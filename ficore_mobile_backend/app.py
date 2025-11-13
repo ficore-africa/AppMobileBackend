@@ -326,16 +326,6 @@ def favicon():
             'message': 'Favicon not found'
         }), 404
 
-# Root endpoint - redirects to admin for web access
-@app.route('/', methods=['GET'])
-def root():
-    """Root endpoint - redirect to admin interface for web access"""
-    # Check if request is from a browser (has Accept header with text/html)
-    accept_header = request.headers.get('Accept', '')
-    if 'text/html' in accept_header:
-        # Browser request - redirect to admin interface
-        from flask import redirect, url_for
-        return redirect(url_for('admin_index'))
     
     # API request - return JSON response
     return jsonify({
@@ -616,6 +606,7 @@ def bad_request(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
