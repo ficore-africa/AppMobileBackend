@@ -326,30 +326,6 @@ def favicon():
             'message': 'Favicon not found'
         }), 404
 
-    
-    # API request - return JSON response
-    return jsonify({
-        'success': True,
-        'message': 'Welcome to FiCore Mobile Backend API',
-        'version': '1.0.0',
-        'webInterface': '/admin',
-        'endpoints': {
-            'auth': '/auth/*',
-            'users': '/users/*',
-            'income': '/income/*',
-            'expenses': '/expenses/*',
-            'financial': '/api/financial/*',
-
-            'credits': '/credits/*',
-            'tax': '/tax/*',
-            'debtors': '/debtors/*',
-            'creditors': '/creditors/*',
-            'inventory': '/inventory/*',
-            'dashboard': '/dashboard/*',
-            'admin': '/admin/*'
-        }
-    })
-
 # Dashboard endpoint that combines data from all modules
 @app.route('/dashboard', methods=['GET'])
 @token_required
@@ -606,6 +582,7 @@ def bad_request(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
