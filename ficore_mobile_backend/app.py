@@ -285,32 +285,6 @@ def health_check():
         'version': '1.0.0'
     })
 
-# Admin web interface route - serves the admin dashboard HTML
-@app.route('/admin', methods=['GET'])
-def admin_index():
-    """Serve the admin web interface"""
-    try:
-        admin_html_path = os.path.join(os.path.dirname(__file__), 'admin_web_app', 'index.html')
-        if not os.path.exists(admin_html_path):
-            raise FileNotFoundError(f"Admin HTML file not found at {admin_html_path}")
-        with open(admin_html_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        return Response(html_content, mimetype='text/html')
-    except FileNotFoundError as e:
-        print(f"Error: {str(e)}")  # Log for debugging
-        return jsonify({
-            'success': False,
-            'message': 'Admin interface not found',
-            'error': 'Admin web app files are missing'
-        }), 404
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to load admin interface',
-            'error': str(e)
-        }), 500
-
 @app.route('/admin/<path:filename>')
 def serve_admin_static(filename):
     """Serve static files for the admin interface"""
@@ -642,5 +616,6 @@ def bad_request(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
