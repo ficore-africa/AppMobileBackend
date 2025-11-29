@@ -329,6 +329,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 year_to_date = sum(inc.get('amount', 0) for inc in year_incomes)
                 print(f"DEBUG: CALCULATED year_to_date = {year_to_date}")
                 
+                # CRITICAL FIX: Count YTD records correctly - should match year_incomes count
+                ytd_record_count = len(year_incomes)
+                print(f"DEBUG: CALCULATED ytd_record_count = {ytd_record_count}")
+                
                 # FIXED: Calculate average monthly based on actual received amounts only
                 twelve_months_ago = now - timedelta(days=365)
                 recent_incomes = [inc for inc in incomes 
@@ -353,17 +357,23 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                         source_totals[income['source']] += income['amount']
                 top_sources = dict(sorted(source_totals.items(), key=lambda x: x[1], reverse=True)[:5])
                 
-                # Growth percentage
+                # CRITICAL FIX: Consistent growth percentage calculation
+                # Use the SAME logic as insights endpoint to prevent contradictions
                 growth_percentage = 0
                 if total_last_month > 0:
                     growth_percentage = ((total_this_month - total_last_month) / total_last_month) * 100
+                elif total_this_month > 0 and total_last_month == 0:
+                    # Special case: if there's income this month but none last month, show 100% growth
+                    growth_percentage = 100.0
+                
+                print(f"DEBUG: CALCULATED growth_percentage = {growth_percentage}% (this_month={total_this_month}, last_month={total_last_month})")
                 
                 summary_data = {
                     'total_this_month': total_this_month,
                     'total_last_month': total_last_month,
                     'average_monthly': average_monthly,
                     'year_to_date': year_to_date,
-                    'total_records': len(incomes),
+                    'total_records': ytd_record_count,  # CRITICAL FIX: Use YTD count, not all-time count
                     'recent_incomes': recent_incomes_data,
                     'top_sources': top_sources,
                     'growth_percentage': growth_percentage
@@ -374,7 +384,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 print(f"  total_this_month: {total_this_month}")
                 print(f"  total_last_month: {total_last_month}")
                 print(f"  year_to_date: {year_to_date}")
-                print(f"  total_records: {len(incomes)}")
+                print(f"  total_records (YTD): {ytd_record_count}")
+                print(f"  growth_percentage: {growth_percentage}%")
                 
                 return jsonify({
                     'success': True,
@@ -407,6 +418,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'dateReceived': {'$lte': now}  # Only past and present incomes, no projections
             }))
             
+            # CRITICAL DEBUG: Log insights calculation
+            print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
+            print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
+            
             if not incomes:
                 return jsonify({
                     'success': True,
@@ -420,26 +435,35 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Calculate insights based on ACTUAL received amounts only
             insights = []
             
-            # Get current month data
+            # Get current month data - MUST USE EXACT SAME LOGIC AS SUMMARY ENDPOINT
             start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
             
             # Current month income
-            current_month_incomes = [inc for inc in incomes if inc['dateReceived'] >= start_of_month]
-            current_month_total = sum(inc['amount'] for inc in current_month_incomes)
+            current_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and inc['dateReceived'] >= start_of_month]
+            current_month_total = sum(inc.get('amount', 0) for inc in current_month_incomes)
+            
+            print(f"DEBUG INSIGHTS: This month incomes count: {len(current_month_incomes)}")
+            print(f"DEBUG INSIGHTS: This month total: {current_month_total}")
             
             # Last month income
-            last_month_incomes = [inc for inc in incomes if start_of_last_month <= inc['dateReceived'] < start_of_month]
-            last_month_total = sum(inc['amount'] for inc in last_month_incomes)
+            last_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and start_of_last_month <= inc['dateReceived'] < start_of_month]
+            last_month_total = sum(inc.get('amount', 0) for inc in last_month_incomes)
             
-            # Growth insight
+            print(f"DEBUG INSIGHTS: Last month incomes count: {len(last_month_incomes)}")
+            print(f"DEBUG INSIGHTS: Last month total: {last_month_total}")
+            
+            # CRITICAL FIX: Growth insight - MUST USE EXACT SAME CALCULATION AS SUMMARY
             if last_month_total > 0:
                 growth_rate = ((current_month_total - last_month_total) / last_month_total) * 100
+                print(f"DEBUG INSIGHTS: Calculated growth_rate = {growth_rate}%")
+                
                 if growth_rate > 10:
                     insights.append({
                         'type': 'growth',
                         'title': 'Income Growth',
                         'message': f'Your income increased by {growth_rate:.1f}% this month!',
+                        'severity': 'success',
                         'value': growth_rate,
                         'priority': 'high'
                     })
@@ -448,9 +472,20 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                         'type': 'decline',
                         'title': 'Income Decline',
                         'message': f'Your income decreased by {abs(growth_rate):.1f}% this month.',
+                        'severity': 'warning',
                         'value': growth_rate,
                         'priority': 'medium'
                     })
+            elif current_month_total > 0 and last_month_total == 0:
+                # Special case: income this month but none last month
+                insights.append({
+                    'type': 'growth',
+                    'title': 'Income Started',
+                    'message': 'You have income this month! Keep it up.',
+                    'severity': 'success',
+                    'value': 100.0,
+                    'priority': 'high'
+                })
             
             # Top income source
             source_totals = defaultdict(float)
