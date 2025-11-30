@@ -422,6 +422,63 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @income_bp.route('/counts', methods=['GET'])
+    @token_required
+    def get_income_counts(current_user):
+        """Get total income counts bypassing pagination - for accurate record counts"""
+        try:
+            # Validate database connection
+            if mongo is None or mongo.db is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Database connection error',
+                    'errors': {'general': ['Database not available']}
+                }), 500
+            
+            now = datetime.utcnow()
+            start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
+            
+            # Count YTD records - NO PAGINATION LIMIT
+            ytd_count = mongo.db.incomes.count_documents({
+                'userId': current_user['_id'],
+                'dateReceived': {'$gte': start_of_year, '$lte': now}
+            })
+            print(f"DEBUG: YTD count = {ytd_count}")
+            
+            # Count all-time records - NO PAGINATION LIMIT
+            all_time_count = mongo.db.incomes.count_documents({
+                'userId': current_user['_id']
+            })
+            print(f"DEBUG: All-time count = {all_time_count}")
+            
+            # Count this month records - NO PAGINATION LIMIT
+            this_month_count = mongo.db.incomes.count_documents({
+                'userId': current_user['_id'],
+                'dateReceived': {'$gte': start_of_month, '$lte': now}
+            })
+            print(f"DEBUG: This month count = {this_month_count}")
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'ytd_count': ytd_count,
+                    'all_time_count': all_time_count,
+                    'this_month_count': this_month_count
+                },
+                'message': 'Income counts retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"ERROR in get_income_counts: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve income counts',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     @income_bp.route('/insights', methods=['GET'])
     @token_required
     def get_income_insights(current_user):

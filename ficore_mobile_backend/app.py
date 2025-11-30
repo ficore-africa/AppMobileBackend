@@ -285,6 +285,88 @@ def health_check():
         'version': '1.0.0'
     })
 
+# Profile picture upload endpoint
+@app.route('/upload/profile-picture', methods=['POST'])
+@token_required
+def upload_profile_picture(current_user):
+    """Upload profile picture for user"""
+    try:
+        # Check if file is in request
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'message': 'No file provided'
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file has a filename
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'message': 'No file selected'
+            }), 400
+        
+        # Validate file type
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'success': False,
+                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}'
+            }), 400
+        
+        # Create uploads directory if it doesn't exist
+        uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'profile_pictures')
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Generate unique filename
+        user_id = str(current_user['_id'])
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f"profile_{user_id}_{timestamp}.{file_ext}"
+        filepath = os.path.join(uploads_dir, filename)
+        
+        # Save file
+        file.save(filepath)
+        
+        # Generate URL for the uploaded file
+        # In production, this should be your actual domain
+        base_url = request.host_url.rstrip('/')
+        image_url = f"{base_url}/uploads/profile_pictures/{filename}"
+        
+        # Update user profile with new picture URL
+        mongo.db.users.update_one(
+            {'_id': current_user['_id']},
+            {
+                '$set': {
+                    'profilePictureUrl': image_url,
+                    'updatedAt': datetime.utcnow()
+                }
+            }
+        )
+        
+        print(f"Profile picture uploaded successfully for user {current_user['email']}: {image_url}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'image_url': image_url,
+                'url': image_url  # Alias for compatibility
+            },
+            'message': 'Profile picture uploaded successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"Error uploading profile picture: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': 'Failed to upload profile picture',
+            'errors': {'general': [str(e)]}
+        }), 500
+
 @app.route('/admin/<path:filename>')
 def serve_admin_static(filename):
     """Serve static files for the admin interface"""
@@ -299,16 +381,28 @@ def serve_admin_static(filename):
 
 @app.route('/uploads/<path:filename>')
 def serve_uploaded_file(filename):
-    """Serve uploaded files (receipts, documents, etc.)"""
+    """Serve uploaded files (receipts, documents, profile pictures, etc.)"""
     try:
         uploads_path = os.path.join(os.path.dirname(__file__), 'uploads')
-        return send_from_directory(uploads_path, filename)
+        
+        # Handle subdirectories (e.g., profile_pictures/image.jpg)
+        if '/' in filename:
+            # Split into directory and filename
+            parts = filename.split('/')
+            subdir = parts[0]
+            file_name = '/'.join(parts[1:])
+            full_path = os.path.join(uploads_path, subdir)
+            return send_from_directory(full_path, file_name)
+        else:
+            return send_from_directory(uploads_path, filename)
+            
     except FileNotFoundError:
         return jsonify({
             'success': False,
             'message': f'File {filename} not found'
         }), 404
     except Exception as e:
+        print(f"Error serving file {filename}: {str(e)}")
         return jsonify({
             'success': False,
             'message': 'Failed to serve file',
