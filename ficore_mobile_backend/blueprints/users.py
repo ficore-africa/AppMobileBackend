@@ -875,6 +875,17 @@ def complete_profile():
             
             update_data = {}
             
+            # Validate numberOfEmployees if provided
+            if 'numberOfEmployees' in data:
+                num_employees = data['numberOfEmployees']
+                if num_employees is not None:
+                    if not isinstance(num_employees, int) or num_employees < 0:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Number of employees must be a non-negative integer (0 or greater)',
+                            'errors': {'numberOfEmployees': ['Must be 0 or a positive number']}
+                        }), 400
+            
             # Update profile fields
             for field in profile_fields:
                 if field in data:
@@ -887,7 +898,11 @@ def complete_profile():
             
             for field in profile_fields:
                 value = data.get(field) if field in data else user.get(field)
-                if value is not None and value != '' and value != {}:
+                # Special handling for numberOfEmployees - 0 is a valid value
+                if field == 'numberOfEmployees':
+                    if value is not None and isinstance(value, int) and value >= 0:
+                        completed_fields += 1
+                elif value is not None and value != '' and value != {}:
                     completed_fields += 1
             
             completion_percentage = (completed_fields / total_fields) * 100

@@ -5,8 +5,11 @@ Structured content for all educational modules
 # Category mappings for filtering
 CONTENT_CATEGORIES = {
     'basics': ['nta_2025_overview', 'pit_basics_2026'],
-    'employee': ['employee_tax_guide', 'employee_benefits_taxation'],
-    'entrepreneur': ['entrepreneur_tax_guide', 'deductible_expenses_entrepreneurs'],
+    'pit': ['nta_2025_overview', 'nta_2025_residence', 'nta_2025_tax_rates', 'pit_basics_2026', 'thresholds_exemptions_employees'],
+    'employee': ['employee_tax_guide', 'employee_benefits_taxation', 'thresholds_exemptions_employees'],
+    'entrepreneur': ['entrepreneur_tax_guide', 'deductible_expenses_entrepreneurs', 'thresholds_exemptions_smes'],
+    'deductions': ['nta_2025_rent_relief', 'rent_relief_2026'],
+    'compliance': ['nta_2025_trailing_income', 'nta_2025_compliance', 'filing_requirements', 'penalties_compliance'],
     'universal': ['statutory_contributions_2026', 'rent_relief_2026', 'filing_requirements', 'penalties_compliance', 'tax_planning_2026', 'calculator_guide_2026']
 }
 
@@ -1816,6 +1819,1252 @@ Tax compliance is not just a legal obligation but a civic responsibility. Unders
         'calculator_links': ['employee', 'entrepreneur']
     },
 
+    'nta_2025_residence': {
+        'content': """
+# Tax Residence Rules Under NTA 2025
+
+Understanding whether you're a tax resident is crucial because it determines what income Nigeria can tax.
+
+## Who is a Resident Individual?
+
+Under the NTA, you are a resident individual if you meet ANY of these conditions in a year:
+
+### 1. Domiciled in Nigeria
+You consider Nigeria your permanent home
+
+### 2. Have a Permanent Place
+You have a permanent place for your domestic use in Nigeria
+
+### 3. Economic and Family Ties
+You have substantial economic ties AND immediate family in Nigeria
+
+### 4. Physical Presence
+You stay in Nigeria for 183 days or more in a 12-month period
+(This includes annual leave or temporary absences)
+
+## Who is a Non-Resident?
+
+A non-resident is anyone who does NOT meet any of the above conditions.
+
+## Taxation Differences
+
+### Residents:
+- Taxed on WORLDWIDE income
+- All income is taxable regardless of where it's earned
+- Income doesn't need to be brought into Nigeria to be taxed
+
+### Non-Residents:
+- Taxed ONLY on Nigeria-sourced income
+- Foreign income is not taxable in Nigeria
+
+## Employment Income Rules
+
+Employment income is taxable in Nigeria if:
+- You are a Nigerian tax resident, OR
+- Your employment duties are performed partly or wholly in Nigeria
+
+### Important Note for Remote Workers:
+The revised rules may not capture employment income for remote workers who perform ALL duties outside Nigeria.
+
+### Special Exemption for Tech Workers:
+Non-resident employees of startups or tech/creative companies are exempt from Nigerian income tax IF:
+- Their employment income is taxable in their country of residence
+
+## Impact on International Assignments
+
+If you're on assignment in Nigeria and qualify as a resident (e.g., you have a permanent home for your assignment), your worldwide income becomes taxable in Nigeria, not just your Nigerian income.
+
+This is a significant change that affects cost projections and tax planning for international assignees.
+""",
+        'category': 'pit',
+        'calculator_links': ['employee', 'entrepreneur']
+    },
+    
+    'nta_2025_tax_rates': {
+        'content': """
+# New Tax Rates and Income Bands
+
+The NTA introduces a more progressive personal income tax system with revised rates and income bands.
+
+## Progressive Tax Bands (Effective January 2026)
+
+### Band 1: ₦0 - ₦800,000
+**Rate: 0% (TAX-FREE)**
+This means the first ₦800,000 you earn is completely tax-free!
+
+### Band 2: ₦800,001 - ₦3,000,000
+**Rate: 15%**
+Only the amount above ₦800,000 is taxed at 15%
+
+### Band 3: ₦3,000,001 - ₦12,000,000
+**Rate: 18%**
+Income in this range is taxed at 18%
+
+### Band 4: ₦12,000,001 - ₦25,000,000
+**Rate: 21%**
+Income in this range is taxed at 21%
+
+### Band 5: ₦25,000,001 - ₦50,000,000
+**Rate: 23%**
+Income in this range is taxed at 23%
+
+### Band 6: Above ₦50,000,000
+**Rate: 25%**
+Income above ₦50 million is taxed at 25%
+
+## How Progressive Tax Works
+
+### Example: If you earn ₦5,000,000 annually
+
+**Step 1**: First ₦800,000 = ₦0 tax (0%)
+**Step 2**: Next ₦2,200,000 (₦800,001 to ₦3,000,000) = ₦330,000 tax (15%)
+**Step 3**: Remaining ₦2,000,000 (₦3,000,001 to ₦5,000,000) = ₦360,000 tax (18%)
+
+**Total Tax** = ₦0 + ₦330,000 + ₦360,000 = ₦690,000
+**Effective Rate** = 13.8%
+
+## Capital Gains Tax Merger
+
+**IMPORTANT CHANGE**: The personal income tax and capital gains tax regimes have been merged.
+
+**Before**: Capital gains were taxed at a flat 10%
+**Now**: Capital gains are subject to the progressive income tax rates above
+
+This means if you're in a higher income bracket, your capital gains will be taxed at your marginal rate (up to 25%), not the old 10% flat rate.
+
+## Impact on Different Income Levels
+
+### Low-Income Earners (Under ₦800,000):
+✓ No tax burden - completely tax-free
+✓ Significant relief for low-income workers
+
+### Middle-Income Earners (₦800,000 - ₦12,000,000):
+✓ Moderate tax rates (15-18%)
+✓ Progressive system ensures fairness
+
+### High-Income Earners (Above ₦12,000,000):
+⚠ Higher tax rates (21-25%)
+⚠ Increased effective tax rate
+⚠ Higher costs for tax-equalized employees
+
+## What This Means for Employers
+
+- Payroll systems need updating
+- Higher costs for tax-equalized employees
+- Effective tax rate increases from ~18% to 25%
+- Need to adjust assignment cost projections
+
+## Preparation Steps
+
+1. Calculate your expected tax under the new rates
+2. Update payroll withholding calculations
+3. Review tax planning strategies
+4. Consult with tax professionals for optimization
+""",
+        'category': 'pit',
+        'calculator_links': ['employee', 'entrepreneur']
+    },
+    
+    'nta_2025_rent_relief': {
+        'content': """
+# Rent Relief Under NTA 2025
+
+**Major Change**: The Consolidated Relief Allowance (CRA) has been eliminated and replaced with Rent Relief.
+
+## What is Rent Relief?
+
+Rent Relief is a tax deduction based on the annual rent you pay for your accommodation.
+
+## How Much Can You Claim?
+
+**Rent Relief = 20% of annual rent paid**
+**Maximum Cap = ₦500,000**
+
+## Calculation Examples:
+
+### Example 1: Annual rent = ₦1,500,000
+20% of ₦1,500,000 = ₦300,000
+**Relief = ₦300,000** (within cap)
+
+### Example 2: Annual rent = ₦3,000,000
+20% of ₦3,000,000 = ₦600,000
+**Relief = ₦500,000** (capped at maximum)
+
+### Example 3: Annual rent = ₦600,000
+20% of ₦600,000 = ₦120,000
+**Relief = ₦120,000** (within cap)
+
+## Who Qualifies?
+
+✓ Individuals who pay rent for accommodation
+✓ Must declare annual rent amount
+✓ Must provide supporting documentation
+
+## Who Does NOT Qualify?
+
+✗ Homeowners (those who own their residence)
+✗ Those living in employer-provided accommodation
+✗ Those not paying rent
+
+## Documentation Requirements
+
+To claim rent relief, you must:
+1. Declare your annual rent amount
+2. Provide supporting information as required by tax authorities
+3. Keep rent receipts and tenancy agreements
+
+Further implementation guidelines are expected from tax authorities.
+
+## Impact on Different Groups
+
+### Renters:
+✓ Can claim up to ₦500,000 relief
+✓ Reduces taxable income
+✓ Must keep proper documentation
+
+### Homeowners:
+✗ No rent relief available
+✗ Only benefit from ₦800,000 tax-free band
+✗ Lost the previous CRA benefit
+
+## What Happened to CRA?
+
+The Consolidated Relief Allowance (CRA) has been completely eliminated under the NTA.
+
+**Before**: Everyone got CRA regardless of rent status
+**Now**: Only renters get relief, and it's based on actual rent paid
+
+## Planning Tips
+
+1. Keep all rent receipts and agreements
+2. Ensure rent payments are properly documented
+3. Declare accurate annual rent amounts
+4. Consult tax professionals for optimization
+5. Understand your eligibility before claiming
+
+## Important Notes
+
+- Relief is capped at ₦500,000 maximum
+- You must actually pay rent to qualify
+- Documentation will be required
+- False declarations may result in penalties
+- Guidelines from tax authorities are pending
+""",
+        'category': 'deductions',
+        'calculator_links': ['employee', 'entrepreneur']
+    },
+    
+    'nta_2025_trailing_income': {
+        'content': """
+# Trailing Income Taxation
+
+The NTA clarifies how one-off or deferred payments are taxed, especially when received after employment ends.
+
+## What is Trailing Income?
+
+Trailing income refers to payments linked to Nigerian employment that are received after you've left the job or country.
+
+### Examples include:
+- Bonuses paid after year-end
+- Commissions earned but paid later
+- Deferred compensation
+- Terminal benefits
+- Severance packages
+- Stock options that vest later
+
+## When is It Taxed?
+
+### Regular Salary:
+- Accrues day-to-day
+- Taxed in the period earned
+
+### Trailing Income:
+- Taxed on the actual date of payment, OR
+- If paid after employment ends, taxed on the last day of employment
+
+**Key Rule**: Trailing income linked to Nigerian employment is taxable in Nigeria even after you exit the country.
+
+## Example Scenarios
+
+### Scenario 1: Year-End Bonus
+You work in Nigeria until November 2026
+Your 2026 bonus is paid in February 2027
+**Tax Treatment**: Taxable in Nigeria (linked to 2026 employment)
+
+### Scenario 2: Deferred Commission
+You leave Nigeria in June 2026
+Commission from 2025 sales paid in August 2026
+**Tax Treatment**: Taxable in Nigeria (linked to Nigerian employment)
+
+### Scenario 3: Terminal Benefits
+Employment ends December 2026
+Terminal benefits paid January 2027
+**Tax Treatment**: Deemed taxable on last day of employment (Dec 2026)
+
+## Why This Matters
+
+### For Employees:
+- You may owe Nigerian tax even after leaving
+- Need to track payments received after exit
+- Must file returns for trailing income
+- Cannot avoid tax by receiving payment abroad
+
+### For Employers:
+- Must track and report trailing payments
+- Withholding obligations may continue
+- Need systems to monitor post-exit payments
+- Compliance requirements extend beyond employment end
+
+## Compliance Requirements
+
+### Employees Must:
+1. Track all deferred or trailing payments
+2. Declare them in tax returns
+3. Pay tax even if received abroad
+4. Keep records of payment dates and amounts
+
+### Employers Must:
+1. Maintain records of trailing payments
+2. Report payments to tax authorities
+3. Withhold tax where applicable
+4. Update tracking systems for compliance
+
+## Common Mistakes to Avoid
+
+✗ Assuming foreign payment = no Nigerian tax
+✗ Not declaring bonuses paid after exit
+✗ Failing to file returns for trailing income
+✗ Not keeping proper payment records
+
+## Best Practices
+
+✓ Review employment contracts for deferred payments
+✓ Set up tracking systems for post-exit income
+✓ Consult tax professionals before leaving Nigeria
+✓ File returns even after employment ends
+✓ Keep documentation of all payments
+
+## Important Notes
+
+- This applies to ALL trailing income from Nigerian employment
+- Location of payment doesn't matter
+- Tax is due regardless of where you are
+- Penalties apply for non-compliance
+- Both employers and employees are responsible
+""",
+        'category': 'compliance',
+        'calculator_links': ['employee', 'entrepreneur']
+    },
+    
+    'thresholds_exemptions_employees': {
+        'content': """
+# Tax Thresholds and Exemptions for Employees (2026)
+
+## Your Taxes Are Coming Down, Not Going Up!
+
+From January 2026, if you're in the bottom 98% of income earners, you will pay less or no tax. Here's what you need to know.
+
+## Personal Income Tax (PAYE) Exemptions
+
+### 1. Minimum Wage Earners - Completely Exempt
+If you earn the national minimum wage or less, you pay **0% tax**.
+
+### 2. Annual Income Up to ₦1,200,000 - Tax-Free
+If your annual gross income is up to ₦1,200,000 (about ₦100,000 per month), you're exempt from tax.
+- This translates to about ₦800,000 taxable income after deductions
+- **No tax to pay at all**
+
+### 3. Reduced Tax for Middle-Income Earners
+If you earn up to ₦20 million annually, you'll pay **reduced PAYE tax** compared to before.
+
+### 4. Gifts - Tax-Free
+Any gifts you receive are **completely exempt** from tax.
+
+## Allowable Deductions & Reliefs
+
+These deductions reduce your taxable income, saving you money:
+
+### 5. Pension Contributions to PFA
+Your pension contributions are **fully deductible** from taxable income.
+- Typically 8% of your salary
+- Reduces your tax burden significantly
+
+**PROOF REQUIRED**: Keep contribution certificates from your PFA. Attach these to your expense entries in Ficore for easy access at tax time.
+
+### 6. National Health Insurance Scheme (NHIS)
+Your NHIS contributions are **tax-deductible**.
+- Usually about 1.75% of salary
+- Protects your health and reduces your tax
+
+### 7. National Housing Fund (NHF)
+Your NHF contributions (2.5% of salary) are **fully deductible**.
+- Helps you qualify for housing loans
+- Reduces your taxable income
+
+### 8. Interest on Home Loans
+Interest paid on loans for your **owner-occupied residential house** is deductible.
+- Must be your primary residence
+- Significant savings for homeowners with mortgages
+
+### 9. Life Insurance or Annuity Premiums
+Premiums you pay for life insurance or annuities are **tax-deductible**.
+- Protects your family
+- Reduces your tax bill
+
+### 10. Rent Relief - 20% of Annual Rent
+If you rent your home, you can claim **20% of annual rent** (up to ₦500,000).
+- **Example**: If you pay ₦1,200,000 rent annually, you get ₦240,000 relief
+- **Maximum**: ₦500,000 relief per year
+
+**PROOF REQUIRED**: Keep all rent receipts, tenancy agreement, and landlord's Tax ID. Use Ficore's "Add Attachments" feature to store these documents with your rent payment entries.
+
+## Pensions & Gratuities - Tax-Free
+
+### 11. Pension Funds - Exempt
+Pension funds and assets under the Pension Reform Act are **completely tax-exempt**.
+
+### 12. Retirement Benefits - Exempt
+Pension, gratuity, or any retirement benefits granted under the Pension Reform Act are **tax-free**.
+
+### 13. Compensation for Job Loss - Up to ₦50 Million
+If you lose your job, compensation up to **₦50 million is tax-exempt**.
+- Provides cushion during difficult times
+- No tax burden on severance packages
+
+**PROOF REQUIRED**: Keep termination letter, severance agreement, and payment receipts. Store these in Ficore to prove the exemption when filing taxes.
+
+## Capital Gains Tax (CGT) - Exemptions for Individuals
+
+### 14. Sale of Your Home - Tax-Free
+When you sell your **owner-occupied house**, there's **no CGT**.
+- Must be your primary residence
+- Complete exemption
+
+### 15. Personal Effects - Up to ₦5 Million
+Sale of personal effects or chattels worth up to **₦5 million is exempt**.
+- Furniture, electronics, personal items
+- No tax on everyday sales
+
+### 16. Private Vehicles - Up to 2 Per Year
+You can sell up to **two private vehicles per year** tax-free.
+- No CGT on personal car sales
+- Applies to most individuals
+
+### 17. Small Share Investments - Exempt
+If you invest in shares:
+- Sales below **₦150 million per year** are exempt, OR
+- Gains up to **₦10 million** are exempt
+- Protects small investors
+
+### 18. Reinvestment in Shares - Exempt
+If you sell shares and **reinvest the proceeds** in Nigerian companies within 12 months, you pay **no CGT**.
+- Encourages long-term investment
+- Full exemption when you reinvest
+
+## Value Added Tax (VAT) - 0% or Exempt
+
+These items have **no VAT**, making them cheaper for you:
+
+### 29. Basic Food Items - 0% VAT
+All basic food items are **VAT-free**.
+- Rice, beans, yam, garri, bread, etc.
+- Food costs less from January 2026
+
+### 30. Rent - Exempt
+Rent payments are **completely exempt** from VAT.
+- No VAT on your housing costs
+
+### 31. Education Services and Materials - 0% VAT
+School fees, textbooks, and educational materials have **no VAT**.
+- Education becomes more affordable
+- Applies to all levels
+
+### 32. Health and Medical Services - 0% VAT
+Hospital visits, medical consultations, and treatments are **VAT-free**.
+- Healthcare is more accessible
+
+### 33. Pharmaceutical Products - 0% VAT
+Medicines and drugs have **no VAT**.
+- Lower cost for essential medications
+
+### 40. Shared Passenger Transport - 0% VAT
+Danfo, Keke, Okada, and shared taxis have **no VAT**.
+- Transport costs stay low
+- Non-charter transport only
+
+### 41. Electric Vehicles and Parts - Exempt
+Electric vehicles and their parts are **VAT-exempt**.
+- Encourages clean energy
+- Lower cost for eco-friendly transport
+
+### 43. Baby Products - 0% VAT
+Baby food, diapers, and baby care items have **no VAT**.
+- Reduces cost of raising children
+
+### 44. Sanitary Towels, Pads, Tampons - 0% VAT
+Feminine hygiene products are **VAT-free**.
+- Essential items more affordable
+
+## Stamp Duties - Exempt
+
+### 46. Electronic Money Transfers Below ₦10,000 - Exempt
+Small transfers under **₦10,000 have no stamp duty**.
+- Most daily transactions are free
+
+### 47. Salary Payments - Exempt
+Your salary payments have **no stamp duty**.
+- No extra charges on your income
+
+### 48. Intra-Bank Transfers - Exempt
+Transfers within the same bank are **stamp duty-free**.
+- No charges for moving your own money
+
+## Real-World Examples
+
+### Example 1: Entry-Level Employee
+**Situation**: Annual salary ₦1,000,000
+**Tax**: ₦0 (below ₦1,200,000 threshold)
+**Benefit**: Complete tax exemption
+
+### Example 2: Mid-Level Employee
+**Situation**: 
+- Annual salary: ₦3,600,000
+- Rent paid: ₦800,000
+- Pension: ₦288,000
+- NHIS: ₦63,000
+- NHF: ₦90,000
+
+**Deductions**:
+- Statutory contributions: ₦441,000
+- Rent relief (20%): ₦160,000
+- **Total deductions**: ₦601,000
+
+**Taxable Income**: ₦2,999,000
+**Tax**: Much lower than before due to ₦800,000 tax-free band
+
+### Example 3: Senior Employee
+**Situation**:
+- Annual salary: ₦8,000,000
+- Mortgage interest: ₦400,000
+- Life insurance: ₦100,000
+- Pension: ₦640,000
+
+**Benefit**: All deductions reduce taxable income significantly, plus first ₦800,000 is tax-free
+
+## Key Takeaways
+
+✅ **Bottom 98% pay less or no tax**
+✅ **First ₦800,000 is completely tax-free**
+✅ **Food, education, healthcare have no VAT**
+✅ **Many personal expenses are deductible**
+✅ **Retirement benefits are tax-free**
+✅ **Small investments and personal sales are exempt**
+
+## What This Means for You
+
+1. **Lower Tax Bill**: Most employees will pay significantly less tax
+2. **Lower Living Costs**: No VAT on food, education, healthcare
+3. **More Deductions**: More ways to reduce your taxable income
+4. **Better Protection**: Job loss compensation and retirement benefits are tax-free
+5. **Simpler Compliance**: Clear thresholds and exemptions
+
+## How to Claim Your Exemptions: The Power of Proof
+
+### You Only Qualify If You Can Prove It
+
+These exemptions and reliefs are yours by law, but **you must have proper documentation** to claim them. Without proof, you cannot benefit from these tax savings.
+
+### What You Need to Prove
+
+**For Rent Relief (₦500,000 maximum):**
+- Rent receipts for every payment
+- Tenancy agreement
+- Landlord's Tax ID
+- Bank transfer evidence
+
+**For Pension & Statutory Contributions:**
+- Contribution certificates from PFA
+- NHIS payment receipts
+- NHF contribution statements
+- Payslips showing deductions
+
+**For Mortgage Interest:**
+- Loan agreement documents
+- Interest payment statements
+- Bank statements showing payments
+- Property ownership documents
+
+**For Life Insurance:**
+- Insurance policy documents
+- Premium payment receipts
+- Annual statements from insurer
+
+**For Job Loss Compensation:**
+- Termination letter
+- Severance agreement
+- Payment receipts
+- Employment contract
+
+### Ficore Makes Record-Keeping Easy
+
+**The Ficore Solution:**
+Ficore helps you maintain all required documentation effortlessly:
+
+1. **Attach Documents to Entries**: Go to any income or expense entry and use the "Add Attachments" feature
+2. **Upload Receipts & Invoices**: Attach rent receipts, insurance payments, contribution certificates
+3. **Organize by Category**: All documents are linked to the relevant entries
+4. **Access Anytime**: Retrieve your proof instantly when filing taxes
+5. **5MB per Document**: Enough space for clear scans or photos (merge/compress if needed using tools like iLovePDF)
+
+**Example: Claiming Rent Relief**
+1. Record your monthly rent payment in Ficore
+2. Click "Add Attachments" on the entry
+3. Upload your rent receipt and tenancy agreement
+4. Repeat for each month
+5. At tax time, you have 12 months of proof ready!
+
+### Without Proof, You Lose Money
+
+**Scenario 1: No Documentation**
+- Annual rent: ₦1,200,000
+- Potential relief: ₦240,000
+- Tax savings: ₦43,200 (at 18% rate)
+- **Without receipts: ₦0 savings** ❌
+
+**Scenario 2: With Ficore Documentation**
+- Annual rent: ₦1,200,000
+- Documented relief: ₦240,000
+- Tax savings: ₦43,200 (at 18% rate)
+- **With Ficore: ₦43,200 saved** ✅
+
+### Tax Authorities Will Ask for Proof
+
+When you file your tax return or during an audit, tax authorities will request:
+- Original receipts or certified copies
+- Bank statements showing payments
+- Contracts and agreements
+- Contribution certificates
+
+**Ficore keeps everything organized and accessible**, so you're always prepared.
+
+## Action Steps
+
+1. **Calculate Your Position**: Use the Employee Tax Calculator to see your savings
+2. **Start Recording Now**: Enter all your income and expenses in Ficore
+3. **Attach Your Proof**: Use "Add Attachments" to upload receipts, invoices, and certificates
+4. **Maximize Deductions**: Ensure all eligible deductions are claimed with proper documentation
+5. **Stay Organized**: Review your attachments monthly to ensure nothing is missing
+6. **Plan Ahead**: Use these exemptions for better financial planning
+
+### Ficore Tip: Don't Just Qualify, Prove It!
+
+The difference between qualifying for an exemption and actually receiving it is **proof**. Ficore ensures you have the documentation you need to claim every Naira you're entitled to.
+
+The new tax laws are designed to put more money in your pocket while making essential items more affordable. Take advantage of these exemptions and reliefs - and let Ficore help you prove you qualify!
+
+*Source: Presidential Fiscal Policy & Tax Reforms Committee*
+""",
+        'category': 'pit',
+        'calculator_links': ['employee']
+    },
+    
+    'thresholds_exemptions_smes': {
+        'content': """
+# Tax Thresholds and Exemptions for Entrepreneurs & SMEs (2026)
+
+## Small Companies Will Pay 0% Tax!
+
+From January 2026, small companies will pay **0% corporate tax** and will be **exempt from VAT**. Here's everything you need to know.
+
+## Small Company Definition
+
+You qualify as a small company if:
+- **Turnover**: Not more than ₦100 million per year
+- **Fixed Assets**: Not more than ₦250 million total
+
+If you meet both criteria, you enjoy massive tax benefits!
+
+## Companies Income Tax (CIT) - Exemptions
+
+### 20. Small Companies - 0% Tax
+If your company qualifies as small (turnover ≤ ₦100m, assets ≤ ₦250m), you pay **0% corporate income tax**.
+- **Complete exemption**
+- No CIT to pay at all
+- Huge savings for small businesses
+
+**PROOF REQUIRED**: Maintain complete financial statements, all sales invoices, purchase receipts, and fixed asset register. Use Ficore to record every transaction and attach all supporting documents. This is how you prove you qualify for 0% tax.
+
+### 21. Eligible Startups - Exempt
+If your startup is **labeled** (officially recognized), you're **completely exempt** from CIT.
+- Must meet startup criteria
+- Encourages innovation and entrepreneurship
+
+### 22. Compensation Relief - 50% Extra Deduction
+If you increase salaries, give wage awards, or provide transport subsidies for low-income workers, you get **50% additional deduction**.
+- **Example**: Pay ₦1 million in wage increases, deduct ₦1.5 million from taxable income
+- Rewards businesses that support workers
+
+### 23. Employment Relief - 50% Deduction
+Hire new employees and keep them for at least 3 years? Get **50% deduction** on their salaries.
+- **Example**: New employee salary ₦600,000, deduct ₦900,000
+- Encourages job creation
+
+**PROOF REQUIRED**: Keep employment contracts, payroll records for 3+ years, and tax remittance receipts. Attach these to your employee expense entries in Ficore to claim this valuable relief.
+
+### 24. Agricultural Businesses - 5-Year Tax Holiday
+Crop production, livestock, dairy, and other agricultural businesses get **5 years of 0% tax**.
+- Complete exemption for first 5 years
+- Boosts food production
+
+### 25. Venture Capital Gains - Exempt
+If you're a venture capitalist, private equity fund, accelerator, or incubator investing in labeled startups, your **gains are tax-exempt**.
+- Encourages startup funding
+- No CGT on startup investments
+
+## Capital Gains Tax (CGT) - Exemptions
+
+### Small Company CGT - 0%
+Small companies (turnover ≤ ₦100m, assets ≤ ₦250m) pay **0% CGT**.
+
+### 17. Small Share Investments - Exempt
+For share disposals:
+- Sales below **₦150 million per year** are exempt, OR
+- Gains up to **₦10 million** are exempt
+- Protects small investors
+
+### 18. Reinvestment in Shares - Full Exemption
+Sell shares and **reinvest proceeds** in Nigerian companies within 12 months? **No CGT**.
+- Encourages long-term investment
+- Must reinvest through CBN-authorized channels
+
+### 19. Institutional Investors - Exempt
+Pension funds (PFAs), REITs, NGOs, and charities are **completely exempt** from CGT.
+- Non-commercial operations only
+
+## Development Levy - Exemption
+
+### 26. Small Companies - Exempt from 4% Levy
+Small companies are **completely exempt** from the 4% development levy.
+- No levy to pay
+- More cash for business operations
+
+## Withholding Tax - Exemptions
+
+### 27. Small Companies, Manufacturers, Agric - Exempt on Income
+Small companies, manufacturers, and agricultural businesses are **exempt from withholding tax deduction** on their income.
+- You receive full payment
+- Better cash flow
+
+### 28. Small Companies - Exempt on Payments
+Small companies are **exempt from deducting withholding tax** on payments to suppliers.
+- Simpler accounting
+- Less administrative burden
+
+## Value Added Tax (VAT) - 0% or Exempt
+
+### 34. Small Companies - Exempt from Charging VAT
+If your turnover is **≤ ₦100 million**, you're **exempt from charging VAT**.
+- Don't need to register for VAT
+- Simpler compliance
+- Lower prices for your customers
+
+**PROOF REQUIRED**: Track all sales and maintain complete invoices to prove your turnover is below ₦100M. Ficore automatically calculates your total turnover and stores all supporting invoices, making VAT exemption claims straightforward.
+
+### 35. Diesel, Petrol, Solar Equipment - VAT Suspended/Exempt
+Fuel and solar power equipment have **no VAT** or **suspended VAT**.
+- Lower operating costs
+- Encourages clean energy
+
+### 36. VAT Refund on Assets and Overheads
+You can get **refund of VAT** on assets and overheads used to produce VATable or 0% VAT goods.
+- Reduces your costs
+- Improves cash flow
+
+### 37. Agricultural Inputs - 0% VAT
+Fertilizers, seeds, seedlings, feeds, and live animals have **no VAT**.
+- Lower costs for farmers
+- Boosts agricultural production
+
+### 38. Agricultural Equipment - 0% VAT
+Purchase, lease, or hire of equipment for agricultural purposes is **VAT-free**.
+- Encourages mechanization
+- Lower investment costs
+
+### 39. Disability Aids - 0% VAT
+Hearing aids, wheelchairs, braille materials have **no VAT**.
+- Supports inclusive business practices
+
+### 42. Humanitarian Supplies - Exempt
+Humanitarian supplies are **VAT-exempt**.
+- Supports social enterprises
+
+### 45. Land and Building - Exempt
+Land and building transactions are **VAT-exempt**.
+- Lower costs for business premises
+
+## Stamp Duties - Exemptions
+
+### 49. Government Securities or Shares - Exempt
+Transfers of government securities or shares have **no stamp duty**.
+- Lower transaction costs for investments
+
+### 50. Stock and Share Documents - Exempt
+All documents for transfer of stocks and shares are **stamp duty-free**.
+- Easier capital market transactions
+
+## Capital Gains Tax (CGT) - Detailed Rules
+
+### Exemption Thresholds
+1. **Disposals within 12 months**: If total sales proceeds don't exceed **₦150 million** AND total gains don't exceed **₦10 million**, you're exempt.
+
+2. **Reinvestment**: Reinvest proceeds into shares of Nigerian companies within 12 months for **full exemption**.
+
+3. **Foreign Share Disposals**: Gains from foreign shares repatriated through CBN-authorized channels are **exempt**.
+
+### Allowable Deductions
+You can now deduct:
+1. **Realized capital losses** on share disposals
+2. **Transaction charges** (brokerage fees, regulatory levies)
+3. **Margin interest** and realized foreign exchange losses
+4. Other expenses incidental to the investment
+
+### Cost Base Reset (Fairness Rule)
+For investments held before 1 January 2026, your cost base is reset to the **higher of**:
+- Actual acquisition cost, OR
+- Closing market price as at 31 December 2025
+
+This ensures you're not taxed on gains earned before the new law.
+
+## Real-World Examples
+
+### Example 1: Small Retail Shop
+**Situation**:
+- Annual turnover: ₦60 million
+- Fixed assets: ₦15 million
+- Profit: ₦8 million
+
+**Tax Benefits**:
+- **CIT**: ₦0 (small company exemption)
+- **VAT**: Not required to charge VAT
+- **Development Levy**: ₦0 (exempt)
+- **Withholding Tax**: Exempt on income and payments
+- **Total Tax Saved**: Over ₦2 million annually
+
+### Example 2: Small Manufacturing Business
+**Situation**:
+- Annual turnover: ₦95 million
+- Fixed assets: ₦200 million
+- Employees: 15 people
+- New hires: 3 people (₦1.8 million total salaries)
+
+**Tax Benefits**:
+- **CIT**: ₦0 (small company exemption)
+- **Employment Relief**: 50% deduction on ₦1.8m = ₦900,000 extra deduction
+- **Withholding Tax**: Exempt
+- **VAT**: Exempt from charging
+- **VAT Refund**: Can claim refund on input VAT
+
+### Example 3: Agricultural Business
+**Situation**:
+- Crop production business
+- Annual turnover: ₦40 million
+- Just starting operations
+
+**Tax Benefits**:
+- **CIT**: 0% for first 5 years (agricultural tax holiday)
+- **VAT on Inputs**: 0% on fertilizers, seeds, equipment
+- **Small Company Benefits**: All exemptions apply
+- **Total Savings**: Massive - virtually no tax for 5 years
+
+### Example 4: Tech Startup
+**Situation**:
+- Labeled startup
+- Annual turnover: ₦30 million
+- Received VC investment
+
+**Tax Benefits**:
+- **CIT**: 0% (startup exemption + small company)
+- **VAT**: Exempt from charging
+- **Investor CGT**: Investors' gains are exempt
+- **Withholding Tax**: Exempt
+
+## Key Takeaways
+
+✅ **Small companies pay 0% corporate tax**
+✅ **No VAT for companies with turnover ≤ ₦100 million**
+✅ **Agricultural businesses get 5-year tax holiday**
+✅ **Startups are completely exempt**
+✅ **Many business inputs have 0% VAT**
+✅ **Withholding tax exemptions improve cash flow**
+✅ **Employment incentives reward job creation**
+
+## What This Means for Your Business
+
+1. **Massive Tax Savings**: Most small businesses will pay little to no tax
+2. **Lower Operating Costs**: No VAT on many business inputs
+3. **Better Cash Flow**: Withholding tax exemptions mean you receive full payments
+4. **Simpler Compliance**: No VAT registration or complex tax filings for small companies
+5. **Growth Incentives**: Tax benefits for hiring and expanding
+
+## Qualifying as a Small Company
+
+### Turnover Test: ≤ ₦100 Million
+Calculate your annual turnover (total sales/revenue):
+- **₦99 million**: Qualifies ✅
+- **₦101 million**: Doesn't qualify ❌
+
+### Fixed Assets Test: ≤ ₦250 Million
+Calculate total value of fixed assets (land, buildings, equipment, vehicles):
+- **₦240 million**: Qualifies ✅
+- **₦260 million**: Doesn't qualify ❌
+
+### Both Tests Must Pass
+You must meet **both** criteria to qualify as a small company.
+
+## How to Claim Your Exemptions: The Power of Proof
+
+### You Only Qualify If You Can Prove It
+
+These massive tax benefits are yours by law, but **you must maintain proper business records** to claim them. Without documentation, you cannot access 0% tax or any exemptions.
+
+### What You Need to Prove
+
+**For Small Company Status (0% CIT, VAT Exempt):**
+- Annual financial statements showing turnover ≤ ₦100M
+- Fixed asset register showing total ≤ ₦250M
+- Bank statements for all business accounts
+- Sales invoices and receipts
+- Purchase invoices and receipts
+
+**For Deductible Business Expenses:**
+- All supplier invoices and receipts
+- Staff payroll records and payment evidence
+- Rent agreements and payment receipts
+- Utility bills for business premises
+- Travel receipts and expense reports
+- Marketing and advertising invoices
+
+**For Employment Relief (50% Extra Deduction):**
+- Employment contracts for new hires
+- Payroll records showing 3+ years retention
+- Tax remittance receipts for employees
+- Bank statements showing salary payments
+
+**For Agricultural Tax Holiday (5 Years):**
+- Business registration as agricultural entity
+- Production records and harvest documentation
+- Sales records for agricultural products
+- Land ownership or lease documents
+
+**For CGT Exemptions:**
+- Share purchase agreements and receipts
+- Sale agreements and proceeds documentation
+- Reinvestment evidence (if claiming reinvestment exemption)
+- Broker statements and transaction records
+
+### Ficore Makes Business Record-Keeping Easy
+
+**The Ficore Solution:**
+Ficore helps you maintain all required business documentation effortlessly:
+
+1. **Attach Documents to Every Transaction**: Go to any income or expense entry and use the "Add Attachments" feature
+2. **Upload Invoices & Receipts**: Attach supplier invoices, customer receipts, expense documentation
+3. **Organize by Category**: All documents are automatically linked to the relevant business entries
+4. **Track Assets**: Document equipment purchases, vehicle acquisitions, property investments
+5. **Employee Records**: Attach employment contracts, payroll records, tax remittances
+6. **5MB per Document**: Sufficient for invoices, receipts, contracts (merge/compress using tools like iLovePDF if needed)
+
+**Example: Proving Small Company Status**
+1. Record every sale in Ficore and attach customer invoices
+2. Record every expense and attach supplier invoices
+3. At year-end, Ficore shows total turnover with full documentation
+4. Export your records showing turnover ≤ ₦100M
+5. **Result: Proven eligibility for 0% tax** ✅
+
+**Example: Claiming Employment Relief**
+1. Record new employee hire in Ficore
+2. Attach employment contract to the entry
+3. Record monthly salary payments with payslips attached
+4. After 3 years, you have complete proof of retention
+5. **Result: 50% extra deduction on ₦1.8M = ₦900K additional deduction** ✅
+
+### Without Proof, You Lose Massive Savings
+
+**Scenario 1: No Documentation**
+- Small retail shop, ₦60M turnover, ₦8M profit
+- Potential CIT savings: ₦2.4M (at 30% rate)
+- **Without proper records: Pay full tax** ❌
+- **Lost savings: ₦2.4M annually**
+
+**Scenario 2: With Ficore Documentation**
+- Small retail shop, ₦60M turnover, ₦8M profit
+- Documented turnover and assets prove small company status
+- CIT: ₦0 (0% rate for small companies)
+- **With Ficore: ₦2.4M saved annually** ✅
+
+**Scenario 3: Manufacturing Business**
+- ₦95M turnover, 3 new employees (₦1.8M salaries)
+- Potential employment relief: ₦900K extra deduction
+- Tax savings: ₦270K (at 30% rate)
+- **Without employment contracts and payroll records: ₦0 relief** ❌
+- **With Ficore documentation: ₦270K saved** ✅
+
+### Tax Authorities Will Audit Your Claims
+
+When you claim 0% tax or exemptions, tax authorities will request:
+- Complete financial statements
+- All invoices and receipts
+- Bank statements matching your records
+- Asset registers and purchase documentation
+- Employment records and contracts
+- Proof of business operations
+
+**Ficore keeps everything organized and audit-ready**, so you can confidently claim every exemption.
+
+### Real Business Impact
+
+**Without Ficore:**
+- Scattered receipts and invoices
+- Missing documentation
+- Cannot prove small company status
+- Pay full 30% corporate tax
+- Lose employment relief benefits
+- Risk penalties for inadequate records
+
+**With Ficore:**
+- Every transaction documented
+- All receipts attached and organized
+- Clear proof of turnover and assets
+- Qualify for 0% tax with confidence
+- Claim all employment incentives
+- Audit-ready records at all times
+
+## Action Steps
+
+1. **Calculate Your Status**: Use the Entrepreneur Tax Calculator to determine if you qualify as a small company
+2. **Start Recording Today**: Enter all business income and expenses in Ficore immediately
+3. **Attach Every Document**: Use "Add Attachments" for every invoice, receipt, and contract
+4. **Track Your Thresholds**: Monitor your turnover and assets to stay within exemption limits
+5. **Document New Hires**: Attach employment contracts and payroll records for employment relief
+6. **Organize Assets**: Maintain a complete fixed asset register with purchase documentation
+7. **Review Monthly**: Check that all transactions have proper documentation attached
+8. **Plan Strategically**: Use thresholds to optimize your tax position
+
+### Ficore Tip: Your Records Are Your Savings
+
+For small businesses, the difference between paying 30% tax and 0% tax is **documentation**. Ficore ensures you have the proof you need to claim every exemption and save millions in taxes.
+
+## Common Questions
+
+**Q: What if my turnover is ₦105 million?**
+A: You don't qualify for small company exemptions, but you still benefit from lower corporate tax rates and other reliefs. Ficore still helps you track everything for compliance.
+
+**Q: Can I split my business to stay under ₦100 million?**
+A: Tax authorities will look at substance over form. Artificial arrangements may not be recognized. Focus on legitimate business structuring with professional advice.
+
+**Q: What if I exceed ₦100 million mid-year?**
+A: Exemptions typically apply based on annual figures. Ficore helps you monitor your position in real-time so you can plan accordingly.
+
+**Q: Do I still need to file returns if I'm exempt?**
+A: Yes, you must still file returns showing your exempt status and claiming exemptions. Ficore makes this easy by organizing all your documentation.
+
+**Q: How long should I keep records?**
+A: Keep all business records for at least 6 years. Ficore stores your attachments securely for easy access anytime.
+
+## Planning Strategies
+
+### Stay Below Thresholds
+- Monitor turnover and asset levels in real-time with Ficore
+- Consider timing of major purchases
+- Plan growth to optimize tax position
+- Use Ficore reports to track your position
+
+### Maximize Deductions
+- Hire strategically to claim employment relief (document everything!)
+- Increase wages to claim compensation relief (attach payroll records)
+- Invest in qualifying assets and inputs (attach purchase invoices)
+- Use Ficore to ensure every deduction is properly documented
+
+### Reinvest Gains
+- Use CGT exemption for reinvestment (attach investment documentation)
+- Build long-term investment portfolio (track with Ficore)
+- Support other Nigerian businesses (document transactions)
+
+### Build Audit-Ready Records
+- Attach documents to every transaction as you go
+- Don't wait until tax time to organize
+- Use Ficore's categorization to keep everything sorted
+- Review your documentation monthly
+
+The new tax laws are designed to help small businesses thrive. Take full advantage of these exemptions and reliefs - and let Ficore help you prove you qualify for every single benefit!
+
+**Remember: Without proof, exemptions are just promises. With Ficore, they're money in your pocket.**
+
+*Source: Presidential Fiscal Policy & Tax Reforms Committee*
+""",
+        'category': 'entrepreneur',
+        'calculator_links': ['entrepreneur']
+    },
+    
+    'nta_2025_compliance': {
+        'content': """
+# NTA 2025 Compliance and Preparation
+
+The NTA becomes effective January 2026. Here's how to prepare.
+
+## Implementation Timeline
+
+**26 June 2025**: NTA signed into law
+**July - December 2025**: Transition period
+**1 January 2026**: NTA becomes effective
+
+The government provided a 6+ month transition period to allow stakeholders time to prepare and minimize disruptions.
+
+## Steps for Individuals
+
+### 1. Assess Personal Impact
+- Calculate your tax under new rates
+- Determine if you're a tax resident
+- Identify trailing income obligations
+- Review rent relief eligibility
+
+### 2. Update Financial Planning
+- Adjust budget for new tax rates
+- Plan for higher withholding
+- Consider tax optimization strategies
+- Review investment tax implications
+
+### 3. Gather Documentation
+- Collect rent receipts and agreements
+- Document all income sources
+- Keep records of deferred payments
+- Organize employment contracts
+
+### 4. Seek Professional Advice
+- Consult with tax professionals
+- Understand your specific situation
+- Get help with tax planning
+- Clarify residence status if needed
+
+## Steps for Employers
+
+### 1. Update Systems
+- Modify payroll software for new rates
+- Update withholding calculations
+- Implement rent relief processing
+- Set up trailing income tracking
+
+### 2. Review Policies
+- Assess impact on tax-equalized employees
+- Update assignment cost projections
+- Review compensation structures
+- Adjust international assignment policies
+
+### 3. Train Staff
+- Educate HR and payroll teams
+- Train managers on new rules
+- Inform employees about changes
+- Provide resources and support
+
+### 4. Compliance Preparation
+- Review reporting requirements
+- Update compliance processes
+- Prepare for increased costs
+- Establish tracking mechanisms
+
+## What to Expect from Tax Authorities
+
+### Further Guidelines Coming:
+- Detailed implementation rules
+- Rent relief documentation requirements
+- Trailing income reporting formats
+- Compliance procedures
+- Penalty structures
+
+These guidelines are expected before January 2026.
+
+## Common Questions
+
+**Q: Do I need to do anything now?**
+A: Start planning and assessing impact. Full compliance required from January 2026.
+
+**Q: Will my employer handle everything?**
+A: Employers handle withholding, but you're responsible for accurate declarations and compliance.
+
+**Q: What if I'm on international assignment?**
+A: Determine your residence status and understand worldwide income implications. Seek professional advice.
+
+**Q: How do I claim rent relief?**
+A: Declare annual rent and provide documentation as required. Wait for detailed guidelines.
+
+**Q: What about my 2025 income?**
+A: 2025 income is taxed under old rules. NTA applies from January 2026 onwards.
+
+## Resources and Support
+
+### Tax Authorities:
+- Federal Inland Revenue Service (FIRS)
+- State Internal Revenue Services
+- Joint Revenue Board
+
+### Professional Help:
+- Certified tax consultants
+- Accounting firms
+- Tax lawyers
+- Financial advisors
+
+### Ficore Africa:
+- Tax calculation tools
+- Educational resources
+- Professional network
+- Compliance support
+
+## Red Flags to Watch
+
+⚠ Not updating payroll by January 2026
+⚠ Ignoring residence status changes
+⚠ Failing to track trailing income
+⚠ Not keeping rent documentation
+⚠ Assuming old rules still apply
+
+## Action Checklist
+
+### Before January 2026:
+☐ Calculate tax impact
+☐ Determine residence status
+☐ Gather rent documentation
+☐ Review employment contracts
+☐ Consult tax professional
+☐ Update personal budget
+☐ Inform employer of changes
+☐ Set up record-keeping system
+
+### For Employers:
+☐ Update payroll systems
+☐ Train staff on new rules
+☐ Review assignment policies
+☐ Assess cost implications
+☐ Establish tracking systems
+☐ Communicate with employees
+☐ Prepare compliance processes
+☐ Engage tax advisors
+
+## Final Notes
+
+The NTA 2025 represents significant reform aimed at:
+- Enhancing revenue generation
+- Simplifying compliance
+- Addressing regional disparities
+- Modernizing tax administration
+
+While changes may increase tax for higher earners, they provide relief for low-income workers and create a more progressive, equitable system.
+
+Stay informed, prepare early, and seek professional guidance to ensure smooth transition and compliance.
+""",
+        'category': 'compliance',
+        'calculator_links': ['employee', 'entrepreneur']
+    },
+    
     'tax_planning_2026': {
         'content': """
 # Tax Planning Strategies (2026)
