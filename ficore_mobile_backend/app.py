@@ -16,7 +16,7 @@ from blueprints.users import users_bp, init_users_blueprint
 from blueprints.income import init_income_blueprint
 from blueprints.expenses import expenses_bp, init_expenses_blueprint
 from blueprints.financial_aggregation import init_financial_aggregation_blueprint
-
+from blueprints.attachments import init_attachments_blueprint
 
 from blueprints.credits import init_credits_blueprint
 from blueprints.summaries import init_summaries_blueprint
@@ -25,6 +25,7 @@ from blueprints.tax import init_tax_blueprint
 from blueprints.debtors import init_debtors_blueprint
 from blueprints.creditors import init_creditors_blueprint
 from blueprints.inventory import init_inventory_blueprint
+from blueprints.assets import assets_bp
 from blueprints.dashboard import init_dashboard_blueprint
 from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
@@ -240,7 +241,7 @@ users_blueprint = init_users_blueprint(mongo, token_required)
 income_blueprint = init_income_blueprint(mongo, token_required, serialize_doc)
 expenses_blueprint = init_expenses_blueprint(mongo, token_required, serialize_doc)
 financial_aggregation_blueprint = init_financial_aggregation_blueprint(mongo, token_required, serialize_doc)
-
+attachments_blueprint = init_attachments_blueprint(mongo, token_required, serialize_doc)
 
 credits_blueprint = init_credits_blueprint(mongo, token_required, serialize_doc)
 summaries_blueprint = init_summaries_blueprint(mongo, token_required, serialize_doc)
@@ -260,7 +261,7 @@ app.register_blueprint(users_blueprint)
 app.register_blueprint(income_blueprint)
 app.register_blueprint(expenses_blueprint)
 app.register_blueprint(financial_aggregation_blueprint)
-
+app.register_blueprint(attachments_blueprint)
 
 app.register_blueprint(credits_blueprint)
 app.register_blueprint(summaries_blueprint)
@@ -269,6 +270,7 @@ app.register_blueprint(tax_blueprint)
 app.register_blueprint(debtors_blueprint)
 app.register_blueprint(creditors_blueprint)
 app.register_blueprint(inventory_blueprint)
+app.register_blueprint(assets_bp, url_prefix='/api')
 app.register_blueprint(dashboard_blueprint)
 app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
@@ -285,6 +287,88 @@ def health_check():
         'version': '1.0.0'
     })
 
+# Profile picture upload endpoint
+@app.route('/upload/profile-picture', methods=['POST'])
+@token_required
+def upload_profile_picture(current_user):
+    """Upload profile picture for user"""
+    try:
+        # Check if file is in request
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'message': 'No file provided'
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file has a filename
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'message': 'No file selected'
+            }), 400
+        
+        # Validate file type
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'success': False,
+                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}'
+            }), 400
+        
+        # Create uploads directory if it doesn't exist
+        uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'profile_pictures')
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Generate unique filename
+        user_id = str(current_user['_id'])
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f"profile_{user_id}_{timestamp}.{file_ext}"
+        filepath = os.path.join(uploads_dir, filename)
+        
+        # Save file
+        file.save(filepath)
+        
+        # Generate URL for the uploaded file
+        # In production, this should be your actual domain
+        base_url = request.host_url.rstrip('/')
+        image_url = f"{base_url}/uploads/profile_pictures/{filename}"
+        
+        # Update user profile with new picture URL
+        mongo.db.users.update_one(
+            {'_id': current_user['_id']},
+            {
+                '$set': {
+                    'profilePictureUrl': image_url,
+                    'updatedAt': datetime.utcnow()
+                }
+            }
+        )
+        
+        print(f"Profile picture uploaded successfully for user {current_user['email']}: {image_url}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'image_url': image_url,
+                'url': image_url  # Alias for compatibility
+            },
+            'message': 'Profile picture uploaded successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"Error uploading profile picture: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': 'Failed to upload profile picture',
+            'errors': {'general': [str(e)]}
+        }), 500
+
 @app.route('/admin/<path:filename>')
 def serve_admin_static(filename):
     """Serve static files for the admin interface"""
@@ -299,16 +383,28 @@ def serve_admin_static(filename):
 
 @app.route('/uploads/<path:filename>')
 def serve_uploaded_file(filename):
-    """Serve uploaded files (receipts, documents, etc.)"""
+    """Serve uploaded files (receipts, documents, profile pictures, etc.)"""
     try:
         uploads_path = os.path.join(os.path.dirname(__file__), 'uploads')
-        return send_from_directory(uploads_path, filename)
+        
+        # Handle subdirectories (e.g., profile_pictures/image.jpg)
+        if '/' in filename:
+            # Split into directory and filename
+            parts = filename.split('/')
+            subdir = parts[0]
+            file_name = '/'.join(parts[1:])
+            full_path = os.path.join(uploads_path, subdir)
+            return send_from_directory(full_path, file_name)
+        else:
+            return send_from_directory(uploads_path, filename)
+            
     except FileNotFoundError:
         return jsonify({
             'success': False,
             'message': f'File {filename} not found'
         }), 404
     except Exception as e:
+        print(f"Error serving file {filename}: {str(e)}")
         return jsonify({
             'success': False,
             'message': 'Failed to serve file',

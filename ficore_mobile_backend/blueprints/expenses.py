@@ -340,10 +340,18 @@ def get_expense_summary():
             filter_end = datetime.fromisoformat(end_date.replace('Z', '')) if end_date else now
            
             all_expenses = list(expenses_bp.mongo.db.expenses.find({'userId': current_user['_id']}))
-            filtered_expenses = [exp for exp in all_expenses if filter_start <= exp['date'] <= filter_end]
+            
+            # CRITICAL DEBUG: Log expense summary calculation
+            print(f"DEBUG EXPENSE SUMMARY - User: {current_user['_id']}")
+            print(f"DEBUG: Total expenses retrieved: {len(all_expenses)}")
+            
+            filtered_expenses = [exp for exp in all_expenses if exp.get('date') and filter_start <= exp['date'] <= filter_end]
            
-            total_this_month = sum(exp['amount'] for exp in all_expenses if exp['date'] >= start_of_month)
-            total_last_month = sum(exp['amount'] for exp in all_expenses if start_of_last_month <= exp['date'] < start_of_month)
+            total_this_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month)
+            total_last_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month)
+            
+            print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
+            print(f"DEBUG EXPENSE SUMMARY: Last month total: {total_last_month}")
            
             category_totals = {}
             for expense in filtered_expenses:
@@ -503,6 +511,11 @@ def get_expense_insights():
     def _get_expense_insights(current_user):
         try:
             expenses = list(expenses_bp.mongo.db.expenses.find({'userId': current_user['_id']}))
+            
+            # CRITICAL DEBUG: Log insights calculation
+            print(f"DEBUG EXPENSE INSIGHTS - User: {current_user['_id']}")
+            print(f"DEBUG: Total expenses retrieved: {len(expenses)}")
+            
             if not expenses:
                 return jsonify({
                     'success': True,
@@ -514,19 +527,51 @@ def get_expense_insights():
             start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
            
-            current_month_expenses = [e for e in expenses if e['date'] >= start_of_month]
-            last_month_expenses = [e for e in expenses if start_of_last_month <= e['date'] < start_of_month]
+            current_month_expenses = [e for e in expenses if e.get('date') and e['date'] >= start_of_month]
+            last_month_expenses = [e for e in expenses if e.get('date') and start_of_last_month <= e['date'] < start_of_month]
            
-            current_total = sum(e['amount'] for e in current_month_expenses)
-            last_total = sum(e['amount'] for e in last_month_expenses)
+            current_total = sum(e.get('amount', 0) for e in current_month_expenses)
+            last_total = sum(e.get('amount', 0) for e in last_month_expenses)
+            
+            print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")
+            print(f"DEBUG EXPENSE INSIGHTS: This month total: {current_total}")
+            print(f"DEBUG EXPENSE INSIGHTS: Last month expenses count: {len(last_month_expenses)}")
+            print(f"DEBUG EXPENSE INSIGHTS: Last month total: {last_total}")
            
             insights = []
+            # CRITICAL FIX: Consistent calculation with proper severity field
             if last_total > 0:
                 change = ((current_total - last_total) / last_total) * 100
+                print(f"DEBUG EXPENSE INSIGHTS: Calculated change = {change}%")
+                
                 if change > 15:
-                    insights.append({'type': 'increase', 'title': 'Spending Increase', 'message': f'Up {change:.1f}% this month', 'value': change, 'priority': 'high'})
+                    insights.append({
+                        'type': 'increase', 
+                        'title': 'Spending Increase', 
+                        'message': f'Up {change:.1f}% this month', 
+                        'severity': 'warning',  # Added severity
+                        'value': change, 
+                        'priority': 'high'
+                    })
                 elif change < -15:
-                    insights.append({'type': 'decrease', 'title': 'Spending Down', 'message': f'Down {abs(change):.1f}% – well done!', 'value': change, 'priority': 'high'})
+                    insights.append({
+                        'type': 'decrease', 
+                        'title': 'Spending Down', 
+                        'message': f'Down {abs(change):.1f}% – well done!', 
+                        'severity': 'success',  # Added severity
+                        'value': change, 
+                        'priority': 'high'
+                    })
+            elif current_total > 0 and last_total == 0:
+                # Special case: expenses this month but none last month
+                insights.append({
+                    'type': 'increase',
+                    'title': 'Expenses Started',
+                    'message': 'You have expenses this month.',
+                    'severity': 'info',
+                    'value': 100.0,
+                    'priority': 'medium'
+                })
            
             category_totals = {}
             for e in current_month_expenses:
@@ -536,11 +581,25 @@ def get_expense_insights():
             if category_totals:
                 top_cat, top_amt = max(category_totals.items(), key=lambda x: x[1])
                 pct = (top_amt / current_total) * 100 if current_total else 0
-                insights.append({'type': 'top_category', 'title': 'Top Category', 'message': f'{top_cat}: {pct:.1f}% of spending', 'value': top_amt, 'priority': 'medium'})
+                insights.append({
+                    'type': 'top_category', 
+                    'title': 'Top Category', 
+                    'message': f'{top_cat}: {pct:.1f}% of spending', 
+                    'severity': 'info',  # Added severity
+                    'value': top_amt, 
+                    'priority': 'medium'
+                })
            
             days = now.day
             avg_daily = current_total / days if days else 0
-            insights.append({'type': 'daily_average', 'title': 'Daily Avg', 'message': f'₦{avg_daily:,.0f}/day', 'value': avg_daily, 'priority': 'low'})
+            insights.append({
+                'type': 'daily_average', 
+                'title': 'Daily Avg', 
+                'message': f'₦{avg_daily:,.0f}/day', 
+                'severity': 'info',  # Added severity
+                'value': avg_daily, 
+                'priority': 'low'
+            })
            
             return jsonify({
                 'success': True,

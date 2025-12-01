@@ -287,83 +287,108 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'errors': {'general': [str(date_error)]}
                 }), 500
             
-            # Get income data with error handling - ONLY actual received incomes
+            # CRITICAL: Calculate totals using MongoDB aggregation - NO LIMITS
+            # Aggregation counts/sums ALL records matching the criteria
+            # This ensures accurate totals regardless of how many records exist
             try:
-                # CRITICAL FIX: Only get incomes where dateReceived <= now (no future projections)
-                incomes = list(mongo.db.incomes.find({
-                    'userId': current_user['_id'],
-                    'dateReceived': {'$lte': now}  # Only past and present incomes
-                }))
-            except Exception as db_error:
-                return jsonify({
-                    'success': False,
-                    'message': 'Database query error',
-                    'errors': {'general': [str(db_error)]}
-                }), 500
-            
-            # Calculate totals with safe operations - NO RECURRING PROJECTIONS
-            try:
-                # CRITICAL DEBUG: Log all income data for investigation
                 print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
-                print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
                 print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
-                # Debug each income record
-                for i, inc in enumerate(incomes):
-                    print(f"DEBUG Income {i+1}: ID={inc.get('_id')}, Amount={inc.get('amount')}, DateReceived={inc.get('dateReceived')}, Source={inc.get('source')}")
+                # Calculate this month total using aggregation - NO LIMIT, counts ALL records
+                total_this_month_result = list(mongo.db.incomes.aggregate([
+                    {'$match': {
+                        'userId': current_user['_id'],
+                        'dateReceived': {'$gte': start_of_month, '$lte': now}
+                    }},
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
+                ]))
+                total_this_month = total_this_month_result[0]['total'] if total_this_month_result else 0.0
+                this_month_count = total_this_month_result[0]['count'] if total_this_month_result else 0
+                print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
                 
-                # FIXED: Simple sum of actual amounts only, no multipliers or projections
-                this_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and inc['dateReceived'] >= start_of_month]
-                print(f"DEBUG: This month incomes count: {len(this_month_incomes)}")
-                for i, inc in enumerate(this_month_incomes):
-                    print(f"DEBUG This Month Income {i+1}: Amount={inc.get('amount')}, DateReceived={inc.get('dateReceived')}")
-                
-                total_this_month = sum(inc.get('amount', 0) for inc in this_month_incomes)
-                print(f"DEBUG: CALCULATED total_this_month = {total_this_month}")
-                
-                last_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and start_of_last_month <= inc['dateReceived'] < start_of_month]
-                total_last_month = sum(inc.get('amount', 0) for inc in last_month_incomes)
+                # Calculate last month total using aggregation - NO LIMIT, counts ALL records
+                total_last_month_result = list(mongo.db.incomes.aggregate([
+                    {'$match': {
+                        'userId': current_user['_id'],
+                        'dateReceived': {'$gte': start_of_last_month, '$lt': start_of_month}
+                    }},
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                total_last_month = total_last_month_result[0]['total'] if total_last_month_result else 0.0
                 print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
                 
-                year_incomes = [inc for inc in incomes if inc.get('dateReceived') and inc['dateReceived'] >= start_of_year]
-                year_to_date = sum(inc.get('amount', 0) for inc in year_incomes)
-                print(f"DEBUG: CALCULATED year_to_date = {year_to_date}")
+                # Calculate YTD total and count using aggregation - NO LIMIT, counts ALL records
+                year_to_date_result = list(mongo.db.incomes.aggregate([
+                    {'$match': {
+                        'userId': current_user['_id'],
+                        'dateReceived': {'$gte': start_of_year, '$lte': now}
+                    }},
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
+                ]))
+                year_to_date = year_to_date_result[0]['total'] if year_to_date_result else 0.0
+                ytd_record_count = year_to_date_result[0]['count'] if year_to_date_result else 0
+                print(f"DEBUG: CALCULATED year_to_date = {year_to_date}, ytd_record_count = {ytd_record_count}")
                 
-                # FIXED: Calculate average monthly based on actual received amounts only
+                # Get all-time record count for fallback - NO LIMIT, counts ALL records
+                all_time_record_count = mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                print(f"DEBUG: CALCULATED all_time_record_count = {all_time_record_count}")
+                
+                # CRITICAL FIX: Fallback to all-time if YTD is 0
+                final_record_count = ytd_record_count if ytd_record_count > 0 else all_time_record_count
+                print(f"DEBUG: FINAL record_count (with fallback) = {final_record_count}")
+                
+                # Calculate average monthly (last 12 months) - NO LIMIT, processes ALL records
                 twelve_months_ago = now - timedelta(days=365)
-                recent_incomes = [inc for inc in incomes 
-                                if inc.get('dateReceived') and inc['dateReceived'] >= twelve_months_ago]
-                # Calculate actual average based on received amounts, not projected
-                total_recent_amount = sum(inc.get('amount', 0) for inc in recent_incomes)
-                average_monthly = total_recent_amount / 12 if recent_incomes else 0
+                monthly_totals = list(mongo.db.incomes.aggregate([
+                    {'$match': {
+                        'userId': current_user['_id'],
+                        'dateReceived': {'$gte': twelve_months_ago, '$lte': now}
+                    }},
+                    {'$group': {
+                        '_id': {'year': {'$year': '$dateReceived'}, 'month': {'$month': '$dateReceived'}},
+                        'total': {'$sum': '$amount'}
+                    }}
+                ]))
+                average_monthly = sum(item['total'] for item in monthly_totals) / max(len(monthly_totals), 1) if monthly_totals else 0
                 
                 # Get recent incomes (last 5)
-                recent_incomes_list = sorted([inc for inc in incomes if inc.get('dateReceived')], 
-                                           key=lambda x: x['dateReceived'], reverse=True)[:5]
+                recent_incomes = list(mongo.db.incomes.find({
+                    'userId': current_user['_id']
+                }).sort('dateReceived', -1).limit(5))
+                
                 recent_incomes_data = []
-                for income in recent_incomes_list:
+                for income in recent_incomes:
                     income_data = serialize_doc(income.copy())
                     income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                     recent_incomes_data.append(income_data)
                 
-                # Top sources with safe operations
-                source_totals = defaultdict(float)
-                for income in incomes:
-                    if income.get('source') and income.get('amount'):
-                        source_totals[income['source']] += income['amount']
-                top_sources = dict(sorted(source_totals.items(), key=lambda x: x[1], reverse=True)[:5])
+                # Get top sources using aggregation
+                top_sources_data = list(mongo.db.incomes.aggregate([
+                    {'$match': {'userId': current_user['_id']}},
+                    {'$group': {'_id': '$source', 'total': {'$sum': '$amount'}}},
+                    {'$sort': {'total': -1}},
+                    {'$limit': 5}
+                ]))
+                top_sources = {item['_id']: item['total'] for item in top_sources_data}
                 
-                # Growth percentage
+                # CRITICAL FIX: Consistent growth percentage calculation
+                # Use the SAME logic as insights endpoint to prevent contradictions
                 growth_percentage = 0
                 if total_last_month > 0:
                     growth_percentage = ((total_this_month - total_last_month) / total_last_month) * 100
+                elif total_this_month > 0 and total_last_month == 0:
+                    # Special case: if there's income this month but none last month, show 100% growth
+                    growth_percentage = 100.0
+                
+                print(f"DEBUG: CALCULATED growth_percentage = {growth_percentage}% (this_month={total_this_month}, last_month={total_last_month})")
                 
                 summary_data = {
                     'total_this_month': total_this_month,
                     'total_last_month': total_last_month,
                     'average_monthly': average_monthly,
                     'year_to_date': year_to_date,
-                    'total_records': len(incomes),
+                    'total_records': final_record_count,  # CRITICAL FIX: YTD count with fallback to all-time
                     'recent_incomes': recent_incomes_data,
                     'top_sources': top_sources,
                     'growth_percentage': growth_percentage
@@ -374,7 +399,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 print(f"  total_this_month: {total_this_month}")
                 print(f"  total_last_month: {total_last_month}")
                 print(f"  year_to_date: {year_to_date}")
-                print(f"  total_records: {len(incomes)}")
+                print(f"  total_records: {final_record_count} (YTD: {ytd_record_count}, All-time: {all_time_record_count})")
+                print(f"  growth_percentage: {growth_percentage}%")
                 
                 return jsonify({
                     'success': True,
@@ -396,6 +422,63 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @income_bp.route('/counts', methods=['GET'])
+    @token_required
+    def get_income_counts(current_user):
+        """Get total income counts bypassing pagination - for accurate record counts"""
+        try:
+            # Validate database connection
+            if mongo is None or mongo.db is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Database connection error',
+                    'errors': {'general': ['Database not available']}
+                }), 500
+            
+            now = datetime.utcnow()
+            start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
+            
+            # Count YTD records - NO PAGINATION LIMIT
+            ytd_count = mongo.db.incomes.count_documents({
+                'userId': current_user['_id'],
+                'dateReceived': {'$gte': start_of_year, '$lte': now}
+            })
+            print(f"DEBUG: YTD count = {ytd_count}")
+            
+            # Count all-time records - NO PAGINATION LIMIT
+            all_time_count = mongo.db.incomes.count_documents({
+                'userId': current_user['_id']
+            })
+            print(f"DEBUG: All-time count = {all_time_count}")
+            
+            # Count this month records - NO PAGINATION LIMIT
+            this_month_count = mongo.db.incomes.count_documents({
+                'userId': current_user['_id'],
+                'dateReceived': {'$gte': start_of_month, '$lte': now}
+            })
+            print(f"DEBUG: This month count = {this_month_count}")
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'ytd_count': ytd_count,
+                    'all_time_count': all_time_count,
+                    'this_month_count': this_month_count
+                },
+                'message': 'Income counts retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"ERROR in get_income_counts: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve income counts',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     @income_bp.route('/insights', methods=['GET'])
     @token_required
     def get_income_insights(current_user):
@@ -406,6 +489,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'userId': current_user['_id'],
                 'dateReceived': {'$lte': now}  # Only past and present incomes, no projections
             }))
+            
+            # CRITICAL DEBUG: Log insights calculation
+            print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
+            print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
             
             if not incomes:
                 return jsonify({
@@ -420,26 +507,35 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Calculate insights based on ACTUAL received amounts only
             insights = []
             
-            # Get current month data
+            # Get current month data - MUST USE EXACT SAME LOGIC AS SUMMARY ENDPOINT
             start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
             
             # Current month income
-            current_month_incomes = [inc for inc in incomes if inc['dateReceived'] >= start_of_month]
-            current_month_total = sum(inc['amount'] for inc in current_month_incomes)
+            current_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and inc['dateReceived'] >= start_of_month]
+            current_month_total = sum(inc.get('amount', 0) for inc in current_month_incomes)
+            
+            print(f"DEBUG INSIGHTS: This month incomes count: {len(current_month_incomes)}")
+            print(f"DEBUG INSIGHTS: This month total: {current_month_total}")
             
             # Last month income
-            last_month_incomes = [inc for inc in incomes if start_of_last_month <= inc['dateReceived'] < start_of_month]
-            last_month_total = sum(inc['amount'] for inc in last_month_incomes)
+            last_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and start_of_last_month <= inc['dateReceived'] < start_of_month]
+            last_month_total = sum(inc.get('amount', 0) for inc in last_month_incomes)
             
-            # Growth insight
+            print(f"DEBUG INSIGHTS: Last month incomes count: {len(last_month_incomes)}")
+            print(f"DEBUG INSIGHTS: Last month total: {last_month_total}")
+            
+            # CRITICAL FIX: Growth insight - MUST USE EXACT SAME CALCULATION AS SUMMARY
             if last_month_total > 0:
                 growth_rate = ((current_month_total - last_month_total) / last_month_total) * 100
+                print(f"DEBUG INSIGHTS: Calculated growth_rate = {growth_rate}%")
+                
                 if growth_rate > 10:
                     insights.append({
                         'type': 'growth',
                         'title': 'Income Growth',
                         'message': f'Your income increased by {growth_rate:.1f}% this month!',
+                        'severity': 'success',
                         'value': growth_rate,
                         'priority': 'high'
                     })
@@ -448,9 +544,20 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                         'type': 'decline',
                         'title': 'Income Decline',
                         'message': f'Your income decreased by {abs(growth_rate):.1f}% this month.',
+                        'severity': 'warning',
                         'value': growth_rate,
                         'priority': 'medium'
                     })
+            elif current_month_total > 0 and last_month_total == 0:
+                # Special case: income this month but none last month
+                insights.append({
+                    'type': 'growth',
+                    'title': 'Income Started',
+                    'message': 'You have income this month! Keep it up.',
+                    'severity': 'success',
+                    'value': 100.0,
+                    'priority': 'high'
+                })
             
             # Top income source
             source_totals = defaultdict(float)

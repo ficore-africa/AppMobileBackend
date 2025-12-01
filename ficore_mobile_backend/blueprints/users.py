@@ -865,6 +865,7 @@ def complete_profile():
     def _complete_profile(current_user):
         try:
             data = request.get_json()
+            print(f"Profile completion request from user {current_user['email']}: {data}")
             
             # Profile completion fields
             profile_fields = [
@@ -874,6 +875,17 @@ def complete_profile():
             ]
             
             update_data = {}
+            
+            # Validate numberOfEmployees if provided
+            if 'numberOfEmployees' in data:
+                num_employees = data['numberOfEmployees']
+                if num_employees is not None:
+                    if not isinstance(num_employees, int) or num_employees < 0:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Number of employees must be a non-negative integer (0 or greater)',
+                            'errors': {'numberOfEmployees': ['Must be 0 or a positive number']}
+                        }), 400
             
             # Update profile fields
             for field in profile_fields:
@@ -887,7 +899,11 @@ def complete_profile():
             
             for field in profile_fields:
                 value = data.get(field) if field in data else user.get(field)
-                if value is not None and value != '' and value != {}:
+                # Special handling for numberOfEmployees - 0 is a valid value
+                if field == 'numberOfEmployees':
+                    if value is not None and isinstance(value, int) and value >= 0:
+                        completed_fields += 1
+                elif value is not None and value != '' and value != {}:
                     completed_fields += 1
             
             completion_percentage = (completed_fields / total_fields) * 100
@@ -902,32 +918,44 @@ def complete_profile():
             
             # Check if profile is sufficiently complete (at least 5 fields)
             if completed_fields >= 5:
-                # Track profile completion activity for rewards
+                # Track profile completion activity for rewards - directly in database
                 try:
-                    import requests
-                    from flask import current_app
+                    # Check if user has already earned this reward
+                    existing_activity = users_bp.mongo.db.activities.find_one({
+                        'userId': current_user['_id'],
+                        'action': 'complete_profile',
+                        'module': 'profile'
+                    })
                     
-                    # Get auth token for internal API call
-                    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-                    
-                    # Call rewards tracking endpoint
-                    tracking_response = requests.post(
-                        f"{request.host_url}rewards/track-activity",
-                        headers={'Authorization': f'Bearer {token}'},
-                        json={
+                    if not existing_activity:
+                        # Record the activity
+                        activity_data = {
+                            'userId': current_user['_id'],
                             'action': 'complete_profile',
-                            'module': 'profile'
+                            'module': 'profile',
+                            'timestamp': datetime.utcnow(),
+                            'metadata': {
+                                'completedFields': completed_fields,
+                                'completionPercentage': completion_percentage
+                            }
                         }
-                    )
-                    
-                    if tracking_response.status_code == 200:
-                        print("Profile completion activity tracked successfully")
+                        users_bp.mongo.db.activities.insert_one(activity_data)
+                        
+                        # Award credits directly (10 credits for profile completion)
+                        users_bp.mongo.db.users.update_one(
+                            {'_id': current_user['_id']},
+                            {'$inc': {'ficoreCreditBalance': 10.0}}
+                        )
+                        
+                        print(f"Profile completion reward granted: 10 credits to user {current_user['email']}")
                     else:
-                        print(f"Failed to track profile completion: {tracking_response.text}")
+                        print(f"User {current_user['email']} has already earned profile completion reward")
                         
                 except Exception as tracking_error:
                     print(f"Error tracking profile completion: {str(tracking_error)}")
                     # Don't fail the profile update if tracking fails
+            
+            print(f"Profile completion successful for user {current_user['email']}: {completed_fields}/{total_fields} fields")
             
             return jsonify({
                 'success': True,
@@ -941,6 +969,9 @@ def complete_profile():
             })
             
         except Exception as e:
+            print(f"Profile completion error for user {current_user['email']}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to update profile',

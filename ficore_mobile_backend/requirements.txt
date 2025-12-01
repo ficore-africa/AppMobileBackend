@@ -9,3 +9,4 @@ python-dotenv==1.0.0
 gunicorn==21.2.0
 requests==2.32.3
 reportlab==4.0.7
+google-cloud-storage==2.14.0

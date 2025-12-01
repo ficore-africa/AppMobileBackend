@@ -7,7 +7,16 @@ import os
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.pdf_generator import PDFGenerator
-from tax_education_content import TAX_EDUCATION_CONTENT, CONTENT_CATEGORIES, CALCULATOR_LINKS
+from tax_education_content import (
+    TAX_EDUCATION_CONTENT, 
+    CALCULATOR_LINKS,
+    get_total_modules,
+    get_content_categories,
+    get_module_metadata,
+    get_all_modules_metadata,
+    get_module_content,
+    get_module_reward
+)
 
 
 def init_tax_blueprint(mongo, token_required, serialize_doc):
@@ -357,303 +366,12 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
     @tax_bp.route('/education', methods=['GET'])
     @token_required
     def get_tax_education(current_user):
-        """Get tax education modules"""
+        """Get tax education modules - uses single source of truth from tax_education_content.py"""
         try:
             language = request.args.get('language', 'en')
 
-            # Educational modules
-            modules = [
-                {
-                    'id': 'nta_2025_overview',
-                    'title': 'NTA 2025 Overview' if language == 'en' else 'Bayyani na NTA 2025',
-                    'description': 'Overview of Nigerian Tax Authority updates for 2025' if language == 'en' 
-                                 else 'Bayyani na sabuntawar Hukumar Haraji ta Najeriya na 2025',
-                    'duration': '10 minutes',
-                    'topics': [
-                        'NTA 2025 key changes',
-                        'New tax policies',
-                        'Updated procedures',
-                        'Compliance requirements'
-                    ] if language == 'en' else [
-                        'Manyan canje-canje na NTA 2025',
-                        'Sabbin manufofin haraji',
-                        'Sabbin hanyoyin aiki',
-                        'Bukatar bin doka'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'pit_basics_2026',
-                    'title': 'Personal Income Tax Basics (2026)' if language == 'en' else 'Tushen Harajin Kudin Shiga (2026)',
-                    'description': 'Learn the fundamentals of Personal Income Tax in Nigeria with 2026 rates' if language == 'en' 
-                                 else 'Koyi tushen Harajin Kudin Shiga a Najeriya da farashi na 2026',
-                    'duration': '12 minutes',
-                    'topics': [
-                        'What is Personal Income Tax?',
-                        'Who must pay PIT?',
-                        '2026 Tax-free allowances (₦800,000)',
-                        '2026 Progressive tax bands (0%, 15%, 18%, 21%, 23%, 25%)',
-                        'Employee vs Entrepreneur tax differences'
-                    ] if language == 'en' else [
-                        'Menene Harajin Kudin Shiga?',
-                        'Wanene ya kamata ya biya PIT?',
-                        'Kudaden da ba a biya haraji na 2026 (₦800,000)',
-                        'Matakan haraji na 2026 (0%, 15%, 18%, 21%, 23%, 25%)',
-                        'Bambancin haraji tsakanin ma\'aikaci da \'yan kasuwa'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'employee_tax_guide',
-                    'title': 'Employee Tax Guide (PAYE)' if language == 'en' else 'Jagoran Harajin Ma\'aikaci (PAYE)',
-                    'description': 'Complete guide to Personal Income Tax for employees under PAYE system' if language == 'en'
-                                 else 'Cikakken jagora ga Harajin Kudin Shiga na ma\'aikata a karkashin tsarin PAYE',
-                    'duration': '18 minutes',
-                    'topics': [
-                        'Understanding gross employment income',
-                        'Car benefits (5% of car value)',
-                        'Housing benefits (max 20% of salary)',
-                        'Statutory contributions (Pension, NHIS, NHF)',
-                        'Rent relief for employees (20% up to ₦500,000)',
-                        'Other personal income inclusion',
-                        'How to use the Employee Tax Calculator'
-                    ] if language == 'en' else [
-                        'Fahimtar jimlar kudin shiga na aiki',
-                        'Amfanin mota (5% na darajar mota)',
-                        'Amfanin gidaje (mafi yawa 20% na albashi)',
-                        'Gudummawar doka (Fansho, NHIS, NHF)',
-                        'Rangwamen haya ga ma\'aikata (20% har zuwa ₦500,000)',
-                        'Haɗa sauran kudin shiga na sirri',
-                        'Yadda ake amfani da Na\'urar Lissafin Harajin Ma\'aikaci'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'entrepreneur_tax_guide',
-                    'title': 'Entrepreneur Tax Guide' if language == 'en' else 'Jagoran Harajin \'Yan Kasuwa',
-                    'description': 'Complete guide to Personal Income Tax for business owners and entrepreneurs' if language == 'en'
-                                 else 'Cikakken jagora ga Harajin Kudin Shiga na masu kasuwanci da \'yan kasuwa',
-                    'duration': '20 minutes',
-                    'topics': [
-                        'Business income vs personal income',
-                        'Deductible business expenses breakdown',
-                        'Net business income calculation',
-                        'Personal statutory contributions',
-                        'Rent relief for entrepreneurs (20% up to ₦500,000)',
-                        'Other personal income inclusion',
-                        'How to use the Entrepreneur Tax Calculator'
-                    ] if language == 'en' else [
-                        'Kudin shiga na kasuwanci da na sirri',
-                        'Rarraba kudaden kasuwanci da za a cire',
-                        'Lissafin kudin shiga na kasuwanci',
-                        'Gudummawar doka na sirri',
-                        'Rangwamen haya ga \'yan kasuwa (20% har zuwa ₦500,000)',
-                        'Haɗa sauran kudin shiga na sirri',
-                        'Yadda ake amfani da Na\'urar Lissafin Harajin \'Yan Kasuwa'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'deductible_expenses_entrepreneurs',
-                    'title': 'Business Deductible Expenses (Entrepreneurs)' if language == 'en' else 'Kudaden Kasuwanci da za a Cire (\'Yan Kasuwa)',
-                    'description': 'Learn what business expenses entrepreneurs can deduct from their income' if language == 'en'
-                                 else 'Koyi irin kudaden kasuwanci da \'yan kasuwa za su iya cirewa daga kudin shiga',
-                    'duration': '15 minutes',
-                    'topics': [
-                        'Office and administrative costs',
-                        'Staff wages and salaries',
-                        'Business travel expenses',
-                        'Rent and utilities (business premises)',
-                        'Marketing and sales costs',
-                        'Cost of goods sold (COGS)',
-                        'What expenses are NOT deductible',
-                        'Record keeping for deductions'
-                    ] if language == 'en' else [
-                        'Kudaden ofis da gudanarwa',
-                        'Albashin ma\'aikata',
-                        'Kudaden tafiye-tafiyen kasuwanci',
-                        'Haya da kayan aiki (wuraren kasuwanci)',
-                        'Kudaden tallace-tallace',
-                        'Farashin kayayyakin da aka sayar',
-                        'Kudaden da ba za a iya cirewa ba',
-                        'Kiyaye bayanai don cirewa'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'employee_benefits_taxation',
-                    'title': 'Employee Benefits & Taxation' if language == 'en' else 'Amfanin Ma\'aikaci da Haraji',
-                    'description': 'Understanding how employee benefits are taxed in Nigeria' if language == 'en'
-                                 else 'Fahimtar yadda ake biyan haraji akan amfanin ma\'aikaci a Najeriya',
-                    'duration': '14 minutes',
-                    'topics': [
-                        'Taxable vs non-taxable benefits',
-                        'Car benefits calculation (5% rule)',
-                        'Housing benefits (20% salary cap)',
-                        'Meal allowances and transport',
-                        'Medical benefits taxation',
-                        'Leave allowances',
-                        'How benefits affect your tax calculation'
-                    ] if language == 'en' else [
-                        'Amfanin da ake biya haraji da wanda ba a biya ba',
-                        'Lissafin amfanin mota (ka\'idar 5%)',
-                        'Amfanin gidaje (iyaka 20% na albashi)',
-                        'Kudaden abinci da sufuri',
-                        'Harajin amfanin lafiya',
-                        'Kudaden hutu',
-                        'Yadda amfani ke shafar lissafin harajin ku'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'statutory_contributions_2026',
-                    'title': 'Statutory Contributions (2026 Update)' if language == 'en' else 'Gudummawar Doka (Sabuntawa 2026)',
-                    'description': 'Learn about pension, housing fund, and other statutory deductions with 2026 updates' if language == 'en'
-                                 else 'Koyi game da fansho, asusun gidaje, da sauran cirewa na doka da sabuntawa na 2026',
-                    'duration': '16 minutes',
-                    'topics': [
-                        'Pension contributions (Employee vs Employer)',
-                        'National Housing Fund (NHF) - 2.5% contribution',
-                        'National Health Insurance Scheme (NHIS)',
-                        'Life assurance premiums',
-                        'Differences for employees vs entrepreneurs',
-                        'How contributions reduce your taxable income',
-                        'Benefits of statutory contributions',
-                        'Maximum contribution limits'
-                    ] if language == 'en' else [
-                        'Gudummawar fansho (Ma\'aikaci da Mai aiki)',
-                        'Asusun Gidaje na Kasa (NHF) - gudummawa 2.5%',
-                        'Tsarin Inshorar Lafiya na Kasa (NHIS)',
-                        'Kudin inshorar rayuwa',
-                        'Bambanci ga ma\'aikata da \'yan kasuwa',
-                        'Yadda gudummawa ke rage kudin shiga mai haraji',
-                        'Amfanin gudummawar doka',
-                        'Iyakokin gudummawa mafi girma'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'rent_relief_2026',
-                    'title': 'Rent Relief Guide (2026)' if language == 'en' else 'Jagoran Rangwamen Haya (2026)',
-                    'description': 'Complete guide to claiming rent relief under the 2026 tax system' if language == 'en'
-                                 else 'Cikakken jagora ga neman rangwamen haya a karkashin tsarin haraji na 2026',
-                    'duration': '10 minutes',
-                    'topics': [
-                        'What is rent relief?',
-                        '20% rent relief calculation',
-                        'Maximum relief of ₦500,000',
-                        'Eligible rent payments',
-                        'Documentation required',
-                        'Rent relief for employees vs entrepreneurs',
-                        'How to claim in your tax calculation'
-                    ] if language == 'en' else [
-                        'Menene rangwamen haya?',
-                        'Lissafin rangwamen haya 20%',
-                        'Mafi girman rangwame ₦500,000',
-                        'Biyan haya mai cancanta',
-                        'Takardun da ake bukata',
-                        'Rangwamen haya ga ma\'aikata da \'yan kasuwa',
-                        'Yadda ake nema a lissafin harajin ku'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'filing_requirements',
-                    'title': 'Tax Filing Requirements' if language == 'en' else 'Bukatar Shigar da Haraji',
-                    'description': 'Learn how and when to file your tax returns' if language == 'en'
-                                 else 'Koyi yadda da lokacin da za ka shigar da harajin ka',
-                    'duration': '20 minutes',
-                    'topics': [
-                        'Who must file tax returns?',
-                        'Filing deadlines',
-                        'Required documents',
-                        'Online vs offline filing',
-                        'Tax clearance certificate'
-                    ] if language == 'en' else [
-                        'Wanene ya kamata ya shigar da haraji?',
-                        'Lokutan shigar da haraji',
-                        'Takardun da ake bukata',
-                        'Shigar da haraji ta yanar gizo ko ba haka ba',
-                        'Takardar shaida ta haraji'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'penalties_compliance',
-                    'title': 'Tax Penalties and Compliance' if language == 'en' else 'Hukunci da Bin Dokokin Haraji',
-                    'description': 'Understand penalties for non-compliance and how to avoid them' if language == 'en'
-                                 else 'Fahimci hukuncin rashin bin doka da yadda za ka guje musu',
-                    'duration': '15 minutes',
-                    'topics': [
-                        'Late filing penalties',
-                        'Underpayment penalties',
-                        'Interest on unpaid taxes',
-                        'Tax evasion vs tax avoidance',
-                        'How to stay compliant'
-                    ] if language == 'en' else [
-                        'Hukuncin shigar da haraji a makare',
-                        'Hukuncin rashin biyan cikakken haraji',
-                        'Riba akan harajin da ba a biya ba',
-                        'Gujewa haraji da rashin biyan haraji',
-                        'Yadda za ka bi doka'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'tax_planning_2026',
-                    'title': 'Tax Planning Strategies (2026)' if language == 'en' else 'Dabarun Tsara Haraji (2026)',
-                    'description': 'Learn strategies to optimize your tax obligations legally under 2026 rates' if language == 'en'
-                                 else 'Koyi dabarun inganta harajin ka bisa doka a karkashin farashi na 2026',
-                    'duration': '28 minutes',
-                    'topics': [
-                        'Maximizing deductions (Employee vs Entrepreneur)',
-                        'Timing income and expenses',
-                        'Optimizing statutory contributions',
-                        'Rent relief optimization',
-                        'Other income management',
-                        'Investment tax benefits',
-                        'Retirement planning',
-                        'Record keeping best practices',
-                        'Using both calculators effectively'
-                    ] if language == 'en' else [
-                        'Kara yawan cirewa (Ma\'aikaci da \'Yan Kasuwa)',
-                        'Tsara lokacin kudin shiga da kashe kudi',
-                        'Inganta gudummawar doka',
-                        'Inganta rangwamen haya',
-                        'Sarrafa sauran kudin shiga',
-                        'Amfanin haraji na saka hannun jari',
-                        'Tsara ritaya',
-                        'Hanyoyin kiyaye bayanai',
-                        'Amfani da na\'urori biyu yadda ya kamata'
-                    ],
-                    'coins_reward': 1
-                },
-                {
-                    'id': 'calculator_guide_2026',
-                    'title': 'Using FiCore Tax Calculators (2026)' if language == 'en' else 'Amfani da Na\'urar Lissafin Haraji FiCore (2026)',
-                    'description': 'Step-by-step guide to using both Employee and Entrepreneur tax calculators' if language == 'en'
-                                 else 'Jagora mataki-mataki ga amfani da na\'urar lissafin haraji na Ma\'aikaci da \'Yan Kasuwa',
-                    'duration': '15 minutes',
-                    'topics': [
-                        'Choosing the right calculator',
-                        'Employee calculator walkthrough',
-                        'Entrepreneur calculator walkthrough',
-                        'Understanding your results',
-                        'Tax breakdown interpretation',
-                        'Saving and sharing calculations',
-                        'Common mistakes to avoid'
-                    ] if language == 'en' else [
-                        'Zabar na\'urar da ta dace',
-                        'Jagoran na\'urar ma\'aikaci',
-                        'Jagoran na\'urar \'yan kasuwa',
-                        'Fahimtar sakamakonku',
-                        'Fassarar rarraba haraji',
-                        'Ajiye da raba lissafin',
-                        'Kurakurai da za a guje musu'
-                    ],
-                    'coins_reward': 1
-                }
-            ]
+            # Get all modules from single source of truth
+            modules = get_all_modules_metadata(language)
 
             # Get user's progress
             progress = list(mongo.db.tax_education_progress.find({
@@ -689,10 +407,10 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
     @tax_bp.route('/education/progress', methods=['GET'])
     @token_required
     def get_education_progress(current_user):
-        """Get user's tax education progress"""
+        """Get user's tax education progress - dynamically calculated"""
         try:
-            # Get all available modules (from the modules list in get_tax_education)
-            total_modules = 12  # Based on the modules defined in get_tax_education function
+            # Get total modules dynamically from single source of truth
+            total_modules = get_total_modules()
             
             # Get user's completed modules
             completed_progress = list(mongo.db.tax_education_progress.find({
@@ -785,28 +503,8 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
             # Award FiCore Credits if module completed
             credits_awarded = 0
             if completed and not (existing_progress and existing_progress.get('completed')):
-                # Define FiCore Credit rewards for each module (1 FC per module as requested)
-                module_rewards = {
-                    # Legacy modules (for backward compatibility)
-                    'pit_basics': 1,
-                    'deductible_expenses': 1,
-                    'statutory_contributions': 1,
-                    'tax_planning': 1,
-                    # Current 2025/2026 modules
-                    'nta_2025_overview': 1,
-                    'pit_basics_2026': 1,
-                    'employee_tax_guide': 1,
-                    'entrepreneur_tax_guide': 1,
-                    'deductible_expenses_entrepreneurs': 1,
-                    'employee_benefits_taxation': 1,
-                    'statutory_contributions_2026': 1,
-                    'rent_relief_2026': 1,
-                    'filing_requirements': 1,
-                    'penalties_compliance': 1,
-                    'tax_planning_2026': 1,
-                    'calculator_guide_2026': 1
-                }
-                credits_awarded = module_rewards.get(module_id, 1)  # Default to 1 FC if module not in list
+                # Get reward from single source of truth
+                credits_awarded = get_module_reward(module_id)
                 
                 if credits_awarded > 0:
                     # Update user's FiCore Credit balance
@@ -917,18 +615,17 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
     @tax_bp.route('/education/content/<module_id>', methods=['GET'])
     @token_required
     def get_education_content(current_user, module_id):
-        """Get detailed content for a specific education module"""
+        """Get detailed content for a specific education module - uses single source of truth"""
         try:
-            # Check if module exists
-            if module_id not in TAX_EDUCATION_CONTENT:
+            # Get module content from single source of truth
+            content_data = get_module_content(module_id)
+            
+            if not content_data:
                 return jsonify({
                     'success': False,
                     'message': 'Module not found',
                     'errors': {'module_id': ['Invalid module ID']}
                 }), 404
-            
-            # Get module content
-            content_data = TAX_EDUCATION_CONTENT[module_id]
             
             # Get calculator links
             calculator_links = []
@@ -950,7 +647,7 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
             completed_at = user_progress.get('completed_at') if user_progress else None
             
             response_data = {
-                'module_id': module_id,
+                'module_id': content_data['module_id'],
                 'content': content_data['content'],
                 'category': content_data['category'],
                 'calculator_links': calculator_links,
@@ -974,29 +671,22 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
     @tax_bp.route('/education/categories', methods=['GET'])
     @token_required
     def get_education_categories(current_user):
-        """Get education modules organized by categories"""
+        """Get education modules organized by categories - uses single source of truth"""
         try:
             language = request.args.get('language', 'en')
             
-            # Get all modules (existing code)
-            modules = [
-                # ... existing modules code from the education endpoint
-            ]
+            # Get all modules from single source of truth
+            modules = get_all_modules_metadata(language)
+            
+            # Get categories dynamically
+            categories_map = get_content_categories()
             
             # Organize by categories
             categorized_modules = {}
-            for category, module_ids in CONTENT_CATEGORIES.items():
+            for category, module_ids in categories_map.items():
                 categorized_modules[category] = {
                     'name': category.title(),
                     'modules': [m for m in modules if m['id'] in module_ids]
-                }
-            
-            # Add legacy modules to appropriate categories
-            legacy_modules = [m for m in modules if m['id'] not in sum(CONTENT_CATEGORIES.values(), [])]
-            if legacy_modules:
-                categorized_modules['legacy'] = {
-                    'name': 'Legacy Modules',
-                    'modules': legacy_modules
                 }
             
             return jsonify({

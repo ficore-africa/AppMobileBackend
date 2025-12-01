@@ -560,6 +560,81 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
         ]
 
+    # ==================== ATTACHMENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_attachment_schema() -> Dict[str, Any]:
+        """
+        Schema for attachments collection.
+        Stores file attachments for income and expense records.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'entityType': str,  # Required: 'income' or 'expense'
+            'entityId': ObjectId,  # Required, reference to incomes._id or expenses._id
+            'originalFilename': str,  # Required, original filename
+            'storagePath': str,  # Required, path in Google Cloud Storage
+            'fileSize': int,  # File size in bytes
+            'mimeType': str,  # File MIME type
+            'description': Optional[str],  # Optional description
+            'createdAt': datetime,  # Upload timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_attachment_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for attachments collection."""
+        return [
+            {'keys': [('userId', 1), ('entityType', 1), ('entityId', 1)], 'name': 'user_entity_type_id'},
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('entityType', 1), ('entityId', 1)], 'name': 'entity_type_id'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
+    # ==================== ASSETS COLLECTION ====================
+    
+    @staticmethod
+    def get_asset_schema() -> Dict[str, Any]:
+        """
+        Schema for assets collection.
+        Tracks fixed assets for 0% tax qualification (≤₦250M threshold).
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'assetName': str,  # Required, name of the asset
+            'assetCode': Optional[str],  # Optional asset code/identifier
+            'description': Optional[str],  # Optional description
+            'category': str,  # Required: 'Vehicles', 'Office Equipment', 'Machinery', etc.
+            'purchasePrice': float,  # Required, original purchase price
+            'currentValue': float,  # Required, current book value after depreciation
+            'purchaseDate': datetime,  # Required, date of purchase
+            'supplier': Optional[str],  # Optional supplier name
+            'location': Optional[str],  # Optional physical location
+            'status': str,  # Required: 'active', 'disposed', 'under_maintenance'
+            'depreciationRate': Optional[float],  # Optional annual depreciation rate (%)
+            'depreciationMethod': str,  # Required: 'straight_line', 'reducing_balance', 'none'
+            'usefulLifeYears': Optional[int],  # Optional useful life in years
+            'attachments': List[str],  # List of attachment URLs/IDs (purchase invoices, receipts)
+            'notes': Optional[str],  # Optional notes
+            'disposalDate': Optional[datetime],  # Optional disposal date
+            'disposalValue': Optional[float],  # Optional disposal value
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_asset_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for assets collection."""
+        return [
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('assetCode', 1)], 'sparse': True, 'name': 'asset_code'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -596,6 +671,8 @@ class DatabaseInitializer:
             'creditor_transactions': self.schema.get_creditor_transaction_indexes(),
             'inventory_items': self.schema.get_inventory_item_indexes(),
             'inventory_movements': self.schema.get_inventory_movement_indexes(),
+            'attachments': self.schema.get_attachment_indexes(),
+            'assets': self.schema.get_asset_indexes(),
         }
         
         results = {
