@@ -51,24 +51,76 @@ class MonthlyEntryTracker:
                     is_premium = True
         
         # Count Income entries for current month
+        month_start = self._get_month_start()
+        month_end = self._get_month_end()
+        
+        # CRITICAL FIX: Try multiple strategies to count entries
+        # Strategy 1: Standard query with ObjectId userId and datetime createdAt
         income_count = self.mongo.db.incomes.count_documents({
             'userId': user_id,
             'createdAt': {
-                '$gte': self._get_month_start(),
-                '$lt': self._get_month_end()
+                '$gte': month_start,
+                '$lt': month_end
             }
         })
         
-        # Count Expense entries for current month
         expense_count = self.mongo.db.expenses.count_documents({
             'userId': user_id,
             'createdAt': {
-                '$gte': self._get_month_start(),
-                '$lt': self._get_month_end()
+                '$gte': month_start,
+                '$lt': month_end
             }
         })
         
+        # Strategy 2: If count is 0, try with string userId (fallback for data inconsistency)
+        if income_count == 0:
+            income_count = self.mongo.db.incomes.count_documents({
+                'userId': str(user_id),
+                'createdAt': {
+                    '$gte': month_start,
+                    '$lt': month_end
+                }
+            })
+        
+        if expense_count == 0:
+            expense_count = self.mongo.db.expenses.count_documents({
+                'userId': str(user_id),
+                'createdAt': {
+                    '$gte': month_start,
+                    '$lt': month_end
+                }
+            })
+        
+        # Strategy 3: If still 0, check if entries exist at all for this user
+        if income_count == 0:
+            total_income_all_time = self.mongo.db.incomes.count_documents({'userId': user_id})
+            if total_income_all_time == 0:
+                # Try string userId
+                total_income_all_time = self.mongo.db.incomes.count_documents({'userId': str(user_id)})
+            
+            if total_income_all_time > 0:
+                print(f"FALLBACK: Found {total_income_all_time} income entries but createdAt query returned 0. Using fallback counting.")
+                # Entries exist but createdAt query failed - use comprehensive fallback
+                income_count = self._count_by_id_timestamp(self.mongo.db.incomes, user_id, month_start, month_end)
+                print(f"FALLBACK RESULT: Income count after fallback: {income_count}")
+        
+        if expense_count == 0:
+            total_expense_all_time = self.mongo.db.expenses.count_documents({'userId': user_id})
+            if total_expense_all_time == 0:
+                # Try string userId
+                total_expense_all_time = self.mongo.db.expenses.count_documents({'userId': str(user_id)})
+            
+            if total_expense_all_time > 0:
+                print(f"FALLBACK: Found {total_expense_all_time} expense entries but createdAt query returned 0. Using fallback counting.")
+                # Entries exist but createdAt query failed - use comprehensive fallback
+                expense_count = self._count_by_id_timestamp(self.mongo.db.expenses, user_id, month_start, month_end)
+                print(f"FALLBACK RESULT: Expense count after fallback: {expense_count}")
+        
         total_count = income_count + expense_count
+        
+        # Final logging
+        print(f"FINAL COUNT: User {user_id} - Income: {income_count}, Expense: {expense_count}, Total: {total_count} for month {month_key}")
+        print(f"DEBUG: is_premium={is_premium}, is_admin={user.get('isAdmin', False) if user else False}")
         
         # CRITICAL FIX: Premium users get unlimited entries
         if is_premium:
@@ -80,7 +132,21 @@ class MonthlyEntryTracker:
             remaining = max(0, limit - total_count)
             is_over_limit = total_count >= limit
         
-        return {
+        # CRITICAL DEBUG: Log the final calculation
+        print(f"DEBUG CALCULATION: total_count={total_count}, limit={limit}, remaining={remaining}, is_over_limit={is_over_limit}")
+        
+        # CRITICAL FIX: Ensure remaining is never negative and matches the calculation
+        if remaining < 0:
+            print(f"ERROR: Negative remaining detected! Setting to 0. Original value: {remaining}")
+            remaining = 0
+        
+        # CRITICAL VALIDATION: Double-check the math
+        expected_remaining = max(0, limit - total_count)
+        if remaining != expected_remaining:
+            print(f"ERROR: Remaining mismatch! Expected: {expected_remaining}, Got: {remaining}. Correcting...")
+            remaining = expected_remaining
+        
+        result = {
             'count': total_count,
             'income_count': income_count,
             'expense_count': expense_count,
@@ -89,6 +155,9 @@ class MonthlyEntryTracker:
             'remaining': remaining,
             'is_over_limit': is_over_limit
         }
+        
+        print(f"FINAL RESULT: {result}")
+        return result
     
     def check_entry_allowed(self, user_id: ObjectId, entry_type: str) -> Dict[str, Any]:
         """
@@ -213,6 +282,89 @@ class MonthlyEntryTracker:
             'fc_cost': 0.0,
             'monthly_data': entry_check['monthly_data']
         }
+    
+    def _count_by_id_timestamp(self, collection, user_id: ObjectId, month_start: datetime, month_end: datetime) -> int:
+        """
+        Comprehensive fallback method to count entries using multiple strategies:
+        1. ObjectId timestamp extraction
+        2. Alternative date fields (date, dateReceived, updatedAt)
+        3. Both ObjectId and string userId formats
+        """
+        try:
+            # Try with ObjectId userId first
+            entries = list(collection.find({'userId': user_id}))
+            
+            # If no entries found, try with string userId
+            if not entries:
+                entries = list(collection.find({'userId': str(user_id)}))
+            
+            # If still no entries, try without userId filter (last resort - check all entries)
+            if not entries:
+                print(f"WARNING: No entries found for user {user_id} in {collection.name}")
+                return 0
+            
+            count = 0
+            
+            for entry in entries:
+                entry_time = None
+                
+                try:
+                    # Strategy 1: Try createdAt field (might be string or datetime)
+                    if 'createdAt' in entry and entry['createdAt']:
+                        if isinstance(entry['createdAt'], datetime):
+                            entry_time = entry['createdAt']
+                        elif isinstance(entry['createdAt'], str):
+                            # Try parsing ISO format string
+                            try:
+                                entry_time = datetime.fromisoformat(entry['createdAt'].replace('Z', ''))
+                            except:
+                                pass
+                    
+                    # Strategy 2: Try alternative date fields
+                    if not entry_time:
+                        # For expenses: try 'date' field
+                        if 'date' in entry and entry['date']:
+                            if isinstance(entry['date'], datetime):
+                                entry_time = entry['date']
+                            elif isinstance(entry['date'], str):
+                                try:
+                                    entry_time = datetime.fromisoformat(entry['date'].replace('Z', ''))
+                                except:
+                                    pass
+                        
+                        # For income: try 'dateReceived' field
+                        if not entry_time and 'dateReceived' in entry and entry['dateReceived']:
+                            if isinstance(entry['dateReceived'], datetime):
+                                entry_time = entry['dateReceived']
+                            elif isinstance(entry['dateReceived'], str):
+                                try:
+                                    entry_time = datetime.fromisoformat(entry['dateReceived'].replace('Z', ''))
+                                except:
+                                    pass
+                    
+                    # Strategy 3: Extract timestamp from ObjectId (most reliable)
+                    if not entry_time:
+                        entry_time = entry['_id'].generation_time
+                    
+                    # Normalize timezone (remove timezone info for comparison)
+                    if entry_time and entry_time.tzinfo is not None:
+                        entry_time = entry_time.replace(tzinfo=None)
+                    
+                    # Check if entry is in current month
+                    if entry_time and month_start <= entry_time < month_end:
+                        count += 1
+                        
+                except Exception as entry_error:
+                    # Skip entries with errors but log them
+                    print(f"Error processing entry {entry.get('_id')}: {str(entry_error)}")
+                    continue
+            
+            return count
+        except Exception as e:
+            print(f"Error in _count_by_id_timestamp: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return 0
     
     def _get_month_start(self) -> datetime:
         """Get start of current month"""
