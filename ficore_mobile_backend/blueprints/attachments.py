@@ -12,7 +12,7 @@ def init_attachments_blueprint(mongo, token_required, serialize_doc):
     
     # Initialize Google Cloud Storage client
     storage_client = storage.Client()
-    bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+    bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-app-attachments-hassan')
     
     # Allowed file extensions and max size
     ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'}
@@ -322,3 +322,4 @@ def init_attachments_blueprint(mongo, token_required, serialize_doc):
             }), 500
     
     return attachments_bp
+
