@@ -174,20 +174,20 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             asset_doc = {
                 'userId': current_user['_id'],
                 'assetName': data['assetName'].strip(),
-                'assetCode': data.get('assetCode', '').strip() or None,
-                'description': data.get('description', '').strip() or None,
+                'assetCode': data.get('assetCode').strip() if data.get('assetCode') else None,
+                'description': data.get('description').strip() if data.get('description') else None,
                 'category': data['category'],
                 'purchasePrice': float(data['purchasePrice']),
                 'currentValue': float(data['currentValue']),
                 'purchaseDate': purchase_date,
-                'supplier': data.get('supplier', '').strip() or None,
-                'location': data.get('location', '').strip() or None,
+                'supplier': data.get('supplier').strip() if data.get('supplier') else None,
+                'location': data.get('location').strip() if data.get('location') else None,
                 'status': data['status'],
                 'depreciationRate': float(data['depreciationRate']) if data.get('depreciationRate') else None,
                 'depreciationMethod': data['depreciationMethod'],
                 'usefulLifeYears': int(data['usefulLifeYears']) if data.get('usefulLifeYears') else None,
                 'attachments': data.get('attachments', []),
-                'notes': data.get('notes', '').strip() or None,
+                'notes': data.get('notes').strip() if data.get('notes') else None,
                 'disposalDate': disposal_date,
                 'disposalValue': float(data['disposalValue']) if data.get('disposalValue') else None,
                 'createdAt': now,
@@ -240,11 +240,11 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             update_data = {'updatedAt': datetime.utcnow()}
 
             if 'assetName' in data:
-                update_data['assetName'] = data['assetName'].strip()
+                update_data['assetName'] = data['assetName'].strip() if data['assetName'] else None
             if 'assetCode' in data:
-                update_data['assetCode'] = data['assetCode'].strip() or None
+                update_data['assetCode'] = data['assetCode'].strip() if data['assetCode'] else None
             if 'description' in data:
-                update_data['description'] = data['description'].strip() or None
+                update_data['description'] = data['description'].strip() if data['description'] else None
             if 'category' in data:
                 update_data['category'] = data['category']
             if 'purchasePrice' in data:
@@ -257,9 +257,9 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                 except:
                     pass
             if 'supplier' in data:
-                update_data['supplier'] = data['supplier'].strip() or None
+                update_data['supplier'] = data['supplier'].strip() if data['supplier'] else None
             if 'location' in data:
-                update_data['location'] = data['location'].strip() or None
+                update_data['location'] = data['location'].strip() if data['location'] else None
             if 'status' in data:
                 update_data['status'] = data['status']
             if 'depreciationRate' in data:
@@ -271,7 +271,7 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             if 'attachments' in data:
                 update_data['attachments'] = data['attachments']
             if 'notes' in data:
-                update_data['notes'] = data['notes'].strip() or None
+                update_data['notes'] = data['notes'].strip() if data['notes'] else None
             if 'disposalDate' in data:
                 if data['disposalDate']:
                     try:
