@@ -7,18 +7,12 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId
 
-assets_bp = Blueprint('assets', __name__, url_prefix='/assets')
-
 def init_assets_blueprint(mongo, token_required, serialize_doc):
     """Initialize the assets blueprint with database and auth decorator"""
-    assets_bp.mongo = mongo
-    assets_bp.token_required = token_required
-    assets_bp.serialize_doc = serialize_doc
-    return assets_bp
-
-
-@assets_bp.route('', methods=['GET'])
-def get_assets():
+    assets_bp = Blueprint('assets', __name__, url_prefix='/assets')
+    
+    @assets_bp.route('', methods=['GET'])
+    def get_assets():
     """Get all assets for the authenticated user with optional filters"""
     @assets_bp.token_required
     def _get_assets(current_user):
@@ -89,8 +83,8 @@ def get_assets():
     return _get_assets()
 
 
-@assets_bp.route('/<asset_id>', methods=['GET'])
-def get_asset(asset_id):
+    @assets_bp.route('/<asset_id>', methods=['GET'])
+    def get_asset(asset_id):
     """Get a single asset by ID"""
     @assets_bp.token_required
     def _get_asset(current_user):
@@ -131,8 +125,8 @@ def get_asset(asset_id):
     return _get_asset()
 
 
-@assets_bp.route('', methods=['POST'])
-def create_asset():
+    @assets_bp.route('', methods=['POST'])
+    def create_asset():
     """Create a new asset"""
     @assets_bp.token_required
     def _create_asset(current_user):
@@ -235,8 +229,8 @@ def create_asset():
     return _create_asset()
 
 
-@assets_bp.route('/<asset_id>', methods=['PUT'])
-def update_asset(asset_id):
+    @assets_bp.route('/<asset_id>', methods=['PUT'])
+    def update_asset(asset_id):
     """Update an existing asset"""
     @assets_bp.token_required
     def _update_asset(current_user):
@@ -332,8 +326,8 @@ def update_asset(asset_id):
     return _update_asset()
 
 
-@assets_bp.route('/<asset_id>', methods=['DELETE'])
-def delete_asset(asset_id):
+    @assets_bp.route('/<asset_id>', methods=['DELETE'])
+    def delete_asset(asset_id):
     """Delete an asset"""
     @assets_bp.token_required
     def _delete_asset(current_user):
@@ -369,8 +363,8 @@ def delete_asset(asset_id):
     return _delete_asset()
 
 
-@assets_bp.route('/summary', methods=['GET'])
-def get_asset_summary():
+    @assets_bp.route('/summary', methods=['GET'])
+    def get_asset_summary():
     """Get asset summary statistics for the authenticated user"""
     @assets_bp.token_required
     def _get_asset_summary(current_user):
@@ -478,8 +472,8 @@ def get_asset_summary():
     return _get_asset_summary()
 
 
-@assets_bp.route('/search', methods=['GET'])
-def search_assets():
+    @assets_bp.route('/search', methods=['GET'])
+    def search_assets():
     """Search assets by name, code, or description"""
     @assets_bp.token_required
     def _search_assets(current_user):
@@ -536,3 +530,6 @@ def search_assets():
             }), 500
     
     return _search_assets()
+    
+    # Return the initialized blueprint
+    return assets_bp
