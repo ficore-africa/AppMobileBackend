@@ -35,14 +35,20 @@ class MonthlyEntryTracker:
         """
         month_key = self.get_current_month_key()
         
-        # Check if user is Premium subscriber FIRST
+        # Check if user is Admin or Premium subscriber FIRST
         user = self.mongo.db.users.find_one({'_id': user_id})
         is_premium = False
         if user:
-            is_subscribed = user.get('isSubscribed', False)
-            subscription_end = user.get('subscriptionEndDate')
-            if is_subscribed and subscription_end and subscription_end > datetime.utcnow():
+            # Admins get unlimited access
+            is_admin = user.get('isAdmin', False)
+            if is_admin:
                 is_premium = True
+            else:
+                # Check premium subscription
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end = user.get('subscriptionEndDate')
+                if is_subscribed and subscription_end and subscription_end > datetime.utcnow():
+                    is_premium = True
         
         # Count Income entries for current month
         income_count = self.mongo.db.incomes.count_documents({
@@ -98,13 +104,22 @@ class MonthlyEntryTracker:
             'monthly_data': dict
         }
         """
-        # First check if user has active subscription
+        # First check if user exists
         user = self.mongo.db.users.find_one({'_id': user_id})
         if not user:
             return {
                 'allowed': False,
                 'reason': 'User not found',
                 'monthly_data': {}
+            }
+        
+        # Admin users have unlimited entries
+        is_admin = user.get('isAdmin', False)
+        if is_admin:
+            return {
+                'allowed': True,
+                'reason': 'Admin user - unlimited entries',
+                'monthly_data': self.get_user_monthly_count(user_id)
             }
         
         # Premium users have unlimited entries
@@ -145,9 +160,20 @@ class MonthlyEntryTracker:
             'monthly_data': dict
         }
         """
-        # CRITICAL FIX: Check Premium status FIRST - Premium users NEVER pay FC for entries
+        # CRITICAL FIX: Check Premium/Admin status FIRST - Premium users and Admins NEVER pay FC for entries
         user = self.mongo.db.users.find_one({'_id': user_id})
         if user:
+            # Check if user is admin (admins get unlimited access)
+            is_admin = user.get('isAdmin', False)
+            if is_admin:
+                return {
+                    'deduct_fc': False,
+                    'reason': 'Admin user - unlimited access',
+                    'fc_cost': 0.0,
+                    'monthly_data': self.get_user_monthly_count(user_id)
+                }
+            
+            # Check if user is premium subscriber
             is_subscribed = user.get('isSubscribed', False)
             subscription_end = user.get('subscriptionEndDate')
             if is_subscribed and subscription_end and subscription_end > datetime.utcnow():
@@ -207,12 +233,17 @@ class MonthlyEntryTracker:
         """
         monthly_data = self.get_user_monthly_count(user_id)
         
-        # Get user subscription status
+        # Get user subscription and admin status
         user = self.mongo.db.users.find_one({'_id': user_id})
         is_subscribed = False
+        is_admin = False
         subscription_type = None
         
         if user:
+            # Check admin status
+            is_admin = user.get('isAdmin', False)
+            
+            # Check subscription status
             is_subscribed = user.get('isSubscribed', False)
             subscription_end = user.get('subscriptionEndDate')
             if is_subscribed and subscription_end and subscription_end > datetime.utcnow():
@@ -220,18 +251,27 @@ class MonthlyEntryTracker:
             else:
                 is_subscribed = False
         
-        # CRITICAL FIX: Premium users don't have monthly reset dates
+        # Determine tier (Admin > Premium > Free)
+        if is_admin:
+            tier = 'Admin'
+        elif is_subscribed:
+            tier = 'Premium'
+        else:
+            tier = 'Free'
+        
+        # CRITICAL FIX: Premium users and Admins don't have monthly reset dates
         result = {
             **monthly_data,
             'is_subscribed': is_subscribed,
+            'is_admin': is_admin,
             'subscription_type': subscription_type,
-            'tier': 'Premium' if is_subscribed else 'Free'
+            'tier': tier
         }
         
-        # Only add reset date for Free users (Premium users don't have monthly resets)
-        if not is_subscribed:
+        # Only add reset date for Free users (Premium/Admin users don't have monthly resets)
+        if not is_subscribed and not is_admin:
             result['next_reset_date'] = self._get_month_end().isoformat() + 'Z'
         else:
-            result['next_reset_date'] = None  # No resets for Premium users
+            result['next_reset_date'] = None  # No resets for Premium/Admin users
         
         return result

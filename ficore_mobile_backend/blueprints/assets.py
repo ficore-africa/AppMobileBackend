@@ -123,7 +123,7 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
     @assets_bp.route('', methods=['POST'])
     @token_required
     def create_asset(current_user):
-        """Create a new asset"""
+        """Create a new asset (costs 2 FCs for non-premium users)"""
         try:
             data = request.get_json()
             if not data:
@@ -152,6 +152,57 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Validation failed',
                     'errors': errors
                 }), 400
+
+            # Check if user is premium subscriber or admin (they get unlimited access)
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_subscribed = user.get('isSubscribed', False)
+            is_admin = user.get('isAdmin', False)
+            
+            # FC Cost: 2 FCs for creating an asset (premium users bypass this)
+            if not is_subscribed and not is_admin:
+                fc_cost = 2.0
+                current_balance = user.get('ficoreCreditBalance', 0.0)
+                
+                if current_balance < fc_cost:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient credits. Need {fc_cost} FCs, have {current_balance} FCs',
+                        'errors': {
+                            'credits': [f'This operation requires {fc_cost} FCs. Please purchase credits or upgrade to premium.']
+                        },
+                        'data': {
+                            'requiredCredits': fc_cost,
+                            'currentBalance': current_balance,
+                            'shortfall': fc_cost - current_balance
+                        }
+                    }), 402  # Payment Required
+                
+                # Deduct credits
+                new_balance = current_balance - fc_cost
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {'$set': {'ficoreCreditBalance': new_balance}}
+                )
+                
+                # Record credit transaction
+                credit_transaction = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'type': 'debit',
+                    'amount': fc_cost,
+                    'description': f'Asset creation - {data.get("assetName", "New Asset")}',
+                    'operation': 'create_asset',
+                    'balanceBefore': current_balance,
+                    'balanceAfter': new_balance,
+                    'status': 'completed',
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'operation': 'create_asset',
+                        'deductionType': 'app_usage',
+                        'assetName': data.get('assetName', 'Unknown')
+                    }
+                }
+                mongo.db.credit_transactions.insert_one(credit_transaction)
 
             # Parse dates
             try:
@@ -313,11 +364,73 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
     @assets_bp.route('/<asset_id>', methods=['DELETE'])
     @token_required
     def delete_asset(current_user, asset_id):
-        """Delete an asset"""
+        """Delete an asset (costs 2 FCs for non-premium users)"""
         try:
             if not ObjectId.is_valid(asset_id):
                 return jsonify({'success': False, 'message': 'Invalid asset ID'}), 400
 
+            # Check if asset exists and belongs to user
+            asset = mongo.db.assets.find_one({
+                '_id': ObjectId(asset_id),
+                'userId': current_user['_id']
+            })
+            
+            if not asset:
+                return jsonify({'success': False, 'message': 'Asset not found'}), 404
+
+            # Check if user is premium subscriber or admin (they get unlimited access)
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_subscribed = user.get('isSubscribed', False)
+            is_admin = user.get('isAdmin', False)
+            
+            # FC Cost: 2 FCs for deleting an asset (premium users bypass this)
+            if not is_subscribed and not is_admin:
+                fc_cost = 2.0
+                current_balance = user.get('ficoreCreditBalance', 0.0)
+                
+                if current_balance < fc_cost:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient credits. Need {fc_cost} FCs, have {current_balance} FCs',
+                        'errors': {
+                            'credits': [f'This operation requires {fc_cost} FCs. Please purchase credits or upgrade to premium.']
+                        },
+                        'data': {
+                            'requiredCredits': fc_cost,
+                            'currentBalance': current_balance,
+                            'shortfall': fc_cost - current_balance
+                        }
+                    }), 402  # Payment Required
+                
+                # Deduct credits
+                new_balance = current_balance - fc_cost
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {'$set': {'ficoreCreditBalance': new_balance}}
+                )
+                
+                # Record credit transaction
+                credit_transaction = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'type': 'debit',
+                    'amount': fc_cost,
+                    'description': f'Asset deletion - {asset.get("assetName", "Asset")}',
+                    'operation': 'delete_asset',
+                    'balanceBefore': current_balance,
+                    'balanceAfter': new_balance,
+                    'status': 'completed',
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'operation': 'delete_asset',
+                        'deductionType': 'app_usage',
+                        'assetName': asset.get('assetName', 'Unknown'),
+                        'assetId': str(asset_id)
+                    }
+                }
+                mongo.db.credit_transactions.insert_one(credit_transaction)
+
+            # Delete the asset
             result = mongo.db.assets.delete_one({
                 '_id': ObjectId(asset_id),
                 'userId': current_user['_id']
