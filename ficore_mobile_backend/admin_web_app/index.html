@@ -133,6 +133,38 @@
         </nav>
 
         <div class="container-fluid mt-4">
+            <!-- Timeframe Selector -->
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col-md-6">
+                                    <label class="form-label mb-0"><strong>Activity Timeframe:</strong></label>
+                                    <select id="timeframeSelector" class="form-select form-select-sm d-inline-block w-auto ms-2" onchange="updateTimeframe()">
+                                        <option value="7">Last 7 days</option>
+                                        <option value="30" selected>Last 30 days</option>
+                                        <option value="60">Last 60 days</option>
+                                        <option value="90">Last 90 days</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 text-end">
+                                    <button class="btn btn-success btn-sm" onclick="exportUsers('all')">
+                                        <i class="fas fa-download"></i> Export All Users
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="exportUsers('active')">
+                                        <i class="fas fa-download"></i> Export Active
+                                    </button>
+                                    <button class="btn btn-warning btn-sm" onclick="exportUsers('inactive')">
+                                        <i class="fas fa-download"></i> Export Inactive
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Statistics Cards -->
             <div class="row mb-4">
                 <div class="col-md-3">
@@ -142,8 +174,37 @@
                                 <div>
                                     <h4 id="totalUsers">0</h4>
                                     <p class="mb-0">Total Users</p>
+                                    <small id="newUsersTimeframe" class="text-white-50">0 new</small>
                                 </div>
                                 <i class="fas fa-users fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-white bg-success">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="activeUsersTimeframe">0</h4>
+                                    <p class="mb-0">Active Users</p>
+                                    <small id="activeUsersLabel" class="text-white-50">Last 30 days</small>
+                                </div>
+                                <i class="fas fa-user-check fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-white bg-danger">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="inactiveUsersTimeframe">0</h4>
+                                    <p class="mb-0">Inactive Users</p>
+                                    <small id="inactiveUsersLabel" class="text-white-50">Last 30 days</small>
+                                </div>
+                                <i class="fas fa-user-times fa-2x"></i>
                             </div>
                         </div>
                     </div>
@@ -161,32 +222,6 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card text-white bg-success">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <h4 id="approvedRequests">0</h4>
-                                    <p class="mb-0">Approved</p>
-                                </div>
-                                <i class="fas fa-check fa-2x"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card text-white bg-danger">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <h4 id="rejectedRequests">0</h4>
-                                    <p class="mb-0">Rejected</p>
-                                </div>
-                                <i class="fas fa-times fa-2x"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Tabs -->
@@ -200,7 +235,19 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button"
                         role="tab">
-                        <i class="fas fa-users"></i> Users
+                        <i class="fas fa-users"></i> All Users
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="active-users-tab" data-bs-toggle="tab" data-bs-target="#activeUsers" type="button"
+                        role="tab" onclick="loadActiveUsers()">
+                        <i class="fas fa-user-check"></i> Active Users
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="inactive-users-tab" data-bs-toggle="tab" data-bs-target="#inactiveUsers" type="button"
+                        role="tab" onclick="loadInactiveUsers()">
+                        <i class="fas fa-user-times"></i> Inactive Users
                     </button>
                 </li>
             </ul>
@@ -241,18 +288,18 @@
                 <div class="tab-pane fade" id="users" role="tabpanel">
                     <div class="card mt-3">
                         <div class="card-header">
-                            <h5><i class="fas fa-users"></i> Users Management</h5>
+                            <h5><i class="fas fa-users"></i> All Users Management</h5>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table class="table table-striped">
                                     <thead>
                                         <tr>
-                                            <th>User ID</th>
                                             <th>Email</th>
                                             <th>Name</th>
                                             <th>Credit Balance</th>
                                             <th>Status</th>
+                                            <th>Last Login</th>
                                             <th>Joined</th>
                                             <th>Actions</th>
                                         </tr>
@@ -260,6 +307,68 @@
                                     <tbody id="usersTableBody">
                                         <tr>
                                             <td colspan="7" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Users Tab -->
+                <div class="tab-pane fade" id="activeUsers" role="tabpanel">
+                    <div class="card mt-3">
+                        <div class="card-header">
+                            <h5><i class="fas fa-user-check"></i> Active Users <span id="activeUsersCount" class="badge bg-success">0</span></h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Email</th>
+                                            <th>Name</th>
+                                            <th>Phone</th>
+                                            <th>Credit Balance</th>
+                                            <th>Subscription</th>
+                                            <th>Last Login</th>
+                                            <th>Days Since Login</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="activeUsersTableBody">
+                                        <tr>
+                                            <td colspan="7" class="text-center">Click to load active users...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inactive Users Tab -->
+                <div class="tab-pane fade" id="inactiveUsers" role="tabpanel">
+                    <div class="card mt-3">
+                        <div class="card-header">
+                            <h5><i class="fas fa-user-times"></i> Inactive Users <span id="inactiveUsersCount" class="badge bg-danger">0</span></h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Email</th>
+                                            <th>Name</th>
+                                            <th>Phone</th>
+                                            <th>Credit Balance</th>
+                                            <th>Subscription</th>
+                                            <th>Last Login</th>
+                                            <th>Days Inactive</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="inactiveUsersTableBody">
+                                        <tr>
+                                            <td colspan="7" class="text-center">Click to load inactive users...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -399,13 +508,20 @@
             ]);
         }
 
+        let currentTimeframe = 30;
+
+        function updateTimeframe() {
+            currentTimeframe = parseInt(document.getElementById('timeframeSelector').value);
+            loadStatistics();
+        }
+
         async function loadStatistics() {
             try {
-                const usersResponse = await fetch(`${API_BASE_URL}/admin/users`, {
+                const statsResponse = await fetch(`${API_BASE_URL}/admin/dashboard/stats?timeframe=${currentTimeframe}`, {
                     headers: { 'Authorization': `Bearer ${authToken}` }
                 });
-                const usersData = await usersResponse.json();
-                console.log('Users response:', usersData);
+                const statsData = await statsResponse.json();
+                console.log('Dashboard stats response:', statsData);
 
                 const requestsResponse = await fetch(`${API_BASE_URL}/admin/credit-requests`, {
                     headers: { 'Authorization': `Bearer ${authToken}` }
@@ -413,19 +529,138 @@
                 const requestsData = await requestsResponse.json();
                 console.log('Credit requests response:', requestsData);
 
-                if (usersData.success) {
-                    document.getElementById('totalUsers').textContent = usersData.data.pagination.total;
+                if (statsData.success) {
+                    const stats = statsData.data;
+                    document.getElementById('totalUsers').textContent = stats.totalUsers;
+                    document.getElementById('activeUsersTimeframe').textContent = stats.activeUsersTimeframe;
+                    document.getElementById('inactiveUsersTimeframe').textContent = stats.inactiveUsersTimeframe;
+                    document.getElementById('newUsersTimeframe').textContent = `${stats.newUsersTimeframe} new`;
+                    document.getElementById('activeUsersLabel').textContent = `Last ${stats.timeframeDays} days`;
+                    document.getElementById('inactiveUsersLabel').textContent = `Last ${stats.timeframeDays} days`;
                 }
 
                 if (requestsData.success) {
                     const stats = requestsData.data.statistics;
                     document.getElementById('pendingRequests').textContent = stats.pending;
-                    document.getElementById('approvedRequests').textContent = stats.approved;
-                    document.getElementById('rejectedRequests').textContent = stats.rejected;
                 }
             } catch (error) {
                 console.error('Failed to load statistics:', error);
             }
+        }
+
+        async function exportUsers(status) {
+            try {
+                const url = `${API_BASE_URL}/admin/users/export?status=${status}&timeframe=${currentTimeframe}`;
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `ficore_users_${status}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    showSuccessMessage(`Users exported successfully!`);
+                } else {
+                    alert('Failed to export users');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Failed to export users: ' + error.message);
+            }
+        }
+
+        async function loadActiveUsers() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/list/active?timeframe=${currentTimeframe}&limit=100`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await response.json();
+                console.log('Active users response:', data);
+                
+                if (data.success) {
+                    displayActiveUsers(data.data.users);
+                    document.getElementById('activeUsersCount').textContent = data.data.pagination.total;
+                }
+            } catch (error) {
+                console.error('Failed to load active users:', error);
+                document.getElementById('activeUsersTableBody').innerHTML =
+                    '<tr><td colspan="7" class="text-center text-danger">Failed to load active users</td></tr>';
+            }
+        }
+
+        function displayActiveUsers(users) {
+            const tbody = document.getElementById('activeUsersTableBody');
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No active users found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td>${user.email}</td>
+                    <td>${user.displayName || 'Not set'}</td>
+                    <td>${user.phone || 'N/A'}</td>
+                    <td>${user.ficoreCreditBalance.toLocaleString()} FCs</td>
+                    <td>
+                        ${user.isSubscribed ? 
+                            `<span class="badge bg-success">${user.subscriptionType || 'Premium'}</span>` : 
+                            '<span class="badge bg-secondary">Free</span>'}
+                    </td>
+                    <td>${new Date(user.lastLogin).toLocaleDateString()}</td>
+                    <td>${user.daysSinceLastLogin} days</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadInactiveUsers() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/list/inactive?timeframe=${currentTimeframe}&limit=100`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await response.json();
+                console.log('Inactive users response:', data);
+                
+                if (data.success) {
+                    displayInactiveUsers(data.data.users);
+                    document.getElementById('inactiveUsersCount').textContent = data.data.pagination.total;
+                }
+            } catch (error) {
+                console.error('Failed to load inactive users:', error);
+                document.getElementById('inactiveUsersTableBody').innerHTML =
+                    '<tr><td colspan="7" class="text-center text-danger">Failed to load inactive users</td></tr>';
+            }
+        }
+
+        function displayInactiveUsers(users) {
+            const tbody = document.getElementById('inactiveUsersTableBody');
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No inactive users found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td>${user.email}</td>
+                    <td>${user.displayName || 'Not set'}</td>
+                    <td>${user.phone || 'N/A'}</td>
+                    <td>${user.ficoreCreditBalance.toLocaleString()} FCs</td>
+                    <td>
+                        ${user.isSubscribed ? 
+                            `<span class="badge bg-success">${user.subscriptionType || 'Premium'}</span>` : 
+                            '<span class="badge bg-secondary">Free</span>'}
+                    </td>
+                    <td>${user.lastLogin === 'Never' ? '<span class="badge bg-warning">Never</span>' : new Date(user.lastLogin).toLocaleDateString()}</td>
+                    <td>
+                        ${user.neverLoggedIn ? 
+                            '<span class="badge bg-danger">Never logged in</span>' : 
+                            `${user.daysSinceLastLogin} days`}
+                    </td>
+                </tr>
+            `).join('');
         }
 
         async function loadCreditRequests() {
@@ -504,7 +739,6 @@
             }
             tbody.innerHTML = users.map(user => `
                 <tr>
-                    <td>${user.id}</td>
                     <td>${user.email}</td>
                     <td>${user.displayName || 'Not set'}</td>
                     <td>${user.ficoreCreditBalance.toLocaleString()} FCs</td>
@@ -513,10 +747,11 @@
                             ${user.isActive ? 'Active' : 'Inactive'}
                         </span>
                     </td>
+                    <td>${user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : '<span class="badge bg-warning">Never</span>'}</td>
                     <td>${new Date(user.createdAt).toLocaleDateString()}</td>
                     <td>
                         <button class="btn btn-sm btn-outline-primary" onclick="adjustUserCredits('${user.id}', '${user.displayName}', ${user.ficoreCreditBalance})">
-                            <i class="fas fa-coins"></i> Adjust Credits
+                            <i class="fas fa-coins"></i> Credits
                         </button>
                     </td>
                 </tr>

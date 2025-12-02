@@ -43,10 +43,27 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def get_dashboard_stats(current_user):
         """Get comprehensive dashboard statistics for admin"""
         try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
             # User statistics
             total_users = mongo.db.users.count_documents({})
             active_users = mongo.db.users.count_documents({'isActive': True})
             admin_users = mongo.db.users.count_documents({'role': 'admin'})
+            
+            # Active users by timeframe (users who logged in within timeframe)
+            active_users_timeframe = mongo.db.users.count_documents({
+                'lastLogin': {'$gte': timeframe_start}
+            })
+            
+            # Inactive users (never logged in or not logged in within timeframe)
+            inactive_users_timeframe = total_users - active_users_timeframe
+            
+            # New users in timeframe
+            new_users_timeframe = mongo.db.users.count_documents({
+                'createdAt': {'$gte': timeframe_start}
+            })
             
             # Credit statistics
             pending_credit_requests = mongo.db.credit_requests.count_documents({'status': 'pending'})
@@ -114,6 +131,10 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'totalUsers': total_users,
                 'activeUsers': active_users,
                 'adminUsers': admin_users,
+                'activeUsersTimeframe': active_users_timeframe,
+                'inactiveUsersTimeframe': inactive_users_timeframe,
+                'newUsersTimeframe': new_users_timeframe,
+                'timeframeDays': timeframe_days,
                 'totalBudgets': total_budgets,
                 'budgetsThisMonth': budgets_this_month,
                 'pendingCreditRequests': pending_credit_requests,
@@ -132,6 +153,241 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve dashboard statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_users(current_user):
+        """Export all users data to CSV format"""
+        try:
+            from io import StringIO
+            import csv
+            
+            # Get filter parameters
+            status_filter = request.args.get('status', 'all')  # all, active, inactive
+            timeframe_days = int(request.args.get('timeframe', 0))  # 0 = all time
+            
+            # Build query
+            query = {}
+            if status_filter == 'active':
+                if timeframe_days > 0:
+                    timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+                    query['lastLogin'] = {'$gte': timeframe_start}
+                else:
+                    query['isActive'] = True
+            elif status_filter == 'inactive':
+                if timeframe_days > 0:
+                    timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+                    query['$or'] = [
+                        {'lastLogin': {'$lt': timeframe_start}},
+                        {'lastLogin': {'$exists': False}}
+                    ]
+                else:
+                    query['isActive'] = False
+            
+            # Get all users matching criteria
+            users = list(mongo.db.users.find(query).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'User ID',
+                'Email',
+                'First Name',
+                'Last Name',
+                'Display Name',
+                'Phone',
+                'Role',
+                'Credit Balance',
+                'Is Active',
+                'Is Subscribed',
+                'Subscription Type',
+                'Setup Complete',
+                'Created At',
+                'Last Login',
+                'Language'
+            ])
+            
+            # Write user data
+            for user in users:
+                writer.writerow([
+                    str(user['_id']),
+                    user.get('email', ''),
+                    user.get('firstName', ''),
+                    user.get('lastName', ''),
+                    user.get('displayName', ''),
+                    user.get('phone', ''),
+                    user.get('role', 'personal'),
+                    user.get('ficoreCreditBalance', 0.0),
+                    'Yes' if user.get('isActive', True) else 'No',
+                    'Yes' if user.get('isSubscribed', False) else 'No',
+                    user.get('subscriptionType', 'None'),
+                    'Yes' if user.get('setupComplete', False) else 'No',
+                    user.get('createdAt', datetime.utcnow()).isoformat(),
+                    user.get('lastLogin').isoformat() if user.get('lastLogin') else 'Never',
+                    user.get('language', 'en')
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return as downloadable file
+            from flask import make_response
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_users_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            return response
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/list/active', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_active_users_list(current_user):
+        """Get detailed list of active users within timeframe"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            # Get pagination
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            skip = (page - 1) * limit
+            
+            # Query for active users (logged in within timeframe)
+            query = {'lastLogin': {'$gte': timeframe_start}}
+            
+            total = mongo.db.users.count_documents(query)
+            users = list(mongo.db.users.find(query)
+                        .sort('lastLogin', -1)
+                        .skip(skip)
+                        .limit(limit))
+            
+            # Format user data
+            user_list = []
+            for user in users:
+                user_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'phone': user.get('phone', ''),
+                    'ficoreCreditBalance': user.get('ficoreCreditBalance', 0.0),
+                    'isSubscribed': user.get('isSubscribed', False),
+                    'subscriptionType': user.get('subscriptionType'),
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
+                    'daysSinceLastLogin': (datetime.utcnow() - user.get('lastLogin')).days if user.get('lastLogin') else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': user_list,
+                    'timeframeDays': timeframe_days,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': f'Active users (last {timeframe_days} days) retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve active users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/list/inactive', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_inactive_users_list(current_user):
+        """Get detailed list of inactive users (not logged in within timeframe)"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            # Get pagination
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            skip = (page - 1) * limit
+            
+            # Query for inactive users (not logged in within timeframe or never logged in)
+            query = {
+                '$or': [
+                    {'lastLogin': {'$lt': timeframe_start}},
+                    {'lastLogin': {'$exists': False}},
+                    {'lastLogin': None}
+                ]
+            }
+            
+            total = mongo.db.users.count_documents(query)
+            users = list(mongo.db.users.find(query)
+                        .sort('createdAt', -1)
+                        .skip(skip)
+                        .limit(limit))
+            
+            # Format user data
+            user_list = []
+            for user in users:
+                last_login = user.get('lastLogin')
+                days_since_login = None
+                if last_login:
+                    days_since_login = (datetime.utcnow() - last_login).days
+                
+                user_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'phone': user.get('phone', ''),
+                    'ficoreCreditBalance': user.get('ficoreCreditBalance', 0.0),
+                    'isSubscribed': user.get('isSubscribed', False),
+                    'subscriptionType': user.get('subscriptionType'),
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    'lastLogin': last_login.isoformat() + 'Z' if last_login else 'Never',
+                    'daysSinceLastLogin': days_since_login,
+                    'neverLoggedIn': last_login is None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': user_list,
+                    'timeframeDays': timeframe_days,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': f'Inactive users (not active in last {timeframe_days} days) retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve inactive users',
                 'errors': {'general': [str(e)]}
             }), 500
 
