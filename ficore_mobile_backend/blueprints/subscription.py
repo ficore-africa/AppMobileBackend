@@ -8,7 +8,9 @@ import hashlib
 import traceback
 
 def init_subscription_blueprint(mongo, token_required, serialize_doc):
+    from utils.analytics_tracker import create_tracker
     subscription_bp = Blueprint('subscription', __name__, url_prefix='/subscription')
+    tracker = create_tracker(mongo.db)
     
     # Paystack configuration
     PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
@@ -318,6 +320,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     }
                 }
             )
+            
+            # Track subscription started event
+            try:
+                tracker.track_subscription_started(
+                    user_id=user_id,
+                    subscription_type=plan_type,
+                    amount=plan['price']
+                )
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
             
             # Create subscription record
             subscription_record = {

@@ -21,7 +21,9 @@ from tax_education_content import (
 
 def init_tax_blueprint(mongo, token_required, serialize_doc):
     """Initialize the tax blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     tax_bp = Blueprint('tax', __name__, url_prefix='/tax')
+    tracker = create_tracker(mongo.db)
 
     # Nigerian Personal Income Tax Bands (NTA 2026)
     TAX_BANDS = [
@@ -289,6 +291,15 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
             # Save calculation to history
             result = mongo.db.tax_calculations.insert_one(calculation_result)
             calculation_id = str(result.inserted_id)
+            
+            # Track tax calculation event
+            try:
+                tracker.track_tax_calculation(
+                    user_id=current_user['_id'],
+                    tax_year=tax_year
+                )
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
 
             # Prepare response
             response_data = serialize_doc(calculation_result.copy())

@@ -5,6 +5,7 @@ import jwt
 import uuid
 from bson import ObjectId
 from functools import wraps
+from utils.analytics_tracker import create_tracker
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -12,6 +13,7 @@ def init_auth_blueprint(mongo, app_config):
     """Initialize the auth blueprint with database and config"""
     auth_bp.mongo = mongo
     auth_bp.config = app_config
+    auth_bp.tracker = create_tracker(mongo.db)
     return auth_bp
 
 # Validation helpers
@@ -66,6 +68,16 @@ def login():
             {'_id': user['_id']},
             {'$set': {'lastLogin': datetime.utcnow()}}
         )
+        
+        # Track login event
+        try:
+            device_info = {
+                'user_agent': request.headers.get('User-Agent', 'Unknown'),
+                'ip_address': request.remote_addr
+            }
+            auth_bp.tracker.track_login(user['_id'], device_info=device_info)
+        except Exception as e:
+            print(f"Analytics tracking failed: {e}")
         
         return jsonify({
             'success': True,
@@ -181,6 +193,16 @@ def signup():
         
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
+        
+        # Track registration event
+        try:
+            device_info = {
+                'user_agent': request.headers.get('User-Agent', 'Unknown'),
+                'ip_address': request.remote_addr
+            }
+            auth_bp.tracker.track_registration(result.inserted_id, device_info=device_info)
+        except Exception as e:
+            print(f"Analytics tracking failed: {e}")
         
         # Generate tokens (unchanged)
         access_token = jwt.encode({

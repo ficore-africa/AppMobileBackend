@@ -13,8 +13,10 @@ users_bp = Blueprint('users', __name__, url_prefix='/users')
 
 def init_users_blueprint(mongo, token_required):
     """Initialize the users blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     users_bp.mongo = mongo
     users_bp.token_required = token_required
+    users_bp.tracker = create_tracker(mongo.db)
     return users_bp
 
 @users_bp.route('/profile', methods=['GET'])
@@ -127,6 +129,15 @@ def update_profile():
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
+                
+                # Track profile update event
+                try:
+                    users_bp.tracker.track_profile_updated(
+                        user_id=current_user['_id'],
+                        fields_updated=list(update_data.keys())
+                    )
+                except Exception as e:
+                    print(f"Analytics tracking failed: {e}")
             
             # Get updated user
             updated_user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})

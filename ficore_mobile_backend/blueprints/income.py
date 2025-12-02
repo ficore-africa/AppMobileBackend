@@ -14,7 +14,9 @@ from utils.monthly_entry_tracker import MonthlyEntryTracker
 
 def init_income_blueprint(mongo, token_required, serialize_doc):
     """Initialize the income blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     income_bp = Blueprint('income', __name__, url_prefix='/income')
+    tracker = create_tracker(mongo.db)
 
     @income_bp.route('', methods=['GET'])
     @token_required
@@ -211,6 +213,17 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             result = mongo.db.incomes.insert_one(income_data)
             income_id = str(result.inserted_id)
+            
+            # Track income creation event
+            try:
+                tracker.track_income_created(
+                    user_id=current_user['_id'],
+                    amount=raw_amount,
+                    category=data['category'],
+                    source=data['source']
+                )
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
             
             # NEW: Deduct FC if required (over monthly limit)
             if fc_check['deduct_fc']:

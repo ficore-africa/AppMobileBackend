@@ -5,7 +5,9 @@ from collections import defaultdict
 
 def init_dashboard_blueprint(mongo, token_required, serialize_doc):
     """Initialize the enhanced dashboard blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
+    tracker = create_tracker(mongo.db)
 
     def get_date_range(period='monthly'):
         """Get date range for analytics"""
@@ -280,6 +282,12 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
     def get_overview(current_user):
         """Get comprehensive dashboard overview"""
         try:
+            # Track dashboard view
+            try:
+                tracker.track_dashboard_view(current_user['_id'])
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
+            
             period = request.args.get('period', 'monthly')
             start_date, end_date = get_date_range(period)
             

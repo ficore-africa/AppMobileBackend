@@ -31,6 +31,7 @@ from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
 from blueprints.reminders import init_reminders_blueprint
+from blueprints.analytics import init_analytics_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -256,6 +257,7 @@ rewards_blueprint = init_rewards_blueprint(mongo, token_required, serialize_doc)
 subscription_blueprint = init_subscription_blueprint(mongo, token_required, serialize_doc)
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
 reminders_blueprint = init_reminders_blueprint(mongo, token_required, serialize_doc)
+analytics_blueprint = init_analytics_blueprint(mongo, token_required, admin_required, serialize_doc)
 
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(users_blueprint)
@@ -277,6 +279,7 @@ app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
 app.register_blueprint(reminders_blueprint)
+app.register_blueprint(analytics_blueprint)
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])

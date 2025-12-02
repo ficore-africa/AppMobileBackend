@@ -635,6 +635,36 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
         ]
 
+    # ==================== ANALYTICS_EVENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_analytics_event_schema() -> Dict[str, Any]:
+        """
+        Schema for analytics_events collection.
+        Tracks user activity events for admin dashboard metrics.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'eventType': str,  # Required: 'user_logged_in', 'income_entry_created', 'expense_entry_created', etc.
+            'timestamp': datetime,  # Required, when event occurred
+            'eventDetails': Optional[Dict[str, Any]],  # Optional event-specific data
+            'deviceInfo': Optional[Dict[str, str]],  # Optional device information
+            'sessionId': Optional[str],  # Optional session identifier
+            'createdAt': datetime,  # Record creation timestamp
+        }
+    
+    @staticmethod
+    def get_analytics_event_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for analytics_events collection."""
+        return [
+            {'keys': [('userId', 1), ('timestamp', -1)], 'name': 'user_timestamp_desc'},
+            {'keys': [('eventType', 1), ('timestamp', -1)], 'name': 'event_type_timestamp_desc'},
+            {'keys': [('timestamp', -1)], 'name': 'timestamp_desc'},
+            {'keys': [('userId', 1), ('eventType', 1)], 'name': 'user_event_type'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -673,6 +703,7 @@ class DatabaseInitializer:
             'inventory_movements': self.schema.get_inventory_movement_indexes(),
             'attachments': self.schema.get_attachment_indexes(),
             'assets': self.schema.get_asset_indexes(),
+            'analytics_events': self.schema.get_analytics_event_indexes(),
         }
         
         results = {
