@@ -390,6 +390,36 @@
             <!-- Admin Tools -->
             <div class="section">
                 <h2 class="section-title">Admin Tools</h2>
+                
+                <!-- Export Section -->
+                <div style="background: #FEF3C7; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #F59E0B;">
+                    <h3 style="margin-bottom: 15px; color: #92400E;">📊 Export User Data (Names & Emails)</h3>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                        <label style="font-weight: 600;">Timeframe:</label>
+                        <select id="exportTimeframe" style="padding: 8px 12px; border-radius: 6px; border: 2px solid #D97706;">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="60">Last 60 days</option>
+                            <option value="90">Last 90 days</option>
+                        </select>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                        <button class="btn" style="background: #10B981;" onclick="exportUsers('all')">
+                            📥 Export All Users
+                        </button>
+                        <button class="btn" style="background: #3B82F6;" onclick="exportUsers('active')">
+                            ✅ Export Active Users
+                        </button>
+                        <button class="btn" style="background: #EF4444;" onclick="exportUsers('inactive')">
+                            ⚠️ Export Inactive Users
+                        </button>
+                    </div>
+                    <p style="margin-top: 10px; font-size: 13px; color: #92400E;">
+                        <strong>CSV includes:</strong> Email, First Name, Last Name, Display Name, Phone, Credit Balance, Last Login
+                    </p>
+                </div>
+                
+                <!-- Other Admin Tools -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                     <button class="btn" onclick="viewAllUsersData()">View All Users Data</button>
                     <button class="btn" onclick="viewAnalyticsStats()">System Statistics</button>
@@ -835,6 +865,36 @@
             .catch(error => {
                 alert('Error searching user: ' + error.message);
             });
+        }
+        
+        // Export Users Function
+        async function exportUsers(status) {
+            try {
+                const timeframe = document.getElementById('exportTimeframe').value;
+                const url = `${API_BASE_URL}/admin/users/export?status=${status}&timeframe=${timeframe}`;
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `ficore_users_${status}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    alert(`✅ ${status.toUpperCase()} users exported successfully! Check your downloads.`);
+                } else {
+                    alert('❌ Failed to export users. Please try again.');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
         }
         
         async function viewNDPRRequests() {
