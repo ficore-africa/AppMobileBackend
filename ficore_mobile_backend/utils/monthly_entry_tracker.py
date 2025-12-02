@@ -173,16 +173,18 @@ class MonthlyEntryTracker:
         # CRITICAL DEBUG: Log the final calculation
         print(f"DEBUG CALCULATION: total_count={total_count}, limit={limit}, remaining={remaining}, is_over_limit={is_over_limit}")
         
-        # CRITICAL FIX: Ensure remaining is never negative and matches the calculation
-        if remaining < 0:
-            print(f"ERROR: Negative remaining detected! Setting to 0. Original value: {remaining}")
-            remaining = 0
-        
-        # CRITICAL VALIDATION: Double-check the math
-        expected_remaining = max(0, limit - total_count)
-        if remaining != expected_remaining:
-            print(f"ERROR: Remaining mismatch! Expected: {expected_remaining}, Got: {remaining}. Correcting...")
-            remaining = expected_remaining
+        # CRITICAL FIX: Only validate for Free users, Premium users always have unlimited
+        if not is_premium:
+            # CRITICAL FIX: Ensure remaining is never negative and matches the calculation
+            if remaining < 0:
+                print(f"ERROR: Negative remaining detected! Setting to 0. Original value: {remaining}")
+                remaining = 0
+            
+            # CRITICAL VALIDATION: Double-check the math for Free users only
+            expected_remaining = max(0, limit - total_count)
+            if remaining != expected_remaining:
+                print(f"ERROR: Remaining mismatch! Expected: {expected_remaining}, Got: {remaining}. Correcting...")
+                remaining = expected_remaining
         
         result = {
             'count': total_count,
