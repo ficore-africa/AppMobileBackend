@@ -26,7 +26,6 @@ python run_migrations_manual.py
 
 Or with a custom MongoDB URI:
 ```bash
-python run_migrations_manual.py "mongodb+srv://user:pass@cluster.mongodb.net/db"
 ```
 
 ### Run Single Migration
@@ -78,7 +77,6 @@ def run_migration(mongo_uri=None):
 
 if __name__ == '__main__':
     import sys
-    mongo_uri = sys.argv[1] if len(sys.argv) > 1 else None
     success = run_migration(mongo_uri)
     sys.exit(0 if success else 1)
 ```
@@ -99,3 +97,4 @@ Look for `migrationApplied` and `migrationDate` fields in affected documents:
 ```javascript
 db.subscriptions.findOne({migrationApplied: 'fix_subscription_plan_field'})
 ```
+
