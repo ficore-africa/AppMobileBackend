@@ -387,6 +387,111 @@
                 <ul class="activity-list" id="recent-activity"></ul>
             </div>
             
+            <!-- Rate Limit Monitoring -->
+            <div class="section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 class="section-title">🚦 Rate Limit Monitoring</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <select id="rateLimitTimeframe" style="padding: 8px 12px; border-radius: 6px; border: 2px solid #1E3A8A;">
+                            <option value="1" selected>Last 1 hour</option>
+                            <option value="6">Last 6 hours</option>
+                            <option value="24">Last 24 hours</option>
+                        </select>
+                        <button class="btn" onclick="loadRateLimitData()">Refresh</button>
+                    </div>
+                </div>
+                
+                <!-- Rate Limit Overview -->
+                <div class="metrics-grid" style="margin-bottom: 20px;">
+                    <div class="metric-card" style="border-left-color: #10B981;">
+                        <div class="metric-label">Total API Calls</div>
+                        <div class="metric-value" id="rl-total-calls">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;" id="rl-calls-per-min">-</div>
+                    </div>
+                    <div class="metric-card" style="border-left-color: #F59E0B;">
+                        <div class="metric-label">Rate Limit Hits</div>
+                        <div class="metric-value" id="rl-limit-hits">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;" id="rl-limit-rate">-</div>
+                    </div>
+                    <div class="metric-card" style="border-left-color: #EF4444;">
+                        <div class="metric-label">Error Rate</div>
+                        <div class="metric-value" id="rl-error-rate">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;" id="rl-error-count">-</div>
+                    </div>
+                    <div class="metric-card" style="border-left-color: #3B82F6;">
+                        <div class="metric-label">Avg Response Time</div>
+                        <div class="metric-value" id="rl-avg-response">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;">milliseconds</div>
+                    </div>
+                </div>
+                
+                <!-- Heavy Users Table -->
+                <div style="background: #FEE2E2; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #DC2626;">
+                    <h3 style="margin-bottom: 15px; color: #991B1B;">⚠️ Heavy API Users (>100 calls/hour)</h3>
+                    <div id="heavy-users-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="top-users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Total Calls</th>
+                                    <th>Calls/Min</th>
+                                    <th>Endpoints</th>
+                                    <th>Avg Response</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="heavy-users-body">
+                                <tr><td colspan="7" style="text-align: center; padding: 20px; color: #6B7280;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Top Endpoints -->
+                <div style="background: #DBEAFE; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #3B82F6;">
+                    <h3 style="margin-bottom: 15px; color: #1E40AF;">📊 Most Called Endpoints</h3>
+                    <div id="endpoint-stats-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="top-users-table">
+                            <thead>
+                                <tr>
+                                    <th>Endpoint</th>
+                                    <th>Total Calls</th>
+                                    <th>Calls/Min</th>
+                                    <th>Unique Users</th>
+                                    <th>Avg Response</th>
+                                    <th>Error Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody id="endpoint-stats-body">
+                                <tr><td colspan="6" style="text-align: center; padding: 20px; color: #6B7280;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Rate Limit Violations -->
+                <div style="background: #FEF3C7; padding: 20px; border-radius: 8px; border-left: 4px solid #F59E0B;">
+                    <h3 style="margin-bottom: 15px; color: #92400E;">🚨 Rate Limit Violations (429 Errors)</h3>
+                    <div id="violations-container" style="max-height: 300px; overflow-y: auto;">
+                        <table class="top-users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Endpoint</th>
+                                    <th>Violations</th>
+                                    <th>Last Violation</th>
+                                </tr>
+                            </thead>
+                            <tbody id="violations-body">
+                                <tr><td colspan="5" style="text-align: center; padding: 20px; color: #6B7280;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Admin Tools -->
             <div class="section">
                 <h2 class="section-title">Admin Tools</h2>
@@ -958,8 +1063,148 @@
             }
         }
         
+        // Rate Limit Monitoring Functions
+        async function loadRateLimitData() {
+            try {
+                const hours = document.getElementById('rateLimitTimeframe').value;
+                
+                // Load overview
+                const overviewResponse = await apiCall(`/admin/rate-limits/overview?hours=${hours}`);
+                if (overviewResponse.success) {
+                    const overview = overviewResponse.data.overview;
+                    document.getElementById('rl-total-calls').textContent = overview.totalCalls.toLocaleString();
+                    document.getElementById('rl-calls-per-min').textContent = `${overview.callsPerMinute} calls/min`;
+                    document.getElementById('rl-limit-hits').textContent = overview.rateLimitHits.toLocaleString();
+                    document.getElementById('rl-limit-rate').textContent = `${overview.rateLimitRate}% of calls`;
+                    document.getElementById('rl-error-rate').textContent = `${overview.errorRate}%`;
+                    document.getElementById('rl-error-count').textContent = `${overview.errorCalls.toLocaleString()} errors`;
+                    document.getElementById('rl-avg-response').textContent = `${overview.avgResponseTime}ms`;
+                }
+                
+                // Load heavy users
+                const heavyUsersResponse = await apiCall(`/admin/rate-limits/heavy-users?hours=${hours}&min_calls=100`);
+                if (heavyUsersResponse.success) {
+                    const heavyUsersBody = document.getElementById('heavy-users-body');
+                    heavyUsersBody.innerHTML = '';
+                    
+                    if (heavyUsersResponse.data.heavyUsers.length === 0) {
+                        heavyUsersBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #10B981;">✅ No heavy users detected</td></tr>';
+                    } else {
+                        heavyUsersResponse.data.heavyUsers.forEach(user => {
+                            const row = document.createElement('tr');
+                            const subscriptionBadge = user.isSubscribed ? '<span class="badge" style="background: #10B981; margin-left: 5px;">Premium</span>' : '';
+                            row.innerHTML = `
+                                <td>${user.displayName}${subscriptionBadge}</td>
+                                <td>${user.email}</td>
+                                <td><strong>${user.totalCalls.toLocaleString()}</strong></td>
+                                <td>${user.callsPerMinute}</td>
+                                <td>${user.uniqueEndpoints}</td>
+                                <td>${user.avgResponseTime.toFixed(2)}ms</td>
+                                <td><button onclick="viewUserApiUsage('${user._id}')" class="btn" style="padding: 5px 10px;">Details</button></td>
+                            `;
+                            heavyUsersBody.appendChild(row);
+                        });
+                    }
+                }
+                
+                // Load endpoint stats
+                const endpointStatsResponse = await apiCall(`/admin/rate-limits/endpoint-stats?hours=${hours}`);
+                if (endpointStatsResponse.success) {
+                    const endpointStatsBody = document.getElementById('endpoint-stats-body');
+                    endpointStatsBody.innerHTML = '';
+                    
+                    endpointStatsResponse.data.endpoints.forEach(endpoint => {
+                        const row = document.createElement('tr');
+                        const errorColor = endpoint.errorRate > 10 ? '#DC2626' : '#6B7280';
+                        row.innerHTML = `
+                            <td><code style="font-size: 12px;">${endpoint.endpoint}</code></td>
+                            <td><strong>${endpoint.totalCalls.toLocaleString()}</strong></td>
+                            <td>${endpoint.callsPerMinute}</td>
+                            <td>${endpoint.uniqueUsers}</td>
+                            <td>${endpoint.avgResponseTime}ms</td>
+                            <td style="color: ${errorColor}; font-weight: bold;">${endpoint.errorRate}%</td>
+                        `;
+                        endpointStatsBody.appendChild(row);
+                    });
+                }
+                
+                // Load violations
+                const violationsResponse = await apiCall(`/admin/rate-limits/violations?hours=${hours}`);
+                if (violationsResponse.success) {
+                    const violationsBody = document.getElementById('violations-body');
+                    violationsBody.innerHTML = '';
+                    
+                    if (violationsResponse.data.violations.length === 0) {
+                        violationsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #10B981;">✅ No rate limit violations</td></tr>';
+                    } else {
+                        violationsResponse.data.violations.forEach(violation => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${violation.displayName}</td>
+                                <td>${violation.email}</td>
+                                <td><code style="font-size: 12px;">${violation.endpoint}</code></td>
+                                <td><strong style="color: #DC2626;">${violation.violationCount}</strong></td>
+                                <td>${formatTime(violation.lastViolation)}</td>
+                            `;
+                            violationsBody.appendChild(row);
+                        });
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error loading rate limit data:', error);
+                alert('Error loading rate limit data: ' + error.message);
+            }
+        }
+        
+        async function viewUserApiUsage(userId) {
+            try {
+                const hours = document.getElementById('rateLimitTimeframe').value;
+                const response = await apiCall(`/admin/rate-limits/user/${userId}?hours=${hours}`);
+                
+                if (response.success) {
+                    const data = response.data;
+                    
+                    let html = '<h3>User API Usage Details</h3>';
+                    html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                    html += `<p><strong>Name:</strong> ${data.user.displayName}</p>`;
+                    html += `<p><strong>Email:</strong> ${data.user.email}</p>`;
+                    html += `<p><strong>Subscription:</strong> ${data.user.isSubscribed ? '✅ Premium' : '❌ Free'}</p>`;
+                    html += `<p><strong>Total Calls:</strong> ${data.totalCalls.toLocaleString()}</p>`;
+                    html += `<p><strong>Calls per Minute:</strong> ${data.callsPerMinute}</p>`;
+                    html += `<p><strong>Timeframe:</strong> ${data.timeframe}</p>`;
+                    html += '</div>';
+                    
+                    html += '<h4>Endpoint Breakdown</h4>';
+                    html += '<table style="width: 100%; border-collapse: collapse;">';
+                    html += '<thead><tr style="background: #F4F1EC;">';
+                    html += '<th style="padding: 10px; text-align: left;">Endpoint</th>';
+                    html += '<th style="padding: 10px; text-align: right;">Calls</th>';
+                    html += '<th style="padding: 10px; text-align: right;">Avg Response</th>';
+                    html += '<th style="padding: 10px; text-align: left;">Last Call</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    data.endpointBreakdown.forEach(item => {
+                        html += '<tr style="border-bottom: 1px solid #eee;">';
+                        html += `<td style="padding: 10px;"><code style="font-size: 12px;">${item.endpoint}</code></td>`;
+                        html += `<td style="padding: 10px; text-align: right;"><strong>${item.count}</strong></td>`;
+                        html += `<td style="padding: 10px; text-align: right;">${item.avgResponseTime}ms</td>`;
+                        html += `<td style="padding: 10px;">${formatTime(item.lastCall)}</td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    
+                    showModal('User API Usage', html);
+                }
+            } catch (error) {
+                alert('Error loading user API usage: ' + error.message);
+            }
+        }
+        
         // Initial load - NO AUTO-REFRESH
         loadDashboard();
+        loadRateLimitData();
     </script>
 </body>
 </html>

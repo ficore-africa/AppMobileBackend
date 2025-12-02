@@ -32,9 +32,14 @@ from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
 from blueprints.reminders import init_reminders_blueprint
 from blueprints.analytics import init_analytics_blueprint
+from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprint
 
 # Import database models
 from models import DatabaseInitializer
+
+# Import rate limit tracking utilities
+from utils.rate_limit_tracker import RateLimitTracker
+from utils.api_logging_middleware import setup_api_logging
 
 app = Flask(__name__)
 
@@ -214,6 +219,9 @@ def token_required(f):
             except Exception as db_error:
                 print(f"Database error in token validation: {str(db_error)}")
                 return jsonify({'success': False, 'message': 'Database connection error'}), 500
+            
+            # Store user ID in g for API logging middleware
+            g.current_user_id = current_user['_id']
                 
         except jwt.ExpiredSignatureError:
             return jsonify({'success': False, 'message': 'Token has expired'}), 401
@@ -261,6 +269,13 @@ subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, 
 reminders_blueprint = init_reminders_blueprint(mongo, token_required, serialize_doc)
 analytics_blueprint = init_analytics_blueprint(mongo, token_required, admin_required, serialize_doc)
 
+# Initialize rate limit tracker
+rate_limit_tracker = RateLimitTracker(mongo)
+rate_limit_monitoring_blueprint = init_rate_limit_monitoring_blueprint(mongo, token_required, admin_required, rate_limit_tracker)
+
+# Setup API logging middleware
+setup_api_logging(app, rate_limit_tracker)
+
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(users_blueprint)
 app.register_blueprint(income_blueprint)
@@ -282,6 +297,7 @@ app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
 app.register_blueprint(reminders_blueprint)
 app.register_blueprint(analytics_blueprint)
+app.register_blueprint(rate_limit_monitoring_blueprint)
 
 # Root redirect to admin login
 @app.route('/')
