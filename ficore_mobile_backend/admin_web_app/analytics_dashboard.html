@@ -13,8 +13,8 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #f5f7fa;
-            color: #2c3e50;
+            background: #FFF8F0;
+            color: #2E2E2E;
             padding: 20px;
         }
         
@@ -29,17 +29,58 @@
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
             margin-bottom: 30px;
+            position: relative;
         }
         
         h1 {
-            color: #2c3e50;
+            color: #1E3A8A;
             font-size: 28px;
             margin-bottom: 5px;
         }
         
         .subtitle {
-            color: #7f8c8d;
+            color: #6B7280;
             font-size: 14px;
+        }
+        
+        .header-actions {
+            position: absolute;
+            right: 30px;
+            top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: #B88A44;
+        }
+        
+        .btn-secondary:hover {
+            background: #D4AF37;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+        }
+        
+        .btn-danger:hover {
+            background: #B91C1C;
         }
         
         .metrics-grid {
@@ -54,10 +95,11 @@
             padding: 25px;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid #1E3A8A;
         }
         
         .metric-label {
-            color: #7f8c8d;
+            color: #6B7280;
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -67,20 +109,7 @@
         .metric-value {
             font-size: 36px;
             font-weight: 700;
-            color: #2c3e50;
-        }
-        
-        .metric-change {
-            font-size: 13px;
-            margin-top: 8px;
-        }
-        
-        .metric-change.positive {
-            color: #27ae60;
-        }
-        
-        .metric-change.negative {
-            color: #e74c3c;
+            color: #1E3A8A;
         }
         
         .section {
@@ -95,7 +124,7 @@
             font-size: 20px;
             font-weight: 600;
             margin-bottom: 20px;
-            color: #2c3e50;
+            color: #1E3A8A;
         }
         
         .activity-list {
@@ -104,7 +133,7 @@
         
         .activity-item {
             padding: 15px 0;
-            border-bottom: 1px solid #ecf0f1;
+            border-bottom: 1px solid #E5E7EB;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -120,18 +149,18 @@
         
         .activity-type {
             font-weight: 600;
-            color: #2c3e50;
+            color: #2E2E2E;
             margin-bottom: 4px;
         }
         
         .activity-user {
             font-size: 13px;
-            color: #7f8c8d;
+            color: #6B7280;
         }
         
         .activity-time {
             font-size: 13px;
-            color: #95a5a6;
+            color: #94A3B8;
         }
         
         .event-counts {
@@ -142,51 +171,35 @@
         
         .event-count-item {
             padding: 15px;
-            background: #f8f9fa;
+            background: #F4F1EC;
             border-radius: 8px;
-            border-left: 4px solid #3498db;
+            border-left: 4px solid #B88A44;
         }
         
         .event-count-label {
             font-size: 13px;
-            color: #7f8c8d;
+            color: #6B7280;
             margin-bottom: 5px;
         }
         
         .event-count-value {
             font-size: 24px;
             font-weight: 700;
-            color: #2c3e50;
+            color: #2E2E2E;
         }
         
         .loading {
             text-align: center;
             padding: 40px;
-            color: #7f8c8d;
+            color: #6B7280;
         }
         
         .error {
-            background: #fee;
-            color: #c33;
+            background: #FEE2E2;
+            color: #DC2626;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
-        }
-        
-        .refresh-btn {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: background 0.2s;
-        }
-        
-        .refresh-btn:hover {
-            background: #2980b9;
         }
         
         .top-users-table {
@@ -197,9 +210,9 @@
         .top-users-table th {
             text-align: left;
             padding: 12px;
-            background: #f8f9fa;
+            background: #F4F1EC;
             font-weight: 600;
-            color: #2c3e50;
+            color: #2E2E2E;
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -207,7 +220,7 @@
         
         .top-users-table td {
             padding: 12px;
-            border-bottom: 1px solid #ecf0f1;
+            border-bottom: 1px solid #E5E7EB;
         }
         
         .top-users-table tr:last-child td {
@@ -220,16 +233,77 @@
             border-radius: 12px;
             font-size: 12px;
             font-weight: 600;
-            background: #3498db;
+            background: #1E3A8A;
             color: white;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            overflow: auto;
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            max-width: 1000px;
+            border-radius: 10px;
+            padding: 30px;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-body {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            color: #2E2E2E;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #E5E7EB;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #1E3A8A;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>📊 FiCore Analytics Dashboard</h1>
+            <h1>FiCore Analytics Dashboard</h1>
             <p class="subtitle">Real-time usage metrics and user activity</p>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="showChangePasswordModal()">Change Password</button>
+                <button class="btn btn-danger" onclick="logout()">Logout</button>
+            </div>
         </header>
         
         <div id="error-container"></div>
@@ -286,7 +360,7 @@
             <div class="section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h2 class="section-title">Event Counts (This Month)</h2>
-                    <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh</button>
+                    <button class="btn" onclick="loadDashboard()">Refresh</button>
                 </div>
                 <div class="event-counts" id="event-counts"></div>
             </div>
@@ -317,31 +391,51 @@
             <div class="section">
                 <h2 class="section-title">Admin Tools</h2>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                    <button class="refresh-btn" onclick="viewAllUsersData()">
-                        📊 View All Users Data
-                    </button>
-                    <button class="refresh-btn" onclick="viewAnalyticsStats()">
-                        📈 System Statistics
-                    </button>
-                    <button class="refresh-btn" onclick="searchUserData()">
-                        🔍 Search User Data
-                    </button>
-                    <button class="refresh-btn" onclick="viewNDPRRequests()">
-                        ⚖️ NDPR Requests
-                    </button>
+                    <button class="btn" onclick="viewAllUsersData()">View All Users Data</button>
+                    <button class="btn" onclick="viewAnalyticsStats()">System Statistics</button>
+                    <button class="btn" onclick="searchUserData()">Search User Data</button>
+                    <button class="btn" onclick="viewNDPRRequests()">NDPR Requests</button>
                 </div>
             </div>
-            
-            <!-- User Data Viewer Modal -->
-            <div id="userDataModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; overflow: auto;">
-                <div style="background: white; margin: 50px auto; max-width: 1000px; border-radius: 10px; padding: 30px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 id="modalTitle">User Data</h2>
-                        <button onclick="closeModal()" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer;">Close</button>
+        </div>
+    </div>
+    
+    <!-- Change Password Modal -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Change Password</h2>
+                <button onclick="closeChangePasswordModal()" class="btn btn-danger">Close</button>
+            </div>
+            <div class="modal-body">
+                <div id="password-error" class="error" style="display: none;"></div>
+                <form id="change-password-form">
+                    <div class="form-group">
+                        <label for="current-password">Current Password</label>
+                        <input type="password" id="current-password" required>
                     </div>
-                    <div id="modalContent" style="max-height: 600px; overflow-y: auto;"></div>
-                </div>
+                    <div class="form-group">
+                        <label for="new-password">New Password</label>
+                        <input type="password" id="new-password" required minlength="8">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">Confirm New Password</label>
+                        <input type="password" id="confirm-password" required minlength="8">
+                    </div>
+                    <button type="submit" class="btn">Update Password</button>
+                </form>
             </div>
+        </div>
+    </div>
+    
+    <!-- User Data Viewer Modal -->
+    <div id="userDataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">User Data</h2>
+                <button onclick="closeModal()" class="btn btn-danger">Close</button>
+            </div>
+            <div id="modalContent" class="modal-body"></div>
         </div>
     </div>
     
@@ -353,28 +447,16 @@
         let ADMIN_TOKEN = localStorage.getItem('admin_token');
         
         if (!ADMIN_TOKEN) {
-            // No token, redirect to login
             window.location.href = 'admin_login.html';
         }
         
         // Get admin info
         const ADMIN_EMAIL = localStorage.getItem('admin_email') || 'Admin';
         const ADMIN_NAME = localStorage.getItem('admin_name') || 'Admin';
+        const ADMIN_USER_ID = localStorage.getItem('admin_user_id');
         
-        // Add logout button to header
+        // Update subtitle with admin info
         window.addEventListener('load', () => {
-            const header = document.querySelector('header');
-            const logoutBtn = document.createElement('button');
-            logoutBtn.textContent = '🚪 Logout';
-            logoutBtn.className = 'refresh-btn';
-            logoutBtn.style.position = 'absolute';
-            logoutBtn.style.right = '30px';
-            logoutBtn.style.top = '20px';
-            logoutBtn.onclick = logout;
-            header.style.position = 'relative';
-            header.appendChild(logoutBtn);
-            
-            // Add admin name
             const subtitle = document.querySelector('.subtitle');
             subtitle.textContent = `Logged in as: ${ADMIN_NAME} (${ADMIN_EMAIL})`;
         });
@@ -384,9 +466,71 @@
                 localStorage.removeItem('admin_token');
                 localStorage.removeItem('admin_email');
                 localStorage.removeItem('admin_name');
+                localStorage.removeItem('admin_user_id');
                 window.location.href = 'admin_login.html';
             }
         }
+        
+        // Password Change Functions
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+            document.getElementById('change-password-form').reset();
+            document.getElementById('password-error').style.display = 'none';
+        }
+        
+        function closeChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+        }
+        
+        document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const errorDiv = document.getElementById('password-error');
+            
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = 'New passwords do not match';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            // Validate password strength
+            if (newPassword.length < 8) {
+                errorDiv.textContent = 'Password must be at least 8 characters long';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/password`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        currentPassword: currentPassword,
+                        newPassword: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Password changed successfully! Please login again.');
+                    logout();
+                } else {
+                    errorDiv.textContent = data.message || 'Failed to change password';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Error changing password: ' + error.message;
+                errorDiv.style.display = 'block';
+            }
+        });
         
         // API Helper
         async function apiCall(endpoint) {
@@ -397,7 +541,6 @@
                 }
             });
             
-            // Check for authentication errors
             if (response.status === 401 || response.status === 403) {
                 alert('Session expired. Please login again.');
                 localStorage.removeItem('admin_token');
@@ -513,21 +656,19 @@
                 document.getElementById('error-container').innerHTML = `
                     <div class="error">
                         <strong>Error:</strong> ${error.message}
-                        <br><small>Make sure you're logged in as an admin and have the correct token.</small>
                     </div>
                 `;
             }
         }
         
         // Admin Tools Functions
-        
         async function viewAllUsersData() {
             try {
                 const response = await apiCall('/api/analytics/admin/all-users-data?limit=50');
                 
                 let html = '<h3>All Users Analytics Data (Last 50 Events)</h3>';
                 html += '<table style="width: 100%; border-collapse: collapse; margin-top: 20px;">';
-                html += '<thead><tr style="background: #f8f9fa;">';
+                html += '<thead><tr style="background: #F4F1EC;">';
                 html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">User</th>';
                 html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Event</th>';
                 html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>';
@@ -536,17 +677,17 @@
                 
                 response.data.events.forEach(event => {
                     html += '<tr style="border-bottom: 1px solid #eee;">';
-                    html += `<td style="padding: 12px;">${event.userName}<br><small style="color: #7f8c8d;">${event.userEmail}</small></td>`;
+                    html += `<td style="padding: 12px;">${event.userName}<br><small style="color: #6B7280;">${event.userEmail}</small></td>`;
                     html += `<td style="padding: 12px;">${formatEventType(event.eventType)}</td>`;
                     html += `<td style="padding: 12px;">${formatTime(event.timestamp)}</td>`;
                     html += `<td style="padding: 12px;">`;
-                    html += `<button onclick="viewUserDetails('${event.userId}')" style="background: #3498db; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-right: 5px;">View</button>`;
-                    html += `<button onclick="deleteUserData('${event.userId}', '${event.userEmail}')" style="background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Delete</button>`;
+                    html += `<button onclick="viewUserDetails('${event.userId}')" class="btn" style="padding: 5px 10px; margin-right: 5px;">View</button>`;
+                    html += `<button onclick="deleteUserData('${event.userId}', '${event.userEmail}')" class="btn btn-danger" style="padding: 5px 10px;">Delete</button>`;
                     html += `</td></tr>`;
                 });
                 
                 html += '</tbody></table>';
-                html += `<p style="margin-top: 20px; color: #7f8c8d;">Total: ${response.data.pagination.total} events</p>`;
+                html += `<p style="margin-top: 20px; color: #6B7280;">Total: ${response.data.pagination.total} events</p>`;
                 
                 showModal('All Users Analytics Data', html);
             } catch (error) {
@@ -559,7 +700,7 @@
                 const response = await apiCall(`/api/analytics/admin/user/${userId}/data`);
                 
                 let html = '<h3>User Analytics Profile</h3>';
-                html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
                 html += `<p><strong>Name:</strong> ${response.data.user.name}</p>`;
                 html += `<p><strong>Email:</strong> ${response.data.user.email}</p>`;
                 html += `<p><strong>User ID:</strong> ${response.data.user.userId}</p>`;
@@ -571,7 +712,7 @@
                 html += '<h4>Event Breakdown</h4>';
                 html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 20px;">';
                 Object.entries(response.data.analytics.eventTypes).forEach(([type, count]) => {
-                    html += `<div style="background: #ecf0f1; padding: 10px; border-radius: 5px;">`;
+                    html += `<div style="background: #F4F1EC; padding: 10px; border-radius: 5px;">`;
                     html += `<strong>${formatEventType(type)}</strong><br>${count} events`;
                     html += `</div>`;
                 });
@@ -583,14 +724,14 @@
                     html += `<div style="padding: 10px; border-bottom: 1px solid #eee;">`;
                     html += `<strong>${formatEventType(event.eventType)}</strong> - ${formatTime(event.timestamp)}`;
                     if (event.eventDetails) {
-                        html += `<br><small style="color: #7f8c8d;">${JSON.stringify(event.eventDetails)}</small>`;
+                        html += `<br><small style="color: #6B7280;">${JSON.stringify(event.eventDetails)}</small>`;
                     }
                     html += `</div>`;
                 });
                 html += '</div>';
                 
                 html += `<div style="margin-top: 20px;">`;
-                html += `<button onclick="deleteUserData('${userId}', '${response.data.user.email}')" style="background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">Delete All User Data</button>`;
+                html += `<button onclick="deleteUserData('${userId}', '${response.data.user.email}')" class="btn btn-danger">Delete All User Data</button>`;
                 html += `</div>`;
                 
                 showModal('User Details', html);
@@ -618,7 +759,7 @@
                 if (data.success) {
                     alert(`Successfully deleted ${data.data.deletedEvents} events for ${userEmail}`);
                     closeModal();
-                    loadDashboard(); // Refresh dashboard
+                    loadDashboard();
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -634,26 +775,26 @@
                 let html = '<h3>System Analytics Statistics</h3>';
                 
                 html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">';
-                html += `<div style="background: #3498db; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<div style="background: #1E3A8A; color: white; padding: 20px; border-radius: 8px;">`;
                 html += `<h4 style="margin: 0 0 10px 0;">Total Events</h4>`;
                 html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.totalEvents.toLocaleString()}</p>`;
                 html += `</div>`;
-                html += `<div style="background: #2ecc71; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<div style="background: #16A34A; color: white; padding: 20px; border-radius: 8px;">`;
                 html += `<h4 style="margin: 0 0 10px 0;">Unique Users</h4>`;
                 html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.uniqueUsers.toLocaleString()}</p>`;
                 html += `</div>`;
-                html += `<div style="background: #9b59b6; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<div style="background: #B88A44; color: white; padding: 20px; border-radius: 8px;">`;
                 html += `<h4 style="margin: 0 0 10px 0;">Avg Events/User</h4>`;
                 html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.avgEventsPerUser}</p>`;
                 html += `</div>`;
-                html += `<div style="background: #e67e22; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<div style="background: #F97316; color: white; padding: 20px; border-radius: 8px;">`;
                 html += `<h4 style="margin: 0 0 10px 0;">Storage Size</h4>`;
                 html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.storageSizeMB} MB</p>`;
                 html += `</div>`;
                 html += '</div>';
                 
                 html += '<h4>Activity by Time Period</h4>';
-                html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
                 html += `<p><strong>Last 24 Hours:</strong> ${response.data.timeRanges.last24Hours.toLocaleString()} events</p>`;
                 html += `<p><strong>Last 7 Days:</strong> ${response.data.timeRanges.last7Days.toLocaleString()} events</p>`;
                 html += `<p><strong>Last 30 Days:</strong> ${response.data.timeRanges.last30Days.toLocaleString()} events</p>`;
@@ -662,7 +803,7 @@
                 html += '<h4>Event Types Distribution</h4>';
                 html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">';
                 Object.entries(response.data.eventTypes).forEach(([type, count]) => {
-                    html += `<div style="background: #ecf0f1; padding: 10px; border-radius: 5px;">`;
+                    html += `<div style="background: #F4F1EC; padding: 10px; border-radius: 5px;">`;
                     html += `<strong>${formatEventType(type)}</strong><br>${count.toLocaleString()} events`;
                     html += `</div>`;
                 });
@@ -678,7 +819,6 @@
             const email = prompt('Enter user email to search:');
             if (!email) return;
             
-            // Search for user by email
             fetch(`${API_BASE_URL}/api/users/search?email=${encodeURIComponent(email)}`, {
                 headers: {
                     'Authorization': `Bearer ${ADMIN_TOKEN}`
@@ -702,7 +842,7 @@
                 const response = await apiCall('/api/analytics/admin/ndpr-requests');
                 
                 let html = '<h3>NDPR Compliance Summary</h3>';
-                html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
                 html += `<p><strong>Total Users:</strong> ${response.data.summary.totalUsers}</p>`;
                 html += `<p><strong>Users with Analytics Data:</strong> ${response.data.summary.usersWithAnalytics}</p>`;
                 html += `<p><strong>Users without Analytics Data:</strong> ${response.data.summary.usersWithoutAnalytics}</p>`;
@@ -710,10 +850,10 @@
                 
                 html += '<h4>NDPR Rights Available</h4>';
                 html += '<ul style="line-height: 2;">';
-                html += '<li>✅ Right to Access - Users can view their data via API</li>';
-                html += '<li>✅ Right to Erasure - Users can delete their data via API</li>';
-                html += '<li>✅ Data Portability - Users can export their data in JSON</li>';
-                html += '<li>✅ Right to Object - Users can opt-out of tracking</li>';
+                html += '<li>Right to Access - Users can view their data via API</li>';
+                html += '<li>Right to Erasure - Users can delete their data via API</li>';
+                html += '<li>Data Portability - Users can export their data in JSON</li>';
+                html += '<li>Right to Object - Users can opt-out of tracking</li>';
                 html += '</ul>';
                 
                 html += '<h4>Admin Actions</h4>';
@@ -725,8 +865,8 @@
                 html += '<li>Monitor system-wide analytics statistics</li>';
                 html += '</ul>';
                 
-                html += '<div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #ffc107;">';
-                html += '<strong>⚠️ Important:</strong> All data deletions are logged for audit purposes. ';
+                html += '<div style="background: #FFF3CD; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #F59E0B;">';
+                html += '<strong>Important:</strong> All data deletions are logged for audit purposes. ';
                 html += 'Analytics data is automatically deleted after 12 months per NDPR retention policy.';
                 html += '</div>';
                 
@@ -749,15 +889,16 @@
         // Close modal when clicking outside
         window.onclick = function(event) {
             const modal = document.getElementById('userDataModal');
+            const passwordModal = document.getElementById('changePasswordModal');
             if (event.target === modal) {
                 closeModal();
             }
+            if (event.target === passwordModal) {
+                closeChangePasswordModal();
+            }
         }
         
-        // Auto-refresh every 30 seconds
-        setInterval(loadDashboard, 30000);
-        
-        // Initial load
+        // Initial load - NO AUTO-REFRESH
         loadDashboard();
     </script>
 </body>
