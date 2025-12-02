@@ -281,6 +281,12 @@ app.register_blueprint(subscription_discounts_blueprint)
 app.register_blueprint(reminders_blueprint)
 app.register_blueprint(analytics_blueprint)
 
+# Root redirect to admin login
+@app.route('/')
+def index():
+    """Redirect root URL to admin login page"""
+    return redirect('/admin/admin_login.html')
+
 # Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -372,6 +378,11 @@ def upload_profile_picture(current_user):
             'message': 'Failed to upload profile picture',
             'errors': {'general': [str(e)]}
         }), 500
+
+@app.route('/admin')
+def admin_redirect():
+    """Redirect /admin to admin login page"""
+    return redirect('/admin/admin_login.html')
 
 @app.route('/admin/<path:filename>')
 def serve_admin_static(filename):
