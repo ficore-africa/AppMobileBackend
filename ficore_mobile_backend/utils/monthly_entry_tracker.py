@@ -54,11 +54,11 @@ class MonthlyEntryTracker:
         month_start = self._get_month_start()
         month_end = self._get_month_end()
         
-        # CRITICAL FIX: Try multiple strategies to count entries
-        # Strategy 1: Standard query with ObjectId userId and datetime createdAt
+        # CRITICAL FIX: Use correct date fields with comprehensive fallback
+        # Strategy 1: Try primary date field (dateReceived for income, date for expense)
         income_count = self.mongo.db.incomes.count_documents({
             'userId': user_id,
-            'createdAt': {
+            'dateReceived': {
                 '$gte': month_start,
                 '$lt': month_end
             }
@@ -66,13 +66,51 @@ class MonthlyEntryTracker:
         
         expense_count = self.mongo.db.expenses.count_documents({
             'userId': user_id,
-            'createdAt': {
+            'date': {
                 '$gte': month_start,
                 '$lt': month_end
             }
         })
         
-        # Strategy 2: If count is 0, try with string userId (fallback for data inconsistency)
+        # Strategy 2: If count is 0, try with createdAt as fallback
+        if income_count == 0:
+            income_count = self.mongo.db.incomes.count_documents({
+                'userId': user_id,
+                'createdAt': {
+                    '$gte': month_start,
+                    '$lt': month_end
+                }
+            })
+        
+        if expense_count == 0:
+            expense_count = self.mongo.db.expenses.count_documents({
+                'userId': user_id,
+                'createdAt': {
+                    '$gte': month_start,
+                    '$lt': month_end
+                }
+            })
+        
+        # Strategy 3: If still 0, try with string userId and primary date field
+        if income_count == 0:
+            income_count = self.mongo.db.incomes.count_documents({
+                'userId': str(user_id),
+                'dateReceived': {
+                    '$gte': month_start,
+                    '$lt': month_end
+                }
+            })
+        
+        if expense_count == 0:
+            expense_count = self.mongo.db.expenses.count_documents({
+                'userId': str(user_id),
+                'date': {
+                    '$gte': month_start,
+                    '$lt': month_end
+                }
+            })
+        
+        # Strategy 4: If still 0, try with string userId and createdAt
         if income_count == 0:
             income_count = self.mongo.db.incomes.count_documents({
                 'userId': str(user_id),
@@ -309,8 +347,29 @@ class MonthlyEntryTracker:
                 entry_time = None
                 
                 try:
-                    # Strategy 1: Try createdAt field (might be string or datetime)
-                    if 'createdAt' in entry and entry['createdAt']:
+                    # Strategy 1: Try primary date fields first (dateReceived for income, date for expense)
+                    # For income: try 'dateReceived' field
+                    if 'dateReceived' in entry and entry['dateReceived']:
+                        if isinstance(entry['dateReceived'], datetime):
+                            entry_time = entry['dateReceived']
+                        elif isinstance(entry['dateReceived'], str):
+                            try:
+                                entry_time = datetime.fromisoformat(entry['dateReceived'].replace('Z', ''))
+                            except:
+                                pass
+                    
+                    # For expenses: try 'date' field
+                    if not entry_time and 'date' in entry and entry['date']:
+                        if isinstance(entry['date'], datetime):
+                            entry_time = entry['date']
+                        elif isinstance(entry['date'], str):
+                            try:
+                                entry_time = datetime.fromisoformat(entry['date'].replace('Z', ''))
+                            except:
+                                pass
+                    
+                    # Strategy 2: Try createdAt field as fallback (might be string or datetime)
+                    if not entry_time and 'createdAt' in entry and entry['createdAt']:
                         if isinstance(entry['createdAt'], datetime):
                             entry_time = entry['createdAt']
                         elif isinstance(entry['createdAt'], str):
@@ -320,29 +379,7 @@ class MonthlyEntryTracker:
                             except:
                                 pass
                     
-                    # Strategy 2: Try alternative date fields
-                    if not entry_time:
-                        # For expenses: try 'date' field
-                        if 'date' in entry and entry['date']:
-                            if isinstance(entry['date'], datetime):
-                                entry_time = entry['date']
-                            elif isinstance(entry['date'], str):
-                                try:
-                                    entry_time = datetime.fromisoformat(entry['date'].replace('Z', ''))
-                                except:
-                                    pass
-                        
-                        # For income: try 'dateReceived' field
-                        if not entry_time and 'dateReceived' in entry and entry['dateReceived']:
-                            if isinstance(entry['dateReceived'], datetime):
-                                entry_time = entry['dateReceived']
-                            elif isinstance(entry['dateReceived'], str):
-                                try:
-                                    entry_time = datetime.fromisoformat(entry['dateReceived'].replace('Z', ''))
-                                except:
-                                    pass
-                    
-                    # Strategy 3: Extract timestamp from ObjectId (most reliable)
+                    # Strategy 3: Extract timestamp from ObjectId (last resort)
                     if not entry_time:
                         entry_time = entry['_id'].generation_time
                     

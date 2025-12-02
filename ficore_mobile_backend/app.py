@@ -678,6 +678,17 @@ def bad_request(error):
     }), 400
 
 if __name__ == '__main__':
+    # Run database migrations before starting the app
+    try:
+        print("\n🔄 Running database migrations...")
+        from run_migrations import run_all_migrations
+        mongo_uri = app.config.get('MONGO_URI')
+        run_all_migrations(mongo_uri)
+        print("✅ Migrations completed\n")
+    except Exception as e:
+        print(f"⚠️  Migration error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if migrations fail
+    
     app.run(debug=True, host='0.0.0.0', port=5000)
 
 

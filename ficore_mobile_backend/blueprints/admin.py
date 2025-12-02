@@ -1818,6 +1818,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 mongo.db.subscriptions.update_one(
                     {'userId': ObjectId(user_id)},
                     {'$set': {
+                        'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
                         'planId': plan_id,
                         'planName': data.get('planName', plan_id),
                         'startDate': start_date,
@@ -1838,6 +1839,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 subscription_data = {
                     '_id': subscription_id,
                     'userId': ObjectId(user_id),
+                    'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
                     'planId': plan_id,
                     'planName': data.get('planName', plan_id),
                     'startDate': start_date,
