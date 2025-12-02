@@ -48,10 +48,12 @@ CORS(app, origins=['*'])
 mongo = PyMongo(app)
 
 # Initialize rate limiter with more reasonable limits
+# CRITICAL FIX: Increased limits to prevent legitimate usage from being blocked
+# Mobile apps make frequent API calls, especially for status checks
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["1000 per day", "200 per hour"],
+    default_limits=["50000 per day", "500 per hour"],  # Increased from 1000/200
     storage_uri="memory://",
 )
 

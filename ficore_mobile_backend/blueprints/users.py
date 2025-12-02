@@ -41,6 +41,11 @@ def get_profile():
                 'financialGoals': current_user.get('financialGoals', []),
                 'createdAt': current_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': current_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if current_user.get('lastLogin') else None,
+                # CRITICAL FIX: Include profile picture URL and business info
+                'profilePictureUrl': current_user.get('profilePictureUrl'),
+                'businessName': current_user.get('businessName'),
+                'businessType': current_user.get('businessType'),
+                'industry': current_user.get('industry'),
                 # Add subscription information to profile
                 'isSubscribed': current_user.get('isSubscribed', False),
                 'subscriptionType': current_user.get('subscriptionType'),
@@ -158,7 +163,12 @@ def update_profile():
                 'setupComplete': updated_user.get('setupComplete', False),
                 'financialGoals': updated_user.get('financialGoals', []),
                 'createdAt': updated_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
-                'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None
+                'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None,
+                # CRITICAL FIX: Include profile picture URL and business info
+                'profilePictureUrl': updated_user.get('profilePictureUrl'),
+                'businessName': updated_user.get('businessName'),
+                'businessType': updated_user.get('businessType'),
+                'industry': updated_user.get('industry')
             }
             
             return jsonify({

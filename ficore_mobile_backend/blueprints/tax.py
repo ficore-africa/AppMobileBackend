@@ -572,6 +572,9 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
                 'module_id': module_id
             })
 
+            # Check if module was already completed (to prevent duplicate rewards)
+            already_completed = existing_progress and existing_progress.get('completed')
+            
             if existing_progress:
                 # Update existing progress
                 mongo.db.tax_education_progress.update_one(
@@ -598,12 +601,36 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
                 result = mongo.db.tax_education_progress.insert_one(progress_data)
                 progress_id = str(result.inserted_id)
 
-            # Check if module was already completed (to prevent duplicate rewards)
-            already_completed = existing_progress and existing_progress.get('completed')
-            credits_awarded = 0 if already_completed else 1  # 1 FC per module, but only if not already completed
-            
-            # Note: Credit awarding is now handled by the FC cost system via /credits/award endpoint
-            # This endpoint only marks the module as complete
+            # Award FiCore Credits if module not already completed
+            credits_awarded = 0
+            if not already_completed:
+                # Get reward from single source of truth
+                credits_awarded = get_module_reward(module_id)
+                
+                if credits_awarded > 0:
+                    # Update user's FiCore Credit balance
+                    mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {'$inc': {'ficoreCreditBalance': credits_awarded}}
+                    )
+                    
+                    # Create CreditTransaction record for traceability
+                    transaction_data = {
+                        '_id': ObjectId(),
+                        'userId': current_user['_id'],
+                        'amount': float(credits_awarded),
+                        'type': 'credit',
+                        'description': f'Tax Education Reward - {module_id.replace("_", " ").title()}',
+                        'status': 'completed',
+                        'action': 'tax_education_reward',
+                        'createdAt': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow(),
+                        'metadata': {
+                            'source': 'tax_education',
+                            'moduleId': module_id
+                        }
+                    }
+                    mongo.db.credit_transactions.insert_one(transaction_data)
 
             return jsonify({
                 'success': True,
@@ -611,9 +638,9 @@ def init_tax_blueprint(mongo, token_required, serialize_doc):
                     'progress_id': progress_id,
                     'module_id': module_id,
                     'completed': True,
-                    'credits_will_be_awarded': credits_awarded
+                    'credits_awarded': credits_awarded
                 },
-                'message': 'Module completed successfully!' + (' Credits will be awarded by the FC system.' if credits_awarded > 0 else ' Module was already completed.')
+                'message': f'Module completed successfully{" - " + str(credits_awarded) + " FC" + ("s" if credits_awarded != 1 else "") + " awarded!" if credits_awarded > 0 else " - Module was already completed."}'
             })
 
         except Exception as e:

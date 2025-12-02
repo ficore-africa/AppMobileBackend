@@ -95,7 +95,10 @@ def login():
                     'role': user.get('role', 'personal'),
                     'ficoreCreditBalance': user.get('ficoreCreditBalance', 10.0),
                     'financialGoals': user.get('financialGoals', []),
-                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    # CRITICAL FIX: Include profile picture URL and business info
+                    'profilePictureUrl': user.get('profilePictureUrl'),
+                    'businessName': user.get('businessName')
                 }
             },
             'message': 'Login successful'
