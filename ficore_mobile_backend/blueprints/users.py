@@ -911,7 +911,29 @@ def complete_profile():
             # Update profile fields
             for field in profile_fields:
                 if field in data:
-                    update_data[field] = data[field]
+                    # Special validation for profilePictureUrl
+                    if field == 'profilePictureUrl' and data[field]:
+                        # Check if the file actually exists on the server
+                        url = data[field]
+                        if '/uploads/profile_pictures/' in url:
+                            # Extract filename from URL
+                            filename = url.split('/uploads/profile_pictures/')[-1]
+                            file_path = os.path.join(
+                                os.path.dirname(os.path.dirname(__file__)),
+                                'uploads', 'profile_pictures', filename
+                            )
+                            # Only save URL if file exists
+                            if os.path.exists(file_path):
+                                update_data[field] = data[field]
+                            else:
+                                print(f"Profile picture file not found: {file_path}. Skipping URL save.")
+                                # Don't save the URL if file doesn't exist
+                                continue
+                        else:
+                            # External URL or different format, save as-is
+                            update_data[field] = data[field]
+                    else:
+                        update_data[field] = data[field]
             
             # Calculate completion percentage
             user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})

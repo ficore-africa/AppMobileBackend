@@ -319,8 +319,12 @@ def health_check():
 @app.route('/upload/profile-picture', methods=['POST'])
 @token_required
 def upload_profile_picture(current_user):
-    """Upload profile picture for user"""
+    """Upload profile picture for user to Google Cloud Storage"""
     try:
+        from google.cloud import storage
+        from werkzeug.utils import secure_filename
+        import uuid
+        
         # Check if file is in request
         if 'file' not in request.files:
             return jsonify({
@@ -347,23 +351,28 @@ def upload_profile_picture(current_user):
                 'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}'
             }), 400
         
-        # Create uploads directory if it doesn't exist
-        uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'profile_pictures')
-        os.makedirs(uploads_dir, exist_ok=True)
+        # Initialize Google Cloud Storage
+        storage_client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        bucket = storage_client.bucket(bucket_name)
         
-        # Generate unique filename
+        # Generate unique filename for GCS
         user_id = str(current_user['_id'])
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        filename = f"profile_{user_id}_{timestamp}.{file_ext}"
-        filepath = os.path.join(uploads_dir, filename)
+        unique_id = str(uuid.uuid4())
+        gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
         
-        # Save file
-        file.save(filepath)
+        # Upload to Google Cloud Storage
+        blob = bucket.blob(gcs_filename)
+        content_type = file.content_type or f'image/{file_ext}'
+        blob.upload_from_file(file, content_type=content_type)
         
-        # Generate URL for the uploaded file
-        # In production, this should be your actual domain
-        base_url = request.host_url.rstrip('/')
-        image_url = f"{base_url}/uploads/profile_pictures/{filename}"
+        # Make blob publicly readable
+        blob.make_public()
+        
+        # Get public URL
+        image_url = blob.public_url
+        
+        print(f"Profile picture uploaded to GCS for user {current_user['email']}: {image_url}")
         
         # Update user profile with new picture URL
         mongo.db.users.update_one(
@@ -371,12 +380,13 @@ def upload_profile_picture(current_user):
             {
                 '$set': {
                     'profilePictureUrl': image_url,
+                    'gcsProfilePicturePath': gcs_filename,  # Store GCS path for future reference
                     'updatedAt': datetime.utcnow()
                 }
             }
         )
         
-        print(f"Profile picture uploaded successfully for user {current_user['email']}: {image_url}")
+        print(f"Profile picture URL saved to database: {image_url}")
         
         return jsonify({
             'success': True,
