@@ -8,6 +8,19 @@ import sys
 from app import app
 
 if __name__ == '__main__':
+    # Ensure upload directories exist
+    print("Ensuring upload directories exist...")
+    upload_dirs = [
+        'uploads/profile_pictures',
+        'uploads/receipts',
+        'uploads/documents',
+        'uploads/attachments',
+    ]
+    for dir_path in upload_dirs:
+        full_path = os.path.join(os.path.dirname(__file__), dir_path)
+        os.makedirs(full_path, exist_ok=True)
+    print("✓ Upload directories ready\n")
+    
     # Set environment variables for development
     os.environ.setdefault('MONGO_URI', 'mongodb://localhost:27017/ficore_mobile')
     os.environ.setdefault('SECRET_KEY', 'ficore-mobile-secret-key-2024')

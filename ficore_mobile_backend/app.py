@@ -427,14 +427,32 @@ def serve_uploaded_file(filename):
             subdir = parts[0]
             file_name = '/'.join(parts[1:])
             full_path = os.path.join(uploads_path, subdir)
+            
+            # Check if file exists
+            file_path = os.path.join(full_path, file_name)
+            if not os.path.exists(file_path):
+                print(f"Error serving file {filename}: 404 Not Found: File does not exist at {file_path}")
+                return jsonify({
+                    'success': False,
+                    'message': f'File not found'
+                }), 404
+                
             return send_from_directory(full_path, file_name)
         else:
+            file_path = os.path.join(uploads_path, filename)
+            if not os.path.exists(file_path):
+                print(f"Error serving file {filename}: 404 Not Found: File does not exist at {file_path}")
+                return jsonify({
+                    'success': False,
+                    'message': f'File not found'
+                }), 404
             return send_from_directory(uploads_path, filename)
             
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        print(f"Error serving file {filename}: 404 Not Found: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f'File {filename} not found'
+            'message': f'File not found'
         }), 404
     except Exception as e:
         print(f"Error serving file {filename}: {str(e)}")
@@ -722,7 +740,6 @@ if __name__ == '__main__':
         # Don't fail app startup if migrations fail
     
     app.run(debug=True, host='0.0.0.0', port=5000)
-
 
 
 
