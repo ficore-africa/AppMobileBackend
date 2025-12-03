@@ -315,6 +315,43 @@ def health_check():
         'version': '1.0.0'
     })
 
+# GCS health check endpoint
+@app.route('/health/gcs', methods=['GET'])
+def gcs_health_check():
+    """Check if Google Cloud Storage is accessible"""
+    try:
+        from google.cloud import storage
+        
+        storage_client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        bucket = storage_client.bucket(bucket_name)
+        
+        # Test if bucket exists and is accessible
+        exists = bucket.exists()
+        
+        if exists:
+            return jsonify({
+                'success': True,
+                'message': 'GCS is accessible',
+                'bucket': bucket_name,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'GCS bucket not found',
+                'bucket': bucket_name,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 404
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'GCS error: {str(e)}',
+            'bucket': os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments'),
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }), 500
+
 # Profile picture upload endpoint
 @app.route('/upload/profile-picture', methods=['POST'])
 @token_required
@@ -353,8 +390,25 @@ def upload_profile_picture(current_user):
         
         # Initialize Google Cloud Storage
         storage_client = storage.Client()
-        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments-hassan')
-        bucket = storage_client.bucket(bucket_name)
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        
+        # Verify bucket exists
+        try:
+            bucket = storage_client.bucket(bucket_name)
+            if not bucket.exists():
+                print(f"❌ GCS bucket does not exist: {bucket_name}")
+                return jsonify({
+                    'success': False,
+                    'message': 'Storage configuration error. Please contact support.',
+                    'errors': {'general': ['Storage bucket not configured']}
+                }), 500
+        except Exception as e:
+            print(f"❌ Error accessing GCS bucket {bucket_name}: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Storage service unavailable. Please try again later.',
+                'errors': {'general': [str(e)]}
+            }), 503
         
         # Generate unique filename for GCS
         user_id = str(current_user['_id'])
@@ -362,35 +416,55 @@ def upload_profile_picture(current_user):
         gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
         
         # Upload to Google Cloud Storage (private bucket)
-        blob = bucket.blob(gcs_filename)
-        content_type = file.content_type or f'image/{file_ext}'
-        blob.upload_from_file(file, content_type=content_type)
+        try:
+            blob = bucket.blob(gcs_filename)
+            content_type = file.content_type or f'image/{file_ext}'
+            blob.upload_from_file(file, content_type=content_type)
+            print(f"✅ Profile picture uploaded to GCS: {gcs_filename}")
+        except Exception as e:
+            print(f"❌ Error uploading to GCS: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to upload image to storage',
+                'errors': {'general': [str(e)]}
+            }), 500
         
         # Generate signed URL (valid for 7 days)
         # This allows private access without making the bucket public
         from datetime import timedelta
-        signed_url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(days=7),
-            method="GET"
-        )
+        try:
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(days=7),
+                method="GET"
+            )
+            print(f"✅ Generated signed URL for immediate use")
+        except Exception as e:
+            print(f"❌ Error generating signed URL: {e}")
+            # Continue anyway - we have the GCS path
+            signed_url = None
         
-        print(f"Profile picture uploaded to GCS for user {current_user['email']}: {gcs_filename}")
-        
-        # Update user profile with GCS path (not the signed URL)
-        # We'll generate fresh signed URLs when needed
-        mongo.db.users.update_one(
-            {'_id': current_user['_id']},
-            {
-                '$set': {
-                    'gcsProfilePicturePath': gcs_filename,  # Store GCS path
-                    'profilePictureUrl': None,  # Clear old URL if any
-                    'updatedAt': datetime.utcnow()
+        # CRITICAL FIX: Update user profile with GCS path (not the signed URL)
+        # We'll generate fresh signed URLs when needed via GET /users/profile
+        # This ensures URLs never expire from the user's perspective
+        try:
+            mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {
+                    '$set': {
+                        'gcsProfilePicturePath': gcs_filename,  # Permanent GCS path
+                        'profilePictureUrl': None,  # Clear old URL if any
+                        'updatedAt': datetime.utcnow()
+                    }
                 }
-            }
-        )
-        
-        print(f"Profile picture path saved to database: {gcs_filename}")
+            )
+            print(f"✅ Saved GCS path to user document: {gcs_filename}")
+        except Exception as e:
+            print(f"❌ Error updating user document: {e}")
+            # Upload succeeded but DB update failed - not critical
+            # User can try again
         
         return jsonify({
             'success': True,

@@ -498,29 +498,57 @@
                 
                 <!-- Export Section -->
                 <div style="background: #FEF3C7; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #F59E0B;">
-                    <h3 style="margin-bottom: 15px; color: #92400E;">📊 Export User Data (Names & Emails)</h3>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-                        <label style="font-weight: 600;">Timeframe:</label>
-                        <select id="exportTimeframe" style="padding: 8px 12px; border-radius: 6px; border: 2px solid #D97706;">
-                            <option value="7">Last 7 days</option>
-                            <option value="30" selected>Last 30 days</option>
-                            <option value="60">Last 60 days</option>
-                            <option value="90">Last 90 days</option>
-                        </select>
+                    <h3 style="margin-bottom: 15px; color: #92400E;">📊 Export User Data</h3>
+                    
+                    <!-- Bulk Export -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; font-size: 14px;">Bulk Export (All Users)</h4>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                            <label style="font-weight: 600;">Timeframe:</label>
+                            <select id="exportTimeframe" style="padding: 8px 12px; border-radius: 6px; border: 2px solid #D97706;">
+                                <option value="7">Last 7 days</option>
+                                <option value="30" selected>Last 30 days</option>
+                                <option value="60">Last 60 days</option>
+                                <option value="90">Last 90 days</option>
+                            </select>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                            <button class="btn" style="background: #10B981;" onclick="exportUsers('all')">
+                                📥 Export All Users
+                            </button>
+                            <button class="btn" style="background: #3B82F6;" onclick="exportUsers('active')">
+                                ✅ Export Active Users
+                            </button>
+                            <button class="btn" style="background: #EF4444;" onclick="exportUsers('inactive')">
+                                ⚠️ Export Inactive Users
+                            </button>
+                            <button class="btn" style="background: #B88A44;" onclick="exportBusinessProfiles()">
+                                💼 Export All Business Profiles
+                            </button>
+                        </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-                        <button class="btn" style="background: #10B981;" onclick="exportUsers('all')">
-                            📥 Export All Users
-                        </button>
-                        <button class="btn" style="background: #3B82F6;" onclick="exportUsers('active')">
-                            ✅ Export Active Users
-                        </button>
-                        <button class="btn" style="background: #EF4444;" onclick="exportUsers('inactive')">
-                            ⚠️ Export Inactive Users
-                        </button>
+                    
+                    <!-- Single User Export -->
+                    <div style="border-top: 2px solid #D97706; padding-top: 20px;">
+                        <h4 style="margin-bottom: 10px; font-size: 14px;">Single User Export</h4>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input 
+                                type="text" 
+                                id="userSearchInput" 
+                                placeholder="Search by email or name..." 
+                                style="flex: 1; padding: 10px; border: 2px solid #D97706; border-radius: 6px;"
+                                onkeyup="searchUserForExport(event)"
+                            >
+                            <button class="btn" style="background: #D97706;" onclick="searchUserForExport()">
+                                🔍 Search
+                            </button>
+                        </div>
+                        <div id="userSearchResults" style="max-height: 200px; overflow-y: auto; background: white; border-radius: 6px; display: none;"></div>
                     </div>
-                    <p style="margin-top: 10px; font-size: 13px; color: #92400E;">
-                        <strong>CSV includes:</strong> Email, First Name, Last Name, Display Name, Phone, Credit Balance, Last Login
+                    
+                    <p style="margin-top: 15px; font-size: 13px; color: #92400E;">
+                        <strong>User CSV includes:</strong> Email, First Name, Last Name, Display Name, Phone, Credit Balance, Last Login<br>
+                        <strong>Business Profile CSV includes:</strong> All user fields + Business Name, Type, Industry, Employees, Address, TIN, Social Media
                     </p>
                 </div>
                 
@@ -995,6 +1023,154 @@
                     alert(`✅ ${status.toUpperCase()} users exported successfully! Check your downloads.`);
                 } else {
                     alert('❌ Failed to export users. Please try again.');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
+        }
+        
+        async function exportBusinessProfiles() {
+            try {
+                const url = `${API_BASE_URL}/admin/users/business-profiles/export`;
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `ficore_business_profiles_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    alert('✅ Business profiles exported successfully! Check your downloads.\n\nIncludes: Business Name, Type, Industry, Employees, Address, TIN, Social Media');
+                } else {
+                    alert('❌ Failed to export business profiles. Please try again.');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
+        }
+        
+        async function searchUserForExport(event) {
+            // Allow search on Enter key
+            if (event && event.key && event.key !== 'Enter') {
+                return;
+            }
+            
+            const searchInput = document.getElementById('userSearchInput');
+            const searchTerm = searchInput.value.trim();
+            const resultsDiv = document.getElementById('userSearchResults');
+            
+            if (searchTerm.length < 2) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+            
+            try {
+                const response = await apiCall(`/admin/users?search=${encodeURIComponent(searchTerm)}&limit=10`);
+                
+                if (response.success && response.data.users.length > 0) {
+                    resultsDiv.innerHTML = '';
+                    resultsDiv.style.display = 'block';
+                    
+                    response.data.users.forEach(user => {
+                        const userDiv = document.createElement('div');
+                        userDiv.style.cssText = 'padding: 12px; border-bottom: 1px solid #E5E7EB; cursor: pointer; display: flex; justify-content: space-between; align-items: center;';
+                        userDiv.onmouseover = () => userDiv.style.background = '#F9FAFB';
+                        userDiv.onmouseout = () => userDiv.style.background = 'white';
+                        
+                        userDiv.innerHTML = `
+                            <div>
+                                <div style="font-weight: 600; color: #2E2E2E;">${user.displayName || user.name || 'No Name'}</div>
+                                <div style="font-size: 12px; color: #6B7280;">${user.email}</div>
+                            </div>
+                            <button 
+                                class="btn" 
+                                style="padding: 6px 12px; font-size: 12px; background: #B88A44;"
+                                onclick="event.stopPropagation(); exportSingleUserBusinessProfile('${user.id}', '${user.email}')"
+                            >
+                                💼 Export Profile
+                            </button>
+                        `;
+                        
+                        resultsDiv.appendChild(userDiv);
+                    });
+                } else {
+                    resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #6B7280;">No users found</div>';
+                    resultsDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                alert('❌ Search failed: ' + error.message);
+            }
+        }
+        
+        async function exportSingleUserBusinessProfile(userId, userEmail) {
+            try {
+                const response = await apiCall(`/admin/users/${userId}`);
+                
+                if (response.success) {
+                    const user = response.data;
+                    
+                    // Create CSV content for single user
+                    let csv = 'Field,Value\n';
+                    csv += `User ID,${userId}\n`;
+                    csv += `Email,${user.email || ''}\n`;
+                    csv += `Display Name,${user.displayName || user.name || ''}\n`;
+                    csv += `First Name,${user.firstName || ''}\n`;
+                    csv += `Last Name,${user.lastName || ''}\n`;
+                    csv += `Phone,${user.phone || ''}\n`;
+                    csv += `\n--- Business Profile ---\n`;
+                    csv += `Business Name,${user.businessName || 'Not provided'}\n`;
+                    csv += `Business Type,${user.businessType || 'Not provided'}\n`;
+                    csv += `Business Type Other,${user.businessTypeOther || 'N/A'}\n`;
+                    csv += `Industry,${user.industry || 'Not provided'}\n`;
+                    csv += `Number of Employees,${user.numberOfEmployees !== undefined ? user.numberOfEmployees : 'Not provided'}\n`;
+                    csv += `Physical Address,${user.physicalAddress || 'Not provided'}\n`;
+                    csv += `Tax ID Number,${user.taxIdentificationNumber || 'Not provided'}\n`;
+                    
+                    // Social media links
+                    if (user.socialMediaLinks && user.socialMediaLinks.length > 0) {
+                        csv += `\n--- Social Media ---\n`;
+                        user.socialMediaLinks.forEach(link => {
+                            csv += `${link.platform || 'Unknown'},${link.url || ''}\n`;
+                        });
+                    } else {
+                        csv += `Social Media Links,Not provided\n`;
+                    }
+                    
+                    csv += `\n--- Account Info ---\n`;
+                    csv += `Credit Balance,${user.ficoreCreditBalance || 0}\n`;
+                    csv += `Is Subscribed,${user.isSubscribed ? 'Yes' : 'No'}\n`;
+                    csv += `Subscription Type,${user.subscriptionType || 'None'}\n`;
+                    csv += `Created At,${user.createdAt || ''}\n`;
+                    csv += `Last Login,${user.lastLogin || 'Never'}\n`;
+                    
+                    // Download CSV
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `business_profile_${userEmail.replace('@', '_at_')}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    
+                    alert(`✅ Business profile for ${userEmail} exported successfully!`);
+                    
+                    // Clear search
+                    document.getElementById('userSearchInput').value = '';
+                    document.getElementById('userSearchResults').style.display = 'none';
+                } else {
+                    alert('❌ Failed to fetch user data');
                 }
             } catch (error) {
                 console.error('Export error:', error);

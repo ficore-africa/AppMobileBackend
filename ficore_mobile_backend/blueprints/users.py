@@ -20,7 +20,14 @@ def init_users_blueprint(mongo, token_required):
     return users_bp
 
 def _generate_profile_picture_signed_url(gcs_path):
-    """Generate a signed URL for a profile picture stored in GCS"""
+    """Generate a signed URL for a profile picture stored in GCS
+    
+    Args:
+        gcs_path: GCS path like 'profile_pictures/{user_id}/{uuid}.jpg'
+        
+    Returns:
+        Signed URL valid for 7 days, or None if generation fails
+    """
     if not gcs_path:
         return None
     
@@ -33,6 +40,11 @@ def _generate_profile_picture_signed_url(gcs_path):
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(gcs_path)
         
+        # Check if blob exists before generating URL
+        if not blob.exists():
+            print(f"❌ GCS blob not found: {gcs_path}")
+            return None
+        
         # Generate signed URL valid for 7 days
         signed_url = blob.generate_signed_url(
             version="v4",
@@ -40,9 +52,13 @@ def _generate_profile_picture_signed_url(gcs_path):
             method="GET"
         )
         
+        print(f"✅ Generated signed URL for: {gcs_path}")
         return signed_url
+        
     except Exception as e:
-        print(f"Error generating signed URL for {gcs_path}: {e}")
+        print(f"❌ Error generating signed URL for {gcs_path}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 @users_bp.route('/profile', methods=['GET'])
@@ -921,9 +937,13 @@ def complete_profile():
             print(f"Profile completion request from user {current_user['email']}: {data}")
             
             # Profile completion fields
+            # CRITICAL FIX: Removed 'profilePictureUrl' from profile fields
+            # Profile pictures are handled separately via GCS upload endpoint
+            # The upload endpoint stores gcsProfilePicturePath in user document
+            # Profile retrieval generates fresh signed URLs from that path
             profile_fields = [
                 'businessName', 'businessType', 'businessTypeOther', 'industry',
-                'physicalAddress', 'taxIdentificationNumber', 'profilePictureUrl',
+                'physicalAddress', 'taxIdentificationNumber',
                 'socialMediaLinks', 'numberOfEmployees'
             ]
             
@@ -943,29 +963,14 @@ def complete_profile():
             # Update profile fields
             for field in profile_fields:
                 if field in data:
-                    # Special validation for profilePictureUrl
-                    if field == 'profilePictureUrl' and data[field]:
-                        # Check if the file actually exists on the server
-                        url = data[field]
-                        if '/uploads/profile_pictures/' in url:
-                            # Extract filename from URL
-                            filename = url.split('/uploads/profile_pictures/')[-1]
-                            file_path = os.path.join(
-                                os.path.dirname(os.path.dirname(__file__)),
-                                'uploads', 'profile_pictures', filename
-                            )
-                            # Only save URL if file exists
-                            if os.path.exists(file_path):
-                                update_data[field] = data[field]
-                            else:
-                                print(f"Profile picture file not found: {file_path}. Skipping URL save.")
-                                # Don't save the URL if file doesn't exist
-                                continue
-                        else:
-                            # External URL or different format, save as-is
-                            update_data[field] = data[field]
-                    else:
-                        update_data[field] = data[field]
+                    update_data[field] = data[field]
+            
+            # CRITICAL FIX: Ignore profilePictureUrl if sent by client
+            # The signed URL from upload is temporary and will expire
+            # We rely on gcsProfilePicturePath which is set by upload endpoint
+            if 'profilePictureUrl' in data:
+                print(f"Ignoring profilePictureUrl from client (temporary signed URL)")
+                print(f"Using gcsProfilePicturePath from upload endpoint instead")
             
             # Calculate completion percentage
             user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})

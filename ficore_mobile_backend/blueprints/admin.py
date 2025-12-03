@@ -2505,5 +2505,81 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to retrieve subscriptions',
                 'errors': {'general': [str(e)]}
             }), 500
+
+    @admin_bp.route('/users/business-profiles/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_business_profiles(current_user):
+        """Export all users' business profile data to CSV format"""
+        try:
+            from io import StringIO
+            import csv
+            
+            # Get all users
+            users = list(mongo.db.users.find({}).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'User ID',
+                'Email',
+                'Display Name',
+                'Business Name',
+                'Business Type',
+                'Business Type Other',
+                'Industry',
+                'Number of Employees',
+                'Physical Address',
+                'Tax ID Number',
+                'Social Media Links',
+                'Created At',
+                'Last Login'
+            ])
+            
+            # Write user data
+            for user in users:
+                # Get social media links as string
+                social_links = ''
+                if user.get('socialMediaLinks'):
+                    links = user['socialMediaLinks']
+                    if isinstance(links, list):
+                        social_links = '; '.join([f"{link.get('platform', '')}: {link.get('url', '')}" for link in links])
+                
+                writer.writerow([
+                    str(user['_id']),
+                    user.get('email', ''),
+                    user.get('displayName', ''),
+                    user.get('businessName', ''),
+                    user.get('businessType', ''),
+                    user.get('businessTypeOther', ''),
+                    user.get('industry', ''),
+                    user.get('numberOfEmployees', ''),
+                    user.get('physicalAddress', ''),
+                    user.get('taxIdentificationNumber', ''),
+                    social_links,
+                    user.get('createdAt', datetime.utcnow()).isoformat(),
+                    user.get('lastLogin').isoformat() if user.get('lastLogin') else 'Never'
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return as downloadable file
+            from flask import make_response
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_business_profiles_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            return response
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export business profiles',
+                'errors': {'general': [str(e)]}
+            }), 500
          
     return admin_bp
