@@ -353,7 +353,7 @@ def upload_profile_picture(current_user):
         
         # Initialize Google Cloud Storage
         storage_client = storage.Client()
-        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments-hassan')
         bucket = storage_client.bucket(bucket_name)
         
         # Generate unique filename for GCS
@@ -361,38 +361,43 @@ def upload_profile_picture(current_user):
         unique_id = str(uuid.uuid4())
         gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
         
-        # Upload to Google Cloud Storage
+        # Upload to Google Cloud Storage (private bucket)
         blob = bucket.blob(gcs_filename)
         content_type = file.content_type or f'image/{file_ext}'
         blob.upload_from_file(file, content_type=content_type)
         
-        # Make blob publicly readable
-        blob.make_public()
+        # Generate signed URL (valid for 7 days)
+        # This allows private access without making the bucket public
+        from datetime import timedelta
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(days=7),
+            method="GET"
+        )
         
-        # Get public URL
-        image_url = blob.public_url
+        print(f"Profile picture uploaded to GCS for user {current_user['email']}: {gcs_filename}")
         
-        print(f"Profile picture uploaded to GCS for user {current_user['email']}: {image_url}")
-        
-        # Update user profile with new picture URL
+        # Update user profile with GCS path (not the signed URL)
+        # We'll generate fresh signed URLs when needed
         mongo.db.users.update_one(
             {'_id': current_user['_id']},
             {
                 '$set': {
-                    'profilePictureUrl': image_url,
-                    'gcsProfilePicturePath': gcs_filename,  # Store GCS path for future reference
+                    'gcsProfilePicturePath': gcs_filename,  # Store GCS path
+                    'profilePictureUrl': None,  # Clear old URL if any
                     'updatedAt': datetime.utcnow()
                 }
             }
         )
         
-        print(f"Profile picture URL saved to database: {image_url}")
+        print(f"Profile picture path saved to database: {gcs_filename}")
         
         return jsonify({
             'success': True,
             'data': {
-                'image_url': image_url,
-                'url': image_url  # Alias for compatibility
+                'image_url': signed_url,  # Return signed URL for immediate use
+                'url': signed_url,  # Alias for compatibility
+                'gcs_path': gcs_filename  # Include path for reference
             },
             'message': 'Profile picture uploaded successfully'
         }), 200

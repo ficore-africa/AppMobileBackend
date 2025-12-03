@@ -19,6 +19,32 @@ def init_users_blueprint(mongo, token_required):
     users_bp.tracker = create_tracker(mongo.db)
     return users_bp
 
+def _generate_profile_picture_signed_url(gcs_path):
+    """Generate a signed URL for a profile picture stored in GCS"""
+    if not gcs_path:
+        return None
+    
+    try:
+        from google.cloud import storage
+        from datetime import timedelta
+        
+        storage_client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(gcs_path)
+        
+        # Generate signed URL valid for 7 days
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(days=7),
+            method="GET"
+        )
+        
+        return signed_url
+    except Exception as e:
+        print(f"Error generating signed URL for {gcs_path}: {e}")
+        return None
+
 @users_bp.route('/profile', methods=['GET'])
 def get_profile():
     @users_bp.token_required
@@ -41,11 +67,17 @@ def get_profile():
                 'financialGoals': current_user.get('financialGoals', []),
                 'createdAt': current_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': current_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if current_user.get('lastLogin') else None,
-                # CRITICAL FIX: Include profile picture URL and business info
-                'profilePictureUrl': current_user.get('profilePictureUrl'),
+                # CRITICAL FIX: Generate signed URL for profile picture if GCS path exists
+                'profilePictureUrl': _generate_profile_picture_signed_url(current_user.get('gcsProfilePicturePath')),
                 'businessName': current_user.get('businessName'),
                 'businessType': current_user.get('businessType'),
+                'businessTypeOther': current_user.get('businessTypeOther'),
                 'industry': current_user.get('industry'),
+                'numberOfEmployees': current_user.get('numberOfEmployees'),
+                'physicalAddress': current_user.get('physicalAddress'),
+                'taxIdentificationNumber': current_user.get('taxIdentificationNumber'),
+                'socialMediaLinks': current_user.get('socialMediaLinks'),
+                'profileCompletionPercentage': current_user.get('profileCompletionPercentage', 0),
                 # Add subscription information to profile
                 'isSubscribed': current_user.get('isSubscribed', False),
                 'subscriptionType': current_user.get('subscriptionType'),
