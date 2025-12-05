@@ -116,22 +116,24 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
         }
     }
     
-    # Earning milestones configuration
+    # Earning milestones configuration - OPTIMIZED (Recommendation #1: Reduced FC earning potential)
+    # Total possible earnings reduced from ~109 FC to ~35 FC
     EARNING_CONFIG = {
         'streak_milestones': {
-            7: {'amount': 10.0, 'flag': 'earned_7day_streak_bonus'},
-            30: {'amount': 25.0, 'flag': 'earned_30day_streak_bonus'},
-            90: {'amount': 50.0, 'flag': 'earned_90day_streak_bonus'}
+            7: {'amount': 5.0, 'flag': 'earned_7day_streak_bonus'},      # REDUCED: 10 → 5 FC
+            30: {'amount': 10.0, 'flag': 'earned_30day_streak_bonus'},   # REDUCED: 25 → 10 FC
+            90: {'amount': 15.0, 'flag': 'earned_90day_streak_bonus'}    # REDUCED: 50 → 15 FC
         },
         'entry_streak_milestones': {
             100: {'discount_percentage': 30, 'flag': 'earned_100day_entry_streak_discount'}
         },
         'exploration_bonuses': {
-            'first_debtors_access': {'amount': 2.0, 'flag': 'earned_first_debtors_access_bonus'},
-            'first_creditors_access': {'amount': 2.0, 'flag': 'earned_first_creditors_access_bonus'},
-            'first_inventory_access': {'amount': 2.0, 'flag': 'earned_first_inventory_access_bonus'},
-            'first_advanced_report': {'amount': 5.0, 'flag': 'earned_first_advanced_report_bonus'},
-            'profile_completion': {'amount': 10.0, 'flag': 'earned_profile_complete_bonus'}
+            # REDUCED: Only reward for premium feature exploration (not basic Income/Expense)
+            'first_debtors_access': {'amount': 1.0, 'flag': 'earned_first_debtors_access_bonus'},      # REDUCED: 2 → 1 FC
+            'first_creditors_access': {'amount': 1.0, 'flag': 'earned_first_creditors_access_bonus'},  # REDUCED: 2 → 1 FC
+            'first_inventory_access': {'amount': 1.0, 'flag': 'earned_first_inventory_access_bonus'},  # REDUCED: 2 → 1 FC
+            'first_advanced_report': {'amount': 2.0, 'flag': 'earned_first_advanced_report_bonus'},    # REDUCED: 5 → 2 FC
+            # REMOVED: Profile completion bonus (was 10 FC) - profile completion should be expected, not rewarded
         }
     }
 
@@ -214,10 +216,22 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
             # Calculate progress metrics
             progress_metrics = _calculate_progress_metrics(user, current_streak, entry_streak)
             
+            # RECOMMENDATION #6: Check FC cap status
+            MAX_EARNED_FC_CAP = 250.0
+            current_fc_balance = float(user.get('ficoreCreditBalance', 0.0))
+            fc_cap_info = {
+                'max_cap': MAX_EARNED_FC_CAP,
+                'current_balance': current_fc_balance,
+                'at_cap': current_fc_balance >= MAX_EARNED_FC_CAP,
+                'remaining_to_cap': max(0, MAX_EARNED_FC_CAP - current_fc_balance),
+                'cap_message': 'You\'ve reached your max FC wallet limit! Upgrade to Premium or spend FCs to earn more.' if current_fc_balance >= MAX_EARNED_FC_CAP else None
+            }
+            
             return jsonify({
                 'success': True,
                 'data': {
-                    'fc_balance': float(user.get('ficoreCreditBalance', 0.0)),
+                    'fc_balance': current_fc_balance,
+                    'fc_cap_info': fc_cap_info,  # NEW: FC cap information
                     'streak': current_streak,
                     'entry_streak': entry_streak,
                     'next_milestone': next_milestone,
@@ -770,11 +784,34 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
     def _check_and_award_streak_milestones(mongo, current_user, streak, user):
         """Check and award streak milestone bonuses"""
         try:
+            # RECOMMENDATION #6: Soft cap on earned FCs (250 FC max)
+            MAX_EARNED_FC_CAP = 250.0
+            
             for milestone, config in EARNING_CONFIG['streak_milestones'].items():
                 if streak >= milestone and not user.get(config['flag'], False):
                     # Award milestone bonus
                     current_balance = user.get('ficoreCreditBalance', 0.0)
-                    new_balance = current_balance + config['amount']
+                    
+                    # Check if user has reached the soft cap
+                    if current_balance >= MAX_EARNED_FC_CAP:
+                        # User has reached max earned FC limit - don't award more
+                        print(f"User {current_user['_id']} has reached FC cap ({MAX_EARNED_FC_CAP}). Streak bonus not awarded.")
+                        # Still mark the milestone as earned to prevent repeated attempts
+                        mongo.db.users.update_one(
+                            {'_id': current_user['_id']},
+                            {'$set': {config['flag']: True}}
+                        )
+                        continue
+                    
+                    # Calculate new balance with cap enforcement
+                    potential_new_balance = current_balance + config['amount']
+                    if potential_new_balance > MAX_EARNED_FC_CAP:
+                        # Award partial amount to reach cap
+                        actual_amount = MAX_EARNED_FC_CAP - current_balance
+                        new_balance = MAX_EARNED_FC_CAP
+                    else:
+                        actual_amount = config['amount']
+                        new_balance = potential_new_balance
                     
                     # Update user balance and flag
                     mongo.db.users.update_one(
@@ -787,32 +824,44 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                         }
                     )
                     
-                    # Create transaction record
+                    # Create transaction record with expiration (Recommendation #2: FC Expiration)
+                    expiry_date = datetime.utcnow() + timedelta(days=60)  # 60-day expiration for earned FCs
                     transaction = {
                         '_id': ObjectId(),
                         'userId': current_user['_id'],
                         'type': 'credit',
-                        'amount': config['amount'],
-                        'description': f'Streak milestone bonus - {milestone} days',
+                        'amount': actual_amount,  # Use actual amount (may be capped)
+                        'description': f'Streak milestone bonus - {milestone} days' + (' (capped)' if actual_amount < config['amount'] else ''),
                         'operation': f'streak_milestone_{milestone}d',
                         'balanceBefore': current_balance,
                         'balanceAfter': new_balance,
                         'status': 'completed',
                         'createdAt': datetime.utcnow(),
+                        'expiresAt': expiry_date,  # NEW: Expiration tracking
+                        'isEarned': True,  # NEW: Mark as earned (not purchased)
                         'metadata': {
                             'milestone': milestone,
-                            'streak_bonus': True
+                            'streak_bonus': True,
+                            'expires_in_days': 60,
+                            'capped': actual_amount < config['amount'],
+                            'original_amount': config['amount']
                         }
                     }
                     mongo.db.credit_transactions.insert_one(transaction)
                     
-                    print(f"Awarded {config['amount']} FCs for {milestone}-day streak milestone")
+                    if actual_amount < config['amount']:
+                        print(f"Awarded {actual_amount} FCs (capped from {config['amount']}) for {milestone}-day streak milestone - User reached FC cap")
+                    else:
+                        print(f"Awarded {actual_amount} FCs for {milestone}-day streak milestone")
         except Exception as e:
             print(f"Error awarding streak milestones: {str(e)}")
 
     def _check_and_award_exploration_bonuses(mongo, current_user, action, module, user):
         """Check and award exploration bonuses"""
         try:
+            # RECOMMENDATION #6: Soft cap on earned FCs (250 FC max)
+            MAX_EARNED_FC_CAP = 250.0
+            
             bonus_key = None
             
             # Map actions to bonus keys
@@ -833,7 +882,27 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                 if not user.get(config['flag'], False):
                     # Award exploration bonus
                     current_balance = user.get('ficoreCreditBalance', 0.0)
-                    new_balance = current_balance + config['amount']
+                    
+                    # Check if user has reached the soft cap
+                    if current_balance >= MAX_EARNED_FC_CAP:
+                        # User has reached max earned FC limit - don't award more
+                        print(f"User {current_user['_id']} has reached FC cap ({MAX_EARNED_FC_CAP}). Exploration bonus not awarded.")
+                        # Still mark the bonus as earned to prevent repeated attempts
+                        mongo.db.users.update_one(
+                            {'_id': current_user['_id']},
+                            {'$set': {config['flag']: True}}
+                        )
+                        return
+                    
+                    # Calculate new balance with cap enforcement
+                    potential_new_balance = current_balance + config['amount']
+                    if potential_new_balance > MAX_EARNED_FC_CAP:
+                        # Award partial amount to reach cap
+                        actual_amount = MAX_EARNED_FC_CAP - current_balance
+                        new_balance = MAX_EARNED_FC_CAP
+                    else:
+                        actual_amount = config['amount']
+                        new_balance = potential_new_balance
                     
                     # Update user balance and flag
                     mongo.db.users.update_one(
@@ -846,26 +915,35 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                         }
                     )
                     
-                    # Create transaction record
+                    # Create transaction record with expiration (Recommendation #2: FC Expiration)
+                    expiry_date = datetime.utcnow() + timedelta(days=60)  # 60-day expiration for earned FCs
                     transaction = {
                         '_id': ObjectId(),
                         'userId': current_user['_id'],
                         'type': 'credit',
-                        'amount': config['amount'],
-                        'description': f'Exploration bonus - {bonus_key.replace("_", " ").title()}',
+                        'amount': actual_amount,  # Use actual amount (may be capped)
+                        'description': f'Exploration bonus - {bonus_key.replace("_", " ").title()}' + (' (capped)' if actual_amount < config['amount'] else ''),
                         'operation': f'exploration_{bonus_key}',
                         'balanceBefore': current_balance,
                         'balanceAfter': new_balance,
                         'status': 'completed',
                         'createdAt': datetime.utcnow(),
+                        'expiresAt': expiry_date,  # NEW: Expiration tracking
+                        'isEarned': True,  # NEW: Mark as earned (not purchased)
                         'metadata': {
                             'exploration_bonus': True,
-                            'bonus_type': bonus_key
+                            'bonus_type': bonus_key,
+                            'expires_in_days': 60,
+                            'capped': actual_amount < config['amount'],
+                            'original_amount': config['amount']
                         }
                     }
                     mongo.db.credit_transactions.insert_one(transaction)
                     
-                    print(f"Awarded {config['amount']} FCs for {bonus_key} exploration bonus")
+                    if actual_amount < config['amount']:
+                        print(f"Awarded {actual_amount} FCs (capped from {config['amount']}) for {bonus_key} exploration bonus - User reached FC cap")
+                    else:
+                        print(f"Awarded {actual_amount} FCs for {bonus_key} exploration bonus")
         except Exception as e:
             print(f"Error awarding exploration bonuses: {str(e)}")
 

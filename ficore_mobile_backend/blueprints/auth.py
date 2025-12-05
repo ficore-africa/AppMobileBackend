@@ -187,7 +187,7 @@ def signup():
             # Prefer explicit displayName if provided by client (business name), else generate from names
             'displayName': display_name.strip() if display_name and isinstance(display_name, str) and display_name.strip() else f"{first_name} {last_name}",
             'role': 'personal',
-            'ficoreCreditBalance': 10.0,  # Starting balance: 10 FC
+            'ficoreCreditBalance': 5.0,  # REDUCED: Starting balance reduced from 10 FC to 5 FC (Recommendation #1)
             'financialGoals': financial_goals,
             'createdAt': datetime.utcnow(),
             'lastLogin': None,

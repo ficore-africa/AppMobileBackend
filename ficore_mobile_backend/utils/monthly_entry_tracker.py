@@ -166,7 +166,7 @@ class MonthlyEntryTracker:
             remaining = 999999  # Always unlimited remaining
             is_over_limit = False  # Premium users never over limit
         else:
-            limit = 100  # Free tier limit
+            limit = 20  # REDUCED: Free tier limit reduced from 100 to 20 (Recommendation #3)
             remaining = max(0, limit - total_count)
             is_over_limit = total_count >= limit
         
@@ -248,7 +248,7 @@ class MonthlyEntryTracker:
         if monthly_data['is_over_limit']:
             return {
                 'allowed': False,
-                'reason': f'Monthly limit reached ({monthly_data["limit"]} entries). Upgrade to Premium for unlimited entries or wait until next month.',
+                'reason': f'Monthly limit reached ({monthly_data["limit"]} entries). Upgrade to Premium (₦10,000/year) for unlimited entries or purchase FCs.',
                 'monthly_data': monthly_data
             }
         
