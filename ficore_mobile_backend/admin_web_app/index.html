@@ -402,7 +402,7 @@
         })();
 
         console.log('🔗 API Base URL:', API_BASE_URL);
-        let authToken = null;
+        let authToken = localStorage.getItem('admin_token');
         let currentRequestId = null;
 
         // Initialize the app
@@ -411,7 +411,7 @@
             document.getElementById('apiUrl').textContent = API_BASE_URL;
             document.getElementById('customApiUrl').value = API_BASE_URL;
 
-            const savedToken = localStorage.getItem('adminToken');
+            const savedToken = localStorage.getItem('admin_token');
             if (savedToken) {
                 console.log('Found saved token, attempting to show dashboard');
                 authToken = savedToken;
@@ -456,7 +456,7 @@
 
                 if (data.success && data.data.user.role === 'admin') {
                     authToken = data.data.token || data.data.access_token;
-                    localStorage.setItem('adminToken', authToken);
+                    localStorage.setItem('admin_token', authToken);
                     document.getElementById('adminName').textContent = data.data.user.displayName || 'Admin';
                     showDashboard();
                     loadDashboardData();
@@ -499,7 +499,7 @@
 
         function logout() {
             console.log('Logging out');
-            localStorage.removeItem('adminToken');
+            localStorage.removeItem('admin_token');
             authToken = null;
             showLogin();
         }
