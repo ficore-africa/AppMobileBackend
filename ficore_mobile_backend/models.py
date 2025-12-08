@@ -55,7 +55,7 @@ class DatabaseSchema:
             'numberOfEmployees': Optional[int],  # Number of employees (0 for none)
             'profileCompletionPercentage': Optional[float],  # Calculated completion percentage
             
-            # Subscription fields
+            # Subscription fields (current/active subscription)
             'isSubscribed': bool,  # Subscription status, default: False
             'subscriptionType': Optional[str],  # 'monthly', 'annually', null
             'subscriptionStartDate': Optional[datetime],  # Subscription start date
@@ -63,6 +63,25 @@ class DatabaseSchema:
             'subscriptionAutoRenew': bool,  # Auto-renewal setting, default: False
             'paymentMethodDetails': Optional[Dict[str, str]],  # Encrypted payment details
             'trialExpiryDate': Optional[datetime],  # Trial expiry date
+            
+            # Subscription history and tracking (NEW - for historical tracking)
+            'wasPremium': Optional[bool],  # Flag indicating user was previously premium
+            'lastPremiumDate': Optional[datetime],  # When user was last premium
+            'totalPremiumDays': Optional[int],  # Lifetime total days as premium user
+            'premiumExpiryCount': Optional[int],  # Number of times subscription expired
+            'subscriptionHistory': Optional[List[Dict[str, Any]]],  # Historical subscription periods
+            # subscriptionHistory structure:
+            # [{
+            #     'planType': str,  # 'monthly', 'annually'
+            #     'startDate': datetime,
+            #     'endDate': datetime,
+            #     'autoRenew': bool,
+            #     'status': str,  # 'expired', 'cancelled', 'completed'
+            #     'terminatedAt': datetime,
+            #     'terminationReason': str,  # 'natural_expiry', 'admin_revoked', 'payment_failed', 'user_cancelled'
+            #     'totalDaysActive': int,
+            #     'paymentMethod': str
+            # }]
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled

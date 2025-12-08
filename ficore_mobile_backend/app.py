@@ -33,6 +33,7 @@ from blueprints.subscription_discounts import init_subscription_discounts_bluepr
 from blueprints.reminders import init_reminders_blueprint
 from blueprints.analytics import init_analytics_blueprint
 from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprint
+from blueprints.admin_subscription_management import init_admin_subscription_management_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -268,6 +269,7 @@ subscription_blueprint = init_subscription_blueprint(mongo, token_required, seri
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
 reminders_blueprint = init_reminders_blueprint(mongo, token_required, serialize_doc)
 analytics_blueprint = init_analytics_blueprint(mongo, token_required, admin_required, serialize_doc)
+admin_subscription_management_blueprint = init_admin_subscription_management_blueprint(mongo, token_required, admin_required, serialize_doc)
 
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
@@ -297,6 +299,7 @@ app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
 app.register_blueprint(reminders_blueprint)
 app.register_blueprint(analytics_blueprint)
+app.register_blueprint(admin_subscription_management_blueprint)
 app.register_blueprint(rate_limit_monitoring_blueprint)
 
 # Root redirect to admin login
@@ -827,6 +830,22 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"⚠️  Migration error (non-fatal): {str(e)}\n")
         # Don't fail app startup if migrations fail
+    
+    # Initialize subscription scheduler
+    try:
+        print("🕐 Initializing subscription scheduler...")
+        from utils.subscription_scheduler import SubscriptionScheduler
+        subscription_scheduler = SubscriptionScheduler(mongo.db)
+        subscription_scheduler.start()
+        print("✅ Subscription scheduler started\n")
+        print("   - Daily expiration processing at 2:00 AM UTC")
+        print("   - Daily expiry warnings at 10:00 AM UTC")
+        print("   - Daily renewal reminders at 9:00 AM UTC")
+        print("   - Daily re-engagement messages at 11:00 AM UTC")
+        print("   - Daily auto-renewal processing at 1:00 AM UTC\n")
+    except Exception as e:
+        print(f"⚠️  Scheduler initialization error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if scheduler fails
     
     app.run(debug=True, host='0.0.0.0', port=5000)
 

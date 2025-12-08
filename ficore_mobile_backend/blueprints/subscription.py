@@ -495,6 +495,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     def get_subscription_status(current_user):
         """Get user's current subscription status"""
         try:
+            from utils.subscription_expiration_manager import SubscriptionExpirationManager
+            
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             
             is_subscribed = user.get('isSubscribed', False)
@@ -509,11 +511,13 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 # Add 24-hour grace period to prevent immediate reversion of admin grants
                 grace_period_end = end_date + timedelta(hours=24)
                 if grace_period_end <= datetime.utcnow():
-                    # Subscription expired beyond grace period, update status
-                    mongo.db.users.update_one(
-                        {'_id': current_user['_id']},
-                        {'$set': {'isSubscribed': False}}
-                    )
+                    # Subscription expired beyond grace period
+                    # Use expiration manager for proper handling with history tracking
+                    expiration_manager = SubscriptionExpirationManager(mongo.db)
+                    expiration_manager._process_single_expiration(user)
+                    
+                    # Reload user to get updated status
+                    user = mongo.db.users.find_one({'_id': current_user['_id']})
                     is_subscribed = False
             
             status_data = {
