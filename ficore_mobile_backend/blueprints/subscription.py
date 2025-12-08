@@ -8,7 +8,9 @@ import hashlib
 import traceback
 
 def init_subscription_blueprint(mongo, token_required, serialize_doc):
+    from utils.analytics_tracker import create_tracker
     subscription_bp = Blueprint('subscription', __name__, url_prefix='/subscription')
+    tracker = create_tracker(mongo.db)
     
     # Paystack configuration
     PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
@@ -17,33 +19,35 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     
     # Subscription plans configuration
     SUBSCRIPTION_PLANS = {
-        'monthly': {
-            'name': 'Monthly Premium',
-            'price': 2500.0,  # ₦2,500 per month
-            'duration_days': 30,
-            'paystack_plan_code': 'PLN_monthly_premium',
-            'description': 'Unlimited operations for 30 days',
-            'features': [
-                'Unlimited Income/Expense entries',
-                'Unlimited PDF exports',
-                'All premium features',
-                'Priority support',
-                'No FC costs for any operations'
-            ]
-        },
+        # MONTHLY PLAN COMMENTED OUT - Only offering yearly subscription
+        # 'monthly': {
+        #     'name': 'Monthly Premium',
+        #     'price': 2500.0,  # ₦2,500 per month
+        #     'duration_days': 30,
+        #     'paystack_plan_code': 'PLN_monthly_premium',
+        #     'description': 'Unlimited operations for 30 days',
+        #     'features': [
+        #         'Unlimited Income/Expense entries',
+        #         'Unlimited PDF exports',
+        #         'All premium features',
+        #         'Priority support',
+        #         'No FC costs for any operations'
+        #     ]
+        # },
         'annually': {
             'name': 'Annual Premium',
-            'price': 25000.0,  # ₦25,000 per year (2.5 months free)
+            'price': 10000.0,  # ₦10,000 per year - Simple, affordable yearly subscription
             'duration_days': 365,
             'paystack_plan_code': 'PLN_annual_premium',
-            'description': 'Unlimited operations for 365 days (Save 2.5 months!)',
+            'description': 'One-time yearly payment - Full access for 365 days',
             'features': [
                 'Unlimited Income/Expense entries',
-                'Unlimited PDF exports',
-                'All premium features',
+                'Full DIICE Business Suite access',
+                'Unlimited PDF exports & analytics',
+                'All premium features unlocked',
                 'Priority support',
                 'No FC costs for any operations',
-                'Save ₦5,000 compared to monthly'
+                'Less than ₦1,000 per month'
             ]
         }
     }
@@ -95,11 +99,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     'savings': None
                 }
                 
-                # Calculate savings for annual plan
-                if plan_id == 'annually':
-                    monthly_yearly_cost = SUBSCRIPTION_PLANS['monthly']['price'] * 12
-                    savings = monthly_yearly_cost - plan_data['price']
-                    plan_info['savings'] = savings
+                # No savings calculation needed - only one plan available
+                # Savings messaging is built into the features list
                 
                 plans.append(plan_info)
             
@@ -319,6 +320,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     }
                 }
             )
+            
+            # Track subscription started event
+            try:
+                tracker.track_subscription_started(
+                    user_id=user_id,
+                    subscription_type=plan_type,
+                    amount=plan['price']
+                )
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
             
             # Create subscription record
             subscription_record = {

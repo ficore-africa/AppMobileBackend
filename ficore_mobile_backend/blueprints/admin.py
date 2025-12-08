@@ -43,10 +43,27 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def get_dashboard_stats(current_user):
         """Get comprehensive dashboard statistics for admin"""
         try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
             # User statistics
             total_users = mongo.db.users.count_documents({})
             active_users = mongo.db.users.count_documents({'isActive': True})
             admin_users = mongo.db.users.count_documents({'role': 'admin'})
+            
+            # Active users by timeframe (users who logged in within timeframe)
+            active_users_timeframe = mongo.db.users.count_documents({
+                'lastLogin': {'$gte': timeframe_start}
+            })
+            
+            # Inactive users (never logged in or not logged in within timeframe)
+            inactive_users_timeframe = total_users - active_users_timeframe
+            
+            # New users in timeframe
+            new_users_timeframe = mongo.db.users.count_documents({
+                'createdAt': {'$gte': timeframe_start}
+            })
             
             # Credit statistics
             pending_credit_requests = mongo.db.credit_requests.count_documents({'status': 'pending'})
@@ -114,6 +131,10 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'totalUsers': total_users,
                 'activeUsers': active_users,
                 'adminUsers': admin_users,
+                'activeUsersTimeframe': active_users_timeframe,
+                'inactiveUsersTimeframe': inactive_users_timeframe,
+                'newUsersTimeframe': new_users_timeframe,
+                'timeframeDays': timeframe_days,
                 'totalBudgets': total_budgets,
                 'budgetsThisMonth': budgets_this_month,
                 'pendingCreditRequests': pending_credit_requests,
@@ -132,6 +153,241 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve dashboard statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_users(current_user):
+        """Export all users data to CSV format"""
+        try:
+            from io import StringIO
+            import csv
+            
+            # Get filter parameters
+            status_filter = request.args.get('status', 'all')  # all, active, inactive
+            timeframe_days = int(request.args.get('timeframe', 0))  # 0 = all time
+            
+            # Build query
+            query = {}
+            if status_filter == 'active':
+                if timeframe_days > 0:
+                    timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+                    query['lastLogin'] = {'$gte': timeframe_start}
+                else:
+                    query['isActive'] = True
+            elif status_filter == 'inactive':
+                if timeframe_days > 0:
+                    timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+                    query['$or'] = [
+                        {'lastLogin': {'$lt': timeframe_start}},
+                        {'lastLogin': {'$exists': False}}
+                    ]
+                else:
+                    query['isActive'] = False
+            
+            # Get all users matching criteria
+            users = list(mongo.db.users.find(query).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'User ID',
+                'Email',
+                'First Name',
+                'Last Name',
+                'Display Name',
+                'Phone',
+                'Role',
+                'Credit Balance',
+                'Is Active',
+                'Is Subscribed',
+                'Subscription Type',
+                'Setup Complete',
+                'Created At',
+                'Last Login',
+                'Language'
+            ])
+            
+            # Write user data
+            for user in users:
+                writer.writerow([
+                    str(user['_id']),
+                    user.get('email', ''),
+                    user.get('firstName', ''),
+                    user.get('lastName', ''),
+                    user.get('displayName', ''),
+                    user.get('phone', ''),
+                    user.get('role', 'personal'),
+                    user.get('ficoreCreditBalance', 0.0),
+                    'Yes' if user.get('isActive', True) else 'No',
+                    'Yes' if user.get('isSubscribed', False) else 'No',
+                    user.get('subscriptionType', 'None'),
+                    'Yes' if user.get('setupComplete', False) else 'No',
+                    user.get('createdAt', datetime.utcnow()).isoformat(),
+                    user.get('lastLogin').isoformat() if user.get('lastLogin') else 'Never',
+                    user.get('language', 'en')
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return as downloadable file
+            from flask import make_response
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_users_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            return response
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/list/active', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_active_users_list(current_user):
+        """Get detailed list of active users within timeframe"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            # Get pagination
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            skip = (page - 1) * limit
+            
+            # Query for active users (logged in within timeframe)
+            query = {'lastLogin': {'$gte': timeframe_start}}
+            
+            total = mongo.db.users.count_documents(query)
+            users = list(mongo.db.users.find(query)
+                        .sort('lastLogin', -1)
+                        .skip(skip)
+                        .limit(limit))
+            
+            # Format user data
+            user_list = []
+            for user in users:
+                user_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'phone': user.get('phone', ''),
+                    'ficoreCreditBalance': user.get('ficoreCreditBalance', 0.0),
+                    'isSubscribed': user.get('isSubscribed', False),
+                    'subscriptionType': user.get('subscriptionType'),
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
+                    'daysSinceLastLogin': (datetime.utcnow() - user.get('lastLogin')).days if user.get('lastLogin') else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': user_list,
+                    'timeframeDays': timeframe_days,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': f'Active users (last {timeframe_days} days) retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve active users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/list/inactive', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_inactive_users_list(current_user):
+        """Get detailed list of inactive users (not logged in within timeframe)"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            # Get pagination
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            skip = (page - 1) * limit
+            
+            # Query for inactive users (not logged in within timeframe or never logged in)
+            query = {
+                '$or': [
+                    {'lastLogin': {'$lt': timeframe_start}},
+                    {'lastLogin': {'$exists': False}},
+                    {'lastLogin': None}
+                ]
+            }
+            
+            total = mongo.db.users.count_documents(query)
+            users = list(mongo.db.users.find(query)
+                        .sort('createdAt', -1)
+                        .skip(skip)
+                        .limit(limit))
+            
+            # Format user data
+            user_list = []
+            for user in users:
+                last_login = user.get('lastLogin')
+                days_since_login = None
+                if last_login:
+                    days_since_login = (datetime.utcnow() - last_login).days
+                
+                user_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'phone': user.get('phone', ''),
+                    'ficoreCreditBalance': user.get('ficoreCreditBalance', 0.0),
+                    'isSubscribed': user.get('isSubscribed', False),
+                    'subscriptionType': user.get('subscriptionType'),
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    'lastLogin': last_login.isoformat() + 'Z' if last_login else 'Never',
+                    'daysSinceLastLogin': days_since_login,
+                    'neverLoggedIn': last_login is None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': user_list,
+                    'timeframeDays': timeframe_days,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': f'Inactive users (not active in last {timeframe_days} days) retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve inactive users',
                 'errors': {'general': [str(e)]}
             }), 500
 
@@ -667,6 +923,16 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
                 'financialGoals': user.get('financialGoals', []),
+                # Business Profile Fields
+                'businessName': user.get('businessName'),
+                'businessType': user.get('businessType'),
+                'businessTypeOther': user.get('businessTypeOther'),
+                'industry': user.get('industry'),
+                'numberOfEmployees': user.get('numberOfEmployees'),
+                'physicalAddress': user.get('physicalAddress'),
+                'taxIdentificationNumber': user.get('taxIdentificationNumber'),
+                'socialMediaLinks': user.get('socialMediaLinks'),
+                'profileCompletionPercentage': user.get('profileCompletionPercentage', 0),
                 # Subscription info
                 'isSubscribed': user.get('isSubscribed', False),
                 'subscriptionType': user.get('subscriptionType'),
@@ -1818,6 +2084,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 mongo.db.subscriptions.update_one(
                     {'userId': ObjectId(user_id)},
                     {'$set': {
+                        'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
                         'planId': plan_id,
                         'planName': data.get('planName', plan_id),
                         'startDate': start_date,
@@ -1838,6 +2105,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 subscription_data = {
                     '_id': subscription_id,
                     'userId': ObjectId(user_id),
+                    'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
                     'planId': plan_id,
                     'planName': data.get('planName', plan_id),
                     'startDate': start_date,
@@ -2245,6 +2513,270 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve subscriptions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/business-profiles/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_business_profiles(current_user):
+        """Export all users' business profile data to CSV format"""
+        try:
+            from io import StringIO
+            import csv
+            
+            # Get all users
+            users = list(mongo.db.users.find({}).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'User ID',
+                'Email',
+                'Display Name',
+                'Business Name',
+                'Business Type',
+                'Business Type Other',
+                'Industry',
+                'Number of Employees',
+                'Physical Address',
+                'Tax ID Number',
+                'Social Media Links',
+                'Created At',
+                'Last Login'
+            ])
+            
+            # Write user data
+            for user in users:
+                # Get social media links as string
+                social_links = ''
+                if user.get('socialMediaLinks'):
+                    links = user['socialMediaLinks']
+                    if isinstance(links, list):
+                        social_links = '; '.join([f"{link.get('platform', '')}: {link.get('url', '')}" for link in links])
+                
+                writer.writerow([
+                    str(user['_id']),
+                    user.get('email', ''),
+                    user.get('displayName', ''),
+                    user.get('businessName', ''),
+                    user.get('businessType', ''),
+                    user.get('businessTypeOther', ''),
+                    user.get('industry', ''),
+                    user.get('numberOfEmployees', ''),
+                    user.get('physicalAddress', ''),
+                    user.get('taxIdentificationNumber', ''),
+                    social_links,
+                    user.get('createdAt', datetime.utcnow()).isoformat(),
+                    user.get('lastLogin').isoformat() if user.get('lastLogin') else 'Never'
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return as downloadable file
+            from flask import make_response
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_business_profiles_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            return response
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export business profiles',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== SUBSCRIPTION PLANS ENDPOINT =====
+
+    @admin_bp.route('/subscription-plans', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_subscription_plans(current_user):
+        """Get available subscription plans with pricing (admin only)"""
+        try:
+            plans = [
+                {
+                    'id': 'MONTHLY',
+                    'name': 'Monthly Premium',
+                    'duration': 30,
+                    'durationUnit': 'days',
+                    'amount': 2500.0,
+                    'currency': 'NGN',
+                    'features': [
+                        'Unlimited transactions',
+                        'Advanced analytics',
+                        'Priority support',
+                        'Export to Excel/PDF',
+                        'Multi-currency support'
+                    ]
+                },
+                {
+                    'id': 'ANNUAL',
+                    'name': 'Annual Premium',
+                    'duration': 365,
+                    'durationUnit': 'days',
+                    'amount': 10000.0,
+                    'currency': 'NGN',
+                    'features': [
+                        'Unlimited transactions',
+                        'Advanced analytics',
+                        'Priority support',
+                        'Export to Excel/PDF',
+                        'Multi-currency support',
+                        '2 months free (vs monthly)'
+                    ],
+                    'savings': '17% savings vs monthly'
+                },
+                {
+                    'id': 'CUSTOM',
+                    'name': 'Custom Duration',
+                    'duration': null,
+                    'durationUnit': 'days',
+                    'amount': null,
+                    'currency': 'NGN',
+                    'description': 'Specify custom duration and amount'
+                }
+            ]
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'plans': plans
+                },
+                'message': 'Subscription plans retrieved successfully'
+            })
+
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve subscription plans',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== AUDIT LOGS ENDPOINT =====
+
+    @admin_bp.route('/audit-logs', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_audit_logs(current_user):
+        """Get audit logs with filtering capabilities (admin only)"""
+        try:
+            # Get filter parameters
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            event_type = request.args.get('eventType', '')  # admin_credit_adjustment, subscription_granted, etc.
+            admin_id = request.args.get('adminId', '')
+            user_id = request.args.get('userId', '')
+            start_date = request.args.get('startDate', '')
+            end_date = request.args.get('endDate', '')
+
+            # Collect audit logs from multiple collections
+            all_logs = []
+
+            # Build query for credit events
+            credit_query = {}
+            if event_type and event_type.startswith('credit'):
+                credit_query['eventType'] = event_type
+            if admin_id:
+                credit_query['adminId'] = ObjectId(admin_id)
+            if user_id:
+                credit_query['userId'] = ObjectId(user_id)
+            if start_date or end_date:
+                credit_query['timestamp'] = {}
+                if start_date:
+                    credit_query['timestamp']['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
+                if end_date:
+                    credit_query['timestamp']['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
+
+            # Get credit events
+            if not event_type or 'credit' in event_type:
+                credit_events = list(mongo.db.credit_events.find(credit_query).sort('timestamp', -1))
+                for event in credit_events:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': event['userId']})
+                    all_logs.append({
+                        'id': str(event['_id']),
+                        'eventType': event['eventType'],
+                        'timestamp': event['timestamp'].isoformat() + 'Z',
+                        'adminId': str(event['adminId']),
+                        'adminName': event.get('adminName', 'Admin'),
+                        'userId': str(event['userId']),
+                        'userEmail': user.get('email', '') if user else '',
+                        'userName': user.get('displayName', '') if user else '',
+                        'reason': event.get('reason', ''),
+                        'metadata': event.get('metadata', {}),
+                        'category': 'credit'
+                    })
+
+            # Build query for subscription events
+            subscription_query = {}
+            if event_type and event_type.startswith('subscription'):
+                subscription_query['eventType'] = event_type
+            if admin_id:
+                subscription_query['adminId'] = ObjectId(admin_id)
+            if user_id:
+                subscription_query['userId'] = ObjectId(user_id)
+            if start_date or end_date:
+                subscription_query['timestamp'] = {}
+                if start_date:
+                    subscription_query['timestamp']['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
+                if end_date:
+                    subscription_query['timestamp']['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
+
+            # Get subscription events
+            if not event_type or 'subscription' in event_type:
+                subscription_events = list(mongo.db.subscription_events.find(subscription_query).sort('timestamp', -1))
+                for event in subscription_events:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': event['userId']})
+                    all_logs.append({
+                        'id': str(event['_id']),
+                        'eventType': event['eventType'],
+                        'timestamp': event['timestamp'].isoformat() + 'Z',
+                        'adminId': str(event['adminId']),
+                        'adminName': event.get('adminName', 'Admin'),
+                        'userId': str(event['userId']),
+                        'userEmail': user.get('email', '') if user else '',
+                        'userName': user.get('displayName', '') if user else '',
+                        'reason': event.get('reason', ''),
+                        'metadata': event.get('metadata', {}),
+                        'category': 'subscription'
+                    })
+
+            # Sort all logs by timestamp (most recent first)
+            all_logs.sort(key=lambda x: x['timestamp'], reverse=True)
+
+            # Apply pagination
+            total = len(all_logs)
+            skip = (page - 1) * limit
+            paginated_logs = all_logs[skip:skip + limit]
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'logs': paginated_logs,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit if total > 0 else 0,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    }
+                },
+                'message': 'Audit logs retrieved successfully'
+            })
+
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve audit logs',
                 'errors': {'general': [str(e)]}
             }), 500
          

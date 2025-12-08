@@ -5,6 +5,7 @@ import jwt
 import uuid
 from bson import ObjectId
 from functools import wraps
+from utils.analytics_tracker import create_tracker
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -12,6 +13,7 @@ def init_auth_blueprint(mongo, app_config):
     """Initialize the auth blueprint with database and config"""
     auth_bp.mongo = mongo
     auth_bp.config = app_config
+    auth_bp.tracker = create_tracker(mongo.db)
     return auth_bp
 
 # Validation helpers
@@ -67,6 +69,31 @@ def login():
             {'$set': {'lastLogin': datetime.utcnow()}}
         )
         
+        # Track login event
+        try:
+            device_info = {
+                'user_agent': request.headers.get('User-Agent', 'Unknown'),
+                'ip_address': request.remote_addr
+            }
+            auth_bp.tracker.track_login(user['_id'], device_info=device_info)
+        except Exception as e:
+            print(f"Analytics tracking failed: {e}")
+        
+        # Determine admin permissions based on role
+        permissions = []
+        if user.get('role') == 'admin':
+            # Grant all admin permissions
+            permissions = [
+                'admin:*',  # Super admin - all permissions
+                'admin:credits:grant',
+                'admin:credits:deduct',
+                'admin:subscription:grant',
+                'admin:subscription:cancel',
+                'admin:subscription:extend',
+                'admin:view:audit',
+                'admin:users:manage'
+            ]
+        
         return jsonify({
             'success': True,
             'data': {
@@ -74,6 +101,7 @@ def login():
                 'access_token': access_token,  # Keep for backward compatibility
                 'refresh_token': refresh_token,
                 'expires_at': (datetime.utcnow() + auth_bp.config['JWT_EXPIRATION_DELTA']).isoformat() + 'Z',
+                'permissions': permissions,  # RBAC permissions for frontend
                 'user': {
                     'id': str(user['_id']),
                     'email': user['email'],
@@ -83,7 +111,10 @@ def login():
                     'role': user.get('role', 'personal'),
                     'ficoreCreditBalance': user.get('ficoreCreditBalance', 10.0),
                     'financialGoals': user.get('financialGoals', []),
-                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    # CRITICAL FIX: Include profile picture URL and business info
+                    'profilePictureUrl': user.get('profilePictureUrl'),
+                    'businessName': user.get('businessName')
                 }
             },
             'message': 'Login successful'
@@ -172,7 +203,7 @@ def signup():
             # Prefer explicit displayName if provided by client (business name), else generate from names
             'displayName': display_name.strip() if display_name and isinstance(display_name, str) and display_name.strip() else f"{first_name} {last_name}",
             'role': 'personal',
-            'ficoreCreditBalance': 10.0,  # Starting balance: 10 FC
+            'ficoreCreditBalance': 5.0,  # REDUCED: Starting balance reduced from 10 FC to 5 FC (Recommendation #1)
             'financialGoals': financial_goals,
             'createdAt': datetime.utcnow(),
             'lastLogin': None,
@@ -181,6 +212,16 @@ def signup():
         
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
+        
+        # Track registration event
+        try:
+            device_info = {
+                'user_agent': request.headers.get('User-Agent', 'Unknown'),
+                'ip_address': request.remote_addr
+            }
+            auth_bp.tracker.track_registration(result.inserted_id, device_info=device_info)
+        except Exception as e:
+            print(f"Analytics tracking failed: {e}")
         
         # Generate tokens (unchanged)
         access_token = jwt.encode({
