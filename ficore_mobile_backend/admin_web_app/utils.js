@@ -1,7 +1,7 @@
 // ===== UTILITY FUNCTIONS FOR ADMIN WEB APP =====
 
 // Configuration
-const API_BASE_URL = 'https://ficore-mobile-backend.onrender.com';
+const API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
 
 // Get admin token from localStorage
 function getAdminToken() {
