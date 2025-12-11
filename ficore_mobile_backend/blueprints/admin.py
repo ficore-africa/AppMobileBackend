@@ -685,6 +685,82 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @admin_bp.route('/users/<user_id>/reset-password-direct', methods=['POST'])
+    @token_required
+    @admin_required
+    def reset_user_password_direct(current_user, user_id):
+        """Directly reset user password to a temporary password (admin only)"""
+        try:
+            data = request.get_json()
+            reason = data.get('reason', '').strip()
+            
+            # Validate reason
+            if not reason or len(reason) < 10:
+                return jsonify({
+                    'success': False,
+                    'message': 'Reason is required and must be at least 10 characters'
+                }), 400
+
+            # Find user
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+
+            # Generate temporary password (8 characters: letters + numbers)
+            import random
+            import string
+            temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            
+            # Update user password and set flag for forced password change
+            mongo.db.users.update_one(
+                {'_id': ObjectId(user_id)},
+                {'$set': {
+                    'password': generate_password_hash(temp_password),
+                    'passwordChangedAt': datetime.utcnow(),
+                    'mustChangePassword': True,  # Force password change on next login
+                    'updatedAt': datetime.utcnow()
+                }, '$unset': {
+                    'resetToken': '',
+                    'resetTokenExpiry': ''
+                }}
+            )
+
+            # Log the admin action
+            mongo.db.admin_actions.insert_one({
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'password_reset_direct',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'reason': reason,
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'temporary_password_generated': True,
+                    'force_password_change': True
+                }
+            })
+
+            return jsonify({
+                'success': True,
+                'message': 'Password reset successfully',
+                'data': {
+                    'temporaryPassword': temp_password,
+                    'userEmail': user['email'],
+                    'mustChangePassword': True,
+                    'note': 'User must change this password on next login'
+                }
+            })
+
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reset password',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     @admin_bp.route('/users/<user_id>/role', methods=['PUT'])
     @token_required
     @admin_required

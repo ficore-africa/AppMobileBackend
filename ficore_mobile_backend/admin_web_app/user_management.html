@@ -359,6 +359,18 @@
                         <value id="userLastLogin">-</value>
                     </div>
                 </div>
+                
+                <div class="action-section" id="accountActions">
+                    <h3>Account Management</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-danger" onclick="showResetPasswordModal()">
+                            <i class="fas fa-key"></i> Reset Password
+                        </button>
+                        <button class="btn btn-primary" onclick="showSendResetEmailModal()">
+                            <i class="fas fa-envelope"></i> Send Reset Email
+                        </button>
+                    </div>
+                </div>
             </div>
             
             <!-- Credits Tab -->
@@ -900,6 +912,159 @@
             } catch (error) {
                 showError('Error cancelling subscription: ' + error.message);
             }
+        }
+
+        // Reset Password Modal (Direct Reset)
+        async function showResetPasswordModal() {
+            if (!hasPermission('admin:password:reset')) {
+                showError('You do not have permission to reset passwords');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for resetting password (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Password Reset',
+                message: `Reset password for ${currentUser.displayName}?`,
+                details: {
+                    'Warning': 'This will generate a temporary password that the user must change on next login',
+                    'User Email': currentUser.email,
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/reset-password-direct`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show the temporary password in a modal
+                    showPasswordResetSuccess(data.data);
+                } else {
+                    showError(data.message || 'Failed to reset password');
+                }
+            } catch (error) {
+                showError('Error resetting password: ' + error.message);
+            }
+        }
+
+        // Send Reset Email Modal
+        async function showSendResetEmailModal() {
+            if (!hasPermission('admin:password:reset')) {
+                showError('You do not have permission to send reset emails');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Send Password Reset Email',
+                message: `Send password reset email to ${currentUser.displayName}?`,
+                details: {
+                    'User Email': currentUser.email,
+                    'Note': 'User will receive an email with reset instructions'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/reset-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Password reset email sent successfully!');
+                } else {
+                    showError(data.message || 'Failed to send reset email');
+                }
+            } catch (error) {
+                showError('Error sending reset email: ' + error.message);
+            }
+        }
+
+        // Show password reset success with temporary password
+        function showPasswordResetSuccess(data) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+            
+            modal.innerHTML = `
+                <div style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    max-width: 500px;
+                    width: 90%;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                ">
+                    <h3 style="color: #16A34A; margin-bottom: 20px;">
+                        <i class="fas fa-check-circle"></i> Password Reset Successful
+                    </h3>
+                    <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <p><strong>User:</strong> ${data.userEmail}</p>
+                        <p><strong>Temporary Password:</strong> 
+                            <code style="background: #E5E7EB; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 16px; font-weight: bold;">
+                                ${data.temporaryPassword}
+                            </code>
+                        </p>
+                        <p style="color: #DC2626; font-weight: 600; margin-top: 15px;">
+                            ⚠️ ${data.note}
+                        </p>
+                    </div>
+                    <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="color: #92400E; font-size: 14px;">
+                            <strong>Important:</strong> Please provide this temporary password to the user securely. 
+                            They will be required to change it immediately upon login.
+                        </p>
+                    </div>
+                    <div style="text-align: right;">
+                        <button onclick="this.closest('div').parentElement.remove()" 
+                                style="background: #1E3A8A; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Auto-remove after 30 seconds for security
+            setTimeout(() => {
+                if (document.body.contains(modal)) {
+                    modal.remove();
+                }
+            }, 30000);
         }
     </script>
 </body>

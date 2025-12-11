@@ -300,12 +300,14 @@ def change_password():
                     'errors': errors
                 }), 400
             
-            # Update password
+            # Update password and clear mustChangePassword flag
             users_bp.mongo.db.users.update_one(
                 {'_id': current_user['_id']},
                 {'$set': {
                     'password': generate_password_hash(new_password),
                     'passwordChangedAt': datetime.utcnow()
+                }, '$unset': {
+                    'mustChangePassword': ''  # Clear the forced password change flag
                 }}
             )
             

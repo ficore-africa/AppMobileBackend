@@ -684,6 +684,39 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
         ]
 
+    # ==================== ADMIN_ACTIONS COLLECTION ====================
+    
+    @staticmethod
+    def get_admin_action_schema() -> Dict[str, Any]:
+        """
+        Schema for admin_actions collection.
+        Tracks administrative actions for audit purposes.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'adminId': ObjectId,  # Required, reference to admin user's _id
+            'adminEmail': str,  # Required, admin's email for easy identification
+            'action': str,  # Required, action type (e.g., 'password_reset_direct', 'credit_grant', etc.)
+            'targetUserId': Optional[ObjectId],  # Optional, target user's _id (if applicable)
+            'targetUserEmail': Optional[str],  # Optional, target user's email (if applicable)
+            'reason': str,  # Required, reason for the action
+            'timestamp': datetime,  # Required, when action was performed
+            'details': Optional[Dict[str, Any]],  # Optional, additional action details
+            'ipAddress': Optional[str],  # Optional, admin's IP address
+            'userAgent': Optional[str],  # Optional, admin's user agent
+        }
+    
+    @staticmethod
+    def get_admin_action_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for admin_actions collection."""
+        return [
+            {'keys': [('adminId', 1), ('timestamp', -1)], 'name': 'admin_timestamp_desc'},
+            {'keys': [('action', 1), ('timestamp', -1)], 'name': 'action_timestamp_desc'},
+            {'keys': [('targetUserId', 1), ('timestamp', -1)], 'name': 'target_user_timestamp_desc'},
+            {'keys': [('timestamp', -1)], 'name': 'timestamp_desc'},
+            {'keys': [('adminEmail', 1)], 'name': 'admin_email'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -723,6 +756,7 @@ class DatabaseInitializer:
             'attachments': self.schema.get_attachment_indexes(),
             'assets': self.schema.get_asset_indexes(),
             'analytics_events': self.schema.get_analytics_event_indexes(),
+            'admin_actions': self.schema.get_admin_action_indexes(),
         }
         
         results = {

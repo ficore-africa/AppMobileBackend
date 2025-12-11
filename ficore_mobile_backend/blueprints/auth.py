@@ -51,6 +51,9 @@ def login():
                 'errors': {'email': ['Invalid email or password']}
             }), 401
         
+        # Check if user must change password (admin reset)
+        must_change_password = user.get('mustChangePassword', False)
+        
         # Generate tokens
         access_token = jwt.encode({
             'user_id': str(user['_id']),
@@ -90,6 +93,7 @@ def login():
                 'admin:subscription:grant',
                 'admin:subscription:cancel',
                 'admin:subscription:extend',
+                'admin:password:reset',
                 'admin:view:audit',
                 'admin:users:manage'
             ]
@@ -102,6 +106,7 @@ def login():
                 'refresh_token': refresh_token,
                 'expires_at': (datetime.utcnow() + auth_bp.config['JWT_EXPIRATION_DELTA']).isoformat() + 'Z',
                 'permissions': permissions,  # RBAC permissions for frontend
+                'mustChangePassword': must_change_password,  # Flag for forced password change
                 'user': {
                     'id': str(user['_id']),
                     'email': user['email'],
@@ -114,7 +119,8 @@ def login():
                     'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                     # CRITICAL FIX: Include profile picture URL and business info
                     'profilePictureUrl': user.get('profilePictureUrl'),
-                    'businessName': user.get('businessName')
+                    'businessName': user.get('businessName'),
+                    'mustChangePassword': must_change_password  # Also include in user object for convenience
                 }
             },
             'message': 'Login successful'
