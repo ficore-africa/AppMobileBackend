@@ -493,36 +493,40 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     @subscription_bp.route('/status', methods=['GET'])
     @token_required
     def get_subscription_status(current_user):
-        """Get user's current subscription status"""
+        """
+        Get user's current subscription status
+        
+        ✅ BACKEND FIX: Now uses MonthlyEntryTracker for real-time validation
+        This ensures consistency with /credits/monthly-entries endpoint
+        and prevents stale subscription data from being returned
+        """
         try:
-            from utils.subscription_expiration_manager import SubscriptionExpirationManager
+            from utils.monthly_entry_tracker import MonthlyEntryTracker
             
+            # ✅ FIX: Use MonthlyEntryTracker for validated subscription status
+            # This provides real-time validation against subscriptionEndDate
+            # and corrects any stale isSubscribed flags in the database
+            entry_tracker = MonthlyEntryTracker(mongo)
+            monthly_stats = entry_tracker.get_monthly_stats(current_user['_id'])
+            
+            # Extract validated subscription info from monthly stats
+            is_subscribed = monthly_stats.get('is_subscribed', False)
+            is_admin = monthly_stats.get('is_admin', False)
+            subscription_type = monthly_stats.get('subscription_type')
+            tier = monthly_stats.get('tier', 'Free')
+            
+            # Get additional details from user document
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            
-            is_subscribed = user.get('isSubscribed', False)
-            subscription_type = user.get('subscriptionType')
             start_date = user.get('subscriptionStartDate')
             end_date = user.get('subscriptionEndDate')
             auto_renew = user.get('subscriptionAutoRenew', False)
             
-            # Check if subscription is actually active
-            # IMPORTANT: Do not auto-revert admin grants - only revert if significantly expired (24+ hours)
-            if is_subscribed and end_date:
-                # Add 24-hour grace period to prevent immediate reversion of admin grants
-                grace_period_end = end_date + timedelta(hours=24)
-                if grace_period_end <= datetime.utcnow():
-                    # Subscription expired beyond grace period
-                    # Use expiration manager for proper handling with history tracking
-                    expiration_manager = SubscriptionExpirationManager(mongo.db)
-                    expiration_manager._process_single_expiration(user)
-                    
-                    # Reload user to get updated status
-                    user = mongo.db.users.find_one({'_id': current_user['_id']})
-                    is_subscribed = False
-            
+            # Build status response with validated data
             status_data = {
-                'is_subscribed': is_subscribed,
+                'is_subscribed': is_subscribed,  # ← VALIDATED by MonthlyEntryTracker
                 'subscription_type': subscription_type,
+                'tier': tier,  # ← NEW: Consistent with /monthly-entries
+                'is_admin': is_admin,  # ← NEW: Consistent with /monthly-entries
                 'start_date': start_date.isoformat() + 'Z' if start_date else None,
                 'end_date': end_date.isoformat() + 'Z' if end_date else None,
                 'auto_renew': auto_renew,
@@ -530,6 +534,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'plan_details': None
             }
             
+            # Calculate days remaining if subscribed
             if is_subscribed and end_date:
                 days_remaining = (end_date - datetime.utcnow()).days
                 status_data['days_remaining'] = max(0, days_remaining)
