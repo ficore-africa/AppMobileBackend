@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FiCore Analytics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        h1 {
+            color: #1E3A8A;
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .header-actions {
+            position: absolute;
+            right: 30px;
+            top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: #B88A44;
+        }
+        
+        .btn-secondary:hover {
+            background: #D4AF37;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+        }
+        
+        .btn-danger:hover {
+            background: #B91C1C;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid #1E3A8A;
+        }
+        
+        .metric-label {
+            color: #6B7280;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        
+        .metric-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1E3A8A;
+        }
+        
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1E3A8A;
+        }
+        
+        .activity-list {
+            list-style: none;
+        }
+        
+        .activity-item {
+            padding: 15px 0;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        
+        .activity-info {
+            flex: 1;
+        }
+        
+        .activity-type {
+            font-weight: 600;
+            color: #2E2E2E;
+            margin-bottom: 4px;
+        }
+        
+        .activity-user {
+            font-size: 13px;
+            color: #6B7280;
+        }
+        
+        .activity-time {
+            font-size: 13px;
+            color: #94A3B8;
+        }
+        
+        .event-counts {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .event-count-item {
+            padding: 15px;
+            background: #F4F1EC;
+            border-radius: 8px;
+            border-left: 4px solid #B88A44;
+        }
+        
+        .event-count-label {
+            font-size: 13px;
+            color: #6B7280;
+            margin-bottom: 5px;
+        }
+        
+        .event-count-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2E2E2E;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6B7280;
+        }
+        
+        .error {
+            background: #FEE2E2;
+            color: #DC2626;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .top-users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .top-users-table th {
+            text-align: left;
+            padding: 12px;
+            background: #F4F1EC;
+            font-weight: 600;
+            color: #2E2E2E;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .top-users-table td {
+            padding: 12px;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .top-users-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            overflow: auto;
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            max-width: 1000px;
+            border-radius: 10px;
+            padding: 30px;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-body {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            color: #2E2E2E;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #E5E7EB;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>FiCore Analytics Dashboard</h1>
+            <p class="subtitle">Real-time usage metrics and user activity</p>
+            <div class="header-actions">
+                <a href="user_management.html" class="btn" style="text-decoration: none;">User Management</a>
+                <a href="audit_logs.html" class="btn" style="text-decoration: none;">Audit Logs</a>
+                <button class="btn btn-secondary" onclick="showChangePasswordModal()">Change Password</button>
+                <button class="btn btn-danger" onclick="logout()">Logout</button>
+            </div>
+        </header>
+        
+        <div id="error-container"></div>
+        
+        <div id="loading" class="loading">
+            <p>Loading dashboard data...</p>
+        </div>
+        
+        <div id="dashboard-content" style="display: none;">
+            <!-- Key Metrics -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Total Users</div>
+                    <div class="metric-value" id="total-users">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Daily Active Users</div>
+                    <div class="metric-value" id="dau">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Weekly Active Users</div>
+                    <div class="metric-value" id="wau">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Monthly Active Users</div>
+                    <div class="metric-value" id="mau">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Total Income Entries</div>
+                    <div class="metric-value" id="total-income">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Total Expense Entries</div>
+                    <div class="metric-value" id="total-expense">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Income (This Month)</div>
+                    <div class="metric-value" id="income-month">-</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Expense (This Month)</div>
+                    <div class="metric-value" id="expense-month">-</div>
+                </div>
+            </div>
+            
+            <!-- Event Counts -->
+            <div class="section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 class="section-title">Event Counts (This Month)</h2>
+                    <button class="btn" onclick="loadDashboard()">Refresh</button>
+                </div>
+                <div class="event-counts" id="event-counts"></div>
+            </div>
+            
+            <!-- Top Users -->
+            <div class="section">
+                <h2 class="section-title">Most Active Users (This Month)</h2>
+                <table class="top-users-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Activity Count</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-users-body"></tbody>
+                </table>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="section">
+                <h2 class="section-title">Recent Activity</h2>
+                <ul class="activity-list" id="recent-activity"></ul>
+            </div>
+            
+            <!-- Rate Limit Monitoring -->
+            <div class="section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 class="section-title">🚦 Rate Limit Monitoring</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <select id="rateLimitTimeframe" style="padding: 8px 12px; border-radius: 6px; border: 2px solid #1E3A8A;">
+                            <option value="1" selected>Last 1 hour</option>
+                            <option value="6">Last 6 hours</option>
+                            <option value="24">Last 24 hours</option>
+                        </select>
+                        <button class="btn" onclick="loadRateLimitData()">Refresh</button>
+                    </div>
+                </div>
+                
+                <!-- Rate Limit Overview -->
+                <div class="metrics-grid" style="margin-bottom: 20px;">
+                    <div class="metric-card" style="border-left-color: #10B981;">
+                        <div class="metric-label">Total API Calls</div>
+                        <div class="metric-value" id="rl-total-calls">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;" id="rl-calls-per-min">-</div>
+                    </div>
+                    <div class="metric-card" style="border-left-color: #F59E0B;">
+                        <div class="metric-label">Rate Limit Hits</div>
+                        <div class="metric-value" id="rl-limit-hits">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;" id="rl-limit-rate">-</div>
+                    </div>
+                    <div class="metric-card" style="border-left-color: #EF4444;">
+                        <div class="metric-label">Error Rate</div>
+                        <div class="metric-value" id="rl-error-rate">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;" id="rl-error-count">-</div>
+                    </div>
+                    <div class="metric-card" style="border-left-color: #3B82F6;">
+                        <div class="metric-label">Avg Response Time</div>
+                        <div class="metric-value" id="rl-avg-response">-</div>
+                        <div style="font-size: 12px; color: #6B7280; margin-top: 5px;">milliseconds</div>
+                    </div>
+                </div>
+                
+                <!-- Heavy Users Table -->
+                <div style="background: #FEE2E2; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #DC2626;">
+                    <h3 style="margin-bottom: 15px; color: #991B1B;">⚠️ Heavy API Users (>100 calls/hour)</h3>
+                    <div id="heavy-users-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="top-users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Total Calls</th>
+                                    <th>Calls/Min</th>
+                                    <th>Endpoints</th>
+                                    <th>Avg Response</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="heavy-users-body">
+                                <tr><td colspan="7" style="text-align: center; padding: 20px; color: #6B7280;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Top Endpoints -->
+                <div style="background: #DBEAFE; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #3B82F6;">
+                    <h3 style="margin-bottom: 15px; color: #1E40AF;">📊 Most Called Endpoints</h3>
+                    <div id="endpoint-stats-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="top-users-table">
+                            <thead>
+                                <tr>
+                                    <th>Endpoint</th>
+                                    <th>Total Calls</th>
+                                    <th>Calls/Min</th>
+                                    <th>Unique Users</th>
+                                    <th>Avg Response</th>
+                                    <th>Error Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody id="endpoint-stats-body">
+                                <tr><td colspan="6" style="text-align: center; padding: 20px; color: #6B7280;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Rate Limit Violations -->
+                <div style="background: #FEF3C7; padding: 20px; border-radius: 8px; border-left: 4px solid #F59E0B;">
+                    <h3 style="margin-bottom: 15px; color: #92400E;">🚨 Rate Limit Violations (429 Errors)</h3>
+                    <div id="violations-container" style="max-height: 300px; overflow-y: auto;">
+                        <table class="top-users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Endpoint</th>
+                                    <th>Violations</th>
+                                    <th>Last Violation</th>
+                                </tr>
+                            </thead>
+                            <tbody id="violations-body">
+                                <tr><td colspan="5" style="text-align: center; padding: 20px; color: #6B7280;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Admin Tools -->
+            <div class="section">
+                <h2 class="section-title">Admin Tools</h2>
+                
+                <!-- Export Section -->
+                <div style="background: #FEF3C7; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #F59E0B;">
+                    <h3 style="margin-bottom: 15px; color: #92400E;">📊 Export User Data</h3>
+                    
+                    <!-- Bulk Export -->
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 10px; font-size: 14px;">Bulk Export (All Users)</h4>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                            <label style="font-weight: 600;">Timeframe:</label>
+                            <select id="exportTimeframe" style="padding: 8px 12px; border-radius: 6px; border: 2px solid #D97706;">
+                                <option value="7">Last 7 days</option>
+                                <option value="30" selected>Last 30 days</option>
+                                <option value="60">Last 60 days</option>
+                                <option value="90">Last 90 days</option>
+                            </select>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                            <button class="btn" style="background: #10B981;" onclick="exportUsers('all')">
+                                📥 Export All Users
+                            </button>
+                            <button class="btn" style="background: #3B82F6;" onclick="exportUsers('active')">
+                                ✅ Export Active Users
+                            </button>
+                            <button class="btn" style="background: #EF4444;" onclick="exportUsers('inactive')">
+                                ⚠️ Export Inactive Users
+                            </button>
+                            <button class="btn" style="background: #B88A44;" onclick="exportBusinessProfiles()">
+                                💼 Export All Business Profiles
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Single User Export -->
+                    <div style="border-top: 2px solid #D97706; padding-top: 20px;">
+                        <h4 style="margin-bottom: 10px; font-size: 14px;">Single User Export</h4>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input 
+                                type="text" 
+                                id="userSearchInput" 
+                                placeholder="Search by email or name..." 
+                                style="flex: 1; padding: 10px; border: 2px solid #D97706; border-radius: 6px;"
+                                onkeyup="searchUserForExport(event)"
+                            >
+                            <button class="btn" style="background: #D97706;" onclick="searchUserForExport()">
+                                🔍 Search
+                            </button>
+                        </div>
+                        <div id="userSearchResults" style="max-height: 200px; overflow-y: auto; background: white; border-radius: 6px; display: none;"></div>
+                    </div>
+                    
+                    <p style="margin-top: 15px; font-size: 13px; color: #92400E;">
+                        <strong>User CSV includes:</strong> Email, First Name, Last Name, Display Name, Phone, Credit Balance, Last Login<br>
+                        <strong>Business Profile CSV includes:</strong> All user fields + Business Name, Type, Industry, Employees, Address, TIN, Social Media
+                    </p>
+                </div>
+                
+                <!-- Other Admin Tools -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <button class="btn" onclick="viewAllUsersData()">View All Users Data</button>
+                    <button class="btn" onclick="viewAnalyticsStats()">System Statistics</button>
+                    <button class="btn" onclick="searchUserData()">Search User Data</button>
+                    <button class="btn" onclick="viewNDPRRequests()">NDPR Requests</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Change Password Modal -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Change Password</h2>
+                <button onclick="closeChangePasswordModal()" class="btn btn-danger">Close</button>
+            </div>
+            <div class="modal-body">
+                <div id="password-error" class="error" style="display: none;"></div>
+                <form id="change-password-form">
+                    <div class="form-group">
+                        <label for="current-password">Current Password</label>
+                        <input type="password" id="current-password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">New Password</label>
+                        <input type="password" id="new-password" required minlength="8">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">Confirm New Password</label>
+                        <input type="password" id="confirm-password" required minlength="8">
+                    </div>
+                    <button type="submit" class="btn">Update Password</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- User Data Viewer Modal -->
+    <div id="userDataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">User Data</h2>
+                <button onclick="closeModal()" class="btn btn-danger">Close</button>
+            </div>
+            <div id="modalContent" class="modal-body"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Configuration
+        const API_BASE_URL = window.location.origin;
+        
+        // Check authentication
+        let ADMIN_TOKEN = localStorage.getItem('admin_token');
+        
+        if (!ADMIN_TOKEN) {
+            window.location.href = 'admin_login.html';
+        }
+        
+        // Get admin info
+        const ADMIN_EMAIL = localStorage.getItem('admin_email') || 'Admin';
+        const ADMIN_NAME = localStorage.getItem('admin_name') || 'Admin';
+        const ADMIN_USER_ID = localStorage.getItem('admin_user_id');
+        
+        // Update subtitle with admin info
+        window.addEventListener('load', () => {
+            const subtitle = document.querySelector('.subtitle');
+            subtitle.textContent = `Logged in as: ${ADMIN_NAME} (${ADMIN_EMAIL})`;
+        });
+        
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_email');
+                localStorage.removeItem('admin_name');
+                localStorage.removeItem('admin_user_id');
+                window.location.href = 'admin_login.html';
+            }
+        }
+        
+        // Password Change Functions
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+            document.getElementById('change-password-form').reset();
+            document.getElementById('password-error').style.display = 'none';
+        }
+        
+        function closeChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+        }
+        
+        document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const errorDiv = document.getElementById('password-error');
+            
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = 'New passwords do not match';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            // Validate password strength
+            if (newPassword.length < 8) {
+                errorDiv.textContent = 'Password must be at least 8 characters long';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/password`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        currentPassword: currentPassword,
+                        newPassword: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Password changed successfully! Please login again.');
+                    logout();
+                } else {
+                    errorDiv.textContent = data.message || 'Failed to change password';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Error changing password: ' + error.message;
+                errorDiv.style.display = 'block';
+            }
+        });
+        
+        // API Helper
+        async function apiCall(endpoint) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                headers: {
+                    'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.status === 401 || response.status === 403) {
+                alert('Session expired. Please login again.');
+                localStorage.removeItem('admin_token');
+                window.location.href = 'admin_login.html';
+                return;
+            }
+            
+            if (!response.ok) {
+                throw new Error(`API call failed: ${response.statusText}`);
+            }
+            
+            return await response.json();
+        }
+        
+        // Format event type for display
+        function formatEventType(eventType) {
+            return eventType
+                .split('_')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+        
+        // Format timestamp
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+            
+            if (minutes < 1) return 'Just now';
+            if (minutes < 60) return `${minutes}m ago`;
+            if (hours < 24) return `${hours}h ago`;
+            return `${days}d ago`;
+        }
+        
+        // Load dashboard data
+        async function loadDashboard() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('dashboard-content').style.display = 'none';
+                document.getElementById('error-container').innerHTML = '';
+                
+                // Load overview
+                const overview = await apiCall('/api/analytics/dashboard/overview');
+                
+                // Update metrics
+                document.getElementById('total-users').textContent = overview.data.users.total.toLocaleString();
+                document.getElementById('dau').textContent = overview.data.users.dailyActive.toLocaleString();
+                document.getElementById('wau').textContent = overview.data.users.weeklyActive.toLocaleString();
+                document.getElementById('mau').textContent = overview.data.users.monthlyActive.toLocaleString();
+                document.getElementById('total-income').textContent = overview.data.entries.totalIncome.toLocaleString();
+                document.getElementById('total-expense').textContent = overview.data.entries.totalExpense.toLocaleString();
+                document.getElementById('income-month').textContent = overview.data.entries.incomeThisMonth.toLocaleString();
+                document.getElementById('expense-month').textContent = overview.data.entries.expenseThisMonth.toLocaleString();
+                
+                // Load event counts
+                const eventCounts = await apiCall('/api/analytics/dashboard/event-counts?period=month');
+                const eventCountsContainer = document.getElementById('event-counts');
+                eventCountsContainer.innerHTML = '';
+                
+                Object.entries(eventCounts.data.eventCounts).forEach(([eventType, count]) => {
+                    const item = document.createElement('div');
+                    item.className = 'event-count-item';
+                    item.innerHTML = `
+                        <div class="event-count-label">${formatEventType(eventType)}</div>
+                        <div class="event-count-value">${count.toLocaleString()}</div>
+                    `;
+                    eventCountsContainer.appendChild(item);
+                });
+                
+                // Load top users
+                const topUsers = await apiCall('/api/analytics/dashboard/top-users?limit=10&period=month');
+                const topUsersBody = document.getElementById('top-users-body');
+                topUsersBody.innerHTML = '';
+                
+                topUsers.data.topUsers.forEach((user, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><span class="badge">#${index + 1}</span></td>
+                        <td>${user.name || 'Unknown'}</td>
+                        <td>${user.email}</td>
+                        <td>${user.eventCount.toLocaleString()}</td>
+                    `;
+                    topUsersBody.appendChild(row);
+                });
+                
+                // Update recent activity
+                const activityList = document.getElementById('recent-activity');
+                activityList.innerHTML = '';
+                
+                overview.data.recentActivity.forEach(activity => {
+                    const item = document.createElement('li');
+                    item.className = 'activity-item';
+                    item.innerHTML = `
+                        <div class="activity-info">
+                            <div class="activity-type">${formatEventType(activity.eventType)}</div>
+                            <div class="activity-user">${activity.userName} (${activity.userEmail})</div>
+                        </div>
+                        <div class="activity-time">${formatTime(activity.timestamp)}</div>
+                    `;
+                    activityList.appendChild(item);
+                });
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard-content').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error-container').innerHTML = `
+                    <div class="error">
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Admin Tools Functions
+        async function viewAllUsersData() {
+            try {
+                const response = await apiCall('/api/analytics/admin/all-users-data?limit=50');
+                
+                let html = '<h3>All Users Analytics Data (Last 50 Events)</h3>';
+                html += '<table style="width: 100%; border-collapse: collapse; margin-top: 20px;">';
+                html += '<thead><tr style="background: #F4F1EC;">';
+                html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">User</th>';
+                html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Event</th>';
+                html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>';
+                html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Actions</th>';
+                html += '</tr></thead><tbody>';
+                
+                response.data.events.forEach(event => {
+                    html += '<tr style="border-bottom: 1px solid #eee;">';
+                    html += `<td style="padding: 12px;">${event.userName}<br><small style="color: #6B7280;">${event.userEmail}</small></td>`;
+                    html += `<td style="padding: 12px;">${formatEventType(event.eventType)}</td>`;
+                    html += `<td style="padding: 12px;">${formatTime(event.timestamp)}</td>`;
+                    html += `<td style="padding: 12px;">`;
+                    html += `<button onclick="viewUserDetails('${event.userId}')" class="btn" style="padding: 5px 10px; margin-right: 5px;">View</button>`;
+                    html += `<button onclick="deleteUserData('${event.userId}', '${event.userEmail}')" class="btn btn-danger" style="padding: 5px 10px;">Delete</button>`;
+                    html += `</td></tr>`;
+                });
+                
+                html += '</tbody></table>';
+                html += `<p style="margin-top: 20px; color: #6B7280;">Total: ${response.data.pagination.total} events</p>`;
+                
+                showModal('All Users Analytics Data', html);
+            } catch (error) {
+                alert('Error loading user data: ' + error.message);
+            }
+        }
+        
+        async function viewUserDetails(userId) {
+            try {
+                const response = await apiCall(`/api/analytics/admin/user/${userId}/data`);
+                
+                let html = '<h3>User Analytics Profile</h3>';
+                html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                html += `<p><strong>Name:</strong> ${response.data.user.name}</p>`;
+                html += `<p><strong>Email:</strong> ${response.data.user.email}</p>`;
+                html += `<p><strong>User ID:</strong> ${response.data.user.userId}</p>`;
+                html += `<p><strong>Total Events:</strong> ${response.data.analytics.totalEvents}</p>`;
+                html += `<p><strong>First Activity:</strong> ${response.data.analytics.firstActivity || 'N/A'}</p>`;
+                html += `<p><strong>Last Activity:</strong> ${response.data.analytics.lastActivity || 'N/A'}</p>`;
+                html += '</div>';
+                
+                html += '<h4>Event Breakdown</h4>';
+                html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 20px;">';
+                Object.entries(response.data.analytics.eventTypes).forEach(([type, count]) => {
+                    html += `<div style="background: #F4F1EC; padding: 10px; border-radius: 5px;">`;
+                    html += `<strong>${formatEventType(type)}</strong><br>${count} events`;
+                    html += `</div>`;
+                });
+                html += '</div>';
+                
+                html += '<h4>Recent Events</h4>';
+                html += '<div style="max-height: 300px; overflow-y: auto;">';
+                response.data.analytics.events.slice(0, 20).forEach(event => {
+                    html += `<div style="padding: 10px; border-bottom: 1px solid #eee;">`;
+                    html += `<strong>${formatEventType(event.eventType)}</strong> - ${formatTime(event.timestamp)}`;
+                    if (event.eventDetails) {
+                        html += `<br><small style="color: #6B7280;">${JSON.stringify(event.eventDetails)}</small>`;
+                    }
+                    html += `</div>`;
+                });
+                html += '</div>';
+                
+                html += `<div style="margin-top: 20px;">`;
+                html += `<button onclick="deleteUserData('${userId}', '${response.data.user.email}')" class="btn btn-danger">Delete All User Data</button>`;
+                html += `</div>`;
+                
+                showModal('User Details', html);
+            } catch (error) {
+                alert('Error loading user details: ' + error.message);
+            }
+        }
+        
+        async function deleteUserData(userId, userEmail) {
+            if (!confirm(`Are you sure you want to delete ALL analytics data for ${userEmail}?\n\nThis action cannot be undone and is for NDPR compliance.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/analytics/admin/user/${userId}/data`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`Successfully deleted ${data.data.deletedEvents} events for ${userEmail}`);
+                    closeModal();
+                    loadDashboard();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error deleting user data: ' + error.message);
+            }
+        }
+        
+        async function viewAnalyticsStats() {
+            try {
+                const response = await apiCall('/api/analytics/admin/stats');
+                
+                let html = '<h3>System Analytics Statistics</h3>';
+                
+                html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">';
+                html += `<div style="background: #1E3A8A; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<h4 style="margin: 0 0 10px 0;">Total Events</h4>`;
+                html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.totalEvents.toLocaleString()}</p>`;
+                html += `</div>`;
+                html += `<div style="background: #16A34A; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<h4 style="margin: 0 0 10px 0;">Unique Users</h4>`;
+                html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.uniqueUsers.toLocaleString()}</p>`;
+                html += `</div>`;
+                html += `<div style="background: #B88A44; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<h4 style="margin: 0 0 10px 0;">Avg Events/User</h4>`;
+                html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.avgEventsPerUser}</p>`;
+                html += `</div>`;
+                html += `<div style="background: #F97316; color: white; padding: 20px; border-radius: 8px;">`;
+                html += `<h4 style="margin: 0 0 10px 0;">Storage Size</h4>`;
+                html += `<p style="font-size: 32px; font-weight: bold; margin: 0;">${response.data.overview.storageSizeMB} MB</p>`;
+                html += `</div>`;
+                html += '</div>';
+                
+                html += '<h4>Activity by Time Period</h4>';
+                html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                html += `<p><strong>Last 24 Hours:</strong> ${response.data.timeRanges.last24Hours.toLocaleString()} events</p>`;
+                html += `<p><strong>Last 7 Days:</strong> ${response.data.timeRanges.last7Days.toLocaleString()} events</p>`;
+                html += `<p><strong>Last 30 Days:</strong> ${response.data.timeRanges.last30Days.toLocaleString()} events</p>`;
+                html += '</div>';
+                
+                html += '<h4>Event Types Distribution</h4>';
+                html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">';
+                Object.entries(response.data.eventTypes).forEach(([type, count]) => {
+                    html += `<div style="background: #F4F1EC; padding: 10px; border-radius: 5px;">`;
+                    html += `<strong>${formatEventType(type)}</strong><br>${count.toLocaleString()} events`;
+                    html += `</div>`;
+                });
+                html += '</div>';
+                
+                showModal('System Statistics', html);
+            } catch (error) {
+                alert('Error loading statistics: ' + error.message);
+            }
+        }
+        
+        function searchUserData() {
+            const email = prompt('Enter user email to search:');
+            if (!email) return;
+            
+            fetch(`${API_BASE_URL}/api/users/search?email=${encodeURIComponent(email)}`, {
+                headers: {
+                    'Authorization': `Bearer ${ADMIN_TOKEN}`
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data.userId) {
+                    viewUserDetails(data.data.userId);
+                } else {
+                    alert('User not found');
+                }
+            })
+            .catch(error => {
+                alert('Error searching user: ' + error.message);
+            });
+        }
+        
+        // Export Users Function
+        async function exportUsers(status) {
+            try {
+                const timeframe = document.getElementById('exportTimeframe').value;
+                const url = `${API_BASE_URL}/admin/users/export?status=${status}&timeframe=${timeframe}`;
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `ficore_users_${status}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    alert(`✅ ${status.toUpperCase()} users exported successfully! Check your downloads.`);
+                } else {
+                    alert('❌ Failed to export users. Please try again.');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
+        }
+        
+        async function exportBusinessProfiles() {
+            try {
+                const url = `${API_BASE_URL}/admin/users/business-profiles/export`;
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `ficore_business_profiles_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    alert('✅ Business profiles exported successfully! Check your downloads.\n\nIncludes: Business Name, Type, Industry, Employees, Address, TIN, Social Media');
+                } else {
+                    alert('❌ Failed to export business profiles. Please try again.');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
+        }
+        
+        async function searchUserForExport(event) {
+            // Allow search on Enter key
+            if (event && event.key && event.key !== 'Enter') {
+                return;
+            }
+            
+            const searchInput = document.getElementById('userSearchInput');
+            const searchTerm = searchInput.value.trim();
+            const resultsDiv = document.getElementById('userSearchResults');
+            
+            if (searchTerm.length < 2) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+            
+            try {
+                const response = await apiCall(`/admin/users?search=${encodeURIComponent(searchTerm)}&limit=10`);
+                
+                if (response.success && response.data.users.length > 0) {
+                    resultsDiv.innerHTML = '';
+                    resultsDiv.style.display = 'block';
+                    
+                    response.data.users.forEach(user => {
+                        const userDiv = document.createElement('div');
+                        userDiv.style.cssText = 'padding: 12px; border-bottom: 1px solid #E5E7EB; cursor: pointer; display: flex; justify-content: space-between; align-items: center;';
+                        userDiv.onmouseover = () => userDiv.style.background = '#F9FAFB';
+                        userDiv.onmouseout = () => userDiv.style.background = 'white';
+                        
+                        userDiv.innerHTML = `
+                            <div>
+                                <div style="font-weight: 600; color: #2E2E2E;">${user.displayName || user.name || 'No Name'}</div>
+                                <div style="font-size: 12px; color: #6B7280;">${user.email}</div>
+                            </div>
+                            <button 
+                                class="btn" 
+                                style="padding: 6px 12px; font-size: 12px; background: #B88A44;"
+                                onclick="event.stopPropagation(); exportSingleUserBusinessProfile('${user.id}', '${user.email}')"
+                            >
+                                💼 Export Profile
+                            </button>
+                        `;
+                        
+                        resultsDiv.appendChild(userDiv);
+                    });
+                } else {
+                    resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #6B7280;">No users found</div>';
+                    resultsDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                alert('❌ Search failed: ' + error.message);
+            }
+        }
+        
+        async function exportSingleUserBusinessProfile(userId, userEmail) {
+            try {
+                const response = await apiCall(`/admin/users/${userId}`);
+                
+                if (response.success) {
+                    const user = response.data;
+                    
+                    // Create CSV content for single user
+                    let csv = 'Field,Value\n';
+                    csv += `User ID,${userId}\n`;
+                    csv += `Email,${user.email || ''}\n`;
+                    csv += `Display Name,${user.displayName || user.name || ''}\n`;
+                    csv += `First Name,${user.firstName || ''}\n`;
+                    csv += `Last Name,${user.lastName || ''}\n`;
+                    csv += `Phone,${user.phone || ''}\n`;
+                    csv += `\n--- Business Profile ---\n`;
+                    csv += `Business Name,${user.businessName || 'Not provided'}\n`;
+                    csv += `Business Type,${user.businessType || 'Not provided'}\n`;
+                    csv += `Business Type Other,${user.businessTypeOther || 'N/A'}\n`;
+                    csv += `Industry,${user.industry || 'Not provided'}\n`;
+                    csv += `Number of Employees,${user.numberOfEmployees !== undefined ? user.numberOfEmployees : 'Not provided'}\n`;
+                    csv += `Physical Address,${user.physicalAddress || 'Not provided'}\n`;
+                    csv += `Tax ID Number,${user.taxIdentificationNumber || 'Not provided'}\n`;
+                    
+                    // Social media links
+                    if (user.socialMediaLinks && user.socialMediaLinks.length > 0) {
+                        csv += `\n--- Social Media ---\n`;
+                        user.socialMediaLinks.forEach(link => {
+                            csv += `${link.platform || 'Unknown'},${link.url || ''}\n`;
+                        });
+                    } else {
+                        csv += `Social Media Links,Not provided\n`;
+                    }
+                    
+                    csv += `\n--- Account Info ---\n`;
+                    csv += `Credit Balance,${user.ficoreCreditBalance || 0}\n`;
+                    csv += `Is Subscribed,${user.isSubscribed ? 'Yes' : 'No'}\n`;
+                    csv += `Subscription Type,${user.subscriptionType || 'None'}\n`;
+                    csv += `Created At,${user.createdAt || ''}\n`;
+                    csv += `Last Login,${user.lastLogin || 'Never'}\n`;
+                    
+                    // Download CSV
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `business_profile_${userEmail.replace('@', '_at_')}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    
+                    alert(`✅ Business profile for ${userEmail} exported successfully!`);
+                    
+                    // Clear search
+                    document.getElementById('userSearchInput').value = '';
+                    document.getElementById('userSearchResults').style.display = 'none';
+                } else {
+                    alert('❌ Failed to fetch user data');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
+        }
+        
+        async function viewNDPRRequests() {
+            try {
+                const response = await apiCall('/api/analytics/admin/ndpr-requests');
+                
+                let html = '<h3>NDPR Compliance Summary</h3>';
+                html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                html += `<p><strong>Total Users:</strong> ${response.data.summary.totalUsers}</p>`;
+                html += `<p><strong>Users with Analytics Data:</strong> ${response.data.summary.usersWithAnalytics}</p>`;
+                html += `<p><strong>Users without Analytics Data:</strong> ${response.data.summary.usersWithoutAnalytics}</p>`;
+                html += '</div>';
+                
+                html += '<h4>NDPR Rights Available</h4>';
+                html += '<ul style="line-height: 2;">';
+                html += '<li>Right to Access - Users can view their data via API</li>';
+                html += '<li>Right to Erasure - Users can delete their data via API</li>';
+                html += '<li>Data Portability - Users can export their data in JSON</li>';
+                html += '<li>Right to Object - Users can opt-out of tracking</li>';
+                html += '</ul>';
+                
+                html += '<h4>Admin Actions</h4>';
+                html += '<p>As an admin, you can:</p>';
+                html += '<ul style="line-height: 2;">';
+                html += '<li>View any user\'s analytics data</li>';
+                html += '<li>Delete user data for NDPR compliance</li>';
+                html += '<li>Export user data for data subject requests</li>';
+                html += '<li>Monitor system-wide analytics statistics</li>';
+                html += '</ul>';
+                
+                html += '<div style="background: #FFF3CD; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #F59E0B;">';
+                html += '<strong>Important:</strong> All data deletions are logged for audit purposes. ';
+                html += 'Analytics data is automatically deleted after 12 months per NDPR retention policy.';
+                html += '</div>';
+                
+                showModal('NDPR Compliance', html);
+            } catch (error) {
+                alert('Error loading NDPR requests: ' + error.message);
+            }
+        }
+        
+        function showModal(title, content) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalContent').innerHTML = content;
+            document.getElementById('userDataModal').style.display = 'block';
+        }
+        
+        function closeModal() {
+            document.getElementById('userDataModal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('userDataModal');
+            const passwordModal = document.getElementById('changePasswordModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+            if (event.target === passwordModal) {
+                closeChangePasswordModal();
+            }
+        }
+        
+        // Rate Limit Monitoring Functions
+        async function loadRateLimitData() {
+            try {
+                const hours = document.getElementById('rateLimitTimeframe').value;
+                
+                // Load overview
+                const overviewResponse = await apiCall(`/admin/rate-limits/overview?hours=${hours}`);
+                if (overviewResponse.success) {
+                    const overview = overviewResponse.data.overview;
+                    document.getElementById('rl-total-calls').textContent = overview.totalCalls.toLocaleString();
+                    document.getElementById('rl-calls-per-min').textContent = `${overview.callsPerMinute} calls/min`;
+                    document.getElementById('rl-limit-hits').textContent = overview.rateLimitHits.toLocaleString();
+                    document.getElementById('rl-limit-rate').textContent = `${overview.rateLimitRate}% of calls`;
+                    document.getElementById('rl-error-rate').textContent = `${overview.errorRate}%`;
+                    document.getElementById('rl-error-count').textContent = `${overview.errorCalls.toLocaleString()} errors`;
+                    document.getElementById('rl-avg-response').textContent = `${overview.avgResponseTime}ms`;
+                }
+                
+                // Load heavy users
+                const heavyUsersResponse = await apiCall(`/admin/rate-limits/heavy-users?hours=${hours}&min_calls=100`);
+                if (heavyUsersResponse.success) {
+                    const heavyUsersBody = document.getElementById('heavy-users-body');
+                    heavyUsersBody.innerHTML = '';
+                    
+                    if (heavyUsersResponse.data.heavyUsers.length === 0) {
+                        heavyUsersBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #10B981;">✅ No heavy users detected</td></tr>';
+                    } else {
+                        heavyUsersResponse.data.heavyUsers.forEach(user => {
+                            const row = document.createElement('tr');
+                            const subscriptionBadge = user.isSubscribed ? '<span class="badge" style="background: #10B981; margin-left: 5px;">Premium</span>' : '';
+                            row.innerHTML = `
+                                <td>${user.displayName}${subscriptionBadge}</td>
+                                <td>${user.email}</td>
+                                <td><strong>${user.totalCalls.toLocaleString()}</strong></td>
+                                <td>${user.callsPerMinute}</td>
+                                <td>${user.uniqueEndpoints}</td>
+                                <td>${user.avgResponseTime.toFixed(2)}ms</td>
+                                <td><button onclick="viewUserApiUsage('${user._id}')" class="btn" style="padding: 5px 10px;">Details</button></td>
+                            `;
+                            heavyUsersBody.appendChild(row);
+                        });
+                    }
+                }
+                
+                // Load endpoint stats
+                const endpointStatsResponse = await apiCall(`/admin/rate-limits/endpoint-stats?hours=${hours}`);
+                if (endpointStatsResponse.success) {
+                    const endpointStatsBody = document.getElementById('endpoint-stats-body');
+                    endpointStatsBody.innerHTML = '';
+                    
+                    endpointStatsResponse.data.endpoints.forEach(endpoint => {
+                        const row = document.createElement('tr');
+                        const errorColor = endpoint.errorRate > 10 ? '#DC2626' : '#6B7280';
+                        row.innerHTML = `
+                            <td><code style="font-size: 12px;">${endpoint.endpoint}</code></td>
+                            <td><strong>${endpoint.totalCalls.toLocaleString()}</strong></td>
+                            <td>${endpoint.callsPerMinute}</td>
+                            <td>${endpoint.uniqueUsers}</td>
+                            <td>${endpoint.avgResponseTime}ms</td>
+                            <td style="color: ${errorColor}; font-weight: bold;">${endpoint.errorRate}%</td>
+                        `;
+                        endpointStatsBody.appendChild(row);
+                    });
+                }
+                
+                // Load violations
+                const violationsResponse = await apiCall(`/admin/rate-limits/violations?hours=${hours}`);
+                if (violationsResponse.success) {
+                    const violationsBody = document.getElementById('violations-body');
+                    violationsBody.innerHTML = '';
+                    
+                    if (violationsResponse.data.violations.length === 0) {
+                        violationsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #10B981;">✅ No rate limit violations</td></tr>';
+                    } else {
+                        violationsResponse.data.violations.forEach(violation => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${violation.displayName}</td>
+                                <td>${violation.email}</td>
+                                <td><code style="font-size: 12px;">${violation.endpoint}</code></td>
+                                <td><strong style="color: #DC2626;">${violation.violationCount}</strong></td>
+                                <td>${formatTime(violation.lastViolation)}</td>
+                            `;
+                            violationsBody.appendChild(row);
+                        });
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error loading rate limit data:', error);
+                alert('Error loading rate limit data: ' + error.message);
+            }
+        }
+        
+        async function viewUserApiUsage(userId) {
+            try {
+                const hours = document.getElementById('rateLimitTimeframe').value;
+                const response = await apiCall(`/admin/rate-limits/user/${userId}?hours=${hours}`);
+                
+                if (response.success) {
+                    const data = response.data;
+                    
+                    let html = '<h3>User API Usage Details</h3>';
+                    html += '<div style="background: #F4F1EC; padding: 15px; border-radius: 5px; margin-bottom: 20px;">';
+                    html += `<p><strong>Name:</strong> ${data.user.displayName}</p>`;
+                    html += `<p><strong>Email:</strong> ${data.user.email}</p>`;
+                    html += `<p><strong>Subscription:</strong> ${data.user.isSubscribed ? '✅ Premium' : '❌ Free'}</p>`;
+                    html += `<p><strong>Total Calls:</strong> ${data.totalCalls.toLocaleString()}</p>`;
+                    html += `<p><strong>Calls per Minute:</strong> ${data.callsPerMinute}</p>`;
+                    html += `<p><strong>Timeframe:</strong> ${data.timeframe}</p>`;
+                    html += '</div>';
+                    
+                    html += '<h4>Endpoint Breakdown</h4>';
+                    html += '<table style="width: 100%; border-collapse: collapse;">';
+                    html += '<thead><tr style="background: #F4F1EC;">';
+                    html += '<th style="padding: 10px; text-align: left;">Endpoint</th>';
+                    html += '<th style="padding: 10px; text-align: right;">Calls</th>';
+                    html += '<th style="padding: 10px; text-align: right;">Avg Response</th>';
+                    html += '<th style="padding: 10px; text-align: left;">Last Call</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    data.endpointBreakdown.forEach(item => {
+                        html += '<tr style="border-bottom: 1px solid #eee;">';
+                        html += `<td style="padding: 10px;"><code style="font-size: 12px;">${item.endpoint}</code></td>`;
+                        html += `<td style="padding: 10px; text-align: right;"><strong>${item.count}</strong></td>`;
+                        html += `<td style="padding: 10px; text-align: right;">${item.avgResponseTime}ms</td>`;
+                        html += `<td style="padding: 10px;">${formatTime(item.lastCall)}</td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    
+                    showModal('User API Usage', html);
+                }
+            } catch (error) {
+                alert('Error loading user API usage: ' + error.message);
+            }
+        }
+        
+        // Initial load - NO AUTO-REFRESH
+        loadDashboard();
+        loadRateLimitData();
+    </script>
+</body>
+</html>

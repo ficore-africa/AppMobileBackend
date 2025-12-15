@@ -18,14 +18,18 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
     PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_your_public_key')
     PAYSTACK_BASE_URL = 'https://api.paystack.co'
     
-    # Credit top-up configuration - Users buy FiCore Credits at ₦50 per credit
+    # Credit top-up configuration - For NON-SUBSCRIBERS ONLY
+    # Premium subscribers (₦10,000/year) get UNLIMITED access without credits
+    # Credits are for pay-per-use access to features for non-subscribers
     CREDIT_PACKAGES = [
-        {'credits': 10, 'naira': 500},    # 10 FCs for ₦500
-        {'credits': 50, 'naira': 2500},   # 50 FCs for ₦2,500  
-        {'credits': 100, 'naira': 5000},  # 100 FCs for ₦5,000
-        {'credits': 200, 'naira': 10000}, # 200 FCs for ₦10,000
+        {'credits': 5, 'naira': 100, 'tier': 'Starter', 'rate': 20},      # ₦20/FC – Entry level
+        {'credits': 10, 'naira': 300, 'tier': 'Baseline', 'rate': 30},    # ₦30/FC – Standard
+        {'credits': 50, 'naira': 1500, 'tier': 'Pro', 'rate': 30},        # ₦30/FC – Professional
+        {'credits': 100, 'naira': 3000, 'tier': 'Business', 'rate': 30},  # ₦30/FC – Business
+        {'credits': 200, 'naira': 5000, 'tier': 'Executive', 'rate': 25}, # ₦25/FC – Bulk saver
     ]
-    NAIRA_PER_CREDIT = 50  # Price: ₦50 per 1 FiCore Credit
+    # NOTE: Removed 200 FCs for ₦10,000 to avoid confusion with Annual Premium subscription
+    NAIRA_PER_CREDIT = 30  # Base price: ₦30 per 1 FiCore Credit (bulk discounts available)
     
     # Configure upload settings
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'receipts')
@@ -66,14 +70,20 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
     @credits_bp.route('/topup-options', methods=['GET'])
     @token_required
     def get_topup_options(current_user):
-        """Get available credit packages for purchase"""
+        """Get available credit packages for purchase (for non-subscribers)"""
         try:
+            # Check if user is a premium subscriber
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_subscribed = user.get('isSubscribed', False)
+            
             options = []
             for package in CREDIT_PACKAGES:
                 options.append({
                     'creditAmount': package['credits'],
                     'nairaAmount': package['naira'],
-                    'displayText': f'{package["credits"]} FCs - ₦{package["naira"]:,}'
+                    'tier': package['tier'],
+                    'rate': package['rate'],
+                    'displayText': f'{package["credits"]} FCs - ₦{package["naira"]:,} ({package["tier"]})'
                 })
             
             # Extract allowed Naira amounts for frontend compatibility
@@ -86,7 +96,9 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                     'conversionRate': float(NAIRA_PER_CREDIT),
                     'allowedNairaAmounts': allowed_naira_amounts,
                     'pricePerCredit': NAIRA_PER_CREDIT,
-                    'packages': CREDIT_PACKAGES
+                    'packages': CREDIT_PACKAGES,
+                    'isSubscribed': is_subscribed,
+                    'message': 'Premium subscribers get unlimited access without credits!' if is_subscribed else 'Credits for pay-per-use access'
                 },
                 'message': 'Credit packages retrieved successfully'
             })
@@ -901,6 +913,8 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             valid_operations = [
                 # Income & Expense operations
                 'create_income', 'delete_income', 'create_expense', 'delete_expense',
+                # Asset Register operations
+                'create_asset', 'delete_asset',
                 # Inventory operations
                 'create_item', 'delete_item', 'create_movement', 'stock_in', 'stock_out', 'adjust_stock',
                 # Creditors operations
@@ -912,7 +926,8 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 'export_debtors_csv', 'export_debtors_pdf', 'export_net_income_report', 'export_financial_report',
                 'export_dashboard_summary', 'export_enhanced_profit_report', 'export_complete_data_export',
                 'export_movements_csv', 'export_valuation_pdf', 'export_aging_report_pdf', 'export_payments_due_csv',
-                'export_debtors_aging_report_pdf', 'export_debtors_payments_due_csv'
+                'export_debtors_aging_report_pdf', 'export_debtors_payments_due_csv',
+                'export_assets_csv', 'export_assets_pdf', 'export_asset_register_pdf', 'export_depreciation_report_pdf'
             ]
             
             if operation not in valid_operations:

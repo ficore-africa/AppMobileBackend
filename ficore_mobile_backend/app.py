@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, redirect, url_for, send_from_directory
+from flask import Flask, request, jsonify, Response, redirect, url_for, send_from_directory, g
 from flask_cors import CORS
 from flask_pymongo import PyMongo
 from flask_limiter import Limiter
@@ -16,7 +16,7 @@ from blueprints.users import users_bp, init_users_blueprint
 from blueprints.income import init_income_blueprint
 from blueprints.expenses import expenses_bp, init_expenses_blueprint
 from blueprints.financial_aggregation import init_financial_aggregation_blueprint
-
+from blueprints.attachments import init_attachments_blueprint
 
 from blueprints.credits import init_credits_blueprint
 from blueprints.summaries import init_summaries_blueprint
@@ -25,14 +25,23 @@ from blueprints.tax import init_tax_blueprint
 from blueprints.debtors import init_debtors_blueprint
 from blueprints.creditors import init_creditors_blueprint
 from blueprints.inventory import init_inventory_blueprint
+from blueprints.assets import init_assets_blueprint
 from blueprints.dashboard import init_dashboard_blueprint
 from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
 from blueprints.reminders import init_reminders_blueprint
+from blueprints.analytics import init_analytics_blueprint
+from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprint
+from blueprints.admin_subscription_management import init_admin_subscription_management_blueprint
+from blueprints.atomic_entries import init_atomic_entries_blueprint
 
 # Import database models
 from models import DatabaseInitializer
+
+# Import rate limit tracking utilities
+from utils.rate_limit_tracker import RateLimitTracker
+from utils.api_logging_middleware import setup_api_logging
 
 app = Flask(__name__)
 
@@ -46,10 +55,12 @@ CORS(app, origins=['*'])
 mongo = PyMongo(app)
 
 # Initialize rate limiter with more reasonable limits
+# CRITICAL FIX: Increased limits to prevent legitimate usage from being blocked
+# Mobile apps make frequent API calls, especially for status checks
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["1000 per day", "200 per hour"],
+    default_limits=["50000 per day", "500 per hour"],  # Increased from 1000/200
     storage_uri="memory://",
 )
 
@@ -210,6 +221,9 @@ def token_required(f):
             except Exception as db_error:
                 print(f"Database error in token validation: {str(db_error)}")
                 return jsonify({'success': False, 'message': 'Database connection error'}), 500
+            
+            # Store user ID in g for API logging middleware
+            g.current_user_id = current_user['_id']
                 
         except jwt.ExpiredSignatureError:
             return jsonify({'success': False, 'message': 'Token has expired'}), 401
@@ -240,7 +254,7 @@ users_blueprint = init_users_blueprint(mongo, token_required)
 income_blueprint = init_income_blueprint(mongo, token_required, serialize_doc)
 expenses_blueprint = init_expenses_blueprint(mongo, token_required, serialize_doc)
 financial_aggregation_blueprint = init_financial_aggregation_blueprint(mongo, token_required, serialize_doc)
-
+attachments_blueprint = init_attachments_blueprint(mongo, token_required, serialize_doc)
 
 credits_blueprint = init_credits_blueprint(mongo, token_required, serialize_doc)
 summaries_blueprint = init_summaries_blueprint(mongo, token_required, serialize_doc)
@@ -249,18 +263,31 @@ tax_blueprint = init_tax_blueprint(mongo, token_required, serialize_doc)
 debtors_blueprint = init_debtors_blueprint(mongo, token_required, serialize_doc)
 creditors_blueprint = init_creditors_blueprint(mongo, token_required, serialize_doc)
 inventory_blueprint = init_inventory_blueprint(mongo, token_required, serialize_doc)
+assets_blueprint = init_assets_blueprint(mongo, token_required, serialize_doc)
 dashboard_blueprint = init_dashboard_blueprint(mongo, token_required, serialize_doc)
 rewards_blueprint = init_rewards_blueprint(mongo, token_required, serialize_doc)
 subscription_blueprint = init_subscription_blueprint(mongo, token_required, serialize_doc)
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
 reminders_blueprint = init_reminders_blueprint(mongo, token_required, serialize_doc)
+analytics_blueprint = init_analytics_blueprint(mongo, token_required, admin_required, serialize_doc)
+admin_subscription_management_blueprint = init_admin_subscription_management_blueprint(mongo, token_required, admin_required, serialize_doc)
+
+# CRITICAL: Initialize atomic entries blueprint for FC charging fix
+atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, serialize_doc)
+
+# Initialize rate limit tracker
+rate_limit_tracker = RateLimitTracker(mongo)
+rate_limit_monitoring_blueprint = init_rate_limit_monitoring_blueprint(mongo, token_required, admin_required, rate_limit_tracker)
+
+# Setup API logging middleware
+setup_api_logging(app, rate_limit_tracker)
 
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(users_blueprint)
 app.register_blueprint(income_blueprint)
 app.register_blueprint(expenses_blueprint)
 app.register_blueprint(financial_aggregation_blueprint)
-
+app.register_blueprint(attachments_blueprint)
 
 app.register_blueprint(credits_blueprint)
 app.register_blueprint(summaries_blueprint)
@@ -269,11 +296,25 @@ app.register_blueprint(tax_blueprint)
 app.register_blueprint(debtors_blueprint)
 app.register_blueprint(creditors_blueprint)
 app.register_blueprint(inventory_blueprint)
+app.register_blueprint(assets_blueprint)
 app.register_blueprint(dashboard_blueprint)
 app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
 app.register_blueprint(reminders_blueprint)
+app.register_blueprint(analytics_blueprint)
+app.register_blueprint(admin_subscription_management_blueprint)
+app.register_blueprint(rate_limit_monitoring_blueprint)
+
+# CRITICAL: Register atomic entries blueprint for FC charging fix
+app.register_blueprint(atomic_entries_blueprint)
+print("✓ Atomic entries blueprint registered at /atomic")
+
+# Root redirect to admin login
+@app.route('/')
+def index():
+    """Redirect root URL to admin login page"""
+    return redirect('/admin/admin_login.html')
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])
@@ -284,6 +325,182 @@ def health_check():
         'timestamp': datetime.utcnow().isoformat() + 'Z',
         'version': '1.0.0'
     })
+
+# GCS health check endpoint
+@app.route('/health/gcs', methods=['GET'])
+def gcs_health_check():
+    """Check if Google Cloud Storage is accessible"""
+    try:
+        from google.cloud import storage
+        
+        storage_client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        bucket = storage_client.bucket(bucket_name)
+        
+        # Test if bucket exists and is accessible
+        exists = bucket.exists()
+        
+        if exists:
+            return jsonify({
+                'success': True,
+                'message': 'GCS is accessible',
+                'bucket': bucket_name,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'GCS bucket not found',
+                'bucket': bucket_name,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 404
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'GCS error: {str(e)}',
+            'bucket': os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments'),
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }), 500
+
+# Profile picture upload endpoint
+@app.route('/upload/profile-picture', methods=['POST'])
+@token_required
+def upload_profile_picture(current_user):
+    """Upload profile picture for user to Google Cloud Storage"""
+    try:
+        from google.cloud import storage
+        from werkzeug.utils import secure_filename
+        import uuid
+        
+        # Check if file is in request
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'message': 'No file provided'
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file has a filename
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'message': 'No file selected'
+            }), 400
+        
+        # Validate file type
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                'success': False,
+                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}'
+            }), 400
+        
+        # Initialize Google Cloud Storage
+        storage_client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        
+        # Verify bucket exists
+        try:
+            bucket = storage_client.bucket(bucket_name)
+            if not bucket.exists():
+                print(f"❌ GCS bucket does not exist: {bucket_name}")
+                return jsonify({
+                    'success': False,
+                    'message': 'Storage configuration error. Please contact support.',
+                    'errors': {'general': ['Storage bucket not configured']}
+                }), 500
+        except Exception as e:
+            print(f"❌ Error accessing GCS bucket {bucket_name}: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Storage service unavailable. Please try again later.',
+                'errors': {'general': [str(e)]}
+            }), 503
+        
+        # Generate unique filename for GCS
+        user_id = str(current_user['_id'])
+        unique_id = str(uuid.uuid4())
+        gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
+        
+        # Upload to Google Cloud Storage (private bucket)
+        try:
+            blob = bucket.blob(gcs_filename)
+            content_type = file.content_type or f'image/{file_ext}'
+            blob.upload_from_file(file, content_type=content_type)
+            print(f"✅ Profile picture uploaded to GCS: {gcs_filename}")
+        except Exception as e:
+            print(f"❌ Error uploading to GCS: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to upload image to storage',
+                'errors': {'general': [str(e)]}
+            }), 500
+        
+        # Generate signed URL (valid for 7 days)
+        # This allows private access without making the bucket public
+        from datetime import timedelta
+        try:
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(days=7),
+                method="GET"
+            )
+            print(f"✅ Generated signed URL for immediate use")
+        except Exception as e:
+            print(f"❌ Error generating signed URL: {e}")
+            # Continue anyway - we have the GCS path
+            signed_url = None
+        
+        # CRITICAL FIX: Update user profile with GCS path (not the signed URL)
+        # We'll generate fresh signed URLs when needed via GET /users/profile
+        # This ensures URLs never expire from the user's perspective
+        try:
+            mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {
+                    '$set': {
+                        'gcsProfilePicturePath': gcs_filename,  # Permanent GCS path
+                        'profilePictureUrl': None,  # Clear old URL if any
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            print(f"✅ Saved GCS path to user document: {gcs_filename}")
+        except Exception as e:
+            print(f"❌ Error updating user document: {e}")
+            # Upload succeeded but DB update failed - not critical
+            # User can try again
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'image_url': signed_url,  # Return signed URL for immediate use
+                'url': signed_url,  # Alias for compatibility
+                'gcs_path': gcs_filename  # Include path for reference
+            },
+            'message': 'Profile picture uploaded successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"Error uploading profile picture: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': 'Failed to upload profile picture',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+@app.route('/admin')
+def admin_redirect():
+    """Redirect /admin to admin login page"""
+    return redirect('/admin/admin_login.html')
 
 @app.route('/admin/<path:filename>')
 def serve_admin_static(filename):
@@ -299,16 +516,46 @@ def serve_admin_static(filename):
 
 @app.route('/uploads/<path:filename>')
 def serve_uploaded_file(filename):
-    """Serve uploaded files (receipts, documents, etc.)"""
+    """Serve uploaded files (receipts, documents, profile pictures, etc.)"""
     try:
         uploads_path = os.path.join(os.path.dirname(__file__), 'uploads')
-        return send_from_directory(uploads_path, filename)
-    except FileNotFoundError:
+        
+        # Handle subdirectories (e.g., profile_pictures/image.jpg)
+        if '/' in filename:
+            # Split into directory and filename
+            parts = filename.split('/')
+            subdir = parts[0]
+            file_name = '/'.join(parts[1:])
+            full_path = os.path.join(uploads_path, subdir)
+            
+            # Check if file exists
+            file_path = os.path.join(full_path, file_name)
+            if not os.path.exists(file_path):
+                print(f"Error serving file {filename}: 404 Not Found: File does not exist at {file_path}")
+                return jsonify({
+                    'success': False,
+                    'message': f'File not found'
+                }), 404
+                
+            return send_from_directory(full_path, file_name)
+        else:
+            file_path = os.path.join(uploads_path, filename)
+            if not os.path.exists(file_path):
+                print(f"Error serving file {filename}: 404 Not Found: File does not exist at {file_path}")
+                return jsonify({
+                    'success': False,
+                    'message': f'File not found'
+                }), 404
+            return send_from_directory(uploads_path, filename)
+            
+    except FileNotFoundError as e:
+        print(f"Error serving file {filename}: 404 Not Found: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f'File {filename} not found'
+            'message': f'File not found'
         }), 404
     except Exception as e:
+        print(f"Error serving file {filename}: {str(e)}")
         return jsonify({
             'success': False,
             'message': 'Failed to serve file',
@@ -581,6 +828,33 @@ def bad_request(error):
     }), 400
 
 if __name__ == '__main__':
+    # Run database migrations before starting the app
+    try:
+        print("\n🔄 Running database migrations...")
+        from run_migrations import run_all_migrations
+        mongo_uri = app.config.get('MONGO_URI')
+        run_all_migrations(mongo_uri)
+        print("✅ Migrations completed\n")
+    except Exception as e:
+        print(f"⚠️  Migration error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if migrations fail
+    
+    # Initialize subscription scheduler
+    try:
+        print("🕐 Initializing subscription scheduler...")
+        from utils.subscription_scheduler import SubscriptionScheduler
+        subscription_scheduler = SubscriptionScheduler(mongo.db)
+        subscription_scheduler.start()
+        print("✅ Subscription scheduler started\n")
+        print("   - Daily expiration processing at 2:00 AM UTC")
+        print("   - Daily expiry warnings at 10:00 AM UTC")
+        print("   - Daily renewal reminders at 9:00 AM UTC")
+        print("   - Daily re-engagement messages at 11:00 AM UTC")
+        print("   - Daily auto-renewal processing at 1:00 AM UTC\n")
+    except Exception as e:
+        print(f"⚠️  Scheduler initialization error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if scheduler fails
+    
     app.run(debug=True, host='0.0.0.0', port=5000)
 
 
