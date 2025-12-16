@@ -1,0 +1,6 @@
+@echo off
+echo Stopping any running Flask servers...
+taskkill /F /IM python.exe /FI "WINDOWTITLE eq Flask*" 2>nul
+
+echo Starting Flask server...
+python start_server.py
