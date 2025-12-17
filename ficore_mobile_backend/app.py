@@ -49,7 +49,7 @@ mongo = PyMongo(app)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["1000 per day", "200 per hour"],
+    default_limits=["10000 per day", "2000 per hour"],
     storage_uri="memory://",
 )
 
@@ -676,6 +676,7 @@ def bad_request(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
