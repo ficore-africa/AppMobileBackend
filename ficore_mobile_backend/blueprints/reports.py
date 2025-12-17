@@ -3,7 +3,7 @@ Reports Blueprint - Centralized Export Endpoints
 Handles all report generation and export functionality for FiCore Mobile
 """
 from flask import Blueprint, request, jsonify, send_file
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import sys
 import os
@@ -227,12 +227,9 @@ def init_reports_blueprint(mongo, token_required):
             
             for income in incomes:
                 export_data['incomes'].append({
-                    'id': str(income['_id']),
                     'source': income.get('source', ''),
                     'amount': income.get('amount', 0),
-                    'category': income.get('category', {}).get('name', 'Other'),
-                    'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
-                    'description': income.get('description', '')
+                    'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
                 })
             
             # Generate PDF
@@ -817,7 +814,7 @@ def init_reports_blueprint(mongo, token_required):
                 assets = list(mongo.db.assets.find(assets_query))
                 
                 # Calculate Net Book Value for each asset
-                from datetime import datetime, timezone, timedelta
+                # Use datetime from module-level import (line 6)
                 nigerian_time = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=1)))
                 
                 fixed_assets_nbv = 0  # Net Book Value for exemption check

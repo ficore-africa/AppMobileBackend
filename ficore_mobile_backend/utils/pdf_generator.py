@@ -72,8 +72,14 @@ class PDFGenerator:
         
         story = []
         
-        # Title
-        title = Paragraph("FiCore Financial Report", self.styles['CustomTitle'])
+        # Title - Dynamic based on data type
+        report_titles = {
+            'all': 'Profit & Loss Statement',
+            'incomes': 'Income Report',
+            'expenses': 'Expense Report'
+        }
+        title_text = report_titles.get(data_type.lower(), 'Financial Report')
+        title = Paragraph(title_text, self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 12))
         
@@ -92,23 +98,26 @@ class PDFGenerator:
         if 'expenses' in export_data and export_data['expenses']:
             story.append(Paragraph("Expenses Summary", self.styles['SectionHeader']))
             
-            expense_data = [['Date', 'Title', 'Category', 'Amount (₦)']]
+            expense_data = [['Date', 'Category', 'Description', 'Amount (₦)']]
             total_expenses = 0
             
             for expense in export_data['expenses']:
                 date_obj = parse_date_safe(expense.get('date'))
                 date_str = date_obj.strftime('%Y-%m-%d')
+                # Use description if available, otherwise fall back to title
+                description = expense.get('description') or expense.get('notes') or expense.get('title', 'N/A')
                 expense_data.append([
                     date_str,
-                    expense.get('title', 'N/A'),
                     expense.get('category', 'N/A'),
+                    description,
                     f"₦{expense.get('amount', 0):,.2f}"
                 ])
                 total_expenses += expense.get('amount', 0)
             
             expense_data.append(['', '', 'Total:', f"₦{total_expenses:,.2f}"])
             
-            expense_table = Table(expense_data, colWidths=[1.5*inch, 2*inch, 1.5*inch, 1.5*inch])
+            # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
+            expense_table = Table(expense_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             expense_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -120,7 +129,8 @@ class PDFGenerator:
                 ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # Align text to top for multi-line descriptions
             ]))
             
             story.append(expense_table)
@@ -130,34 +140,41 @@ class PDFGenerator:
         if 'incomes' in export_data and export_data['incomes']:
             story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
             
-            income_data = [['Date', 'Source', 'Amount (₦)']]
+            income_data = [['Date', 'Category', 'Description', 'Amount (₦)']]
             total_income = 0
             
             for income in export_data['incomes']:
                 date_obj = parse_date_safe(income.get('dateReceived'))
                 date_str = date_obj.strftime('%Y-%m-%d')
+                # Use description if available, otherwise fall back to source
+                description = income.get('description') or income.get('source', 'N/A')
+                # Get category display name
+                category = income.get('category', 'Other')
                 income_data.append([
                     date_str,
-                    income.get('source', 'N/A'),
+                    category,
+                    description,
                     f"₦{income.get('amount', 0):,.2f}"
                 ])
                 total_income += income.get('amount', 0)
             
-            income_data.append(['', 'Total:', f"₦{total_income:,.2f}"])
+            income_data.append(['', '', 'Total:', f"₦{total_income:,.2f}"])
             
-            income_table = Table(income_data, colWidths=[2*inch, 3*inch, 1.5*inch])
+            # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
+            income_table = Table(income_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             income_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('BACKGROUND', (0, 1), (-1, -2), colors.lightgreen),
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # Align text to top for multi-line descriptions
             ]))
             
             story.append(income_table)
@@ -711,7 +728,7 @@ class PDFGenerator:
         story = []
         
         # Title
-        title = Paragraph("Debtors Report (Accounts Receivable)", self.styles['CustomTitle'])
+        title = Paragraph("Accounts Receivable (Debtors) Report", self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 12))
         
@@ -812,7 +829,7 @@ class PDFGenerator:
         story = []
         
         # Title
-        title = Paragraph("Creditors Report (Accounts Payable)", self.styles['CustomTitle'])
+        title = Paragraph("Accounts Payable (Creditors) Report", self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 12))
         
@@ -913,7 +930,7 @@ class PDFGenerator:
         story = []
         
         # Title
-        title = Paragraph("Assets Register", self.styles['CustomTitle'])
+        title = Paragraph("Asset Register Report", self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 12))
         
@@ -1032,20 +1049,58 @@ class PDFGenerator:
             total_book_value = 0
             
             for asset in assets:
-                cost = asset.get('purchaseCost', 0)
-                useful_life = asset.get('usefulLife', 5)  # Default 5 years
+                # CRITICAL FIX: Use correct field names from Asset schema
+                cost = asset.get('purchasePrice', 0)  # Was 'purchaseCost'
+                useful_life = asset.get('usefulLifeYears', 5)  # Was 'usefulLife', default 5 years
                 purchase_date = parse_date_safe(asset.get('purchaseDate'))
+                depreciation_method = asset.get('depreciationMethod', 'straight_line')
+                depreciation_rate = asset.get('depreciationRate', 0)
                 
-                # Calculate depreciation (straight-line method)
-                annual_depreciation = cost / useful_life if useful_life > 0 else 0
+                # OPTION A + C HYBRID: Use manual adjustment if exists, otherwise calculate
+                manual_adjustment = asset.get('manualValueAdjustment')
                 
-                # Calculate years since purchase
-                years_owned = (nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25
-                accumulated_depreciation = min(annual_depreciation * years_owned, cost)
-                book_value = cost - accumulated_depreciation
+                if manual_adjustment is not None:
+                    # Use manual adjustment (Option C layer)
+                    book_value = manual_adjustment
+                    accumulated_depreciation = cost - book_value
+                    # Estimate annual depreciation based on current state
+                    years_owned = max((nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25, 0.01)
+                    annual_depreciation = accumulated_depreciation / years_owned if years_owned > 0 else 0
+                else:
+                    # Calculate on-the-fly (Option A core)
+                    years_owned = (nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25
+                    
+                    if depreciation_method == 'none' or depreciation_rate == 0:
+                        book_value = cost
+                        accumulated_depreciation = 0
+                        annual_depreciation = 0
+                    elif depreciation_method == 'straight_line':
+                        annual_depreciation = cost * (depreciation_rate / 100) if depreciation_rate > 0 else (cost / useful_life if useful_life > 0 else 0)
+                        accumulated_depreciation = min(annual_depreciation * years_owned, cost)
+                        book_value = cost - accumulated_depreciation
+                    elif depreciation_method == 'reducing_balance':
+                        book_value = cost
+                        full_years = int(years_owned)
+                        partial_year = years_owned - full_years
+                        
+                        # Apply full years
+                        for _ in range(full_years):
+                            book_value = book_value * (1 - (depreciation_rate / 100))
+                        
+                        # Apply partial year
+                        if partial_year > 0:
+                            book_value = book_value * (1 - (depreciation_rate / 100 * partial_year))
+                        
+                        accumulated_depreciation = cost - book_value
+                        annual_depreciation = book_value * (depreciation_rate / 100)
+                    else:
+                        # Fallback to simple calculation
+                        annual_depreciation = cost / useful_life if useful_life > 0 else 0
+                        accumulated_depreciation = min(annual_depreciation * years_owned, cost)
+                        book_value = cost - accumulated_depreciation
                 
                 depreciation_data.append([
-                    asset.get('name', 'N/A'),
+                    asset.get('assetName', 'N/A'),  # Was 'name'
                     f"₦{cost:,.2f}",
                     f"{useful_life} years",
                     f"₦{annual_depreciation:,.2f}",
@@ -1223,7 +1278,7 @@ class PDFGenerator:
         story = []
         
         # Title
-        title = Paragraph("FiCore Credit Transactions Report", self.styles['CustomTitle'])
+        title = Paragraph("FiCore Credits Report", self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 12))
         

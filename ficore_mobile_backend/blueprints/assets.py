@@ -10,6 +10,59 @@ from bson import ObjectId
 def init_assets_blueprint(mongo, token_required, serialize_doc):
     """Initialize the assets blueprint with database and auth decorator"""
     assets_bp = Blueprint('assets', __name__, url_prefix='/assets')
+    
+    def calculate_asset_book_value(asset):
+        """
+        OPTION A + C HYBRID: Calculate current book value for an asset
+        Returns manual adjustment if exists, otherwise calculates on-the-fly
+        """
+        # Check for manual adjustment first (Option C layer)
+        manual_adjustment = asset.get('manualValueAdjustment')
+        if manual_adjustment is not None:
+            return float(manual_adjustment)
+        
+        # Calculate on-the-fly (Option A core)
+        purchase_price = asset.get('purchasePrice', 0)
+        purchase_date = asset.get('purchaseDate', datetime.utcnow())
+        depreciation_method = asset.get('depreciationMethod', 'straight_line')
+        depreciation_rate = asset.get('depreciationRate', 0)
+        useful_life = asset.get('usefulLifeYears', 5)
+        
+        # No depreciation
+        if depreciation_method == 'none' or depreciation_rate == 0:
+            return purchase_price
+        
+        # Calculate years owned
+        now = datetime.utcnow()
+        years_owned = (now - purchase_date).days / 365.25
+        
+        if years_owned <= 0:
+            return purchase_price
+        
+        # Straight-line depreciation
+        if depreciation_method == 'straight_line':
+            annual_depreciation = purchase_price * (depreciation_rate / 100) if depreciation_rate > 0 else (purchase_price / useful_life if useful_life > 0 else 0)
+            total_depreciation = annual_depreciation * years_owned
+            return max(purchase_price - total_depreciation, 0)
+        
+        # Reducing balance depreciation
+        elif depreciation_method == 'reducing_balance':
+            book_value = purchase_price
+            full_years = int(years_owned)
+            partial_year = years_owned - full_years
+            
+            # Apply full years
+            for _ in range(full_years):
+                book_value = book_value * (1 - (depreciation_rate / 100))
+            
+            # Apply partial year
+            if partial_year > 0:
+                book_value = book_value * (1 - (depreciation_rate / 100 * partial_year))
+            
+            return max(book_value, 0)
+        
+        # Fallback
+        return purchase_price
 
     @assets_bp.route('', methods=['GET'])
     @token_required
@@ -242,7 +295,11 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                 'disposalDate': disposal_date,
                 'disposalValue': float(data['disposalValue']) if data.get('disposalValue') else None,
                 'createdAt': now,
-                'updatedAt': now
+                'updatedAt': now,
+                # NEW: Manual adjustment fields (Option C layer)
+                'manualValueAdjustment': float(data['manualValueAdjustment']) if data.get('manualValueAdjustment') else None,
+                'lastValueUpdate': now if data.get('manualValueAdjustment') else None,
+                'valueAdjustmentReason': data.get('valueAdjustmentReason').strip() if data.get('valueAdjustmentReason') else None,
             }
 
             result = mongo.db.assets.insert_one(asset_doc)
@@ -333,6 +390,19 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                     update_data['disposalDate'] = None
             if 'disposalValue' in data:
                 update_data['disposalValue'] = float(v) if (v := data.get('disposalValue')) else None
+            
+            # NEW: Handle manual value adjustments (Option C layer)
+            if 'manualValueAdjustment' in data:
+                if data['manualValueAdjustment'] is not None:
+                    update_data['manualValueAdjustment'] = float(data['manualValueAdjustment'])
+                    update_data['lastValueUpdate'] = datetime.utcnow()
+                else:
+                    # Clear manual adjustment
+                    update_data['manualValueAdjustment'] = None
+                    update_data['lastValueUpdate'] = None
+            
+            if 'valueAdjustmentReason' in data:
+                update_data['valueAdjustmentReason'] = data['valueAdjustmentReason'].strip() if data['valueAdjustmentReason'] else None
 
             mongo.db.assets.update_one(
                 {'_id': ObjectId(asset_id), 'userId': current_user['_id']},
@@ -455,54 +525,42 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
     @assets_bp.route('/summary', methods=['GET'])
     @token_required
     def get_asset_summary(current_user):
-        """Get asset summary statistics for the authenticated user"""
+        """
+        Get asset summary statistics for the authenticated user
+        OPTION A + C HYBRID: Calculates book values on-the-fly
+        """
         try:
-            pipeline = [
-                {'$match': {'userId': current_user['_id']}},
-                {'$facet': {
-                    'totals': [
-                        {'$group': {
-                            '_id': None,
-                            'totalAssets': {'$sum': 1},
-                            'activeAssets': {'$sum': {'$cond': [{'$eq': ['$status', 'active']}, 1, 0]}},
-                            'disposedAssets': {'$sum': {'$cond': [{'$eq': ['$status', 'disposed']}, 1, 0]}}
-                        }}
-                    ],
-                    'activeValues': [
-                        {'$match': {'status': 'active'}},
-                        {'$group': {
-                            '_id': None,
-                            'totalPurchaseValue': {'$sum': '$purchasePrice'},
-                            'totalCurrentValue': {'$sum': '$currentValue'}
-                        }}
-                    ],
-                    'categoryBreakdown': [
-                        {'$match': {'status': 'active'}},
-                        {'$group': {
-                            '_id': '$category',
-                            'value': {'$sum': '$currentValue'}
-                        }}
-                    ]
-                }}
-            ]
-
-            result = list(mongo.db.assets.aggregate(pipeline))
-            data = result[0] if result else {}
-
-            totals = data.get('totals', [{}])[0]
-            active_values = data.get('activeValues', [{}])[0]
-
-            total_assets = totals.get('totalAssets', 0)
-            active_assets = totals.get('activeAssets', 0)
-            disposed_assets = totals.get('disposedAssets', 0)
-            total_purchase_value = active_values.get('totalPurchaseValue', 0.0)
-            total_current_value = active_values.get('totalCurrentValue', 0.0)
+            # Get all assets for the user
+            all_assets = list(mongo.db.assets.find({'userId': current_user['_id']}))
+            
+            # Initialize counters
+            total_assets = len(all_assets)
+            active_assets = 0
+            disposed_assets = 0
+            total_purchase_value = 0.0
+            total_current_value = 0.0
+            category_breakdown = {}
+            
+            # Calculate values on-the-fly for each asset
+            for asset in all_assets:
+                status = asset.get('status', 'active')
+                
+                if status == 'active':
+                    active_assets += 1
+                    purchase_price = asset.get('purchasePrice', 0)
+                    book_value = calculate_asset_book_value(asset)
+                    
+                    total_purchase_value += purchase_price
+                    total_current_value += book_value
+                    
+                    # Category breakdown
+                    category = asset.get('category', 'Other')
+                    category_breakdown[category] = category_breakdown.get(category, 0) + book_value
+                    
+                elif status == 'disposed':
+                    disposed_assets += 1
+            
             total_depreciation = total_purchase_value - total_current_value
-
-            category_breakdown = {
-                item['_id']: item['value']
-                for item in data.get('categoryBreakdown', [])
-            }
 
             threshold = 250_000_000.0  # ₦250M
             qualifies_for_zero_tax = total_current_value <= threshold
@@ -523,7 +581,7 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             return jsonify({
                 'success': True,
                 'data': summary,
-                'message': 'Asset summary retrieved successfully'
+                'message': 'Asset summary retrieved successfully (calculated on-the-fly)'
             })
 
         except Exception as e:

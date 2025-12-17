@@ -618,6 +618,12 @@ class DatabaseSchema:
         """
         Schema for assets collection.
         Tracks fixed assets for 0% tax qualification (≤₦250M threshold).
+        
+        DEPRECIATION STRATEGY (Option A + C Hybrid):
+        - Core: On-the-fly calculation as system of record
+        - Layer: Manual adjustments for special cases (damage, appreciation, market changes)
+        - currentValue: DEPRECATED, kept for backward compatibility
+        - manualValueAdjustment: Optional manual override
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -627,7 +633,7 @@ class DatabaseSchema:
             'description': Optional[str],  # Optional description
             'category': str,  # Required: 'Vehicles', 'Office Equipment', 'Machinery', etc.
             'purchasePrice': float,  # Required, original purchase price
-            'currentValue': float,  # Required, current book value after depreciation
+            'currentValue': float,  # DEPRECATED: Use calculated value instead (kept for backward compatibility)
             'purchaseDate': datetime,  # Required, date of purchase
             'supplier': Optional[str],  # Optional supplier name
             'location': Optional[str],  # Optional physical location
@@ -641,6 +647,11 @@ class DatabaseSchema:
             'disposalValue': Optional[float],  # Optional disposal value
             'createdAt': datetime,  # Record creation timestamp
             'updatedAt': datetime,  # Last update timestamp
+            
+            # NEW: Manual adjustment fields (Option C layer on top of Option A)
+            'manualValueAdjustment': Optional[float],  # Manual override for special cases
+            'lastValueUpdate': Optional[datetime],  # When manual adjustment was made
+            'valueAdjustmentReason': Optional[str],  # Why manual adjustment was made (e.g., "Accident damage", "Market appreciation")
         }
     
     @staticmethod
