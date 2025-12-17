@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>FiCore Admin Login</title>
+    <link rel="stylesheet" href="responsive.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo h1 {
+            color: #1E3A8A;
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+        
+        .logo p {
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            color: #2E2E2E;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #E5E7EB;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .login-btn:hover {
+            background: #1E40AF;
+        }
+        
+        .login-btn:active {
+            transform: translateY(0);
+        }
+        
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .error-message {
+            background: #FEE2E2;
+            color: #DC2626;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 10px;
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>FiCore Admin</h1>
+            <p>Analytics Dashboard Login</p>
+        </div>
+        
+        <div id="error-message" class="error-message"></div>
+        
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Admin Email</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="Enter your email"
+                    required
+                    autocomplete="email"
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Enter your password"
+                    required
+                    autocomplete="current-password"
+                >
+            </div>
+            
+            <button type="submit" class="login-btn" id="login-btn">
+                Login to Dashboard
+            </button>
+            
+            <div class="loading" id="loading">
+                Logging in...
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        // Get API base URL from current location
+        const API_BASE_URL = window.location.origin;
+        
+        // Get form elements
+        const loginForm = document.getElementById('login-form');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('login-btn');
+        const errorMessage = document.getElementById('error-message');
+        const loading = document.getElementById('loading');
+        
+        // Handle form submission
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Get form values
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            
+            // Validate
+            if (!email || !password) {
+                showError('Please enter both email and password');
+                return;
+            }
+            
+            // Show loading state
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging in...';
+            loading.classList.add('show');
+            errorMessage.classList.remove('show');
+            
+            try {
+                // Call login API
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Check if user is admin
+                    if (data.data.user.role !== 'admin') {
+                        showError('Access denied. Admin role required.');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Login to Dashboard';
+                        loading.classList.remove('show');
+                        return;
+                    }
+                    
+                    // Store admin token and user info
+                    localStorage.setItem('admin_token', data.data.access_token);
+                    localStorage.setItem('admin_email', data.data.user.email);
+                    localStorage.setItem('admin_name', data.data.user.displayName || data.data.user.name);
+                    localStorage.setItem('admin_user_id', data.data.user.id);
+                    
+                    // CRITICAL: Store admin permissions for RBAC
+                    if (data.data.permissions) {
+                        localStorage.setItem('admin_permissions', JSON.stringify(data.data.permissions));
+                    } else {
+                        // Fallback: grant all permissions if not provided
+                        localStorage.setItem('admin_permissions', JSON.stringify(['admin:*']));
+                    }
+                    
+                    // Show success message
+                    loginBtn.textContent = 'Login Successful!';
+                    loginBtn.style.background = '#16A34A';
+                    
+                    // Redirect to dashboard
+                    setTimeout(() => {
+                        window.location.href = 'analytics_dashboard.html';
+                    }, 500);
+                    
+                } else {
+                    // Show error
+                    showError(data.message || 'Login failed. Please check your credentials.');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Login to Dashboard';
+                    loading.classList.remove('show');
+                }
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('Connection error. Please check your internet connection and try again.');
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login to Dashboard';
+                loading.classList.remove('show');
+            }
+        });
+        
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+        
+        // Check if already logged in
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('admin_token');
+            if (token) {
+                // Verify token is still valid
+                fetch(`${API_BASE_URL}/admin/health`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Token is valid, redirect to dashboard
+                        window.location.href = 'analytics_dashboard.html';
+                    }
+                })
+                .catch(() => {
+                    // Token invalid, stay on login page
+                    localStorage.removeItem('admin_token');
+                });
+            }
+        });
+    </script>
+</body>
+</html>

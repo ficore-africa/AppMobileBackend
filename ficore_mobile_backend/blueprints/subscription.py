@@ -8,7 +8,9 @@ import hashlib
 import traceback
 
 def init_subscription_blueprint(mongo, token_required, serialize_doc):
+    from utils.analytics_tracker import create_tracker
     subscription_bp = Blueprint('subscription', __name__, url_prefix='/subscription')
+    tracker = create_tracker(mongo.db)
     
     # Paystack configuration
     PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
@@ -17,33 +19,35 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     
     # Subscription plans configuration
     SUBSCRIPTION_PLANS = {
-        'monthly': {
-            'name': 'Monthly Premium',
-            'price': 2500.0,  # ₦2,500 per month
-            'duration_days': 30,
-            'paystack_plan_code': 'PLN_monthly_premium',
-            'description': 'Unlimited operations for 30 days',
-            'features': [
-                'Unlimited Income/Expense entries',
-                'Unlimited PDF exports',
-                'All premium features',
-                'Priority support',
-                'No FC costs for any operations'
-            ]
-        },
+        # MONTHLY PLAN COMMENTED OUT - Only offering yearly subscription
+        # 'monthly': {
+        #     'name': 'Monthly Premium',
+        #     'price': 2500.0,  # ₦2,500 per month
+        #     'duration_days': 30,
+        #     'paystack_plan_code': 'PLN_monthly_premium',
+        #     'description': 'Unlimited operations for 30 days',
+        #     'features': [
+        #         'Unlimited Income/Expense entries',
+        #         'Unlimited PDF exports',
+        #         'All premium features',
+        #         'Priority support',
+        #         'No FC costs for any operations'
+        #     ]
+        # },
         'annually': {
             'name': 'Annual Premium',
-            'price': 25000.0,  # ₦25,000 per year (2.5 months free)
+            'price': 10000.0,  # ₦10,000 per year - Simple, affordable yearly subscription
             'duration_days': 365,
             'paystack_plan_code': 'PLN_annual_premium',
-            'description': 'Unlimited operations for 365 days (Save 2.5 months!)',
+            'description': 'One-time yearly payment - Full access for 365 days',
             'features': [
                 'Unlimited Income/Expense entries',
-                'Unlimited PDF exports',
-                'All premium features',
+                'Full DIICE Business Suite access',
+                'Unlimited PDF exports & analytics',
+                'All premium features unlocked',
                 'Priority support',
                 'No FC costs for any operations',
-                'Save ₦5,000 compared to monthly'
+                'Less than ₦1,000 per month'
             ]
         }
     }
@@ -95,11 +99,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     'savings': None
                 }
                 
-                # Calculate savings for annual plan
-                if plan_id == 'annually':
-                    monthly_yearly_cost = SUBSCRIPTION_PLANS['monthly']['price'] * 12
-                    savings = monthly_yearly_cost - plan_data['price']
-                    plan_info['savings'] = savings
+                # No savings calculation needed - only one plan available
+                # Savings messaging is built into the features list
                 
                 plans.append(plan_info)
             
@@ -320,6 +321,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 }
             )
             
+            # Track subscription started event
+            try:
+                tracker.track_subscription_started(
+                    user_id=user_id,
+                    subscription_type=plan_type,
+                    amount=plan['price']
+                )
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
+            
             # Create subscription record
             subscription_record = {
                 '_id': ObjectId(),
@@ -482,32 +493,42 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     @subscription_bp.route('/status', methods=['GET'])
     @token_required
     def get_subscription_status(current_user):
-        """Get user's current subscription status"""
+        """
+        Get user's current subscription status
+        
+        ✅ BACKEND FIX: Now uses MonthlyEntryTracker for real-time validation
+        This ensures consistency with /credits/monthly-entries endpoint
+        and prevents stale subscription data from being returned
+        """
         try:
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            from utils.monthly_entry_tracker import MonthlyEntryTracker
             
-            is_subscribed = user.get('isSubscribed', False)
-            subscription_type = user.get('subscriptionType')
+            # ✅ FIX: Use MonthlyEntryTracker for validated subscription status
+            # This provides real-time validation against subscriptionEndDate
+            # and corrects any stale isSubscribed flags in the database
+            entry_tracker = MonthlyEntryTracker(mongo)
+            monthly_stats = entry_tracker.get_monthly_stats(current_user['_id'])
+            
+            # Extract validated subscription info from monthly stats
+            is_subscribed = monthly_stats.get('is_subscribed', False)
+            is_admin = monthly_stats.get('is_admin', False)
+            subscription_type = monthly_stats.get('subscription_type')
+            tier = monthly_stats.get('tier', 'Free')
+            
+            # Get additional details from user document
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
             start_date = user.get('subscriptionStartDate')
             end_date = user.get('subscriptionEndDate')
             auto_renew = user.get('subscriptionAutoRenew', False)
             
-            # Check if subscription is actually active
-            # IMPORTANT: Do not auto-revert admin grants - only revert if significantly expired (24+ hours)
-            if is_subscribed and end_date:
-                # Add 24-hour grace period to prevent immediate reversion of admin grants
-                grace_period_end = end_date + timedelta(hours=24)
-                if grace_period_end <= datetime.utcnow():
-                    # Subscription expired beyond grace period, update status
-                    mongo.db.users.update_one(
-                        {'_id': current_user['_id']},
-                        {'$set': {'isSubscribed': False}}
-                    )
-                    is_subscribed = False
+            print(f"[SUBSCRIPTION_STATUS] User {current_user['_id']}: auto_renew from DB = {auto_renew}")
             
+            # Build status response with validated data
             status_data = {
-                'is_subscribed': is_subscribed,
+                'is_subscribed': is_subscribed,  # ← VALIDATED by MonthlyEntryTracker
                 'subscription_type': subscription_type,
+                'tier': tier,  # ← NEW: Consistent with /monthly-entries
+                'is_admin': is_admin,  # ← NEW: Consistent with /monthly-entries
                 'start_date': start_date.isoformat() + 'Z' if start_date else None,
                 'end_date': end_date.isoformat() + 'Z' if end_date else None,
                 'auto_renew': auto_renew,
@@ -515,6 +536,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'plan_details': None
             }
             
+            # Calculate days remaining if subscribed
             if is_subscribed and end_date:
                 days_remaining = (end_date - datetime.utcnow()).days
                 status_data['days_remaining'] = max(0, days_remaining)
@@ -540,10 +562,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     def manage_subscription(current_user):
         """Manage subscription settings (auto-renew, etc.)"""
         try:
+            from utils.monthly_entry_tracker import MonthlyEntryTracker
+            
             data = request.get_json()
             
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
-            if not user.get('isSubscribed', False):
+            # ✅ Use MonthlyEntryTracker for validated subscription status
+            entry_tracker = MonthlyEntryTracker(mongo)
+            monthly_stats = entry_tracker.get_monthly_stats(current_user['_id'])
+            is_subscribed = monthly_stats.get('is_subscribed', False)
+            
+            if not is_subscribed:
                 return jsonify({
                     'success': False,
                     'message': 'No active subscription found'
@@ -552,17 +580,30 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             update_data = {}
             
             if 'auto_renew' in data:
-                update_data['subscriptionAutoRenew'] = bool(data['auto_renew'])
+                auto_renew_value = bool(data['auto_renew'])
+                update_data['subscriptionAutoRenew'] = auto_renew_value
+                
+                print(f"[MANAGE_SUBSCRIPTION] User {current_user['_id']} setting auto_renew to {auto_renew_value}")
             
             if update_data:
-                mongo.db.users.update_one(
+                result = mongo.db.users.update_one(
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
                 
+                print(f"[MANAGE_SUBSCRIPTION] Update result: matched={result.matched_count}, modified={result.modified_count}")
+                
+                # Verify the update
+                updated_user = mongo.db.users.find_one({'_id': current_user['_id']})
+                actual_value = updated_user.get('subscriptionAutoRenew', False)
+                print(f"[MANAGE_SUBSCRIPTION] Verified auto_renew value in DB: {actual_value}")
+                
                 return jsonify({
                     'success': True,
-                    'message': 'Subscription settings updated successfully'
+                    'message': 'Subscription settings updated successfully',
+                    'data': {
+                        'auto_renew': actual_value
+                    }
                 })
             else:
                 return jsonify({
@@ -571,6 +612,9 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 }), 400
 
         except Exception as e:
+            print(f"[MANAGE_SUBSCRIPTION] Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to update subscription settings',
@@ -580,7 +624,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     @subscription_bp.route('/cancel', methods=['POST'])
     @token_required
     def cancel_subscription(current_user):
-        """Cancel subscription (disable auto-renew)"""
+        """Cancel subscription (disable auto-renew and create cancellation request)"""
         try:
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             if not user.get('isSubscribed', False):
@@ -589,10 +633,46 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     'message': 'No active subscription found'
                 }), 404
             
+            # Get optional reason from request body
+            data = request.get_json() or {}
+            reason = data.get('reason', '').strip()
+            
             # Disable auto-renew (subscription remains active until end date)
             mongo.db.users.update_one(
                 {'_id': current_user['_id']},
                 {'$set': {'subscriptionAutoRenew': False}}
+            )
+            
+            # Create cancellation request for admin review
+            cancellation_request = {
+                '_id': ObjectId(),
+                'userId': current_user['_id'],
+                'userEmail': user.get('email', ''),
+                'userName': user.get('displayName', 'Unknown User'),
+                'subscriptionType': user.get('subscriptionType', 'Premium'),
+                'subscriptionStartDate': user.get('subscriptionStartDate'),
+                'subscriptionEndDate': user.get('subscriptionEndDate'),
+                'reason': reason if reason else None,
+                'status': 'pending',  # pending, approved, rejected, completed
+                'requestedAt': datetime.utcnow(),
+                'processedAt': None,
+                'processedBy': None,
+                'processedByName': None,
+                'adminNotes': None,
+                'autoRenewDisabled': True
+            }
+            
+            mongo.db.cancellation_requests.insert_one(cancellation_request)
+            
+            # Track analytics event
+            tracker.track_event(
+                user_id=current_user['_id'],
+                event_type='subscription_cancellation_requested',
+                event_details={
+                    'subscription_type': user.get('subscriptionType', 'Premium'),
+                    'has_reason': bool(reason),
+                    'days_until_expiry': (user.get('subscriptionEndDate') - datetime.utcnow()).days if user.get('subscriptionEndDate') else 0
+                }
             )
             
             end_date = user.get('subscriptionEndDate')
@@ -601,12 +681,15 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'success': True,
                 'data': {
                     'end_date': end_date.isoformat() + 'Z' if end_date else None,
-                    'message': 'Your subscription will not auto-renew and will expire on the end date.'
+                    'message': 'Your cancellation request has been submitted to our admin team. Auto-renewal has been disabled and you will continue to have access until your subscription expires.',
+                    'requestId': str(cancellation_request['_id'])
                 },
-                'message': 'Subscription cancelled successfully'
+                'message': 'Subscription cancellation request submitted successfully'
             })
 
         except Exception as e:
+            print(f"Error cancelling subscription: {str(e)}")
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to cancel subscription',

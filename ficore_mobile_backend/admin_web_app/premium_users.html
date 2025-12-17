@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Premium Users Management - FiCore Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="responsive.css">
+    <style>
+        :root {
+            --primary-color: #B88A44;
+            --secondary-color: #917243;
+            --success-color: #10B981;
+            --warning-color: #F59E0B;
+            --danger-color: #EF4444;
+            --info-color: #3B82F6;
+        }
+
+        body {
+            background: #FFF8F0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .navbar-brand {
+            color: var(--primary-color) !important;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .premium-badge {
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: #000;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.85em;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .status-active {
+            background-color: var(--success-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .status-expiring {
+            background-color: var(--warning-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .status-expired {
+            background-color: var(--danger-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .metric-label {
+            color: #6B7280;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .search-box {
+            max-width: 400px;
+        }
+
+        .filter-section {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .time-left-green {
+            color: var(--success-color);
+            font-weight: 600;
+        }
+
+        .time-left-yellow {
+            color: var(--warning-color);
+            font-weight: 600;
+        }
+
+        .time-left-red {
+            color: var(--danger-color);
+            font-weight: 600;
+        }
+
+        .auto-renew-yes {
+            color: var(--success-color);
+        }
+
+        .auto-renew-no {
+            color: var(--danger-color);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="index.html">
+                <i class="fas fa-coins"></i> FiCore Admin
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="index.html">
+                    <i class="fas fa-home"></i> Dashboard
+                </a>
+                <a class="nav-link active" href="premium_users.html">
+                    <i class="fas fa-crown"></i> Premium Users
+                </a>
+                <a class="nav-link" href="cancellation_requests.html">
+                    <i class="fas fa-ban"></i> Cancellation Requests
+                </a>
+                <a class="nav-link" href="analytics_dashboard.html">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a class="nav-link" href="user_management.html">
+                    <i class="fas fa-users"></i> User Management
+                </a>
+                <a class="nav-link" href="audit_logs.html">
+                    <i class="fas fa-clipboard-list"></i> Audit Logs
+                </a>
+                <span class="navbar-text me-3">Welcome, <span id="adminName">Admin</span></span>
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Page Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fas fa-crown text-warning"></i> Premium Users Management</h2>
+                <p class="text-muted">View and manage all premium subscription users</p>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <ul class="nav nav-tabs mb-4" id="userTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="active-tab" data-bs-toggle="tab" data-bs-target="#active-users" type="button" role="tab">
+                    <i class="fas fa-crown"></i> Active Premium Users
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="expired-tab" data-bs-toggle="tab" data-bs-target="#expired-users" type="button" role="tab" onclick="loadExpiredUsers()">
+                    <i class="fas fa-history"></i> Expired Users
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="userTabsContent">
+            <!-- Active Premium Users Tab -->
+            <div class="tab-pane fade show active" id="active-users" role="tabpanel">
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-label">Total Premium Users</div>
+                    <div class="metric-value" id="totalPremiumUsers">0</div>
+                    <small class="text-muted">Active subscriptions</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--success-color);">
+                    <div class="metric-label">Active (>30 days)</div>
+                    <div class="metric-value" style="color: var(--success-color);" id="activeCount">0</div>
+                    <small class="text-muted">Healthy subscriptions</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--warning-color);">
+                    <div class="metric-label">Expiring Soon (≤30 days)</div>
+                    <div class="metric-value" style="color: var(--warning-color);" id="expiringSoonCount">0</div>
+                    <small class="text-muted">Needs attention</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--info-color);">
+                    <div class="metric-label">Auto-Renew Enabled</div>
+                    <div class="metric-value" style="color: var(--info-color);" id="autoRenewCount">0</div>
+                    <small class="text-muted">Recurring revenue</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Actions -->
+        <div class="filter-section">
+            <div class="row align-items-center">
+                <div class="col-md-4">
+                    <div class="input-group search-box">
+                        <input type="text" class="form-control" id="searchInput" placeholder="Search by email or name...">
+                        <button class="btn btn-outline-secondary" type="button" onclick="searchUsers()">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select" id="filterStatus" onchange="filterUsers()">
+                        <option value="all">All Statuses</option>
+                        <option value="active">Active (>30 days left)</option>
+                        <option value="expiring">Expiring Soon (≤30 days)</option>
+                        <option value="expired">Expired</option>
+                    </select>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button class="btn btn-success" onclick="exportPremiumUsers()">
+                        <i class="fas fa-download"></i> Export to CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="loadPremiumUsers()">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Premium Users Table -->
+        <div class="table-container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5><i class="fas fa-users"></i> Premium Users List</h5>
+                <span class="badge bg-primary" id="displayCount">0 users</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th onclick="sortTable('email')" style="cursor: pointer;">
+                                Email <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortTable('displayName')" style="cursor: pointer;">
+                                Display Name <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortTable('subscriptionType')" style="cursor: pointer;">
+                                Subscription Type <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortTable('subscriptionStartDate')" style="cursor: pointer;">
+                                Date Subscribed <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortTable('subscriptionEndDate')" style="cursor: pointer;">
+                                Date Will Expire <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortTable('timeLeft')" style="cursor: pointer;">
+                                Time Left <i class="fas fa-sort"></i>
+                            </th>
+                            <th>Auto-Renew</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="premiumUsersTableBody">
+                        <tr>
+                            <td colspan="9" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2">Loading premium users...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        </div>
+        <!-- End Active Premium Users Tab -->
+
+        <!-- Expired Users Tab -->
+        <div class="tab-pane fade" id="expired-users" role="tabpanel">
+            <!-- Expired Users Statistics -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-label">Total Expired Users</div>
+                        <div class="metric-value" id="totalExpiredUsers">0</div>
+                        <small class="text-muted">Last 30 days</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card" style="border-left-color: var(--danger-color);">
+                        <div class="metric-label">Average Premium Days</div>
+                        <div class="metric-value" style="color: var(--danger-color);" id="avgPremiumDays">0</div>
+                        <small class="text-muted">Per user</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card" style="border-left-color: var(--warning-color);">
+                        <div class="metric-label">Expiry Count</div>
+                        <div class="metric-value" style="color: var(--warning-color);" id="avgExpiryCount">0</div>
+                        <small class="text-muted">Average per user</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card" style="border-left-color: var(--info-color);">
+                        <div class="metric-label">Total FC Balance</div>
+                        <div class="metric-value" style="color: var(--info-color);" id="totalFCBalance">0</div>
+                        <small class="text-muted">Across expired users</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filter-section">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <div class="input-group search-box">
+                            <input type="text" class="form-control" id="expiredSearchInput" placeholder="Search by email or name...">
+                            <button class="btn btn-outline-secondary" type="button" onclick="searchExpiredUsers()">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" id="expiredDaysFilter" onchange="loadExpiredUsers()">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="60">Last 60 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="180">Last 6 months</option>
+                            <option value="365">Last year</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button class="btn btn-success" onclick="exportExpiredUsers()">
+                            <i class="fas fa-download"></i> Export to CSV
+                        </button>
+                        <button class="btn btn-primary" onclick="loadExpiredUsers()">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Expired Users Table -->
+            <div class="table-container">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5><i class="fas fa-history"></i> Expired Users List</h5>
+                    <span class="badge bg-danger" id="expiredDisplayCount">0 users</span>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Email</th>
+                                <th>Display Name</th>
+                                <th>Last Plan</th>
+                                <th>Expired Date</th>
+                                <th>Days Since Expiry</th>
+                                <th>Total Premium Days</th>
+                                <th>Expiry Count</th>
+                                <th>FC Balance</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expiredUsersTableBody">
+                            <tr>
+                                <td colspan="9" class="text-center">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2">Loading expired users...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <!-- End Expired Users Tab -->
+        </div>
+        <!-- End Tab Content -->
+    </div>
+
+    <!-- User Detail Modal -->
+    <div class="modal fade" id="userDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user"></i> User Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="userDetailContent">
+                    <!-- Content loaded dynamically -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Configuration
+        let API_BASE_URL = (() => {
+            const customApiUrl = localStorage.getItem('customApiUrl');
+            if (customApiUrl) return customApiUrl;
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                return 'http://localhost:5000';
+            }
+            return window.location.origin;
+        })();
+
+        let authToken = localStorage.getItem('admin_token');
+        let allPremiumUsers = [];
+        let filteredUsers = [];
+        let sortColumn = 'subscriptionEndDate';
+        let sortDirection = 'asc';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!authToken) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+            
+            const adminName = localStorage.getItem('admin_name') || 'Admin';
+            document.getElementById('adminName').textContent = adminName;
+            
+            loadPremiumUsers();
+        });
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_name');
+            window.location.href = 'admin_login.html';
+        }
+
+        // Load premium users from API
+        async function loadPremiumUsers() {
+            try {
+                showLoading();
+                
+                // Get all users
+                const response = await fetch(`${API_BASE_URL}/admin/users?limit=1000`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch users');
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Filter only premium users (isSubscribed = true)
+                    allPremiumUsers = data.data.users.filter(user => user.isSubscribed === true);
+                    
+                    // Calculate time left for each user
+                    allPremiumUsers = allPremiumUsers.map(user => {
+                        const timeLeft = calculateTimeLeft(user.subscriptionEndDate);
+                        return { ...user, timeLeft };
+                    });
+                    
+                    filteredUsers = [...allPremiumUsers];
+                    updateStatistics();
+                    displayUsers();
+                } else {
+                    showError('Failed to load premium users: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error loading premium users:', error);
+                showError('Error loading premium users: ' + error.message);
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('premiumUsersTableBody').innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading premium users...</p>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function showError(message) {
+            document.getElementById('premiumUsersTableBody').innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> ${message}
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Calculate time left until expiration
+        function calculateTimeLeft(endDateStr) {
+            if (!endDateStr) return { days: 0, status: 'expired' };
+            
+            const endDate = new Date(endDateStr);
+            const now = new Date();
+            const diffTime = endDate - now;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            let status = 'active';
+            if (diffDays <= 0) status = 'expired';
+            else if (diffDays <= 30) status = 'expiring';
+            
+            return { days: diffDays, status };
+        }
+
+        // Format time left display
+        function formatTimeLeft(timeLeft) {
+            if (timeLeft.days <= 0) {
+                return '<span class="time-left-red">Expired</span>';
+            } else if (timeLeft.days === 1) {
+                return '<span class="time-left-red">1 day</span>';
+            } else if (timeLeft.days <= 7) {
+                return `<span class="time-left-red">${timeLeft.days} days</span>`;
+            } else if (timeLeft.days <= 30) {
+                return `<span class="time-left-yellow">${timeLeft.days} days</span>`;
+            } else if (timeLeft.days <= 90) {
+                const months = Math.floor(timeLeft.days / 30);
+                const days = timeLeft.days % 30;
+                return `<span class="time-left-green">${months}m ${days}d</span>`;
+            } else {
+                const months = Math.floor(timeLeft.days / 30);
+                return `<span class="time-left-green">${months} months</span>`;
+            }
+        }
+
+        // Update statistics
+        function updateStatistics() {
+            const total = allPremiumUsers.length;
+            const active = allPremiumUsers.filter(u => u.timeLeft.days > 30).length;
+            const expiring = allPremiumUsers.filter(u => u.timeLeft.days > 0 && u.timeLeft.days <= 30).length;
+            const autoRenew = allPremiumUsers.filter(u => u.subscriptionAutoRenew === true).length;
+            
+            document.getElementById('totalPremiumUsers').textContent = total;
+            document.getElementById('activeCount').textContent = active;
+            document.getElementById('expiringSoonCount').textContent = expiring;
+            document.getElementById('autoRenewCount').textContent = autoRenew;
+        }
+
+        // Display users in table
+        function displayUsers() {
+            const tbody = document.getElementById('premiumUsersTableBody');
+            
+            if (filteredUsers.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">
+                            <i class="fas fa-inbox"></i> No premium users found
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('displayCount').textContent = '0 users';
+                return;
+            }
+            
+            tbody.innerHTML = filteredUsers.map(user => {
+                const statusClass = user.timeLeft.status === 'active' ? 'status-active' : 
+                                   user.timeLeft.status === 'expiring' ? 'status-expiring' : 'status-expired';
+                const statusText = user.timeLeft.status === 'active' ? 'Active' : 
+                                  user.timeLeft.status === 'expiring' ? 'Expiring Soon' : 'Expired';
+                
+                return `
+                    <tr>
+                        <td>${user.email}</td>
+                        <td>${user.displayName || user.name || 'N/A'}</td>
+                        <td>
+                            <span class="premium-badge">
+                                <i class="fas fa-crown"></i>
+                                ${user.subscriptionType || 'Premium'}
+                            </span>
+                        </td>
+                        <td>${formatDate(user.subscriptionStartDate)}</td>
+                        <td>${formatDate(user.subscriptionEndDate)}</td>
+                        <td>${formatTimeLeft(user.timeLeft)}</td>
+                        <td>
+                            ${user.subscriptionAutoRenew ? 
+                                '<i class="fas fa-check-circle auto-renew-yes"></i> Yes' : 
+                                '<i class="fas fa-times-circle auto-renew-no"></i> No'}
+                        </td>
+                        <td><span class="${statusClass}">${statusText}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-info" onclick="viewUserDetail('${user.id || user._id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            document.getElementById('displayCount').textContent = `${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}`;
+        }
+
+        // Format date
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+
+        // Search users
+        function searchUsers() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            if (!searchTerm) {
+                filteredUsers = [...allPremiumUsers];
+            } else {
+                filteredUsers = allPremiumUsers.filter(user => 
+                    user.email.toLowerCase().includes(searchTerm) ||
+                    (user.displayName && user.displayName.toLowerCase().includes(searchTerm)) ||
+                    (user.name && user.name.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            displayUsers();
+        }
+
+        // Filter users by status
+        function filterUsers() {
+            const status = document.getElementById('filterStatus').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            let users = [...allPremiumUsers];
+            
+            // Apply search filter
+            if (searchTerm) {
+                users = users.filter(user => 
+                    user.email.toLowerCase().includes(searchTerm) ||
+                    (user.displayName && user.displayName.toLowerCase().includes(searchTerm)) ||
+                    (user.name && user.name.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            // Apply status filter
+            if (status !== 'all') {
+                users = users.filter(user => user.timeLeft.status === status);
+            }
+            
+            filteredUsers = users;
+            displayUsers();
+        }
+
+        // Sort table
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            
+            filteredUsers.sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+                
+                // Handle time left sorting
+                if (column === 'timeLeft') {
+                    aVal = a.timeLeft.days;
+                    bVal = b.timeLeft.days;
+                }
+                
+                // Handle date sorting
+                if (column === 'subscriptionStartDate' || column === 'subscriptionEndDate') {
+                    aVal = new Date(aVal);
+                    bVal = new Date(bVal);
+                }
+                
+                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            displayUsers();
+        }
+
+        // Export to CSV
+        function exportPremiumUsers() {
+            if (filteredUsers.length === 0) {
+                alert('No users to export');
+                return;
+            }
+            
+            // CSV headers
+            const headers = [
+                'User ID',
+                'Email',
+                'Display Name',
+                'Subscription Type',
+                'Date Subscribed',
+                'Date Will Expire',
+                'Days Left',
+                'Auto-Renew',
+                'Status'
+            ];
+            
+            // CSV rows
+            const rows = filteredUsers.map(user => [
+                user.id || user._id,
+                user.email,
+                user.displayName || user.name || '',
+                user.subscriptionType || 'Premium',
+                formatDate(user.subscriptionStartDate),
+                formatDate(user.subscriptionEndDate),
+                user.timeLeft.days,
+                user.subscriptionAutoRenew ? 'Yes' : 'No',
+                user.timeLeft.status
+            ]);
+            
+            // Create CSV content
+            let csvContent = headers.join(',') + '\n';
+            rows.forEach(row => {
+                csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+            });
+            
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `premium_users_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // View user detail
+        async function viewUserDetail(userId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch user details');
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const user = data.data;
+                    const timeLeft = calculateTimeLeft(user.subscriptionEndDate);
+                    
+                    document.getElementById('userDetailContent').innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="text-muted">User Information</h6>
+                                <p><strong>Email:</strong> ${user.email}</p>
+                                <p><strong>Name:</strong> ${user.displayName || user.name || 'N/A'}</p>
+                                <p><strong>User ID:</strong> ${user.id || user._id}</p>
+                                <p><strong>Role:</strong> ${user.role}</p>
+                                <p><strong>Credit Balance:</strong> ${user.ficoreCreditBalance} FCs</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="text-muted">Subscription Details</h6>
+                                <p><strong>Type:</strong> <span class="premium-badge"><i class="fas fa-crown"></i> ${user.subscriptionType || 'Premium'}</span></p>
+                                <p><strong>Start Date:</strong> ${formatDate(user.subscriptionStartDate)}</p>
+                                <p><strong>End Date:</strong> ${formatDate(user.subscriptionEndDate)}</p>
+                                <p><strong>Time Left:</strong> ${formatTimeLeft(timeLeft)}</p>
+                                <p><strong>Auto-Renew:</strong> ${user.subscriptionAutoRenew ? '<span class="auto-renew-yes">Yes</span>' : '<span class="auto-renew-no">No</span>'}</p>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="row">
+                            <div class="col-12">
+                                <h6 class="text-muted">Account Activity</h6>
+                                <p><strong>Created:</strong> ${formatDate(user.createdAt)}</p>
+                                <p><strong>Last Login:</strong> ${formatDate(user.lastLogin)}</p>
+                                <p><strong>Active:</strong> ${user.isActive ? '<span class="text-success">Yes</span>' : '<span class="text-danger">No</span>'}</p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('userDetailModal'));
+                    modal.show();
+                } else {
+                    alert('Failed to load user details: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error loading user details:', error);
+                alert('Error loading user details: ' + error.message);
+            }
+        }
+
+        // Allow search on Enter key
+        document.getElementById('searchInput').addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                searchUsers();
+            }
+        });
+
+        // ==================== EXPIRED USERS FUNCTIONS ====================
+
+        let allExpiredUsers = [];
+        let filteredExpiredUsers = [];
+
+        // Load expired users from API
+        async function loadExpiredUsers() {
+            try {
+                showExpiredLoading();
+                
+                const daysAgo = document.getElementById('expiredDaysFilter').value;
+                const response = await fetch(`${API_BASE_URL}/admin/subscriptions/expired-users?days_ago=${daysAgo}&limit=1000`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch expired users');
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    allExpiredUsers = data.data.users;
+                    filteredExpiredUsers = [...allExpiredUsers];
+                    displayExpiredUsers();
+                } else {
+                    showExpiredError('Failed to load expired users: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error loading expired users:', error);
+                showExpiredError('Error loading expired users: ' + error.message);
+            }
+        }
+
+        function showExpiredLoading() {
+            document.getElementById('expiredUsersTableBody').innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading expired users...</p>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function showExpiredError(message) {
+            document.getElementById('expiredUsersTableBody').innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> ${message}
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Display expired users in table
+        function displayExpiredUsers() {
+            const tbody = document.getElementById('expiredUsersTableBody');
+            
+            if (filteredExpiredUsers.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">
+                            <i class="fas fa-inbox"></i> No expired users found
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('expiredDisplayCount').textContent = '0 users';
+                return;
+            }
+            
+            tbody.innerHTML = filteredExpiredUsers.map(user => {
+                const lastSub = user.lastSubscription;
+                
+                return `
+                    <tr>
+                        <td>${user.email}</td>
+                        <td>${user.displayName || 'N/A'}</td>
+                        <td>
+                            ${lastSub ? `<span class="badge bg-secondary">${lastSub.planType || 'N/A'}</span>` : 'N/A'}
+                        </td>
+                        <td>${formatDate(user.lastPremiumDate)}</td>
+                        <td>
+                            <span class="badge bg-danger">${user.daysSinceExpiry || 0} days ago</span>
+                        </td>
+                        <td>${user.totalPremiumDays || 0} days</td>
+                        <td>${user.premiumExpiryCount || 0}</td>
+                        <td>${user.ficoreCreditBalance || 0} FC</td>
+                        <td>
+                            <button class="btn btn-sm btn-info" onclick="viewExpiredUserDetail('${user.id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success" onclick="viewUserHistory('${user.id}')">
+                                <i class="fas fa-history"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            document.getElementById('expiredDisplayCount').textContent = `${filteredExpiredUsers.length} user${filteredExpiredUsers.length !== 1 ? 's' : ''}`;
+        }
+
+        // Search expired users
+        function searchExpiredUsers() {
+            const searchTerm = document.getElementById('expiredSearchInput').value.toLowerCase();
+            
+            if (!searchTerm) {
+                filteredExpiredUsers = [...allExpiredUsers];
+            } else {
+                filteredExpiredUsers = allExpiredUsers.filter(user => 
+                    user.email.toLowerCase().includes(searchTerm) ||
+                    (user.displayName && user.displayName.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            displayExpiredUsers();
+        }
+
+        // Export expired users to CSV
+        function exportExpiredUsers() {
+            if (filteredExpiredUsers.length === 0) {
+                alert('No expired users to export');
+                return;
+            }
+            
+            const headers = [
+                'User ID',
+                'Email',
+                'Display Name',
+                'Last Plan',
+                'Expired Date',
+                'Days Since Expiry',
+                'Total Premium Days',
+                'Expiry Count',
+                'FC Balance'
+            ];
+            
+            const rows = filteredExpiredUsers.map(user => [
+                user.id,
+                user.email,
+                user.displayName || '',
+                user.lastSubscription?.planType || 'N/A',
+                formatDate(user.lastPremiumDate),
+                user.daysSinceExpiry || 0,
+                user.totalPremiumDays || 0,
+                user.premiumExpiryCount || 0,
+                user.ficoreCreditBalance || 0
+            ]);
+            
+            let csvContent = headers.join(',') + '\n';
+            rows.forEach(row => {
+                csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+            });
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `expired_users_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // View expired user detail
+        async function viewExpiredUserDetail(userId) {
+            await viewUserDetail(userId);
+        }
+
+        // View user subscription history
+        async function viewUserHistory(userId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/subscriptions/user/${userId}/history`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch user history');
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const user = data.data.user;
+                    const history = data.data.subscriptionHistory;
+                    const events = data.data.events;
+                    
+                    let historyHtml = '<h6 class="text-muted">Subscription History</h6>';
+                    
+                    if (history.length === 0) {
+                        historyHtml += '<p class="text-muted">No subscription history available</p>';
+                    } else {
+                        historyHtml += '<div class="table-responsive"><table class="table table-sm">';
+                        historyHtml += '<thead><tr><th>Plan</th><th>Start</th><th>End</th><th>Status</th><th>Days Active</th></tr></thead><tbody>';
+                        
+                        history.forEach(sub => {
+                            historyHtml += `
+                                <tr>
+                                    <td><span class="badge bg-secondary">${sub.planType || 'N/A'}</span></td>
+                                    <td>${formatDate(sub.startDate)}</td>
+                                    <td>${formatDate(sub.endDate)}</td>
+                                    <td><span class="badge bg-danger">${sub.status}</span></td>
+                                    <td>${sub.totalDaysActive || 0} days</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        historyHtml += '</tbody></table></div>';
+                    }
+                    
+                    historyHtml += '<hr><h6 class="text-muted mt-3">Summary</h6>';
+                    historyHtml += `<p><strong>Total Premium Days:</strong> ${user.totalPremiumDays || 0}</p>`;
+                    historyHtml += `<p><strong>Expiry Count:</strong> ${user.premiumExpiryCount || 0}</p>`;
+                    historyHtml += `<p><strong>Last Premium:</strong> ${formatDate(user.lastPremiumDate)}</p>`;
+                    
+                    document.getElementById('userDetailContent').innerHTML = historyHtml;
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('userDetailModal'));
+                    modal.show();
+                } else {
+                    alert('Failed to load user history: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error loading user history:', error);
+                alert('Error loading user history: ' + error.message);
+            }
+        }
+
+        // Allow search on Enter key for expired users
+        document.getElementById('expiredSearchInput').addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                searchExpiredUsers();
+            }
+        });
+    </script>
+</body>
+</html>

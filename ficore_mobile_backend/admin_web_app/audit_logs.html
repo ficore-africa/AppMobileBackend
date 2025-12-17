@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Audit Logs - FiCore Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="responsive.css">
+    <script src="utils.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+        }
+        
+        .header {
+            background: white;
+            color: #1E3A8A;
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #1E3A8A;
+        }
+        
+        .btn-secondary:hover {
+            background: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 30px;
+        }
+        
+        .filters-section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group label {
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2E2E2E;
+            font-size: 14px;
+        }
+        
+        .form-group input,
+        .form-group select {
+            padding: 10px 15px;
+            border: 2px solid #E5E7EB;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .logs-section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .logs-table th {
+            background: #F9FAFB;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #6B7280;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .logs-table td {
+            padding: 15px 12px;
+            border-bottom: 1px solid #E5E7EB;
+            font-size: 14px;
+        }
+        
+        .logs-table tr:hover {
+            background: #F9FAFB;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .badge-credit {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .badge-subscription {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #E5E7EB;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .pagination button:hover:not(:disabled) {
+            background: #F9FAFB;
+        }
+        
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pagination span {
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6B7280;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6B7280;
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .details-cell {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1><i class="fas fa-clipboard-list"></i> Audit Logs</h1>
+            <div class="header-actions">
+                <a href="index.html" class="btn btn-secondary">
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="premium_users.html" class="btn btn-secondary">
+                    <i class="fas fa-crown"></i> Premium
+                </a>
+                <a href="cancellation_requests.html" class="btn btn-secondary">
+                    <i class="fas fa-ban"></i> Cancellations
+                </a>
+                <a href="user_management.html" class="btn btn-secondary">
+                    <i class="fas fa-users"></i> Users
+                </a>
+                <button onclick="logout()" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="filters-section">
+            <h3 style="margin-bottom: 20px;">Filter Audit Logs</h3>
+            <div class="filters-grid">
+                <div class="form-group">
+                    <label for="eventTypeFilter">Event Type</label>
+                    <select id="eventTypeFilter">
+                        <option value="">All Events</option>
+                        <option value="admin_credit_adjustment">Credit Adjustments</option>
+                        <option value="subscription_granted">Subscription Grants</option>
+                        <option value="subscription_extension">Subscription Extensions</option>
+                        <option value="subscription_cancellation">Subscription Cancellations</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="userEmailFilter">User Email</label>
+                    <input type="text" id="userEmailFilter" placeholder="Filter by user email">
+                </div>
+                <div class="form-group">
+                    <label for="startDateFilter">Start Date</label>
+                    <input type="date" id="startDateFilter">
+                </div>
+                <div class="form-group">
+                    <label for="endDateFilter">End Date</label>
+                    <input type="date" id="endDateFilter">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-primary" onclick="applyFilters()">
+                    <i class="fas fa-filter"></i> Apply Filters
+                </button>
+                <button class="btn btn-secondary" onclick="clearFilters()">
+                    <i class="fas fa-times"></i> Clear
+                </button>
+                <button class="btn btn-secondary" onclick="exportLogs()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+        </div>
+        
+        <div class="logs-section">
+            <div class="logs-header">
+                <h3>Admin Actions</h3>
+                <span id="totalLogs" style="color: #6B7280;">-</span>
+            </div>
+            
+            <div id="loadingState" class="loading" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Loading audit logs...
+            </div>
+            
+            <div id="emptyState" class="empty-state" style="display: none;">
+                <i class="fas fa-clipboard-list"></i>
+                <h3>No audit logs found</h3>
+                <p>Try adjusting your filters</p>
+            </div>
+            
+            <table class="logs-table" id="logsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Admin</th>
+                        <th>Event Type</th>
+                        <th>User</th>
+                        <th>Details</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="logsTableBody">
+                </tbody>
+            </table>
+            
+            <div class="pagination" id="pagination" style="display: none;">
+                <button id="prevBtn" onclick="previousPage()">
+                    <i class="fas fa-chevron-left"></i> Previous
+                </button>
+                <span id="pageInfo">Page 1 of 1</span>
+                <button id="nextBtn" onclick="nextPage()">
+                    Next <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let currentFilters = {};
+        
+        // Check authentication on load
+        window.addEventListener('load', () => {
+            if (!checkAuth()) return;
+            
+            if (!hasPermission('admin:view:audit')) {
+                showError('You do not have permission to view audit logs');
+                setTimeout(() => window.location.href = 'analytics_dashboard.html', 2000);
+                return;
+            }
+            
+            loadAuditLogs();
+        });
+        
+        // Load audit logs
+        async function loadAuditLogs(page = 1) {
+            const loadingState = document.getElementById('loadingState');
+            const emptyState = document.getElementById('emptyState');
+            const logsTable = document.getElementById('logsTable');
+            const pagination = document.getElementById('pagination');
+            
+            loadingState.style.display = 'block';
+            emptyState.style.display = 'none';
+            logsTable.style.display = 'none';
+            pagination.style.display = 'none';
+            
+            try {
+                // Build query parameters
+                const params = new URLSearchParams({
+                    page: page,
+                    limit: 50
+                });
+                
+                if (currentFilters.eventType) params.append('eventType', currentFilters.eventType);
+                if (currentFilters.userEmail) params.append('userEmail', currentFilters.userEmail);
+                if (currentFilters.startDate) params.append('startDate', currentFilters.startDate);
+                if (currentFilters.endDate) params.append('endDate', currentFilters.endDate);
+                
+                const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayAuditLogs(data.data.logs);
+                    updatePagination(data.data.pagination);
+                    
+                    document.getElementById('totalLogs').textContent = 
+                        `${data.data.pagination.total} total logs`;
+                } else {
+                    showError(data.message || 'Failed to load audit logs');
+                }
+            } catch (error) {
+                showError('Error loading audit logs: ' + error.message);
+            } finally {
+                loadingState.style.display = 'none';
+            }
+        }
+        
+        // Display audit logs
+        function displayAuditLogs(logs) {
+            const tbody = document.getElementById('logsTableBody');
+            const logsTable = document.getElementById('logsTable');
+            const emptyState = document.getElementById('emptyState');
+            
+            tbody.innerHTML = '';
+            
+            if (logs.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            
+            logsTable.style.display = 'table';
+            
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                
+                // Format event type badge
+                const badgeClass = log.category === 'credit' ? 'badge-credit' : 'badge-subscription';
+                const eventTypeBadge = `<span class="badge ${badgeClass}">${formatEventType(log.eventType)}</span>`;
+                
+                // Format details
+                const details = formatDetails(log.metadata);
+                
+                row.innerHTML = `
+                    <td>${formatDate(log.timestamp)}</td>
+                    <td>${log.adminName}</td>
+                    <td>${eventTypeBadge}</td>
+                    <td>
+                        <div>${log.userName || 'N/A'}</div>
+                        <div style="font-size: 12px; color: #6B7280;">${log.userEmail}</div>
+                    </td>
+                    <td class="details-cell" title="${details}">${details}</td>
+                    <td class="details-cell" title="${log.reason}">${log.reason}</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Format event type
+        function formatEventType(eventType) {
+            const types = {
+                'admin_credit_adjustment': 'Credit Adjustment',
+                'subscription_granted': 'Subscription Grant',
+                'subscription_extension': 'Subscription Extension',
+                'subscription_cancellation': 'Subscription Cancel'
+            };
+            return types[eventType] || eventType;
+        }
+        
+        // Format details
+        function formatDetails(metadata) {
+            if (!metadata) return 'N/A';
+            
+            const parts = [];
+            
+            if (metadata.operation) {
+                parts.push(`Operation: ${metadata.operation}`);
+            }
+            if (metadata.amount !== undefined) {
+                parts.push(`Amount: ${metadata.amount}`);
+            }
+            if (metadata.balanceBefore !== undefined) {
+                parts.push(`Before: ${metadata.balanceBefore}`);
+            }
+            if (metadata.balanceAfter !== undefined) {
+                parts.push(`After: ${metadata.balanceAfter}`);
+            }
+            if (metadata.planId) {
+                parts.push(`Plan: ${metadata.planId}`);
+            }
+            if (metadata.durationDays) {
+                parts.push(`Duration: ${metadata.durationDays} days`);
+            }
+            if (metadata.extensionDays) {
+                parts.push(`Extended: ${metadata.extensionDays} days`);
+            }
+            
+            return parts.join(', ') || 'N/A';
+        }
+        
+        // Update pagination
+        function updatePagination(pagination) {
+            currentPage = pagination.page;
+            totalPages = pagination.pages;
+            
+            const paginationDiv = document.getElementById('pagination');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const pageInfo = document.getElementById('pageInfo');
+            
+            if (totalPages > 1) {
+                paginationDiv.style.display = 'flex';
+                prevBtn.disabled = !pagination.hasPrev;
+                nextBtn.disabled = !pagination.hasNext;
+                pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+            } else {
+                paginationDiv.style.display = 'none';
+            }
+        }
+        
+        // Apply filters
+        function applyFilters() {
+            currentFilters = {
+                eventType: document.getElementById('eventTypeFilter').value,
+                userEmail: document.getElementById('userEmailFilter').value,
+                startDate: document.getElementById('startDateFilter').value,
+                endDate: document.getElementById('endDateFilter').value
+            };
+            
+            loadAuditLogs(1);
+        }
+        
+        // Clear filters
+        function clearFilters() {
+            document.getElementById('eventTypeFilter').value = '';
+            document.getElementById('userEmailFilter').value = '';
+            document.getElementById('startDateFilter').value = '';
+            document.getElementById('endDateFilter').value = '';
+            
+            currentFilters = {};
+            loadAuditLogs(1);
+        }
+        
+        // Pagination
+        function previousPage() {
+            if (currentPage > 1) {
+                loadAuditLogs(currentPage - 1);
+            }
+        }
+        
+        function nextPage() {
+            if (currentPage < totalPages) {
+                loadAuditLogs(currentPage + 1);
+            }
+        }
+        
+        // Export logs
+        async function exportLogs() {
+            try {
+                // Build query parameters
+                const params = new URLSearchParams({
+                    page: 1,
+                    limit: 10000  // Get all logs for export
+                });
+                
+                if (currentFilters.eventType) params.append('eventType', currentFilters.eventType);
+                if (currentFilters.userEmail) params.append('userEmail', currentFilters.userEmail);
+                if (currentFilters.startDate) params.append('startDate', currentFilters.startDate);
+                if (currentFilters.endDate) params.append('endDate', currentFilters.endDate);
+                
+                const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const logs = data.data.logs;
+                    
+                    // Convert to CSV
+                    const csv = convertToCSV(logs);
+                    
+                    // Download
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `audit_logs_${new Date().toISOString().split('T')[0]}.csv`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    
+                    showSuccess('Audit logs exported successfully!');
+                } else {
+                    showError(data.message || 'Failed to export logs');
+                }
+            } catch (error) {
+                showError('Error exporting logs: ' + error.message);
+            }
+        }
+        
+        // Convert logs to CSV
+        function convertToCSV(logs) {
+            const headers = ['Timestamp', 'Admin', 'Event Type', 'User Email', 'User Name', 'Details', 'Reason'];
+            const rows = logs.map(log => [
+                log.timestamp,
+                log.adminName,
+                formatEventType(log.eventType),
+                log.userEmail,
+                log.userName,
+                formatDetails(log.metadata),
+                log.reason
+            ]);
+            
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+            ].join('\n');
+            
+            return csvContent;
+        }
+    </script>
+</body>
+</html>

@@ -8,13 +8,16 @@ import os
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.pdf_generator import PDFGenerator
+from utils.profile_picture_helper import generate_profile_picture_url as _generate_profile_picture_url
 
 users_bp = Blueprint('users', __name__, url_prefix='/users')
 
 def init_users_blueprint(mongo, token_required):
     """Initialize the users blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     users_bp.mongo = mongo
     users_bp.token_required = token_required
+    users_bp.tracker = create_tracker(mongo.db)
     return users_bp
 
 @users_bp.route('/profile', methods=['GET'])
@@ -39,6 +42,17 @@ def get_profile():
                 'financialGoals': current_user.get('financialGoals', []),
                 'createdAt': current_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': current_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if current_user.get('lastLogin') else None,
+                # CRITICAL FIX: Generate URL for profile picture from GCS or GridFS
+                'profilePictureUrl': _generate_profile_picture_url(current_user),
+                'businessName': current_user.get('businessName'),
+                'businessType': current_user.get('businessType'),
+                'businessTypeOther': current_user.get('businessTypeOther'),
+                'industry': current_user.get('industry'),
+                'numberOfEmployees': current_user.get('numberOfEmployees'),
+                'physicalAddress': current_user.get('physicalAddress'),
+                'taxIdentificationNumber': current_user.get('taxIdentificationNumber'),
+                'socialMediaLinks': current_user.get('socialMediaLinks'),
+                'profileCompletionPercentage': current_user.get('profileCompletionPercentage', 0),
                 # Add subscription information to profile
                 'isSubscribed': current_user.get('isSubscribed', False),
                 'subscriptionType': current_user.get('subscriptionType'),
@@ -61,6 +75,39 @@ def get_profile():
             }), 500
     
     return _get_profile()
+
+@users_bp.route('/profile-picture/<gridfs_id>', methods=['GET'])
+def get_profile_picture(gridfs_id):
+    """Serve profile picture from GridFS"""
+    try:
+        import gridfs
+        from bson import ObjectId
+        from io import BytesIO
+        
+        fs = gridfs.GridFS(users_bp.mongo.db)
+        
+        # Get file from GridFS
+        try:
+            file_data = fs.get(ObjectId(gridfs_id))
+        except gridfs.NoFile:
+            return jsonify({
+                'success': False,
+                'message': 'Profile picture not found'
+            }), 404
+        
+        # Return image file
+        return send_file(
+            BytesIO(file_data.read()),
+            mimetype=file_data.content_type or 'image/jpeg',
+            as_attachment=False
+        )
+        
+    except Exception as e:
+        print(f"❌ Error serving GridFS profile picture: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to retrieve profile picture'
+        }), 500
 
 @users_bp.route('/profile', methods=['PUT'])
 def update_profile():
@@ -127,6 +174,15 @@ def update_profile():
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
+                
+                # Track profile update event
+                try:
+                    users_bp.tracker.track_profile_updated(
+                        user_id=current_user['_id'],
+                        fields_updated=list(update_data.keys())
+                    )
+                except Exception as e:
+                    print(f"Analytics tracking failed: {e}")
             
             # Get updated user
             updated_user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})
@@ -147,7 +203,12 @@ def update_profile():
                 'setupComplete': updated_user.get('setupComplete', False),
                 'financialGoals': updated_user.get('financialGoals', []),
                 'createdAt': updated_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
-                'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None
+                'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None,
+                # CRITICAL FIX: Generate profile picture URL from GCS or GridFS
+                'profilePictureUrl': _generate_profile_picture_url(updated_user),
+                'businessName': updated_user.get('businessName'),
+                'businessType': updated_user.get('businessType'),
+                'industry': updated_user.get('industry')
             }
             
             return jsonify({
@@ -231,12 +292,14 @@ def change_password():
                     'errors': errors
                 }), 400
             
-            # Update password
+            # Update password and clear mustChangePassword flag
             users_bp.mongo.db.users.update_one(
                 {'_id': current_user['_id']},
                 {'$set': {
                     'password': generate_password_hash(new_password),
                     'passwordChangedAt': datetime.utcnow()
+                }, '$unset': {
+                    'mustChangePassword': ''  # Clear the forced password change flag
                 }}
             )
             
@@ -865,20 +928,43 @@ def complete_profile():
     def _complete_profile(current_user):
         try:
             data = request.get_json()
+            print(f"Profile completion request from user {current_user['email']}: {data}")
             
             # Profile completion fields
+            # CRITICAL FIX: Removed 'profilePictureUrl' from profile fields
+            # Profile pictures are handled separately via GCS upload endpoint
+            # The upload endpoint stores gcsProfilePicturePath in user document
+            # Profile retrieval generates fresh signed URLs from that path
             profile_fields = [
                 'businessName', 'businessType', 'businessTypeOther', 'industry',
-                'physicalAddress', 'taxIdentificationNumber', 'profilePictureUrl',
+                'physicalAddress', 'taxIdentificationNumber',
                 'socialMediaLinks', 'numberOfEmployees'
             ]
             
             update_data = {}
             
+            # Validate numberOfEmployees if provided
+            if 'numberOfEmployees' in data:
+                num_employees = data['numberOfEmployees']
+                if num_employees is not None:
+                    if not isinstance(num_employees, int) or num_employees < 0:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Number of employees must be a non-negative integer (0 or greater)',
+                            'errors': {'numberOfEmployees': ['Must be 0 or a positive number']}
+                        }), 400
+            
             # Update profile fields
             for field in profile_fields:
                 if field in data:
                     update_data[field] = data[field]
+            
+            # CRITICAL FIX: Ignore profilePictureUrl if sent by client
+            # The signed URL from upload is temporary and will expire
+            # We rely on gcsProfilePicturePath which is set by upload endpoint
+            if 'profilePictureUrl' in data:
+                print(f"Ignoring profilePictureUrl from client (temporary signed URL)")
+                print(f"Using gcsProfilePicturePath from upload endpoint instead")
             
             # Calculate completion percentage
             user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})
@@ -887,7 +973,11 @@ def complete_profile():
             
             for field in profile_fields:
                 value = data.get(field) if field in data else user.get(field)
-                if value is not None and value != '' and value != {}:
+                # Special handling for numberOfEmployees - 0 is a valid value
+                if field == 'numberOfEmployees':
+                    if value is not None and isinstance(value, int) and value >= 0:
+                        completed_fields += 1
+                elif value is not None and value != '' and value != {}:
                     completed_fields += 1
             
             completion_percentage = (completed_fields / total_fields) * 100
@@ -902,32 +992,44 @@ def complete_profile():
             
             # Check if profile is sufficiently complete (at least 5 fields)
             if completed_fields >= 5:
-                # Track profile completion activity for rewards
+                # Track profile completion activity for rewards - directly in database
                 try:
-                    import requests
-                    from flask import current_app
+                    # Check if user has already earned this reward
+                    existing_activity = users_bp.mongo.db.activities.find_one({
+                        'userId': current_user['_id'],
+                        'action': 'complete_profile',
+                        'module': 'profile'
+                    })
                     
-                    # Get auth token for internal API call
-                    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-                    
-                    # Call rewards tracking endpoint
-                    tracking_response = requests.post(
-                        f"{request.host_url}rewards/track-activity",
-                        headers={'Authorization': f'Bearer {token}'},
-                        json={
+                    if not existing_activity:
+                        # Record the activity
+                        activity_data = {
+                            'userId': current_user['_id'],
                             'action': 'complete_profile',
-                            'module': 'profile'
+                            'module': 'profile',
+                            'timestamp': datetime.utcnow(),
+                            'metadata': {
+                                'completedFields': completed_fields,
+                                'completionPercentage': completion_percentage
+                            }
                         }
-                    )
-                    
-                    if tracking_response.status_code == 200:
-                        print("Profile completion activity tracked successfully")
+                        users_bp.mongo.db.activities.insert_one(activity_data)
+                        
+                        # Award credits directly (10 credits for profile completion)
+                        users_bp.mongo.db.users.update_one(
+                            {'_id': current_user['_id']},
+                            {'$inc': {'ficoreCreditBalance': 10.0}}
+                        )
+                        
+                        print(f"Profile completion reward granted: 10 credits to user {current_user['email']}")
                     else:
-                        print(f"Failed to track profile completion: {tracking_response.text}")
+                        print(f"User {current_user['email']} has already earned profile completion reward")
                         
                 except Exception as tracking_error:
                     print(f"Error tracking profile completion: {str(tracking_error)}")
                     # Don't fail the profile update if tracking fails
+            
+            print(f"Profile completion successful for user {current_user['email']}: {completed_fields}/{total_fields} fields")
             
             return jsonify({
                 'success': True,
@@ -941,6 +1043,9 @@ def complete_profile():
             })
             
         except Exception as e:
+            print(f"Profile completion error for user {current_user['email']}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to update profile',

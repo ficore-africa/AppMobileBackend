@@ -8,8 +8,26 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import io
+
+
+def get_nigerian_time():
+    """Get current time in Nigerian timezone (WAT - UTC+1)"""
+    return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=1)))
+
+
+def parse_date_safe(date_value):
+    """Safely parse date from string or datetime object"""
+    if isinstance(date_value, datetime):
+        return date_value
+    elif isinstance(date_value, str):
+        try:
+            return datetime.fromisoformat(date_value.replace('Z', ''))
+        except:
+            return datetime.now(timezone.utc)
+    else:
+        return datetime.now(timezone.utc)
 
 
 class PDFGenerator:
@@ -54,16 +72,23 @@ class PDFGenerator:
         
         story = []
         
-        # Title
-        title = Paragraph("FiCore Financial Report", self.styles['CustomTitle'])
+        # Title - Dynamic based on data type
+        report_titles = {
+            'all': 'Profit & Loss Statement',
+            'incomes': 'Income Report',
+            'expenses': 'Expense Report'
+        }
+        title_text = report_titles.get(data_type.lower(), 'Financial Report')
+        title = Paragraph(title_text, self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 12))
         
         # User Info
+        nigerian_time = get_nigerian_time()
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
-        <b>Report Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}<br/>
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}<br/>
         <b>Report Type:</b> {data_type.upper()}
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
@@ -73,22 +98,26 @@ class PDFGenerator:
         if 'expenses' in export_data and export_data['expenses']:
             story.append(Paragraph("Expenses Summary", self.styles['SectionHeader']))
             
-            expense_data = [['Date', 'Title', 'Category', 'Amount (₦)']]
+            expense_data = [['Date', 'Category', 'Description', 'Amount (₦)']]
             total_expenses = 0
             
             for expense in export_data['expenses']:
-                date_str = datetime.fromisoformat(expense['date'].replace('Z', '')).strftime('%Y-%m-%d')
+                date_obj = parse_date_safe(expense.get('date'))
+                date_str = date_obj.strftime('%Y-%m-%d')
+                # Use description if available, otherwise fall back to title
+                description = expense.get('description') or expense.get('notes') or expense.get('title', 'N/A')
                 expense_data.append([
                     date_str,
-                    expense.get('title', 'N/A'),
                     expense.get('category', 'N/A'),
+                    description,
                     f"₦{expense.get('amount', 0):,.2f}"
                 ])
                 total_expenses += expense.get('amount', 0)
             
             expense_data.append(['', '', 'Total:', f"₦{total_expenses:,.2f}"])
             
-            expense_table = Table(expense_data, colWidths=[1.5*inch, 2*inch, 1.5*inch, 1.5*inch])
+            # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
+            expense_table = Table(expense_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             expense_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -100,7 +129,8 @@ class PDFGenerator:
                 ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # Align text to top for multi-line descriptions
             ]))
             
             story.append(expense_table)
@@ -110,33 +140,41 @@ class PDFGenerator:
         if 'incomes' in export_data and export_data['incomes']:
             story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
             
-            income_data = [['Date', 'Source', 'Amount (₦)']]
+            income_data = [['Date', 'Category', 'Description', 'Amount (₦)']]
             total_income = 0
             
             for income in export_data['incomes']:
-                date_str = datetime.fromisoformat(income['dateReceived'].replace('Z', '')).strftime('%Y-%m-%d')
+                date_obj = parse_date_safe(income.get('dateReceived'))
+                date_str = date_obj.strftime('%Y-%m-%d')
+                # Use description if available, otherwise fall back to source
+                description = income.get('description') or income.get('source', 'N/A')
+                # Get category display name
+                category = income.get('category', 'Other')
                 income_data.append([
                     date_str,
-                    income.get('source', 'N/A'),
+                    category,
+                    description,
                     f"₦{income.get('amount', 0):,.2f}"
                 ])
                 total_income += income.get('amount', 0)
             
-            income_data.append(['', 'Total:', f"₦{total_income:,.2f}"])
+            income_data.append(['', '', 'Total:', f"₦{total_income:,.2f}"])
             
-            income_table = Table(income_data, colWidths=[2*inch, 3*inch, 1.5*inch])
+            # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
+            income_table = Table(income_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             income_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('BACKGROUND', (0, 1), (-1, -2), colors.lightgreen),
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # Align text to top for multi-line descriptions
             ]))
             
             story.append(income_table)
@@ -149,7 +187,8 @@ class PDFGenerator:
             credit_data = [['Date', 'Type', 'Description', 'Amount (FC)']]
             
             for transaction in export_data['creditTransactions']:
-                date_str = datetime.fromisoformat(transaction['createdAt'].replace('Z', '')).strftime('%Y-%m-%d')
+                date_obj = parse_date_safe(transaction.get('createdAt'))
+                date_str = date_obj.strftime('%Y-%m-%d')
                 credit_data.append([
                     date_str,
                     transaction.get('type', 'N/A'),
@@ -173,10 +212,60 @@ class PDFGenerator:
             story.append(credit_table)
             story.append(Spacer(1, 20))
         
+        # Profit & Loss Summary Section (only for 'all' data type)
+        if data_type.lower() == 'all':
+            # Calculate totals
+            total_income = 0
+            if 'incomes' in export_data and export_data['incomes']:
+                total_income = sum(income.get('amount', 0) for income in export_data['incomes'])
+            
+            total_expenses = 0
+            if 'expenses' in export_data and export_data['expenses']:
+                total_expenses = sum(expense.get('amount', 0) for expense in export_data['expenses'])
+            
+            net_profit_loss = total_income - total_expenses
+            
+            # Add summary section
+            story.append(Spacer(1, 10))
+            story.append(Paragraph("Financial Summary", self.styles['SectionHeader']))
+            
+            summary_data = [
+                ['Description', 'Amount (₦)'],
+                ['Total Income', f"₦{total_income:,.2f}"],
+                ['Total Expenses', f"₦{total_expenses:,.2f}"],
+                ['Net Profit / (Loss)', f"₦{net_profit_loss:,.2f}"]
+            ]
+            
+            summary_table = Table(summary_data, colWidths=[4*inch, 2*inch])
+            
+            # Determine color based on profit or loss
+            result_bg_color = colors.HexColor('#e8f5e9') if net_profit_loss >= 0 else colors.HexColor('#fce8e6')
+            result_text_color = colors.HexColor('#2e7d32') if net_profit_loss >= 0 else colors.HexColor('#c62828')
+            
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, 2), colors.beige),
+                ('BACKGROUND', (0, -1), (-1, -1), result_bg_color),
+                ('TEXTCOLOR', (0, -1), (-1, -1), result_text_color),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (-1, -1), 14),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('LINEABOVE', (0, -1), (-1, -1), 2, colors.black),
+            ]))
+            
+            story.append(summary_table)
+            story.append(Spacer(1, 20))
+        
         # Footer
         footer_text = """
         <i>This report was generated by FiCore Mobile App.<br/>
-        For support, contact: ficoreafrica@gmail.com</i>
+        For support, contact: team@ficoreafrica.com</i>
         """
         story.append(Spacer(1, 30))
         story.append(Paragraph(footer_text, self.styles['InfoText']))
@@ -187,7 +276,7 @@ class PDFGenerator:
         return buffer
     
     def generate_tax_report(self, user_data, tax_calculation):
-        """Generate tax calculation report PDF"""
+        """Generate tax calculation report PDF with Nigerian 2025 tax bands"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
                               topMargin=72, bottomMargin=18)
@@ -200,11 +289,12 @@ class PDFGenerator:
         story.append(Spacer(1, 12))
         
         # User Info
+        nigerian_time = get_nigerian_time()
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
-        <b>Tax Year:</b> {tax_calculation.get('tax_year', datetime.utcnow().year)}<br/>
-        <b>Report Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
+        <b>Tax Year:</b> {tax_calculation.get('tax_year', nigerian_time.year)}<br/>
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
@@ -282,12 +372,1068 @@ class PDFGenerator:
         footer_text = """
         <i>This tax calculation is for informational purposes only.<br/>
         Please consult with a tax professional for official tax filing.<br/>
-        Generated by FiCore Mobile App | ficoreafrica@gmail.com</i>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
         """
         story.append(Spacer(1, 30))
         story.append(Paragraph(footer_text, self.styles['InfoText']))
         
         # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_cash_flow_report(self, user_data, transactions, start_date=None, end_date=None):
+        """Generate Cash Flow statement PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("Cash Flow Statement", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        nigerian_time = get_nigerian_time()
+        period_text = ""
+        if start_date and end_date:
+            period_text = f"<b>Period:</b> {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}<br/>"
+        
+        user_info = f"""
+        <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        {period_text}
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Calculate cash flows
+        operating_inflows = sum(t.get('amount', 0) for t in transactions.get('incomes', []))
+        operating_outflows = sum(t.get('amount', 0) for t in transactions.get('expenses', []))
+        net_operating = operating_inflows - operating_outflows
+        
+        # Operating Activities
+        story.append(Paragraph("Cash Flow from Operating Activities", self.styles['SectionHeader']))
+        operating_data = [
+            ['Description', 'Amount (₦)'],
+            ['Cash Inflows (Income)', f"₦{operating_inflows:,.2f}"],
+            ['Cash Outflows (Expenses)', f"₦{-operating_outflows:,.2f}"],
+            ['Net Cash from Operations', f"₦{net_operating:,.2f}"]
+        ]
+        
+        operating_table = Table(operating_data, colWidths=[4*inch, 2*inch])
+        operating_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(operating_table)
+        story.append(Spacer(1, 20))
+        
+        # Summary
+        story.append(Paragraph("Summary", self.styles['SectionHeader']))
+        summary_text = f"""
+        <b>Total Cash Inflows:</b> ₦{operating_inflows:,.2f}<br/>
+        <b>Total Cash Outflows:</b> ₦{operating_outflows:,.2f}<br/>
+        <b>Net Cash Flow:</b> ₦{net_operating:,.2f}
+        """
+        story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer
+        footer_text = """
+        <i>This cash flow statement is for informational purposes only.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_tax_summary_report(self, user_data, tax_data, start_date=None, end_date=None, tax_type='PIT'):
+        """
+        Generate Tax Summary PDF with Nigerian tax formatting
+        
+        Args:
+            user_data: User information
+            tax_data: Tax calculation data
+            start_date: Start date for tax period
+            end_date: End date for tax period
+            tax_type: 'PIT' for Personal Income Tax or 'CIT' for Corporate Income Tax
+        """
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title based on tax type
+        tax_type_name = "Personal Income Tax (PIT)" if tax_type == 'PIT' else "Corporate Income Tax (CIT)"
+        title = Paragraph(f"Tax Summary Report - {tax_type_name}", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        nigerian_time = get_nigerian_time()
+        period_text = ""
+        if start_date and end_date:
+            period_text = f"<b>Tax Period:</b> {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}<br/>"
+        
+        business_name = user_data.get('businessName', '')
+        entity_info = f"<b>Business:</b> {business_name}<br/>" if business_name else ""
+        
+        user_info = f"""
+        <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        {entity_info}
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Tax Type:</b> {tax_type_name}<br/>
+        {period_text}
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Income Summary
+        story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
+        total_income = tax_data.get('total_income', 0)
+        deductible_expenses = tax_data.get('deductible_expenses', 0)
+        
+        # Build income data based on tax type
+        income_data = [['Description', 'Amount (₦)']]
+        income_data.append(['Gross Income', f"₦{total_income:,.2f}"])
+        
+        # For PIT, show detailed statutory deductions breakdown
+        if tax_type == 'PIT' and 'statutory_deductions' in tax_data:
+            statutory = tax_data['statutory_deductions']
+            
+            income_data.append(['Less: Business Expenses', f"₦{tax_data.get('deductible_expenses', 0) - statutory.get('total', 0):,.2f}"])
+            
+            # Show statutory deductions breakdown
+            if statutory.get('rent_relief', {}).get('relief_amount', 0) > 0:
+                income_data.append(['Less: Rent Relief (20%, max ₦500k)', f"₦{statutory['rent_relief']['relief_amount']:,.2f}"])
+            
+            if statutory.get('pension_contributions', 0) > 0:
+                income_data.append(['Less: Pension Contributions', f"₦{statutory['pension_contributions']:,.2f}"])
+            
+            if statutory.get('life_insurance', 0) > 0:
+                income_data.append(['Less: Life Insurance Premiums', f"₦{statutory['life_insurance']:,.2f}"])
+            
+            if statutory.get('nhis_contributions', 0) > 0:
+                income_data.append(['Less: NHIS Contributions', f"₦{statutory['nhis_contributions']:,.2f}"])
+            
+            if statutory.get('hmo_premiums', 0) > 0:
+                income_data.append(['Less: HMO Premiums', f"₦{statutory['hmo_premiums']:,.2f}"])
+        else:
+            income_data.append(['Less: Deductible Expenses', f"₦{deductible_expenses:,.2f}"])
+        
+        net_income = total_income - deductible_expenses
+        income_data.append(['Taxable Income', f"₦{net_income:,.2f}"])
+        
+        income_table = Table(income_data, colWidths=[4*inch, 2*inch])
+        income_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(income_table)
+        story.append(Spacer(1, 20))
+        
+        # Tax Calculation based on type
+        if tax_type == 'CIT':
+            # Corporate Income Tax Calculation
+            story.append(Paragraph("Corporate Income Tax Calculation", self.styles['SectionHeader']))
+            
+            # CIT is a flat 25% rate in Nigeria (as of 2025)
+            cit_rate = 0.25
+            total_tax = net_income * cit_rate if net_income > 0 else 0
+            
+            # CRITICAL: CIT Exemption requires BOTH conditions to be met (AND, not OR)
+            # Exemption applies if: (Turnover < ₦100M) AND (Fixed Assets NBV < ₦250M)
+            turnover = tax_data.get('annual_turnover', 0)
+            fixed_assets_nbv = tax_data.get('fixed_assets_nbv', 0)  # Net Book Value, not original cost
+            qualifies_for_exemption = (turnover < 100000000) and (fixed_assets_nbv < 250000000)
+            
+            cit_data = [
+                ['Description', 'Amount (₦)'],
+                ['Taxable Profit', f"₦{net_income:,.2f}"],
+                ['CIT Rate', f"{cit_rate*100:.0f}%"],
+                ['Calculated Tax', f"₦{total_tax:,.2f}"]
+            ]
+            
+            if qualifies_for_exemption:
+                cit_data.append(['Small Company Exemption', 'MAY APPLY*'])
+            
+            cit_table = Table(cit_data, colWidths=[4*inch, 2*inch])
+            cit_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fce8e6')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(cit_table)
+            story.append(Spacer(1, 20))
+            
+            # Business Assets & Exemption Analysis
+            story.append(Paragraph("Business Assets & Exemption Analysis", self.styles['SectionHeader']))
+            
+            # Get comprehensive business data
+            fixed_assets_original_cost = tax_data.get('fixed_assets_original_cost', 0)
+            inventory_value = tax_data.get('inventory_value', 0)
+            debtors_value = tax_data.get('debtors_value', 0)
+            creditors_value = tax_data.get('creditors_value', 0)
+            assets_count = tax_data.get('assets_count', 0)
+            
+            # Calculate total business value (for balance sheet display)
+            # Note: Inventory, Debtors, Creditors are shown for complete financial picture
+            # but are NOT used for CIT exemption calculation
+            total_assets = fixed_assets_nbv + inventory_value + debtors_value
+            net_assets = total_assets - creditors_value
+            
+            assets_breakdown_data = [
+                ['Asset Category', 'Value (₦)'],
+                ['Fixed Assets - Net Book Value*', f"₦{fixed_assets_nbv:,.2f}"],
+                ['Fixed Assets - Original Cost', f"₦{fixed_assets_original_cost:,.2f}"],
+                ['Inventory Stock Value', f"₦{inventory_value:,.2f}"],
+                ['Accounts Receivable (Debtors)', f"₦{debtors_value:,.2f}"],
+                ['Total Assets', f"₦{total_assets:,.2f}"],
+                ['Less: Accounts Payable (Creditors)', f"₦{creditors_value:,.2f}"],
+                ['Net Business Assets', f"₦{net_assets:,.2f}"]
+            ]
+            
+            assets_table = Table(assets_breakdown_data, colWidths=[4*inch, 2*inch])
+            assets_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -2), (-1, -2), colors.HexColor('#e8f0fe')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(assets_table)
+            story.append(Spacer(1, 12))
+            
+            # Note about NBV
+            nbv_note = """
+            <i>*Net Book Value = Original Cost - Accumulated Depreciation (used for CIT exemption)</i>
+            """
+            story.append(Paragraph(nbv_note, self.styles['InfoText']))
+            story.append(Spacer(1, 20))
+            
+            # CIT Exemption Eligibility Analysis
+            story.append(Paragraph("CIT Exemption Eligibility", self.styles['SectionHeader']))
+            
+            turnover_qualifies = turnover < 100000000
+            assets_qualify = fixed_assets_nbv < 250000000
+            
+            turnover_status = "✓ QUALIFIES" if turnover_qualifies else "✗ EXCEEDS LIMIT"
+            assets_status = "✓ QUALIFIES" if assets_qualify else "✗ EXCEEDS LIMIT"
+            
+            overall_status = "✓ QUALIFIES" if qualifies_for_exemption else "✗ DOES NOT QUALIFY"
+            
+            exemption_text = f"""
+            <b>CIT Exemption Status: {overall_status}</b><br/>
+            <br/>
+            <b>Criterion 1: Annual Turnover</b><br/>
+            • Threshold: Below ₦100,000,000<br/>
+            • Your Turnover: ₦{turnover:,.2f}<br/>
+            • Status: {turnover_status}<br/>
+            <br/>
+            <b>Criterion 2: Fixed Assets Net Book Value</b><br/>
+            • Threshold: Below ₦250,000,000<br/>
+            • Your Fixed Assets NBV: ₦{fixed_assets_nbv:,.2f}<br/>
+            • Status: {assets_status}<br/>
+            <br/>
+            <b>CRITICAL: Exemption Rule</b><br/>
+            You qualify for CIT exemption ONLY if <b>BOTH</b> criteria are met:<br/>
+            (Turnover < ₦100M) <b>AND</b> (Fixed Assets NBV < ₦250M)<br/>
+            <br/>
+            <b>Note:</b> For the ₦250M threshold, ONLY Fixed Assets Net Book Value is considered.<br/>
+            Inventory, Debtors, and Creditors are NOT included in this specific exemption calculation.<br/>
+            <br/>
+            *This analysis is based on your FiCore data. Consult a tax professional to confirm eligibility and claim this exemption.
+            """
+            story.append(Paragraph(exemption_text, self.styles['Normal']))
+            story.append(Spacer(1, 20))
+        else:
+            # Personal Income Tax Calculation
+            story.append(Paragraph("Personal Income Tax Calculation (PIT Bands 2025)", self.styles['SectionHeader']))
+            
+            # Nigerian Personal Income Tax bands (Effective Jan 1, 2026 for 2025 assessments)
+            # First ₦800,000 is fully tax-exempt
+            tax_bands = [
+                (0, 800000, 0.00),              # Tax-exempt threshold
+                (800000, 3000000, 0.15),        # 15% on next ₦2,200,000
+                (3000000, 12000000, 0.18),      # 18% on next ₦9,000,000
+                (12000000, 25000000, 0.21),     # 21% on next ₦13,000,000
+                (25000000, 50000000, 0.23),     # 23% on next ₦25,000,000
+                (50000000, float('inf'), 0.25)  # 25% on remainder
+            ]
+            
+            tax_breakdown_data = [['Income Band', 'Rate', 'Taxable Amount (₦)', 'Tax (₦)']]
+            total_tax = 0
+            
+            for lower, upper, rate in tax_bands:
+                if net_income <= lower:
+                    break
+                
+                # Calculate the portion of income in this band
+                taxable_in_band = min(net_income, upper) - lower
+                if taxable_in_band <= 0:
+                    continue
+                
+                band_tax = taxable_in_band * rate
+                total_tax += band_tax
+                
+                upper_display = f"₦{upper:,.0f}" if upper != float('inf') else "Above"
+                tax_breakdown_data.append([
+                    f"₦{lower:,.0f} - {upper_display}",
+                    f"{rate*100:.1f}%",
+                    f"₦{taxable_in_band:,.2f}",
+                    f"₦{band_tax:,.2f}"
+                ])
+            
+            tax_breakdown_data.append(['', '', 'Total Tax:', f"₦{total_tax:,.2f}"])
+            
+            tax_table = Table(tax_breakdown_data, colWidths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
+            tax_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fce8e6')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(tax_table)
+            story.append(Spacer(1, 20))
+        
+        # Summary
+        effective_rate = (total_tax / net_income * 100) if net_income > 0 else 0
+        net_after_tax = net_income - total_tax
+        
+        story.append(Paragraph("Tax Summary", self.styles['SectionHeader']))
+        summary_text = f"""
+        <b>Total Tax Liability:</b> ₦{total_tax:,.2f}<br/>
+        <b>Effective Tax Rate:</b> {effective_rate:.2f}%<br/>
+        <b>Net Income After Tax:</b> ₦{net_after_tax:,.2f}
+        """
+        story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer based on tax type
+        if tax_type == 'CIT':
+            footer_text = """
+            <i>This tax summary uses Nigerian Corporate Income Tax rate (25% flat rate).<br/>
+            Small companies (turnover < ₦100M OR assets < ₦250M) may qualify for exemptions.<br/>
+            For informational purposes only. Consult a tax professional for official filing.<br/>
+            Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+            """
+        else:
+            footer_text = """
+            <i>This tax summary uses Nigerian Personal Income Tax bands (effective Jan 1, 2026).<br/>
+            ₦800,000 annual income is fully tax-exempt. Rent relief (20% of rent, max ₦500,000) may apply.<br/>
+            For informational purposes only. Consult a tax professional for official filing.<br/>
+            Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+            """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_debtors_report(self, user_data, debtors, start_date=None, end_date=None):
+        """Generate Debtors/Accounts Receivable PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("Accounts Receivable (Debtors) Report", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        period_text = ""
+        if start_date and end_date:
+            period_text = f"<b>Period:</b> {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}<br/>"
+        
+        nigerian_time = get_nigerian_time()
+        user_info = f"""
+        <b>Business:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        {period_text}
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        if not debtors:
+            story.append(Paragraph("No outstanding debtors found.", self.styles['Normal']))
+        else:
+            # Debtors Table
+            story.append(Paragraph("Outstanding Receivables", self.styles['SectionHeader']))
+            
+            debtor_data = [['Debtor Name', 'Invoice Date', 'Due Date', 'Amount (₦)', 'Status']]
+            total_outstanding = 0
+            overdue_amount = 0
+            
+            for debtor in debtors:
+                invoice_date = parse_date_safe(debtor.get('invoiceDate'))
+                due_date = parse_date_safe(debtor.get('dueDate'))
+                amount = debtor.get('amount', 0)
+                
+                # Determine status
+                if nigerian_time.replace(tzinfo=None) > due_date.replace(tzinfo=None):
+                    status = 'OVERDUE'
+                    overdue_amount += amount
+                else:
+                    status = 'Current'
+                
+                debtor_data.append([
+                    debtor.get('name', 'N/A'),
+                    invoice_date.strftime('%Y-%m-%d'),
+                    due_date.strftime('%Y-%m-%d'),
+                    f"₦{amount:,.2f}",
+                    status
+                ])
+                total_outstanding += amount
+            
+            debtor_data.append(['', '', 'Total Outstanding:', f"₦{total_outstanding:,.2f}", ''])
+            
+            debtor_table = Table(debtor_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
+            debtor_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#fbbc04')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor('#fff9e6')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fbbc04')),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(debtor_table)
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            story.append(Paragraph("Summary", self.styles['SectionHeader']))
+            summary_text = f"""
+            <b>Total Outstanding:</b> ₦{total_outstanding:,.2f}<br/>
+            <b>Overdue Amount:</b> ₦{overdue_amount:,.2f}<br/>
+            <b>Number of Debtors:</b> {len(debtors)}
+            """
+            story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer
+        footer_text = """
+        <i>This debtors report shows all outstanding receivables.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_creditors_report(self, user_data, creditors, start_date=None, end_date=None):
+        """Generate Creditors/Accounts Payable PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("Accounts Payable (Creditors) Report", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        period_text = ""
+        if start_date and end_date:
+            period_text = f"<b>Period:</b> {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}<br/>"
+        
+        nigerian_time = get_nigerian_time()
+        user_info = f"""
+        <b>Business:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        {period_text}
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        if not creditors:
+            story.append(Paragraph("No outstanding creditors found.", self.styles['Normal']))
+        else:
+            # Creditors Table
+            story.append(Paragraph("Outstanding Payables", self.styles['SectionHeader']))
+            
+            creditor_data = [['Creditor Name', 'Invoice Date', 'Due Date', 'Amount (₦)', 'Status']]
+            total_outstanding = 0
+            overdue_amount = 0
+            
+            for creditor in creditors:
+                invoice_date = parse_date_safe(creditor.get('invoiceDate'))
+                due_date = parse_date_safe(creditor.get('dueDate'))
+                amount = creditor.get('amount', 0)
+                
+                # Determine status
+                if nigerian_time.replace(tzinfo=None) > due_date.replace(tzinfo=None):
+                    status = 'OVERDUE'
+                    overdue_amount += amount
+                else:
+                    status = 'Current'
+                
+                creditor_data.append([
+                    creditor.get('name', 'N/A'),
+                    invoice_date.strftime('%Y-%m-%d'),
+                    due_date.strftime('%Y-%m-%d'),
+                    f"₦{amount:,.2f}",
+                    status
+                ])
+                total_outstanding += amount
+            
+            creditor_data.append(['', '', 'Total Outstanding:', f"₦{total_outstanding:,.2f}", ''])
+            
+            creditor_table = Table(creditor_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
+            creditor_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor('#fce8e6')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ea4335')),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(creditor_table)
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            story.append(Paragraph("Summary", self.styles['SectionHeader']))
+            summary_text = f"""
+            <b>Total Outstanding:</b> ₦{total_outstanding:,.2f}<br/>
+            <b>Overdue Amount:</b> ₦{overdue_amount:,.2f}<br/>
+            <b>Number of Creditors:</b> {len(creditors)}
+            """
+            story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer
+        footer_text = """
+        <i>This creditors report shows all outstanding payables.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_assets_report(self, user_data, assets, start_date=None, end_date=None):
+        """Generate Assets Register PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("Asset Register Report", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        nigerian_time = get_nigerian_time()
+        user_info = f"""
+        <b>Business:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        if not assets:
+            story.append(Paragraph("No assets found.", self.styles['Normal']))
+        else:
+            # Assets Table
+            story.append(Paragraph("Asset Details", self.styles['SectionHeader']))
+            
+            asset_data = [['Asset Name', 'Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
+            total_cost = 0
+            total_value = 0
+            
+            for asset in assets:
+                purchase_date = parse_date_safe(asset.get('purchaseDate'))
+                cost = asset.get('purchaseCost', 0)
+                current_value = asset.get('currentValue', cost)
+                
+                asset_data.append([
+                    asset.get('name', 'N/A'),
+                    asset.get('category', 'N/A'),
+                    purchase_date.strftime('%Y-%m-%d'),
+                    f"₦{cost:,.2f}",
+                    f"₦{current_value:,.2f}"
+                ])
+                total_cost += cost
+                total_value += current_value
+            
+            asset_data.append(['', '', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
+            
+            asset_table = Table(asset_data, colWidths=[1.8*inch, 1.3*inch, 1.2*inch, 1.3*inch, 1.4*inch])
+            asset_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (3, 0), (4, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor('#e8f0fe')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(asset_table)
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            total_depreciation = total_cost - total_value
+            story.append(Paragraph("Summary", self.styles['SectionHeader']))
+            summary_text = f"""
+            <b>Total Asset Cost:</b> ₦{total_cost:,.2f}<br/>
+            <b>Total Current Value:</b> ₦{total_value:,.2f}<br/>
+            <b>Total Depreciation:</b> ₦{total_depreciation:,.2f}<br/>
+            <b>Number of Assets:</b> {len(assets)}
+            """
+            story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer
+        footer_text = """
+        <i>This assets register shows all recorded business assets.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_asset_depreciation_report(self, user_data, assets, start_date=None, end_date=None):
+        """Generate Asset Depreciation Schedule PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("Asset Depreciation Schedule", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        nigerian_time = get_nigerian_time()
+        user_info = f"""
+        <b>Business:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        if not assets:
+            story.append(Paragraph("No assets with depreciation found.", self.styles['Normal']))
+        else:
+            # Depreciation Table
+            story.append(Paragraph("Depreciation Details", self.styles['SectionHeader']))
+            
+            depreciation_data = [['Asset', 'Cost (₦)', 'Useful Life', 'Annual Dep. (₦)', 'Accumulated (₦)', 'Book Value (₦)']]
+            total_cost = 0
+            total_annual_dep = 0
+            total_accumulated = 0
+            total_book_value = 0
+            
+            for asset in assets:
+                # CRITICAL FIX: Use correct field names from Asset schema
+                cost = asset.get('purchasePrice', 0)  # Was 'purchaseCost'
+                useful_life = asset.get('usefulLifeYears', 5)  # Was 'usefulLife', default 5 years
+                purchase_date = parse_date_safe(asset.get('purchaseDate'))
+                depreciation_method = asset.get('depreciationMethod', 'straight_line')
+                depreciation_rate = asset.get('depreciationRate', 0)
+                
+                # OPTION A + C HYBRID: Use manual adjustment if exists, otherwise calculate
+                manual_adjustment = asset.get('manualValueAdjustment')
+                
+                if manual_adjustment is not None:
+                    # Use manual adjustment (Option C layer)
+                    book_value = manual_adjustment
+                    accumulated_depreciation = cost - book_value
+                    # Estimate annual depreciation based on current state
+                    years_owned = max((nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25, 0.01)
+                    annual_depreciation = accumulated_depreciation / years_owned if years_owned > 0 else 0
+                else:
+                    # Calculate on-the-fly (Option A core)
+                    years_owned = (nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25
+                    
+                    if depreciation_method == 'none' or depreciation_rate == 0:
+                        book_value = cost
+                        accumulated_depreciation = 0
+                        annual_depreciation = 0
+                    elif depreciation_method == 'straight_line':
+                        annual_depreciation = cost * (depreciation_rate / 100) if depreciation_rate > 0 else (cost / useful_life if useful_life > 0 else 0)
+                        accumulated_depreciation = min(annual_depreciation * years_owned, cost)
+                        book_value = cost - accumulated_depreciation
+                    elif depreciation_method == 'reducing_balance':
+                        book_value = cost
+                        full_years = int(years_owned)
+                        partial_year = years_owned - full_years
+                        
+                        # Apply full years
+                        for _ in range(full_years):
+                            book_value = book_value * (1 - (depreciation_rate / 100))
+                        
+                        # Apply partial year
+                        if partial_year > 0:
+                            book_value = book_value * (1 - (depreciation_rate / 100 * partial_year))
+                        
+                        accumulated_depreciation = cost - book_value
+                        annual_depreciation = book_value * (depreciation_rate / 100)
+                    else:
+                        # Fallback to simple calculation
+                        annual_depreciation = cost / useful_life if useful_life > 0 else 0
+                        accumulated_depreciation = min(annual_depreciation * years_owned, cost)
+                        book_value = cost - accumulated_depreciation
+                
+                depreciation_data.append([
+                    asset.get('assetName', 'N/A'),  # Was 'name'
+                    f"₦{cost:,.2f}",
+                    f"{useful_life} years",
+                    f"₦{annual_depreciation:,.2f}",
+                    f"₦{accumulated_depreciation:,.2f}",
+                    f"₦{book_value:,.2f}"
+                ])
+                
+                total_cost += cost
+                total_annual_dep += annual_depreciation
+                total_accumulated += accumulated_depreciation
+                total_book_value += book_value
+            
+            depreciation_data.append([
+                'Totals:',
+                f"₦{total_cost:,.2f}",
+                '',
+                f"₦{total_annual_dep:,.2f}",
+                f"₦{total_accumulated:,.2f}",
+                f"₦{total_book_value:,.2f}"
+            ])
+            
+            depreciation_table = Table(depreciation_data, colWidths=[1.5*inch, 1*inch, 0.9*inch, 1*inch, 1.1*inch, 1*inch])
+            depreciation_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor('#e8f5e9')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#34a853')),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(depreciation_table)
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            story.append(Paragraph("Depreciation Summary", self.styles['SectionHeader']))
+            summary_text = f"""
+            <b>Total Asset Cost:</b> ₦{total_cost:,.2f}<br/>
+            <b>Total Annual Depreciation:</b> ₦{total_annual_dep:,.2f}<br/>
+            <b>Total Accumulated Depreciation:</b> ₦{total_accumulated:,.2f}<br/>
+            <b>Total Book Value:</b> ₦{total_book_value:,.2f}<br/>
+            <b>Depreciation Method:</b> Straight-Line
+            """
+            story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer
+        footer_text = """
+        <i>This depreciation schedule uses the straight-line method.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_inventory_report(self, user_data, inventory_items, start_date=None, end_date=None):
+        """Generate Inventory Report PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("Inventory Report", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        nigerian_time = get_nigerian_time()
+        user_info = f"""
+        <b>Business:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        if not inventory_items:
+            story.append(Paragraph("No inventory items found.", self.styles['Normal']))
+        else:
+            # Inventory Table
+            story.append(Paragraph("Inventory Details", self.styles['SectionHeader']))
+            
+            inventory_data = [['Item Name', 'SKU', 'Quantity', 'Unit Cost (₦)', 'Total Value (₦)', 'Status']]
+            total_quantity = 0
+            total_value = 0
+            low_stock_count = 0
+            
+            for item in inventory_items:
+                quantity = item.get('quantity', 0)
+                unit_cost = item.get('unitCost', 0)
+                total_item_value = quantity * unit_cost
+                min_stock = item.get('minStockLevel', 10)
+                
+                # Determine status
+                if quantity == 0:
+                    status = 'OUT OF STOCK'
+                elif quantity <= min_stock:
+                    status = 'LOW STOCK'
+                    low_stock_count += 1
+                else:
+                    status = 'In Stock'
+                
+                inventory_data.append([
+                    item.get('name', 'N/A'),
+                    item.get('sku', 'N/A'),
+                    str(quantity),
+                    f"₦{unit_cost:,.2f}",
+                    f"₦{total_item_value:,.2f}",
+                    status
+                ])
+                
+                total_quantity += quantity
+                total_value += total_item_value
+            
+            inventory_data.append(['', 'Totals:', str(total_quantity), '', f"₦{total_value:,.2f}", ''])
+            
+            inventory_table = Table(inventory_data, colWidths=[1.5*inch, 1*inch, 0.8*inch, 1.2*inch, 1.2*inch, 1*inch])
+            inventory_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#fbbc04')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+                ('ALIGN', (3, 0), (4, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor('#fff9e6')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fbbc04')),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(inventory_table)
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            story.append(Paragraph("Inventory Summary", self.styles['SectionHeader']))
+            summary_text = f"""
+            <b>Total Items:</b> {len(inventory_items)}<br/>
+            <b>Total Quantity:</b> {total_quantity}<br/>
+            <b>Total Inventory Value:</b> ₦{total_value:,.2f}<br/>
+            <b>Low Stock Items:</b> {low_stock_count}
+            """
+            story.append(Paragraph(summary_text, self.styles['Normal']))
+        
+        # Footer
+        footer_text = """
+        <i>This inventory report shows current stock levels and values.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Spacer(1, 30))
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_credit_transactions_report(self, user_data, credit_data, start_date=None, end_date=None):
+        """Generate Credit Transactions Report PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        
+        # Title
+        title = Paragraph("FiCore Credits Report", self.styles['CustomTitle'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        nigerian_time = get_nigerian_time()
+        user_info = f"""
+        <b>Name:</b> {user_data.get('name', 'N/A')}<br/>
+        <b>Email:</b> {user_data.get('email', 'N/A')}<br/>
+        <b>Account Type:</b> {'Premium' if user_data.get('isSubscribed', False) else 'Free'}<br/>
+        <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
+        """
+        if start_date or end_date:
+            period = f"<b>Period:</b> "
+            if start_date:
+                period += start_date.strftime('%B %d, %Y')
+            if start_date and end_date:
+                period += " - "
+            if end_date:
+                period += end_date.strftime('%B %d, %Y')
+            user_info += f"<br/>{period}"
+        
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Current Balance Summary
+        story.append(Paragraph("Account Summary", self.styles['SectionHeader']))
+        summary_data = [
+            ['Current FC Balance', f"{credit_data.get('current_balance', 0):.2f} FC"],
+            ['Total Earned', f"+{credit_data.get('total_earned', 0):.2f} FC"],
+            ['Total Spent', f"-{credit_data.get('total_spent', 0):.2f} FC"],
+            ['Net Change', f"{credit_data.get('net_change', 0):+.2f} FC"],
+            ['Total Transactions', str(credit_data.get('transaction_count', 0))]
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f0f0f0')),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+        
+        # Transactions Table
+        transactions = credit_data.get('transactions', [])
+        
+        if not transactions:
+            story.append(Paragraph("No credit transactions found for the selected period.", self.styles['Normal']))
+        else:
+            story.append(Paragraph("Transaction History", self.styles['SectionHeader']))
+            
+            transaction_data = [['Date', 'Type', 'Description', 'Amount (FC)', 'Balance After']]
+            
+            for transaction in transactions:
+                date_obj = parse_date_safe(transaction.get('createdAt'))
+                date_str = date_obj.strftime('%b %d, %Y')
+                
+                trans_type = transaction.get('type', 'N/A').capitalize()
+                description = transaction.get('description', 'N/A')
+                amount = transaction.get('amount', 0)
+                balance_after = transaction.get('balanceAfter', 0)
+                
+                # Format amount with + or - sign
+                amount_str = f"+{amount:.2f}" if amount > 0 else f"{amount:.2f}"
+                
+                transaction_data.append([
+                    date_str,
+                    trans_type,
+                    description,
+                    amount_str,
+                    f"{balance_after:.2f}"
+                ])
+            
+            transaction_table = Table(transaction_data, colWidths=[1*inch, 1*inch, 2.5*inch, 1*inch, 1*inch])
+            transaction_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (3, 0), (4, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#e8f0fe')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 8)
+            ]))
+            
+            story.append(transaction_table)
+        
+        story.append(Spacer(1, 30))
+        
+        # Footer
+        footer_text = """
+        <i>FiCore Credits (FC) are used to access premium features and generate reports.<br/>
+        Premium users get unlimited access to all features without credit deductions.<br/>
+        Generated by FiCore Mobile App | team@ficoreafrica.com</i>
+        """
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
         doc.build(story)
         buffer.seek(0)
         return buffer
