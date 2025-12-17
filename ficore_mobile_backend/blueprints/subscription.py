@@ -521,6 +521,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             end_date = user.get('subscriptionEndDate')
             auto_renew = user.get('subscriptionAutoRenew', False)
             
+            print(f"[SUBSCRIPTION_STATUS] User {current_user['_id']}: auto_renew from DB = {auto_renew}")
+            
             # Build status response with validated data
             status_data = {
                 'is_subscribed': is_subscribed,  # ← VALIDATED by MonthlyEntryTracker
@@ -560,10 +562,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     def manage_subscription(current_user):
         """Manage subscription settings (auto-renew, etc.)"""
         try:
+            from utils.monthly_entry_tracker import MonthlyEntryTracker
+            
             data = request.get_json()
             
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
-            if not user.get('isSubscribed', False):
+            # ✅ Use MonthlyEntryTracker for validated subscription status
+            entry_tracker = MonthlyEntryTracker(mongo)
+            monthly_stats = entry_tracker.get_monthly_stats(current_user['_id'])
+            is_subscribed = monthly_stats.get('is_subscribed', False)
+            
+            if not is_subscribed:
                 return jsonify({
                     'success': False,
                     'message': 'No active subscription found'
@@ -572,17 +580,30 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             update_data = {}
             
             if 'auto_renew' in data:
-                update_data['subscriptionAutoRenew'] = bool(data['auto_renew'])
+                auto_renew_value = bool(data['auto_renew'])
+                update_data['subscriptionAutoRenew'] = auto_renew_value
+                
+                print(f"[MANAGE_SUBSCRIPTION] User {current_user['_id']} setting auto_renew to {auto_renew_value}")
             
             if update_data:
-                mongo.db.users.update_one(
+                result = mongo.db.users.update_one(
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
                 
+                print(f"[MANAGE_SUBSCRIPTION] Update result: matched={result.matched_count}, modified={result.modified_count}")
+                
+                # Verify the update
+                updated_user = mongo.db.users.find_one({'_id': current_user['_id']})
+                actual_value = updated_user.get('subscriptionAutoRenew', False)
+                print(f"[MANAGE_SUBSCRIPTION] Verified auto_renew value in DB: {actual_value}")
+                
                 return jsonify({
                     'success': True,
-                    'message': 'Subscription settings updated successfully'
+                    'message': 'Subscription settings updated successfully',
+                    'data': {
+                        'auto_renew': actual_value
+                    }
                 })
             else:
                 return jsonify({
@@ -591,6 +612,9 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 }), 400
 
         except Exception as e:
+            print(f"[MANAGE_SUBSCRIPTION] Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to update subscription settings',
@@ -642,9 +666,9 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             # Track analytics event
             tracker.track_event(
+                user_id=current_user['_id'],
                 event_type='subscription_cancellation_requested',
-                user_id=str(current_user['_id']),
-                metadata={
+                event_details={
                     'subscription_type': user.get('subscriptionType', 'Premium'),
                     'has_reason': bool(reason),
                     'days_until_expiry': (user.get('subscriptionEndDate') - datetime.utcnow()).days if user.get('subscriptionEndDate') else 0

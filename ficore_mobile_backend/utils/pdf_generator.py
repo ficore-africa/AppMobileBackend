@@ -66,6 +66,8 @@ class PDFGenerator:
     
     def generate_financial_report(self, user_data, export_data, data_type='all'):
         """Generate comprehensive financial report PDF"""
+        print(f"DEBUG PDF GENERATOR: generate_financial_report called with data_type='{data_type}'")
+        
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
                               topMargin=72, bottomMargin=18)
@@ -210,6 +212,59 @@ class PDFGenerator:
             ]))
             
             story.append(credit_table)
+            story.append(Spacer(1, 20))
+        
+        # Profit & Loss Summary Section (only for 'all' data type)
+        if data_type.lower() == 'all':
+            # Calculate totals
+            total_income = 0
+            if 'incomes' in export_data and export_data['incomes']:
+                total_income = sum(income.get('amount', 0) for income in export_data['incomes'])
+            
+            total_expenses = 0
+            if 'expenses' in export_data and export_data['expenses']:
+                total_expenses = sum(expense.get('amount', 0) for expense in export_data['expenses'])
+            
+            net_profit_loss = total_income - total_expenses
+            
+            # DEBUG: Log that we're adding the summary
+            print(f"DEBUG P&L SUMMARY: Adding Financial Summary - Income: ₦{total_income:,.2f}, Expenses: ₦{total_expenses:,.2f}, Net: ₦{net_profit_loss:,.2f}")
+            
+            # Add summary section
+            story.append(Spacer(1, 10))
+            story.append(Paragraph("Financial Summary", self.styles['SectionHeader']))
+            
+            summary_data = [
+                ['Description', 'Amount (₦)'],
+                ['Total Income', f"₦{total_income:,.2f}"],
+                ['Total Expenses', f"₦{total_expenses:,.2f}"],
+                ['Net Profit / (Loss)', f"₦{net_profit_loss:,.2f}"]
+            ]
+            
+            summary_table = Table(summary_data, colWidths=[4*inch, 2*inch])
+            
+            # Determine color based on profit or loss
+            result_bg_color = colors.HexColor('#e8f5e9') if net_profit_loss >= 0 else colors.HexColor('#fce8e6')
+            result_text_color = colors.HexColor('#2e7d32') if net_profit_loss >= 0 else colors.HexColor('#c62828')
+            
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, 2), colors.beige),
+                ('BACKGROUND', (0, -1), (-1, -1), result_bg_color),
+                ('TEXTCOLOR', (0, -1), (-1, -1), result_text_color),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (-1, -1), 14),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('LINEABOVE', (0, -1), (-1, -1), 2, colors.black),
+            ]))
+            
+            story.append(summary_table)
             story.append(Spacer(1, 20))
         
         # Footer

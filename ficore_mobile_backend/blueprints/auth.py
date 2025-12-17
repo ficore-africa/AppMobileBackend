@@ -6,6 +6,7 @@ import uuid
 from bson import ObjectId
 from functools import wraps
 from utils.analytics_tracker import create_tracker
+from utils.profile_picture_helper import generate_profile_picture_url
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -117,8 +118,8 @@ def login():
                     'ficoreCreditBalance': user.get('ficoreCreditBalance', 10.0),
                     'financialGoals': user.get('financialGoals', []),
                     'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
-                    # CRITICAL FIX: Include profile picture URL and business info
-                    'profilePictureUrl': user.get('profilePictureUrl'),
+                    # CRITICAL FIX: Generate profile picture URL from GCS or GridFS
+                    'profilePictureUrl': generate_profile_picture_url(user),
                     'businessName': user.get('businessName'),
                     'mustChangePassword': must_change_password  # Also include in user object for convenience
                 }
