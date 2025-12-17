@@ -43,10 +43,27 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def get_dashboard_stats(current_user):
         """Get comprehensive dashboard statistics for admin"""
         try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
             # User statistics
             total_users = mongo.db.users.count_documents({})
             active_users = mongo.db.users.count_documents({'isActive': True})
             admin_users = mongo.db.users.count_documents({'role': 'admin'})
+            
+            # Active users by timeframe (users who logged in within timeframe)
+            active_users_timeframe = mongo.db.users.count_documents({
+                'lastLogin': {'$gte': timeframe_start}
+            })
+            
+            # Inactive users (never logged in or not logged in within timeframe)
+            inactive_users_timeframe = total_users - active_users_timeframe
+            
+            # New users in timeframe
+            new_users_timeframe = mongo.db.users.count_documents({
+                'createdAt': {'$gte': timeframe_start}
+            })
             
             # Credit statistics
             pending_credit_requests = mongo.db.credit_requests.count_documents({'status': 'pending'})
@@ -114,6 +131,10 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'totalUsers': total_users,
                 'activeUsers': active_users,
                 'adminUsers': admin_users,
+                'activeUsersTimeframe': active_users_timeframe,
+                'inactiveUsersTimeframe': inactive_users_timeframe,
+                'newUsersTimeframe': new_users_timeframe,
+                'timeframeDays': timeframe_days,
                 'totalBudgets': total_budgets,
                 'budgetsThisMonth': budgets_this_month,
                 'pendingCreditRequests': pending_credit_requests,
@@ -132,6 +153,241 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve dashboard statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_users(current_user):
+        """Export all users data to CSV format"""
+        try:
+            from io import StringIO
+            import csv
+            
+            # Get filter parameters
+            status_filter = request.args.get('status', 'all')  # all, active, inactive
+            timeframe_days = int(request.args.get('timeframe', 0))  # 0 = all time
+            
+            # Build query
+            query = {}
+            if status_filter == 'active':
+                if timeframe_days > 0:
+                    timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+                    query['lastLogin'] = {'$gte': timeframe_start}
+                else:
+                    query['isActive'] = True
+            elif status_filter == 'inactive':
+                if timeframe_days > 0:
+                    timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+                    query['$or'] = [
+                        {'lastLogin': {'$lt': timeframe_start}},
+                        {'lastLogin': {'$exists': False}}
+                    ]
+                else:
+                    query['isActive'] = False
+            
+            # Get all users matching criteria
+            users = list(mongo.db.users.find(query).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'User ID',
+                'Email',
+                'First Name',
+                'Last Name',
+                'Display Name',
+                'Phone',
+                'Role',
+                'Credit Balance',
+                'Is Active',
+                'Is Subscribed',
+                'Subscription Type',
+                'Setup Complete',
+                'Created At',
+                'Last Login',
+                'Language'
+            ])
+            
+            # Write user data
+            for user in users:
+                writer.writerow([
+                    str(user['_id']),
+                    user.get('email', ''),
+                    user.get('firstName', ''),
+                    user.get('lastName', ''),
+                    user.get('displayName', ''),
+                    user.get('phone', ''),
+                    user.get('role', 'personal'),
+                    user.get('ficoreCreditBalance', 0.0),
+                    'Yes' if user.get('isActive', True) else 'No',
+                    'Yes' if user.get('isSubscribed', False) else 'No',
+                    user.get('subscriptionType', 'None'),
+                    'Yes' if user.get('setupComplete', False) else 'No',
+                    user.get('createdAt', datetime.utcnow()).isoformat(),
+                    user.get('lastLogin').isoformat() if user.get('lastLogin') else 'Never',
+                    user.get('language', 'en')
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return as downloadable file
+            from flask import make_response
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_users_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            return response
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/list/active', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_active_users_list(current_user):
+        """Get detailed list of active users within timeframe"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            # Get pagination
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            skip = (page - 1) * limit
+            
+            # Query for active users (logged in within timeframe)
+            query = {'lastLogin': {'$gte': timeframe_start}}
+            
+            total = mongo.db.users.count_documents(query)
+            users = list(mongo.db.users.find(query)
+                        .sort('lastLogin', -1)
+                        .skip(skip)
+                        .limit(limit))
+            
+            # Format user data
+            user_list = []
+            for user in users:
+                user_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'phone': user.get('phone', ''),
+                    'ficoreCreditBalance': user.get('ficoreCreditBalance', 0.0),
+                    'isSubscribed': user.get('isSubscribed', False),
+                    'subscriptionType': user.get('subscriptionType'),
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
+                    'daysSinceLastLogin': (datetime.utcnow() - user.get('lastLogin')).days if user.get('lastLogin') else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': user_list,
+                    'timeframeDays': timeframe_days,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': f'Active users (last {timeframe_days} days) retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve active users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/list/inactive', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_inactive_users_list(current_user):
+        """Get detailed list of inactive users (not logged in within timeframe)"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_days = int(request.args.get('timeframe', 30))
+            timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            # Get pagination
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            skip = (page - 1) * limit
+            
+            # Query for inactive users (not logged in within timeframe or never logged in)
+            query = {
+                '$or': [
+                    {'lastLogin': {'$lt': timeframe_start}},
+                    {'lastLogin': {'$exists': False}},
+                    {'lastLogin': None}
+                ]
+            }
+            
+            total = mongo.db.users.count_documents(query)
+            users = list(mongo.db.users.find(query)
+                        .sort('createdAt', -1)
+                        .skip(skip)
+                        .limit(limit))
+            
+            # Format user data
+            user_list = []
+            for user in users:
+                last_login = user.get('lastLogin')
+                days_since_login = None
+                if last_login:
+                    days_since_login = (datetime.utcnow() - last_login).days
+                
+                user_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'phone': user.get('phone', ''),
+                    'ficoreCreditBalance': user.get('ficoreCreditBalance', 0.0),
+                    'isSubscribed': user.get('isSubscribed', False),
+                    'subscriptionType': user.get('subscriptionType'),
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                    'lastLogin': last_login.isoformat() + 'Z' if last_login else 'Never',
+                    'daysSinceLastLogin': days_since_login,
+                    'neverLoggedIn': last_login is None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': user_list,
+                    'timeframeDays': timeframe_days,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': f'Inactive users (not active in last {timeframe_days} days) retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve inactive users',
                 'errors': {'general': [str(e)]}
             }), 500
 
@@ -429,6 +685,82 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @admin_bp.route('/users/<user_id>/reset-password-direct', methods=['POST'])
+    @token_required
+    @admin_required
+    def reset_user_password_direct(current_user, user_id):
+        """Directly reset user password to a temporary password (admin only)"""
+        try:
+            data = request.get_json()
+            reason = data.get('reason', '').strip()
+            
+            # Validate reason
+            if not reason or len(reason) < 10:
+                return jsonify({
+                    'success': False,
+                    'message': 'Reason is required and must be at least 10 characters'
+                }), 400
+
+            # Find user
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+
+            # Generate temporary password (8 characters: letters + numbers)
+            import random
+            import string
+            temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            
+            # Update user password and set flag for forced password change
+            mongo.db.users.update_one(
+                {'_id': ObjectId(user_id)},
+                {'$set': {
+                    'password': generate_password_hash(temp_password),
+                    'passwordChangedAt': datetime.utcnow(),
+                    'mustChangePassword': True,  # Force password change on next login
+                    'updatedAt': datetime.utcnow()
+                }, '$unset': {
+                    'resetToken': '',
+                    'resetTokenExpiry': ''
+                }}
+            )
+
+            # Log the admin action
+            mongo.db.admin_actions.insert_one({
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'password_reset_direct',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'reason': reason,
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'temporary_password_generated': True,
+                    'force_password_change': True
+                }
+            })
+
+            return jsonify({
+                'success': True,
+                'message': 'Password reset successfully',
+                'data': {
+                    'temporaryPassword': temp_password,
+                    'userEmail': user['email'],
+                    'mustChangePassword': True,
+                    'note': 'User must change this password on next login'
+                }
+            })
+
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reset password',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     @admin_bp.route('/users/<user_id>/role', methods=['PUT'])
     @token_required
     @admin_required
@@ -667,6 +999,16 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
                 'financialGoals': user.get('financialGoals', []),
+                # Business Profile Fields
+                'businessName': user.get('businessName'),
+                'businessType': user.get('businessType'),
+                'businessTypeOther': user.get('businessTypeOther'),
+                'industry': user.get('industry'),
+                'numberOfEmployees': user.get('numberOfEmployees'),
+                'physicalAddress': user.get('physicalAddress'),
+                'taxIdentificationNumber': user.get('taxIdentificationNumber'),
+                'socialMediaLinks': user.get('socialMediaLinks'),
+                'profileCompletionPercentage': user.get('profileCompletionPercentage', 0),
                 # Subscription info
                 'isSubscribed': user.get('isSubscribed', False),
                 'subscriptionType': user.get('subscriptionType'),
@@ -1818,6 +2160,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 mongo.db.subscriptions.update_one(
                     {'userId': ObjectId(user_id)},
                     {'$set': {
+                        'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
                         'planId': plan_id,
                         'planName': data.get('planName', plan_id),
                         'startDate': start_date,
@@ -1838,6 +2181,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 subscription_data = {
                     '_id': subscription_id,
                     'userId': ObjectId(user_id),
+                    'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
                     'planId': plan_id,
                     'planName': data.get('planName', plan_id),
                     'startDate': start_date,
@@ -2245,6 +2589,535 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve subscriptions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/business-profiles/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_business_profiles(current_user):
+        """Export all users' business profile data to CSV format"""
+        try:
+            from io import StringIO
+            import csv
+            
+            # Get all users
+            users = list(mongo.db.users.find({}).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'User ID',
+                'Email',
+                'Display Name',
+                'Business Name',
+                'Business Type',
+                'Business Type Other',
+                'Industry',
+                'Number of Employees',
+                'Physical Address',
+                'Tax ID Number',
+                'Social Media Links',
+                'Created At',
+                'Last Login'
+            ])
+            
+            # Write user data
+            for user in users:
+                # Get social media links as string
+                social_links = ''
+                if user.get('socialMediaLinks'):
+                    links = user['socialMediaLinks']
+                    if isinstance(links, list):
+                        social_links = '; '.join([f"{link.get('platform', '')}: {link.get('url', '')}" for link in links])
+                
+                writer.writerow([
+                    str(user['_id']),
+                    user.get('email', ''),
+                    user.get('displayName', ''),
+                    user.get('businessName', ''),
+                    user.get('businessType', ''),
+                    user.get('businessTypeOther', ''),
+                    user.get('industry', ''),
+                    user.get('numberOfEmployees', ''),
+                    user.get('physicalAddress', ''),
+                    user.get('taxIdentificationNumber', ''),
+                    social_links,
+                    user.get('createdAt', datetime.utcnow()).isoformat(),
+                    user.get('lastLogin').isoformat() if user.get('lastLogin') else 'Never'
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return as downloadable file
+            from flask import make_response
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_business_profiles_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            return response
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export business profiles',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== SUBSCRIPTION PLANS ENDPOINT =====
+
+    @admin_bp.route('/subscription-plans', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_subscription_plans(current_user):
+        """Get available subscription plans with pricing (admin only)"""
+        try:
+            plans = [
+                {
+                    'id': 'MONTHLY',
+                    'name': 'Monthly Premium',
+                    'duration': 30,
+                    'durationUnit': 'days',
+                    'amount': 2500.0,
+                    'currency': 'NGN',
+                    'features': [
+                        'Unlimited transactions',
+                        'Advanced analytics',
+                        'Priority support',
+                        'Export to Excel/PDF',
+                        'Multi-currency support'
+                    ]
+                },
+                {
+                    'id': 'ANNUAL',
+                    'name': 'Annual Premium',
+                    'duration': 365,
+                    'durationUnit': 'days',
+                    'amount': 10000.0,
+                    'currency': 'NGN',
+                    'features': [
+                        'Unlimited transactions',
+                        'Advanced analytics',
+                        'Priority support',
+                        'Export to Excel/PDF',
+                        'Multi-currency support',
+                        '2 months free (vs monthly)'
+                    ],
+                    'savings': '17% savings vs monthly'
+                },
+                {
+                    'id': 'CUSTOM',
+                    'name': 'Custom Duration',
+                    'duration': null,
+                    'durationUnit': 'days',
+                    'amount': null,
+                    'currency': 'NGN',
+                    'description': 'Specify custom duration and amount'
+                }
+            ]
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'plans': plans
+                },
+                'message': 'Subscription plans retrieved successfully'
+            })
+
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve subscription plans',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== AUDIT LOGS ENDPOINT =====
+
+    @admin_bp.route('/audit-logs', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_audit_logs(current_user):
+        """Get audit logs with filtering capabilities (admin only)"""
+        try:
+            # Get filter parameters
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            event_type = request.args.get('eventType', '')  # admin_credit_adjustment, subscription_granted, etc.
+            admin_id = request.args.get('adminId', '')
+            user_id = request.args.get('userId', '')
+            start_date = request.args.get('startDate', '')
+            end_date = request.args.get('endDate', '')
+
+            # Collect audit logs from multiple collections
+            all_logs = []
+
+            # Build query for credit events
+            credit_query = {}
+            if event_type and event_type.startswith('credit'):
+                credit_query['eventType'] = event_type
+            if admin_id:
+                credit_query['adminId'] = ObjectId(admin_id)
+            if user_id:
+                credit_query['userId'] = ObjectId(user_id)
+            if start_date or end_date:
+                credit_query['timestamp'] = {}
+                if start_date:
+                    credit_query['timestamp']['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
+                if end_date:
+                    credit_query['timestamp']['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
+
+            # Get credit events
+            if not event_type or 'credit' in event_type:
+                credit_events = list(mongo.db.credit_events.find(credit_query).sort('timestamp', -1))
+                for event in credit_events:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': event['userId']})
+                    all_logs.append({
+                        'id': str(event['_id']),
+                        'eventType': event['eventType'],
+                        'timestamp': event['timestamp'].isoformat() + 'Z',
+                        'adminId': str(event['adminId']),
+                        'adminName': event.get('adminName', 'Admin'),
+                        'userId': str(event['userId']),
+                        'userEmail': user.get('email', '') if user else '',
+                        'userName': user.get('displayName', '') if user else '',
+                        'reason': event.get('reason', ''),
+                        'metadata': event.get('metadata', {}),
+                        'category': 'credit'
+                    })
+
+            # Build query for subscription events
+            subscription_query = {}
+            if event_type and event_type.startswith('subscription'):
+                subscription_query['eventType'] = event_type
+            if admin_id:
+                subscription_query['adminId'] = ObjectId(admin_id)
+            if user_id:
+                subscription_query['userId'] = ObjectId(user_id)
+            if start_date or end_date:
+                subscription_query['timestamp'] = {}
+                if start_date:
+                    subscription_query['timestamp']['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
+                if end_date:
+                    subscription_query['timestamp']['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
+
+            # Get subscription events
+            if not event_type or 'subscription' in event_type:
+                subscription_events = list(mongo.db.subscription_events.find(subscription_query).sort('timestamp', -1))
+                for event in subscription_events:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': event['userId']})
+                    all_logs.append({
+                        'id': str(event['_id']),
+                        'eventType': event['eventType'],
+                        'timestamp': event['timestamp'].isoformat() + 'Z',
+                        'adminId': str(event['adminId']),
+                        'adminName': event.get('adminName', 'Admin'),
+                        'userId': str(event['userId']),
+                        'userEmail': user.get('email', '') if user else '',
+                        'userName': user.get('displayName', '') if user else '',
+                        'reason': event.get('reason', ''),
+                        'metadata': event.get('metadata', {}),
+                        'category': 'subscription'
+                    })
+
+            # Sort all logs by timestamp (most recent first)
+            all_logs.sort(key=lambda x: x['timestamp'], reverse=True)
+
+            # Apply pagination
+            total = len(all_logs)
+            skip = (page - 1) * limit
+            paginated_logs = all_logs[skip:skip + limit]
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'logs': paginated_logs,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit if total > 0 else 0,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    }
+                },
+                'message': 'Audit logs retrieved successfully'
+            })
+
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve audit logs',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== CANCELLATION REQUESTS MANAGEMENT ENDPOINTS =====
+
+    @admin_bp.route('/cancellation-requests', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_cancellation_requests(current_user):
+        """Get all subscription cancellation requests"""
+        try:
+            # Get filter parameters
+            status = request.args.get('status', 'all')  # all, pending, approved, rejected, completed
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 100))
+            
+            # Build query
+            query = {}
+            if status != 'all':
+                query['status'] = status
+            
+            # Get total count
+            total = mongo.db.cancellation_requests.count_documents(query)
+            
+            # Get requests with pagination
+            skip = (page - 1) * limit
+            requests = list(mongo.db.cancellation_requests.find(query)
+                          .sort('requestedAt', -1)
+                          .skip(skip)
+                          .limit(limit))
+            
+            # Serialize requests
+            request_data = []
+            for req in requests:
+                req_info = {
+                    'id': str(req['_id']),
+                    'userId': str(req['userId']),
+                    'userEmail': req.get('userEmail', ''),
+                    'userName': req.get('userName', 'Unknown User'),
+                    'subscriptionType': req.get('subscriptionType', 'Premium'),
+                    'subscriptionStartDate': req.get('subscriptionStartDate').isoformat() + 'Z' if req.get('subscriptionStartDate') else None,
+                    'subscriptionEndDate': req.get('subscriptionEndDate').isoformat() + 'Z' if req.get('subscriptionEndDate') else None,
+                    'reason': req.get('reason'),
+                    'status': req.get('status', 'pending'),
+                    'requestedAt': req.get('requestedAt', datetime.utcnow()).isoformat() + 'Z',
+                    'processedAt': req.get('processedAt').isoformat() + 'Z' if req.get('processedAt') else None,
+                    'processedBy': str(req['processedBy']) if req.get('processedBy') else None,
+                    'processedByName': req.get('processedByName'),
+                    'adminNotes': req.get('adminNotes'),
+                    'autoRenewDisabled': req.get('autoRenewDisabled', False)
+                }
+                request_data.append(req_info)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'requests': request_data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit if total > 0 else 0
+                    }
+                },
+                'message': 'Cancellation requests retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting cancellation requests: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve cancellation requests',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/cancellation-requests/<request_id>/approve', methods=['POST'])
+    @token_required
+    @admin_required
+    def approve_cancellation_request(current_user, request_id):
+        """Approve a cancellation request"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = data.get('adminNotes', '').strip()
+            
+            # Find the cancellation request
+            cancellation_req = mongo.db.cancellation_requests.find_one({'_id': ObjectId(request_id)})
+            if not cancellation_req:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cancellation request not found'
+                }), 404
+            
+            if cancellation_req['status'] != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': f'Request already {cancellation_req["status"]}'
+                }), 400
+            
+            # Update cancellation request status
+            mongo.db.cancellation_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {'$set': {
+                    'status': 'approved',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'processedByName': current_user.get('displayName', 'Admin'),
+                    'adminNotes': admin_notes if admin_notes else None
+                }}
+            )
+            
+            # Ensure auto-renew is disabled for the user
+            mongo.db.users.update_one(
+                {'_id': cancellation_req['userId']},
+                {'$set': {'subscriptionAutoRenew': False}}
+            )
+            
+            # Log the approval in audit logs
+            audit_log = {
+                '_id': ObjectId(),
+                'eventType': 'subscription_cancellation_approved',
+                'timestamp': datetime.utcnow(),
+                'adminId': current_user['_id'],
+                'adminName': current_user.get('displayName', 'Admin'),
+                'userId': cancellation_req['userId'],
+                'reason': admin_notes if admin_notes else 'Cancellation request approved',
+                'metadata': {
+                    'requestId': str(request_id),
+                    'subscriptionType': cancellation_req.get('subscriptionType', 'Premium'),
+                    'userEmail': cancellation_req.get('userEmail', ''),
+                    'userName': cancellation_req.get('userName', '')
+                }
+            }
+            mongo.db.subscription_events.insert_one(audit_log)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Cancellation request approved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error approving cancellation request: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to approve cancellation request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/cancellation-requests/<request_id>/reject', methods=['POST'])
+    @token_required
+    @admin_required
+    def reject_cancellation_request(current_user, request_id):
+        """Reject a cancellation request"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = data.get('adminNotes', '').strip()
+            
+            if not admin_notes:
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin notes are required when rejecting a request'
+                }), 400
+            
+            # Find the cancellation request
+            cancellation_req = mongo.db.cancellation_requests.find_one({'_id': ObjectId(request_id)})
+            if not cancellation_req:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cancellation request not found'
+                }), 404
+            
+            if cancellation_req['status'] != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': f'Request already {cancellation_req["status"]}'
+                }), 400
+            
+            # Update cancellation request status
+            mongo.db.cancellation_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {'$set': {
+                    'status': 'rejected',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'processedByName': current_user.get('displayName', 'Admin'),
+                    'adminNotes': admin_notes
+                }}
+            )
+            
+            # Re-enable auto-renew for the user (since request was rejected)
+            mongo.db.users.update_one(
+                {'_id': cancellation_req['userId']},
+                {'$set': {'subscriptionAutoRenew': True}}
+            )
+            
+            # Log the rejection in audit logs
+            audit_log = {
+                '_id': ObjectId(),
+                'eventType': 'subscription_cancellation_rejected',
+                'timestamp': datetime.utcnow(),
+                'adminId': current_user['_id'],
+                'adminName': current_user.get('displayName', 'Admin'),
+                'userId': cancellation_req['userId'],
+                'reason': admin_notes,
+                'metadata': {
+                    'requestId': str(request_id),
+                    'subscriptionType': cancellation_req.get('subscriptionType', 'Premium'),
+                    'userEmail': cancellation_req.get('userEmail', ''),
+                    'userName': cancellation_req.get('userName', '')
+                }
+            }
+            mongo.db.subscription_events.insert_one(audit_log)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Cancellation request rejected successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error rejecting cancellation request: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reject cancellation request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/cancellation-requests/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_cancellation_stats(current_user):
+        """Get statistics about cancellation requests"""
+        try:
+            total = mongo.db.cancellation_requests.count_documents({})
+            pending = mongo.db.cancellation_requests.count_documents({'status': 'pending'})
+            approved = mongo.db.cancellation_requests.count_documents({'status': 'approved'})
+            rejected = mongo.db.cancellation_requests.count_documents({'status': 'rejected'})
+            
+            # Get today's stats
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            approved_today = mongo.db.cancellation_requests.count_documents({
+                'status': 'approved',
+                'processedAt': {'$gte': today_start}
+            })
+            rejected_today = mongo.db.cancellation_requests.count_documents({
+                'status': 'rejected',
+                'processedAt': {'$gte': today_start}
+            })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'total': total,
+                    'pending': pending,
+                    'approved': approved,
+                    'rejected': rejected,
+                    'approvedToday': approved_today,
+                    'rejectedToday': rejected_today
+                },
+                'message': 'Cancellation statistics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting cancellation stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve cancellation statistics',
                 'errors': {'general': [str(e)]}
             }), 500
          

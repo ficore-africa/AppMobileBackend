@@ -8,9 +8,11 @@ expenses_bp = Blueprint('expenses', __name__, url_prefix='/expenses')
 
 def init_expenses_blueprint(mongo, token_required, serialize_doc):
     """Initialize the expenses blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     expenses_bp.mongo = mongo
     expenses_bp.token_required = token_required
     expenses_bp.serialize_doc = serialize_doc
+    expenses_bp.tracker = create_tracker(mongo.db)
     return expenses_bp
 
 @expenses_bp.route('', methods=['GET'])
@@ -182,6 +184,16 @@ def create_expense():
            
             result = expenses_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
+            
+            # Track expense creation event
+            try:
+                expenses_bp.tracker.track_expense_created(
+                    user_id=current_user['_id'],
+                    amount=float(data['amount']),
+                    category=data['category']
+                )
+            except Exception as e:
+                print(f"Analytics tracking failed: {e}")
             
             # NEW: Deduct FC if required (over monthly limit)
             if fc_check['deduct_fc']:

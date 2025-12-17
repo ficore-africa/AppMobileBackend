@@ -53,15 +53,15 @@ def init_attachments_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             # Get additional fields
-            entity_type = request.form.get('entity_type')  # 'income' or 'expense'
+            entity_type = request.form.get('entity_type')  # 'income', 'expense', or 'asset'
             entity_id = request.form.get('entity_id')
             description = request.form.get('description', '')
             
             # Validation
-            if not entity_type or entity_type not in ['income', 'expense']:
+            if not entity_type or entity_type not in ['income', 'expense', 'asset']:
                 return jsonify({
                     'success': False,
-                    'message': 'Invalid entity_type. Must be "income" or "expense"'
+                    'message': 'Invalid entity_type. Must be "income", "expense", or "asset"'
                 }), 400
             
             if not entity_id or not ObjectId.is_valid(entity_id):
@@ -71,7 +71,13 @@ def init_attachments_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             # Verify entity exists and belongs to user
-            collection = mongo.db.incomes if entity_type == 'income' else mongo.db.expenses
+            if entity_type == 'income':
+                collection = mongo.db.incomes
+            elif entity_type == 'expense':
+                collection = mongo.db.expenses
+            else:  # asset
+                collection = mongo.db.assets
+            
             entity = collection.find_one({
                 '_id': ObjectId(entity_id),
                 'userId': current_user['_id']
@@ -150,10 +156,10 @@ def init_attachments_blueprint(mongo, token_required, serialize_doc):
         """Get all attachments for an income or expense"""
         try:
             # Validation
-            if entity_type not in ['income', 'expense']:
+            if entity_type not in ['income', 'expense', 'asset']:
                 return jsonify({
                     'success': False,
-                    'message': 'Invalid entity_type. Must be "income" or "expense"'
+                    'message': 'Invalid entity_type. Must be "income", "expense", or "asset"'
                 }), 400
             
             if not ObjectId.is_valid(entity_id):

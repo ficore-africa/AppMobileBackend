@@ -2,6 +2,11 @@
 echo 🚀 Ficore Mobile Backend Deployment Script
 echo ==========================================
 
+REM Ensure upload directories exist
+echo 📁 Creating upload directories...
+python ensure_upload_dirs.py
+echo.
+
 REM Check if git is initialized
 if not exist ".git" (
     echo 📁 Initializing Git repository...

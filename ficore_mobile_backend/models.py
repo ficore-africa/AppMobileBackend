@@ -55,7 +55,7 @@ class DatabaseSchema:
             'numberOfEmployees': Optional[int],  # Number of employees (0 for none)
             'profileCompletionPercentage': Optional[float],  # Calculated completion percentage
             
-            # Subscription fields
+            # Subscription fields (current/active subscription)
             'isSubscribed': bool,  # Subscription status, default: False
             'subscriptionType': Optional[str],  # 'monthly', 'annually', null
             'subscriptionStartDate': Optional[datetime],  # Subscription start date
@@ -63,6 +63,25 @@ class DatabaseSchema:
             'subscriptionAutoRenew': bool,  # Auto-renewal setting, default: False
             'paymentMethodDetails': Optional[Dict[str, str]],  # Encrypted payment details
             'trialExpiryDate': Optional[datetime],  # Trial expiry date
+            
+            # Subscription history and tracking (NEW - for historical tracking)
+            'wasPremium': Optional[bool],  # Flag indicating user was previously premium
+            'lastPremiumDate': Optional[datetime],  # When user was last premium
+            'totalPremiumDays': Optional[int],  # Lifetime total days as premium user
+            'premiumExpiryCount': Optional[int],  # Number of times subscription expired
+            'subscriptionHistory': Optional[List[Dict[str, Any]]],  # Historical subscription periods
+            # subscriptionHistory structure:
+            # [{
+            #     'planType': str,  # 'monthly', 'annually'
+            #     'startDate': datetime,
+            #     'endDate': datetime,
+            #     'autoRenew': bool,
+            #     'status': str,  # 'expired', 'cancelled', 'completed'
+            #     'terminatedAt': datetime,
+            #     'terminationReason': str,  # 'natural_expiry', 'admin_revoked', 'payment_failed', 'user_cancelled'
+            #     'totalDaysActive': int,
+            #     'paymentMethod': str
+            # }]
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled
@@ -592,6 +611,124 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
         ]
 
+    # ==================== ASSETS COLLECTION ====================
+    
+    @staticmethod
+    def get_asset_schema() -> Dict[str, Any]:
+        """
+        Schema for assets collection.
+        Tracks fixed assets for 0% tax qualification (≤₦250M threshold).
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'assetName': str,  # Required, name of the asset
+            'assetCode': Optional[str],  # Optional asset code/identifier
+            'description': Optional[str],  # Optional description
+            'category': str,  # Required: 'Vehicles', 'Office Equipment', 'Machinery', etc.
+            'purchasePrice': float,  # Required, original purchase price
+            'currentValue': float,  # Required, current book value after depreciation
+            'purchaseDate': datetime,  # Required, date of purchase
+            'supplier': Optional[str],  # Optional supplier name
+            'location': Optional[str],  # Optional physical location
+            'status': str,  # Required: 'active', 'disposed', 'under_maintenance'
+            'depreciationRate': Optional[float],  # Optional annual depreciation rate (%)
+            'depreciationMethod': str,  # Required: 'straight_line', 'reducing_balance', 'none'
+            'usefulLifeYears': Optional[int],  # Optional useful life in years
+            'attachments': List[str],  # List of attachment URLs/IDs (purchase invoices, receipts)
+            'notes': Optional[str],  # Optional notes
+            'disposalDate': Optional[datetime],  # Optional disposal date
+            'disposalValue': Optional[float],  # Optional disposal value
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_asset_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for assets collection."""
+        return [
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('assetCode', 1)], 'sparse': True, 'name': 'asset_code'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
+    # ==================== ANALYTICS_EVENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_analytics_event_schema() -> Dict[str, Any]:
+        """
+        Schema for analytics_events collection.
+        Tracks user activity events for admin dashboard metrics.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'eventType': str,  # Required: 'user_logged_in', 'income_entry_created', 'expense_entry_created', etc.
+            'timestamp': datetime,  # Required, when event occurred
+            'eventDetails': Optional[Dict[str, Any]],  # Optional event-specific data
+            'deviceInfo': Optional[Dict[str, str]],  # Optional device information
+            'sessionId': Optional[str],  # Optional session identifier
+            'createdAt': datetime,  # Record creation timestamp
+        }
+    
+    @staticmethod
+    def get_analytics_event_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for analytics_events collection."""
+        return [
+            {'keys': [('userId', 1), ('timestamp', -1)], 'name': 'user_timestamp_desc'},
+            {'keys': [('eventType', 1), ('timestamp', -1)], 'name': 'event_type_timestamp_desc'},
+            {'keys': [('timestamp', -1)], 'name': 'timestamp_desc'},
+            {'keys': [('userId', 1), ('eventType', 1)], 'name': 'user_event_type'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
+    # ==================== ADMIN_ACTIONS COLLECTION ====================
+    
+    @staticmethod
+    def get_admin_action_schema() -> Dict[str, Any]:
+        """
+        Schema for admin_actions collection.
+        Tracks administrative actions for audit purposes.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'adminId': ObjectId,  # Required, reference to admin user's _id
+            'adminEmail': str,  # Required, admin's email for easy identification
+            'action': str,  # Required, action type (e.g., 'password_reset_direct', 'credit_grant', etc.)
+            'targetUserId': Optional[ObjectId],  # Optional, target user's _id (if applicable)
+            'targetUserEmail': Optional[str],  # Optional, target user's email (if applicable)
+            'reason': str,  # Required, reason for the action
+            'timestamp': datetime,  # Required, when action was performed
+            'details': Optional[Dict[str, Any]],  # Optional, additional action details
+            'ipAddress': Optional[str],  # Optional, admin's IP address
+            'userAgent': Optional[str],  # Optional, admin's user agent
+        }
+    
+    @staticmethod
+    def get_admin_action_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for admin_actions collection."""
+        return [
+            {'keys': [('adminId', 1), ('timestamp', -1)], 'name': 'admin_timestamp_desc'},
+            {'keys': [('action', 1), ('timestamp', -1)], 'name': 'action_timestamp_desc'},
+            {'keys': [('targetUserId', 1), ('timestamp', -1)], 'name': 'target_user_timestamp_desc'},
+            {'keys': [('timestamp', -1)], 'name': 'timestamp_desc'},
+            {'keys': [('adminEmail', 1)], 'name': 'admin_email'},
+        ]
+    
+    @staticmethod
+    def get_cancellation_request_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for cancellation_requests collection."""
+        return [
+            {'keys': [('userId', 1), ('requestedAt', -1)], 'name': 'user_requested_desc'},
+            {'keys': [('status', 1), ('requestedAt', -1)], 'name': 'status_requested_desc'},
+            {'keys': [('requestedAt', -1)], 'name': 'requested_desc'},
+            {'keys': [('processedAt', -1)], 'name': 'processed_desc', 'sparse': True},
+            {'keys': [('processedBy', 1)], 'name': 'processed_by', 'sparse': True},
+            {'keys': [('userEmail', 1)], 'name': 'user_email'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -629,6 +766,10 @@ class DatabaseInitializer:
             'inventory_items': self.schema.get_inventory_item_indexes(),
             'inventory_movements': self.schema.get_inventory_movement_indexes(),
             'attachments': self.schema.get_attachment_indexes(),
+            'assets': self.schema.get_asset_indexes(),
+            'analytics_events': self.schema.get_analytics_event_indexes(),
+            'admin_actions': self.schema.get_admin_action_indexes(),
+            'cancellation_requests': self.schema.get_cancellation_request_indexes(),
         }
         
         results = {

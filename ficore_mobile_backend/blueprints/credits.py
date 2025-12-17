@@ -913,6 +913,8 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             valid_operations = [
                 # Income & Expense operations
                 'create_income', 'delete_income', 'create_expense', 'delete_expense',
+                # Asset Register operations
+                'create_asset', 'delete_asset',
                 # Inventory operations
                 'create_item', 'delete_item', 'create_movement', 'stock_in', 'stock_out', 'adjust_stock',
                 # Creditors operations
@@ -924,7 +926,8 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 'export_debtors_csv', 'export_debtors_pdf', 'export_net_income_report', 'export_financial_report',
                 'export_dashboard_summary', 'export_enhanced_profit_report', 'export_complete_data_export',
                 'export_movements_csv', 'export_valuation_pdf', 'export_aging_report_pdf', 'export_payments_due_csv',
-                'export_debtors_aging_report_pdf', 'export_debtors_payments_due_csv'
+                'export_debtors_aging_report_pdf', 'export_debtors_payments_due_csv',
+                'export_assets_csv', 'export_assets_pdf', 'export_asset_register_pdf', 'export_depreciation_report_pdf'
             ]
             
             if operation not in valid_operations:

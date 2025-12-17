@@ -13,9 +13,53 @@ users_bp = Blueprint('users', __name__, url_prefix='/users')
 
 def init_users_blueprint(mongo, token_required):
     """Initialize the users blueprint with database and auth decorator"""
+    from utils.analytics_tracker import create_tracker
     users_bp.mongo = mongo
     users_bp.token_required = token_required
+    users_bp.tracker = create_tracker(mongo.db)
     return users_bp
+
+def _generate_profile_picture_signed_url(gcs_path):
+    """Generate a signed URL for a profile picture stored in GCS
+    
+    Args:
+        gcs_path: GCS path like 'profile_pictures/{user_id}/{uuid}.jpg'
+        
+    Returns:
+        Signed URL valid for 7 days, or None if generation fails
+    """
+    if not gcs_path:
+        return None
+    
+    try:
+        from google.cloud import storage
+        from datetime import timedelta
+        
+        storage_client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(gcs_path)
+        
+        # Check if blob exists before generating URL
+        if not blob.exists():
+            print(f"❌ GCS blob not found: {gcs_path}")
+            return None
+        
+        # Generate signed URL valid for 7 days
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(days=7),
+            method="GET"
+        )
+        
+        print(f"✅ Generated signed URL for: {gcs_path}")
+        return signed_url
+        
+    except Exception as e:
+        print(f"❌ Error generating signed URL for {gcs_path}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 @users_bp.route('/profile', methods=['GET'])
 def get_profile():
@@ -39,6 +83,17 @@ def get_profile():
                 'financialGoals': current_user.get('financialGoals', []),
                 'createdAt': current_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': current_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if current_user.get('lastLogin') else None,
+                # CRITICAL FIX: Generate signed URL for profile picture if GCS path exists
+                'profilePictureUrl': _generate_profile_picture_signed_url(current_user.get('gcsProfilePicturePath')),
+                'businessName': current_user.get('businessName'),
+                'businessType': current_user.get('businessType'),
+                'businessTypeOther': current_user.get('businessTypeOther'),
+                'industry': current_user.get('industry'),
+                'numberOfEmployees': current_user.get('numberOfEmployees'),
+                'physicalAddress': current_user.get('physicalAddress'),
+                'taxIdentificationNumber': current_user.get('taxIdentificationNumber'),
+                'socialMediaLinks': current_user.get('socialMediaLinks'),
+                'profileCompletionPercentage': current_user.get('profileCompletionPercentage', 0),
                 # Add subscription information to profile
                 'isSubscribed': current_user.get('isSubscribed', False),
                 'subscriptionType': current_user.get('subscriptionType'),
@@ -127,6 +182,15 @@ def update_profile():
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
+                
+                # Track profile update event
+                try:
+                    users_bp.tracker.track_profile_updated(
+                        user_id=current_user['_id'],
+                        fields_updated=list(update_data.keys())
+                    )
+                except Exception as e:
+                    print(f"Analytics tracking failed: {e}")
             
             # Get updated user
             updated_user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})
@@ -147,7 +211,12 @@ def update_profile():
                 'setupComplete': updated_user.get('setupComplete', False),
                 'financialGoals': updated_user.get('financialGoals', []),
                 'createdAt': updated_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
-                'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None
+                'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None,
+                # CRITICAL FIX: Include profile picture URL and business info
+                'profilePictureUrl': updated_user.get('profilePictureUrl'),
+                'businessName': updated_user.get('businessName'),
+                'businessType': updated_user.get('businessType'),
+                'industry': updated_user.get('industry')
             }
             
             return jsonify({
@@ -231,12 +300,14 @@ def change_password():
                     'errors': errors
                 }), 400
             
-            # Update password
+            # Update password and clear mustChangePassword flag
             users_bp.mongo.db.users.update_one(
                 {'_id': current_user['_id']},
                 {'$set': {
                     'password': generate_password_hash(new_password),
                     'passwordChangedAt': datetime.utcnow()
+                }, '$unset': {
+                    'mustChangePassword': ''  # Clear the forced password change flag
                 }}
             )
             
@@ -868,9 +939,13 @@ def complete_profile():
             print(f"Profile completion request from user {current_user['email']}: {data}")
             
             # Profile completion fields
+            # CRITICAL FIX: Removed 'profilePictureUrl' from profile fields
+            # Profile pictures are handled separately via GCS upload endpoint
+            # The upload endpoint stores gcsProfilePicturePath in user document
+            # Profile retrieval generates fresh signed URLs from that path
             profile_fields = [
                 'businessName', 'businessType', 'businessTypeOther', 'industry',
-                'physicalAddress', 'taxIdentificationNumber', 'profilePictureUrl',
+                'physicalAddress', 'taxIdentificationNumber',
                 'socialMediaLinks', 'numberOfEmployees'
             ]
             
@@ -891,6 +966,13 @@ def complete_profile():
             for field in profile_fields:
                 if field in data:
                     update_data[field] = data[field]
+            
+            # CRITICAL FIX: Ignore profilePictureUrl if sent by client
+            # The signed URL from upload is temporary and will expire
+            # We rely on gcsProfilePicturePath which is set by upload endpoint
+            if 'profilePictureUrl' in data:
+                print(f"Ignoring profilePictureUrl from client (temporary signed URL)")
+                print(f"Using gcsProfilePicturePath from upload endpoint instead")
             
             # Calculate completion percentage
             user = users_bp.mongo.db.users.find_one({'_id': current_user['_id']})
