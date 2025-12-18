@@ -593,17 +593,41 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 
                 print(f"[MANAGE_SUBSCRIPTION] Update result: matched={result.matched_count}, modified={result.modified_count}")
                 
-                # Verify the update
+                # ✅ FIX: Return complete subscription status after update
+                # This eliminates the need for a separate refresh call and prevents race conditions
                 updated_user = mongo.db.users.find_one({'_id': current_user['_id']})
-                actual_value = updated_user.get('subscriptionAutoRenew', False)
-                print(f"[MANAGE_SUBSCRIPTION] Verified auto_renew value in DB: {actual_value}")
+                
+                # Get validated subscription info
+                start_date = updated_user.get('subscriptionStartDate')
+                end_date = updated_user.get('subscriptionEndDate')
+                auto_renew = updated_user.get('subscriptionAutoRenew', False)
+                subscription_type = updated_user.get('subscriptionType')
+                
+                print(f"[MANAGE_SUBSCRIPTION] Verified auto_renew value in DB: {auto_renew}")
+                
+                # Calculate days remaining
+                days_remaining = None
+                if is_subscribed and end_date:
+                    days_remaining = (end_date - datetime.utcnow()).days
+                    days_remaining = max(0, days_remaining)
+                
+                # Build complete status response
+                status_data = {
+                    'is_subscribed': is_subscribed,
+                    'subscription_type': subscription_type,
+                    'tier': monthly_stats.get('tier', 'Free'),
+                    'is_admin': monthly_stats.get('is_admin', False),
+                    'start_date': start_date.isoformat() + 'Z' if start_date else None,
+                    'end_date': end_date.isoformat() + 'Z' if end_date else None,
+                    'auto_renew': auto_renew,
+                    'days_remaining': days_remaining,
+                    'plan_details': SUBSCRIPTION_PLANS.get(subscription_type) if subscription_type in SUBSCRIPTION_PLANS else None
+                }
                 
                 return jsonify({
                     'success': True,
                     'message': 'Subscription settings updated successfully',
-                    'data': {
-                        'auto_renew': actual_value
-                    }
+                    'data': status_data
                 })
             else:
                 return jsonify({
