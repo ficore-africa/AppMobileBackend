@@ -541,8 +541,12 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 days_remaining = (end_date - datetime.utcnow()).days
                 status_data['days_remaining'] = max(0, days_remaining)
                 
-                if subscription_type in SUBSCRIPTION_PLANS:
-                    status_data['plan_details'] = SUBSCRIPTION_PLANS[subscription_type]
+                # ✅ FIX: Add plan ID to plan_details for proper frontend parsing
+                if subscription_type and subscription_type in SUBSCRIPTION_PLANS:
+                    status_data['plan_details'] = {
+                        'id': subscription_type,  # ✅ Add the plan ID
+                        **SUBSCRIPTION_PLANS[subscription_type]  # Include all plan fields
+                    }
             
             return jsonify({
                 'success': True,
@@ -612,6 +616,14 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     days_remaining = max(0, days_remaining)
                 
                 # Build complete status response
+                # ✅ FIX: Add plan ID to plan_details for proper frontend parsing
+                plan_details = None
+                if subscription_type and subscription_type in SUBSCRIPTION_PLANS:
+                    plan_details = {
+                        'id': subscription_type,  # ✅ Add the plan ID
+                        **SUBSCRIPTION_PLANS[subscription_type]  # Include all plan fields
+                    }
+                
                 status_data = {
                     'is_subscribed': is_subscribed,
                     'subscription_type': subscription_type,
@@ -621,7 +633,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     'end_date': end_date.isoformat() + 'Z' if end_date else None,
                     'auto_renew': auto_renew,
                     'days_remaining': days_remaining,
-                    'plan_details': SUBSCRIPTION_PLANS.get(subscription_type) if subscription_type in SUBSCRIPTION_PLANS else None
+                    'plan_details': plan_details
                 }
                 
                 return jsonify({
