@@ -3120,5 +3120,255 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to retrieve cancellation statistics',
                 'errors': {'general': [str(e)]}
             }), 500
+
+    # ===== USER ACTIVATION METRICS ENDPOINT =====
+
+    @admin_bp.route('/activation/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_activation_stats(current_user):
+        """Get user activation metrics (Phase 2 & 3 analytics)"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_param = request.args.get('timeframe', '30')
+            
+            if timeframe_param == 'all':
+                timeframe_start = datetime(2020, 1, 1)  # Beginning of time
+                timeframe_days = None
+            else:
+                timeframe_days = int(timeframe_param)
+                timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            timeframe_end = datetime.utcnow()
+            
+            # 1. SIGNUPS
+            total_signups = mongo.db.users.count_documents({
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            
+            # Daily signups for trend
+            daily_signups = []
+            if timeframe_days and timeframe_days <= 90:
+                for i in range(timeframe_days):
+                    day_start = timeframe_start + timedelta(days=i)
+                    day_end = day_start + timedelta(days=1)
+                    count = mongo.db.users.count_documents({
+                        'createdAt': {'$gte': day_start, '$lt': day_end}
+                    })
+                    daily_signups.append(count)
+            
+            # 2. FIRST ENTRIES (Derived from income + expenses)
+            # Get unique users who created at least one entry
+            income_users = mongo.db.income.distinct('userId', {
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            expense_users = mongo.db.expenses.distinct('userId', {
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            
+            # Combine and deduplicate
+            users_with_entries = set(income_users + expense_users)
+            first_entries_count = len(users_with_entries)
+            
+            # Daily first entries for trend
+            daily_first_entries = []
+            if timeframe_days and timeframe_days <= 90:
+                for i in range(timeframe_days):
+                    day_start = timeframe_start + timedelta(days=i)
+                    day_end = day_start + timedelta(days=1)
+                    
+                    income_day = mongo.db.income.distinct('userId', {
+                        'createdAt': {'$gte': day_start, '$lt': day_end}
+                    })
+                    expense_day = mongo.db.expenses.distinct('userId', {
+                        'createdAt': {'$gte': day_start, '$lt': day_end}
+                    })
+                    
+                    count = len(set(income_day + expense_day))
+                    daily_first_entries.append(count)
+            
+            # 3. ACTIVATION RATE
+            activation_rate = (first_entries_count / total_signups * 100) if total_signups > 0 else 0
+            target_rate = 90.0
+            status = 'on_target' if activation_rate >= target_rate else 'below_target'
+            
+            # 4. AVERAGE TIME TO FIRST ENTRY
+            time_to_first_entries = []
+            distribution = {'0-5min': 0, '5-15min': 0, '15-60min': 0, '60min+': 0}
+            
+            # Sample users from timeframe (limit to 1000 for performance)
+            users_in_timeframe = list(mongo.db.users.find({
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            }).limit(1000))
+            
+            for user in users_in_timeframe:
+                user_id = user['_id']
+                signup_date = user.get('createdAt')
+                
+                if not signup_date:
+                    continue
+                
+                # Find first income entry
+                first_income = mongo.db.income.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                
+                # Find first expense entry
+                first_expense = mongo.db.expenses.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                
+                # Determine actual first entry
+                first_entry_date = None
+                if first_income and first_expense:
+                    first_entry_date = min(
+                        first_income['createdAt'],
+                        first_expense['createdAt']
+                    )
+                elif first_income:
+                    first_entry_date = first_income['createdAt']
+                elif first_expense:
+                    first_entry_date = first_expense['createdAt']
+                
+                if first_entry_date:
+                    time_diff = (first_entry_date - signup_date).total_seconds() / 60  # minutes
+                    time_to_first_entries.append(time_diff)
+                    
+                    # Categorize
+                    if time_diff <= 5:
+                        distribution['0-5min'] += 1
+                    elif time_diff <= 15:
+                        distribution['5-15min'] += 1
+                    elif time_diff <= 60:
+                        distribution['15-60min'] += 1
+                    else:
+                        distribution['60min+'] += 1
+            
+            avg_time = sum(time_to_first_entries) / len(time_to_first_entries) if time_to_first_entries else 0
+            median_time = sorted(time_to_first_entries)[len(time_to_first_entries) // 2] if time_to_first_entries else 0
+            
+            # 5. ENTRY TYPE SPLIT
+            income_first_count = 0
+            expense_first_count = 0
+            
+            for user in users_in_timeframe:
+                user_id = user['_id']
+                
+                first_income = mongo.db.income.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                first_expense = mongo.db.expenses.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                
+                if first_income and first_expense:
+                    if first_income['createdAt'] < first_expense['createdAt']:
+                        income_first_count += 1
+                    else:
+                        expense_first_count += 1
+                elif first_income:
+                    income_first_count += 1
+                elif first_expense:
+                    expense_first_count += 1
+            
+            total_first_entries = income_first_count + expense_first_count
+            income_percentage = (income_first_count / total_first_entries * 100) if total_first_entries > 0 else 0
+            expense_percentage = (expense_first_count / total_first_entries * 100) if total_first_entries > 0 else 0
+            
+            # 6. SECOND ENTRY RATE
+            users_with_second_entry = 0
+            users_with_second_entry_24h = 0
+            
+            for user_id in users_with_entries:
+                # Count total entries for this user
+                income_count = mongo.db.income.count_documents({'userId': user_id})
+                expense_count = mongo.db.expenses.count_documents({'userId': user_id})
+                total_entries = income_count + expense_count
+                
+                if total_entries >= 2:
+                    users_with_second_entry += 1
+                    
+                    # Check if second entry was within 24h of first
+                    all_entries = []
+                    
+                    incomes = list(mongo.db.income.find(
+                        {'userId': user_id},
+                        {'createdAt': 1}
+                    ).sort('createdAt', 1).limit(2))
+                    
+                    expenses = list(mongo.db.expenses.find(
+                        {'userId': user_id},
+                        {'createdAt': 1}
+                    ).sort('createdAt', 1).limit(2))
+                    
+                    all_entries = sorted(
+                        incomes + expenses,
+                        key=lambda x: x['createdAt']
+                    )
+                    
+                    if len(all_entries) >= 2:
+                        time_diff = (all_entries[1]['createdAt'] - all_entries[0]['createdAt']).total_seconds() / 3600  # hours
+                        if time_diff <= 24:
+                            users_with_second_entry_24h += 1
+            
+            second_entry_rate = (users_with_second_entry / first_entries_count * 100) if first_entries_count > 0 else 0
+            
+            # Build response
+            response_data = {
+                'timeframe': f'{timeframe_days}d' if timeframe_days else 'all',
+                'dateRange': {
+                    'start': timeframe_start.isoformat() + 'Z',
+                    'end': timeframe_end.isoformat() + 'Z'
+                },
+                'signups': {
+                    'total': total_signups,
+                    'daily': daily_signups if daily_signups else None
+                },
+                'firstEntries': {
+                    'total': first_entries_count,
+                    'daily': daily_first_entries if daily_first_entries else None
+                },
+                'activationRate': {
+                    'percentage': round(activation_rate, 1),
+                    'target': target_rate,
+                    'status': status
+                },
+                'avgTimeToFirstEntry': {
+                    'minutes': round(avg_time, 1),
+                    'median': round(median_time, 1),
+                    'distribution': distribution
+                },
+                'entryTypeSplit': {
+                    'income': income_first_count,
+                    'expense': expense_first_count,
+                    'incomePercentage': round(income_percentage, 1),
+                    'expensePercentage': round(expense_percentage, 1)
+                },
+                'secondEntryRate': {
+                    'total': users_with_second_entry,
+                    'percentage': round(second_entry_rate, 1),
+                    'within24h': users_with_second_entry_24h
+                }
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': response_data,
+                'message': 'Activation statistics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting activation stats: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve activation statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
          
     return admin_bp
