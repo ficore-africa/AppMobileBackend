@@ -3121,6 +3121,223 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ===== PASSWORD RESET REQUESTS MANAGEMENT ENDPOINTS =====
+
+    @admin_bp.route('/password-reset-requests', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_password_reset_requests(current_user):
+        """Get all password reset requests"""
+        try:
+            # Get filter parameters
+            status = request.args.get('status', 'all')
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            
+            # Build query
+            query = {}
+            if status != 'all':
+                query['status'] = status
+            
+            # Get total count
+            total = mongo.db.password_reset_requests.count_documents(query)
+            
+            # Get requests with pagination
+            skip = (page - 1) * limit
+            requests = list(mongo.db.password_reset_requests.find(query)
+                          .sort('requestedAt', -1)
+                          .skip(skip)
+                          .limit(limit))
+            
+            # Format requests
+            formatted_requests = []
+            for req in requests:
+                formatted_req = {
+                    'id': str(req['_id']),
+                    'userId': str(req['userId']),
+                    'userEmail': req.get('userEmail', ''),
+                    'userName': req.get('userName', 'Unknown User'),
+                    'status': req.get('status', 'pending'),
+                    'requestedAt': req.get('requestedAt').isoformat() + 'Z' if req.get('requestedAt') else None,
+                    'processedAt': req.get('processedAt').isoformat() + 'Z' if req.get('processedAt') else None,
+                    'processedBy': str(req['processedBy']) if req.get('processedBy') else None,
+                    'processedByName': req.get('processedByName'),
+                    'expiresAt': req.get('expiresAt').isoformat() + 'Z' if req.get('expiresAt') else None,
+                    'isExpired': req.get('expiresAt') < datetime.utcnow() if req.get('expiresAt') else False
+                }
+                formatted_requests.append(formatted_req)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'requests': formatted_requests,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': 'Password reset requests retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting password reset requests: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve password reset requests',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/password-reset-requests/<request_id>/process', methods=['POST'])
+    @token_required
+    @admin_required
+    def process_password_reset_request(current_user, request_id):
+        """Process a password reset request by generating temporary password"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = data.get('adminNotes', '').strip()
+            
+            # Find the password reset request
+            reset_req = mongo.db.password_reset_requests.find_one({'_id': ObjectId(request_id)})
+            
+            if not reset_req:
+                return jsonify({
+                    'success': False,
+                    'message': 'Password reset request not found'
+                }), 404
+            
+            if reset_req.get('status') != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': 'Request has already been processed'
+                }), 400
+            
+            # Check if request has expired
+            if reset_req.get('expiresAt') and reset_req['expiresAt'] < datetime.utcnow():
+                # Mark as expired
+                mongo.db.password_reset_requests.update_one(
+                    {'_id': ObjectId(request_id)},
+                    {'$set': {'status': 'expired'}}
+                )
+                return jsonify({
+                    'success': False,
+                    'message': 'Request has expired'
+                }), 400
+            
+            # Generate temporary password (8 characters: letters + numbers)
+            import random
+            import string
+            temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            
+            # Update user password and set flag for forced password change
+            mongo.db.users.update_one(
+                {'_id': reset_req['userId']},
+                {'$set': {
+                    'password': generate_password_hash(temp_password),
+                    'passwordChangedAt': datetime.utcnow(),
+                    'mustChangePassword': True,  # Force password change on next login
+                    'updatedAt': datetime.utcnow()
+                }, '$unset': {
+                    'resetToken': '',
+                    'resetTokenExpiry': ''
+                }}
+            )
+            
+            # Update password reset request status
+            mongo.db.password_reset_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {'$set': {
+                    'status': 'completed',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'processedByName': current_user.get('displayName', 'Admin'),
+                    'temporaryPassword': temp_password,  # Store for admin reference
+                    'adminNotes': admin_notes if admin_notes else None
+                }}
+            )
+            
+            # Log the admin action
+            mongo.db.admin_actions.insert_one({
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'adminName': current_user.get('displayName', 'Admin'),
+                'action': 'password_reset_request_processed',
+                'targetUserId': reset_req['userId'],
+                'targetUserEmail': reset_req['userEmail'],
+                'reason': admin_notes if admin_notes else 'Password reset request from user',
+                'timestamp': datetime.utcnow(),
+                'metadata': {
+                    'requestId': str(request_id),
+                    'temporary_password_generated': True,
+                    'force_password_change': True
+                }
+            })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'temporaryPassword': temp_password,
+                    'userEmail': reset_req['userEmail'],
+                    'userName': reset_req['userName']
+                },
+                'message': 'Password reset request processed successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error processing password reset request: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to process password reset request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/password-reset-requests/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_password_reset_stats(current_user):
+        """Get statistics about password reset requests"""
+        try:
+            total = mongo.db.password_reset_requests.count_documents({})
+            pending = mongo.db.password_reset_requests.count_documents({'status': 'pending'})
+            completed = mongo.db.password_reset_requests.count_documents({'status': 'completed'})
+            expired = mongo.db.password_reset_requests.count_documents({'status': 'expired'})
+            
+            # Get today's stats
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            completed_today = mongo.db.password_reset_requests.count_documents({
+                'status': 'completed',
+                'processedAt': {'$gte': today_start}
+            })
+            
+            # Get pending requests that are about to expire (less than 2 hours left)
+            urgent_cutoff = datetime.utcnow() + timedelta(hours=2)
+            urgent_pending = mongo.db.password_reset_requests.count_documents({
+                'status': 'pending',
+                'expiresAt': {'$lte': urgent_cutoff, '$gte': datetime.utcnow()}
+            })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'total': total,
+                    'pending': pending,
+                    'completed': completed,
+                    'expired': expired,
+                    'completedToday': completed_today,
+                    'urgentPending': urgent_pending
+                },
+                'message': 'Password reset statistics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting password reset stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve password reset statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     # ===== USER ACTIVATION METRICS ENDPOINT =====
 
     @admin_bp.route('/activation/stats', methods=['GET'])

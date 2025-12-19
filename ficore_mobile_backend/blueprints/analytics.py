@@ -1036,4 +1036,179 @@ def init_analytics_blueprint(mongo, token_required, admin_required, serialize_do
                 'error': str(e)
             }), 500
     
+    # ==================== PHASE 6: NOTIFICATION ANALYTICS ====================
+    
+    @analytics_bp.route('/notifications/track', methods=['POST'])
+    @token_required
+    def track_notification_event(current_user):
+        """
+        Track notification analytics event (Phase 6).
+        
+        Fire-and-forget endpoint for tracking notification delivery and engagement.
+        
+        Request body:
+        {
+            "eventType": "notification_sent" | "notification_opened" | "notification_dismissed",
+            "notificationType": "inactivity" | "weekly_digest" | "activation" | "celebration",
+            "notificationId": "unique_notification_id",
+            "metadata": {
+                "daysSince": 3,
+                "income": 5000,
+                "expenses": 3000
+            },
+            "occurredAt": "2025-12-19T10:30:00Z"
+        }
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate required fields
+            required_fields = ['eventType', 'notificationType', 'notificationId', 'occurredAt']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Missing required field: {field}'
+                    }), 400
+            
+            # Validate event type
+            valid_event_types = ['notification_sent', 'notification_opened', 'notification_dismissed']
+            if data['eventType'] not in valid_event_types:
+                return jsonify({
+                    'success': False,
+                    'message': f'Invalid eventType. Must be one of: {", ".join(valid_event_types)}'
+                }), 400
+            
+            # Validate notification type
+            valid_notification_types = ['inactivity', 'weekly_digest', 'activation', 'celebration']
+            if data['notificationType'] not in valid_notification_types:
+                return jsonify({
+                    'success': False,
+                    'message': f'Invalid notificationType. Must be one of: {", ".join(valid_notification_types)}'
+                }), 400
+            
+            # Parse occurred_at timestamp
+            try:
+                occurred_at = datetime.fromisoformat(data['occurredAt'].replace('Z', ''))
+            except:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid occurredAt timestamp format. Use ISO 8601 format.'
+                }), 400
+            
+            # Create notification event document
+            notification_event = {
+                'userId': current_user['_id'],
+                'eventType': data['eventType'],
+                'notificationType': data['notificationType'],
+                'notificationId': data['notificationId'],
+                'metadata': data.get('metadata', {}),
+                'occurredAt': occurred_at,
+                'createdAt': datetime.utcnow()
+            }
+            
+            # Insert event (fire-and-forget)
+            result = mongo.db.notification_events.insert_one(notification_event)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Notification event tracked successfully',
+                'data': {
+                    'eventId': str(result.inserted_id)
+                }
+            }), 201
+            
+        except Exception as e:
+            print(f"Error tracking notification event: {str(e)}")
+            # Don't fail hard - this is fire-and-forget
+            return jsonify({
+                'success': False,
+                'message': 'Failed to track notification event',
+                'error': str(e)
+            }), 500
+    
+    @analytics_bp.route('/notifications/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_notification_stats(current_user):
+        """
+        Admin: Get notification delivery and engagement statistics.
+        
+        Query params:
+        - period: 'week', 'month', 'all' (default: 'month')
+        """
+        try:
+            period = request.args.get('period', 'month')
+            
+            now = datetime.utcnow()
+            
+            # Determine time range
+            if period == 'week':
+                start_date = now - timedelta(days=7)
+            elif period == 'month':
+                start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            else:  # 'all'
+                start_date = datetime(2020, 1, 1)
+            
+            # Get notification counts by type
+            pipeline = [
+                {'$match': {'occurredAt': {'$gte': start_date}}},
+                {'$group': {
+                    '_id': {
+                        'notificationType': '$notificationType',
+                        'eventType': '$eventType'
+                    },
+                    'count': {'$sum': 1}
+                }}
+            ]
+            
+            results = list(mongo.db.notification_events.aggregate(pipeline))
+            
+            # Organize stats
+            stats = {}
+            for result in results:
+                notif_type = result['_id']['notificationType']
+                event_type = result['_id']['eventType']
+                count = result['count']
+                
+                if notif_type not in stats:
+                    stats[notif_type] = {
+                        'sent': 0,
+                        'opened': 0,
+                        'dismissed': 0
+                    }
+                
+                if event_type == 'notification_sent':
+                    stats[notif_type]['sent'] = count
+                elif event_type == 'notification_opened':
+                    stats[notif_type]['opened'] = count
+                elif event_type == 'notification_dismissed':
+                    stats[notif_type]['dismissed'] = count
+            
+            # Calculate engagement rates
+            for notif_type in stats:
+                sent = stats[notif_type]['sent']
+                opened = stats[notif_type]['opened']
+                
+                if sent > 0:
+                    stats[notif_type]['openRate'] = round((opened / sent) * 100, 2)
+                else:
+                    stats[notif_type]['openRate'] = 0
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'period': period,
+                    'stats': stats
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"Error getting notification stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get notification stats',
+                'error': str(e)
+            }), 500
+    
     return analytics_bp
