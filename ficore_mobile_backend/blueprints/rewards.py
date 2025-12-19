@@ -229,7 +229,7 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
             
             # Get FC breakdown (earned vs purchased)
             try:
-                from ..utils.fc_expiration_manager import FCExpirationManager
+                from utils.fc_expiration_manager import FCExpirationManager
                 fc_manager = FCExpirationManager(mongo)
                 fc_breakdown = fc_manager.get_user_fc_breakdown(current_user['_id'])
                 earned_fc = fc_breakdown.get('earned_fc', 0.0)
