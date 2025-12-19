@@ -3370,5 +3370,230 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to retrieve activation statistics',
                 'errors': {'general': [str(e)]}
             }), 500
+    
+    # ===== PHASE 4B: ACTIVATION ANALYTICS AGGREGATION =====
+    
+    @admin_bp.route('/activation/nudge-performance', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_nudge_performance(current_user):
+        """
+        Get nudge effectiveness metrics (Phase 4B.1).
+        
+        Query params:
+        - timeframe: '7' | '30' | '90' | 'all' (default: '30')
+        
+        Returns nudge performance data:
+        - shown count
+        - dismissed count
+        - converted count (next state_transition after shown)
+        - conversion rate
+        - avg time to conversion
+        """
+        try:
+            # Get timeframe parameter
+            timeframe_param = request.args.get('timeframe', '30')
+            
+            if timeframe_param == 'all':
+                timeframe_start = datetime(2020, 1, 1)
+            else:
+                timeframe_days = int(timeframe_param)
+                timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            timeframe_end = datetime.utcnow()
+            
+            # Get all nudge types
+            nudge_types = ['noEntryYet', 'firstEntryDone', 'earlyStreak', 'sevenDayStreak']
+            
+            nudge_performance = []
+            
+            for nudge_type in nudge_types:
+                # Count "shown" events
+                shown_count = mongo.db.activation_events.count_documents({
+                    'eventType': 'shown',
+                    'nudgeType': nudge_type,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+                
+                # Count "dismissed" events
+                dismissed_count = mongo.db.activation_events.count_documents({
+                    'eventType': 'dismissed',
+                    'nudgeType': nudge_type,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+                
+                # Calculate conversions: users who had state_transition after shown
+                # CONVERSION ATTRIBUTION RULE (LOCKED):
+                # - First "shown" event before a state_transition gets credit
+                # - One conversion max per shown event
+                # - Unlimited time window (observational)
+                # - If multiple nudges shown before conversion, earliest gets credit
+                
+                # Get all shown events for this nudge
+                shown_events = list(mongo.db.activation_events.find({
+                    'eventType': 'shown',
+                    'nudgeType': nudge_type,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                }).sort('createdAt', 1))
+                
+                converted_count = 0
+                conversion_times = []
+                
+                for shown_event in shown_events:
+                    user_id = shown_event['userId']
+                    shown_time = shown_event['createdAt']
+                    
+                    # Find next state_transition for this user after shown
+                    next_transition = mongo.db.activation_events.find_one({
+                        'userId': user_id,
+                        'eventType': 'state_transition',
+                        'createdAt': {'$gt': shown_time}
+                    }, sort=[('createdAt', 1)])
+                    
+                    if next_transition:
+                        converted_count += 1
+                        # Calculate time to conversion in minutes
+                        time_diff = (next_transition['createdAt'] - shown_time).total_seconds() / 60
+                        conversion_times.append(time_diff)
+                
+                # Calculate conversion rate
+                conversion_rate = (converted_count / shown_count * 100) if shown_count > 0 else 0
+                
+                # Calculate avg time to conversion
+                avg_time_to_conversion = sum(conversion_times) / len(conversion_times) if conversion_times else 0
+                
+                nudge_performance.append({
+                    'type': nudge_type,
+                    'shown': shown_count,
+                    'dismissed': dismissed_count,
+                    'converted': converted_count,
+                    'conversionRate': round(conversion_rate, 1),
+                    'avgTimeToConversion': round(avg_time_to_conversion, 1)
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'timeframe': f'{timeframe_param}d' if timeframe_param != 'all' else 'all',
+                    'dateRange': {
+                        'start': timeframe_start.isoformat() + 'Z',
+                        'end': timeframe_end.isoformat() + 'Z'
+                    },
+                    'nudges': nudge_performance
+                },
+                'message': 'Nudge performance retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting nudge performance: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve nudge performance',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/activation/funnel', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_activation_funnel(current_user):
+        """
+        Get S0→S1→S2→S3 funnel metrics (Phase 4B.2).
+        
+        Query params:
+        - timeframe: '7' | '30' | '90' | 'all' (default: '30')
+        
+        Returns funnel data based on state_transition events only.
+        """
+        try:
+            # Get timeframe parameter
+            timeframe_param = request.args.get('timeframe', '30')
+            
+            if timeframe_param == 'all':
+                timeframe_start = datetime(2020, 1, 1)
+            else:
+                timeframe_days = int(timeframe_param)
+                timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            timeframe_end = datetime.utcnow()
+            
+            # Count unique users who reached each state (from state_transition events ONLY)
+            # PHASE 4 FIX: S0 must also come from activation_events for consistency
+            states = ['S0', 'S1', 'S2', 'S3']
+            funnel_data = []
+            
+            # Get baseline from S0 state_transition events (not users table)
+            s0_users = mongo.db.activation_events.distinct('userId', {
+                'eventType': 'state_transition',
+                'activationState': 'S0',
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            s0_count = len(s0_users)
+            
+            # If no S0 events yet, fall back to user signups (temporary during migration)
+            if s0_count == 0:
+                s0_count = mongo.db.users.count_documents({
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+            
+            funnel_data.append({
+                'state': 'S0',
+                'count': s0_count,
+                'percentage': 100.0
+            })
+            
+            # S1, S2, S3 = unique users who reached these states
+            for state in ['S1', 'S2', 'S3']:
+                # Get unique users who transitioned to this state
+                users_in_state = mongo.db.activation_events.distinct('userId', {
+                    'eventType': 'state_transition',
+                    'activationState': state,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+                
+                count = len(users_in_state)
+                percentage = (count / s0_count * 100) if s0_count > 0 else 0
+                
+                funnel_data.append({
+                    'state': state,
+                    'count': count,
+                    'percentage': round(percentage, 1)
+                })
+            
+            # Calculate drop-off rates
+            drop_off = {}
+            for i in range(len(funnel_data) - 1):
+                current_state = funnel_data[i]['state']
+                next_state = funnel_data[i + 1]['state']
+                current_count = funnel_data[i]['count']
+                next_count = funnel_data[i + 1]['count']
+                
+                drop_off_rate = ((current_count - next_count) / current_count * 100) if current_count > 0 else 0
+                drop_off[f'{current_state}_to_{next_state}'] = round(drop_off_rate, 1)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'timeframe': f'{timeframe_param}d' if timeframe_param != 'all' else 'all',
+                    'dateRange': {
+                        'start': timeframe_start.isoformat() + 'Z',
+                        'end': timeframe_end.isoformat() + 'Z'
+                    },
+                    'funnel': funnel_data,
+                    'dropOff': drop_off
+                },
+                'message': 'Activation funnel retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting activation funnel: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve activation funnel',
+                'errors': {'general': [str(e)]}
+            }), 500
          
     return admin_bp

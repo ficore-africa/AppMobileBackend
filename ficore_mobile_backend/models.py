@@ -695,6 +695,37 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
         ]
 
+    # ==================== ACTIVATION_EVENTS COLLECTION (PHASE 4) ====================
+    
+    @staticmethod
+    def get_activation_event_schema() -> Dict[str, Any]:
+        """
+        Schema for activation_events collection.
+        Tracks user activation events for Phase 4 analytics.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'eventType': str,  # Required: 'shown' | 'dismissed' | 'state_transition'
+            'activationState': str,  # Required: 'S0' | 'S1' | 'S2' | 'S3'
+            'nudgeType': Optional[str],  # Optional: 'noEntryYet' | 'firstEntryDone' | 'earlyStreak' | 'sevenDayStreak'
+            'streakCount': int,  # Current streak count
+            'occurredAt': datetime,  # Device time when event occurred
+            'timezoneOffset': int,  # Minutes from UTC
+            'createdAt': datetime,  # Server time when event was recorded
+        }
+    
+    @staticmethod
+    def get_activation_event_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for activation_events collection."""
+        return [
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('eventType', 1), ('createdAt', -1)], 'name': 'event_type_created_desc'},
+            {'keys': [('activationState', 1), ('createdAt', -1)], 'name': 'activation_state_created_desc'},
+            {'keys': [('nudgeType', 1), ('createdAt', -1)], 'name': 'nudge_type_created_desc', 'sparse': True},
+            {'keys': [('createdAt', -1)], 'name': 'created_desc'},
+        ]
+
     # ==================== ADMIN_ACTIONS COLLECTION ====================
     
     @staticmethod

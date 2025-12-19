@@ -875,6 +875,102 @@ def init_analytics_blueprint(mongo, token_required, admin_required, serialize_do
                 'error': str(e)
             }), 500
     
+    # ==================== PHASE 4: ACTIVATION EVENT TRACKING ====================
+    
+    @analytics_bp.route('/activation/track', methods=['POST'])
+    @token_required
+    def track_activation_event(current_user):
+        """
+        Track activation event from mobile app (Phase 4).
+        
+        Request body:
+        {
+            "eventType": "shown" | "dismissed" | "state_transition",
+            "activationState": "S0" | "S1" | "S2" | "S3",
+            "nudgeType": "noEntryYet" | "firstEntryDone" | "earlyStreak" | "sevenDayStreak",
+            "streakCount": 0,
+            "occurredAt": "2025-12-19T10:30:00Z",
+            "timezoneOffset": -300
+        }
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate required fields
+            required_fields = ['eventType', 'activationState', 'streakCount', 'occurredAt', 'timezoneOffset']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Missing required field: {field}'
+                    }), 400
+            
+            # Validate event type
+            valid_event_types = ['shown', 'dismissed', 'state_transition']
+            if data['eventType'] not in valid_event_types:
+                return jsonify({
+                    'success': False,
+                    'message': f'Invalid eventType. Must be one of: {", ".join(valid_event_types)}'
+                }), 400
+            
+            # Validate activation state
+            valid_states = ['S0', 'S1', 'S2', 'S3']
+            if data['activationState'] not in valid_states:
+                return jsonify({
+                    'success': False,
+                    'message': f'Invalid activationState. Must be one of: {", ".join(valid_states)}'
+                }), 400
+            
+            # Validate nudge type if provided
+            if data.get('nudgeType'):
+                valid_nudge_types = ['noEntryYet', 'firstEntryDone', 'earlyStreak', 'sevenDayStreak']
+                if data['nudgeType'] not in valid_nudge_types:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Invalid nudgeType. Must be one of: {", ".join(valid_nudge_types)}'
+                    }), 400
+            
+            # Parse occurred_at timestamp
+            try:
+                occurred_at = datetime.fromisoformat(data['occurredAt'].replace('Z', ''))
+            except:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid occurredAt timestamp format. Use ISO 8601 format.'
+                }), 400
+            
+            # Create activation event document
+            activation_event = {
+                'userId': current_user['_id'],
+                'eventType': data['eventType'],
+                'activationState': data['activationState'],
+                'nudgeType': data.get('nudgeType'),
+                'streakCount': int(data['streakCount']),
+                'occurredAt': occurred_at,
+                'timezoneOffset': int(data['timezoneOffset']),
+                'createdAt': datetime.utcnow()
+            }
+            
+            # Insert event (fire-and-forget, no blocking)
+            result = mongo.db.activation_events.insert_one(activation_event)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Activation event tracked successfully',
+                'data': {
+                    'eventId': str(result.inserted_id)
+                }
+            }), 201
+            
+        except Exception as e:
+            print(f"Error tracking activation event: {str(e)}")
+            # Don't fail hard - this is fire-and-forget
+            return jsonify({
+                'success': False,
+                'message': 'Failed to track activation event',
+                'error': str(e)
+            }), 500
+    
     @analytics_bp.route('/dashboard/top-users', methods=['GET'])
     @token_required
     @admin_required
