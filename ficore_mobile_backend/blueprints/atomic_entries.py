@@ -11,6 +11,7 @@ from utils.payment_utils import normalize_payment_method, validate_payment_metho
 from utils.monthly_entry_tracker import MonthlyEntryTracker
 import traceback
 
+
 def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
     """Initialize the atomic entries blueprint with database and auth decorator"""
     from utils.analytics_tracker import create_tracker
@@ -21,48 +22,42 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
     atomic_entries_bp.serialize_doc = serialize_doc
     atomic_entries_bp.tracker = create_tracker(mongo.db)
     
-    return atomic_entries_bp
-
-# Initialize blueprint (will be called from app.py)
-atomic_entries_bp = Blueprint('atomic_entries', __name__, url_prefix='/atomic')
-
-@atomic_entries_bp.route('/expenses/create-with-payment', methods=['POST'])
-def create_expense_with_payment():
-    """
-    Atomic transaction: Create expense + deduct FC (if required)
-    Either BOTH succeed or NEITHER happens
-    
-    Request Body:
-    {
-        "amount": float (required),
-        "description": string (required),
-        "category": string (required),
-        "date": ISO datetime string (optional),
-        "budgetId": string (optional),
-        "tags": array (optional),
-        "paymentMethod": string (optional),
-        "location": string (optional),
-        "notes": string (optional)
-    }
-    
-    Response:
-    {
-        "success": true/false,
-        "data": {
-            "expense": {...},
-            "fc_charge_amount": float,
-            "fc_balance": float,
-            "monthly_entries": {
-                "count": int,
-                "limit": int/null,
-                "remaining": int/null
-            }
-        },
-        "message": string
-    }
-    """
+    @atomic_entries_bp.route('/expenses/create-with-payment', methods=['POST'])
     @atomic_entries_bp.token_required
-    def _create_expense_with_payment(current_user):
+    def create_expense_with_payment(current_user):
+        """
+        Atomic transaction: Create expense + deduct FC (if required)
+        Either BOTH succeed or NEITHER happens
+
+        Request Body:
+        {
+            "amount": float (required),
+            "description": string (required),
+            "category": string (required),
+            "date": ISO datetime string (optional),
+            "budgetId": string (optional),
+            "tags": array (optional),
+            "paymentMethod": string (optional),
+            "location": string (optional),
+            "notes": string (optional)
+        }
+
+        Response:
+        {
+            "success": true/false,
+            "data": {
+                "expense": {...},
+                "fc_charge_amount": float,
+                "fc_balance": float,
+                "monthly_entries": {
+                    "count": int,
+                    "limit": int/null,
+                    "remaining": int/null
+                }
+            },
+            "message": string
+        }
+        """
         # Start tracking for rollback
         expense_id = None
         fc_transaction_id = None
@@ -354,47 +349,43 @@ def create_expense_with_payment():
                 'error_type': 'server_error',
                 'errors': {'general': [str(e)]}
             }), 500
-    
-    return _create_expense_with_payment()
 
-
-@atomic_entries_bp.route('/income/create-with-payment', methods=['POST'])
-def create_income_with_payment():
-    """
-    Atomic transaction: Create income + deduct FC (if required)
-    Either BOTH succeed or NEITHER happens
-    
-    Request Body:
-    {
-        "amount": float (required),
-        "source": string (required),
-        "description": string (optional),
-        "frequency": string (optional),
-        "category": string (required),
-        "dateReceived": ISO datetime string (optional),
-        "isRecurring": bool (optional),
-        "nextRecurringDate": ISO datetime string (optional),
-        "metadata": object (optional)
-    }
-    
-    Response:
-    {
-        "success": true/false,
-        "data": {
-            "income": {...},
-            "fc_charge_amount": float,
-            "fc_balance": float,
-            "monthly_entries": {
-                "count": int,
-                "limit": int/null,
-                "remaining": int/null
-            }
-        },
-        "message": string
-    }
-    """
+    @atomic_entries_bp.route('/income/create-with-payment', methods=['POST'])
     @atomic_entries_bp.token_required
-    def _create_income_with_payment(current_user):
+    def create_income_with_payment(current_user):
+        """
+        Atomic transaction: Create income + deduct FC (if required)
+        Either BOTH succeed or NEITHER happens
+
+        Request Body:
+        {
+            "amount": float (required),
+            "source": string (required),
+            "description": string (optional),
+            "frequency": string (optional),
+            "category": string (required),
+            "dateReceived": ISO datetime string (optional),
+            "isRecurring": bool (optional),
+            "nextRecurringDate": ISO datetime string (optional),
+            "metadata": object (optional)
+        }
+
+        Response:
+        {
+            "success": true/false,
+            "data": {
+                "income": {...},
+                "fc_charge_amount": float,
+                "fc_balance": float,
+                "monthly_entries": {
+                    "count": int,
+                    "limit": int/null,
+                    "remaining": int/null
+                }
+            },
+            "message": string
+        }
+        """
         # Start tracking for rollback
         income_id = None
         fc_transaction_id = None
@@ -677,5 +668,6 @@ def create_income_with_payment():
                 'error_type': 'server_error',
                 'errors': {'general': [str(e)]}
             }), 500
-    
-    return _create_income_with_payment()
+
+    # Return the configured blueprint with all routes registered
+    return atomic_entries_bp
