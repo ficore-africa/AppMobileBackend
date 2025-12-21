@@ -38,8 +38,10 @@ def generate_profile_picture_url(user_doc):
     gridfs_id = user_doc.get('gridfsProfilePictureId')
     if gridfs_id:
         try:
-            # Return endpoint URL for GridFS image
-            gridfs_url = f"/api/users/profile-picture/{gridfs_id}"
+            # CRITICAL FIX: Return absolute URL for GridFS image
+            # The Flutter app needs a full URL to load images via CachedNetworkImage
+            base_url = os.environ.get('API_BASE_URL', 'https://mobilebackend.ficoreafrica.com')
+            gridfs_url = f"{base_url}/api/users/profile-picture/{gridfs_id}"
             print(f"✅ Using GridFS URL: {gridfs_url}")
             return gridfs_url
         except Exception as e:

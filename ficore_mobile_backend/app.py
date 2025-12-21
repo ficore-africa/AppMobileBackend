@@ -462,9 +462,13 @@ def upload_profile_picture(current_user):
                     user_id=user_id
                 )
                 
-                # Create data URL for immediate display
+                # Create data URL for immediate display (fallback)
                 base64_data = base64.b64encode(file_data).decode('utf-8')
-                signed_url = f"data:{content_type};base64,{base64_data}"
+                data_url = f"data:{content_type};base64,{base64_data}"
+                
+                # CRITICAL FIX: Generate absolute GridFS URL for persistent access
+                base_url = os.environ.get('API_BASE_URL', 'https://mobilebackend.ficoreafrica.com')
+                gridfs_url = f"{base_url}/api/users/profile-picture/{str(gridfs_id)}"
                 
                 # Update user with GridFS reference
                 mongo.db.users.update_one(
@@ -480,12 +484,14 @@ def upload_profile_picture(current_user):
                 )
                 
                 print(f"✅ Profile picture stored in GridFS: {gridfs_id}")
+                print(f"✅ GridFS URL: {gridfs_url}")
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'image_url': signed_url,
-                        'url': signed_url,
+                        'image_url': gridfs_url,  # Use persistent GridFS URL
+                        'url': gridfs_url,
+                        'data_url': data_url,  # Include data URL as fallback
                         'storage': 'gridfs',
                         'gridfs_id': str(gridfs_id)
                     },
