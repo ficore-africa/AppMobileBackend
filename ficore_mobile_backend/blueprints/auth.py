@@ -210,7 +210,7 @@ def signup():
             # Prefer explicit displayName if provided by client (business name), else generate from names
             'displayName': display_name.strip() if display_name and isinstance(display_name, str) and display_name.strip() else f"{first_name} {last_name}",
             'role': 'personal',
-            'ficoreCreditBalance': 5.0,  # REDUCED: Starting balance reduced from 10 FC to 5 FC (Recommendation #1)
+            'ficoreCreditBalance': 10.0,  # Starting balance: 10 FC (Welcome bonus)
             'financialGoals': financial_goals,
             'createdAt': datetime.utcnow(),
             'lastLogin': None,
@@ -219,6 +219,26 @@ def signup():
         
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
+        
+        # Create signup bonus transaction record for transparency
+        signup_transaction = {
+            '_id': ObjectId(),
+            'userId': result.inserted_id,
+            'type': 'credit',
+            'amount': 10.0,
+            'description': 'Welcome bonus - Thank you for joining Ficore!',
+            'operation': 'signup_bonus',
+            'balanceBefore': 0.0,
+            'balanceAfter': 10.0,
+            'status': 'completed',
+            'createdAt': datetime.utcnow(),
+            'metadata': {
+                'isWelcomeBonus': True,
+                'isEarned': False,  # This is a gift, not earned
+                'source': 'registration'
+            }
+        }
+        auth_bp.mongo.db.credit_transactions.insert_one(signup_transaction)
         
         # Track registration event
         try:
