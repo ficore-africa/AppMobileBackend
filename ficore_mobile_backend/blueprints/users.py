@@ -8,6 +8,7 @@ import os
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.pdf_generator import PDFGenerator
+from utils.profile_picture_helper import generate_profile_picture_url as _generate_profile_picture_url
 
 users_bp = Blueprint('users', __name__, url_prefix='/users')
 
@@ -18,48 +19,6 @@ def init_users_blueprint(mongo, token_required):
     users_bp.token_required = token_required
     users_bp.tracker = create_tracker(mongo.db)
     return users_bp
-
-def _generate_profile_picture_signed_url(gcs_path):
-    """Generate a signed URL for a profile picture stored in GCS
-    
-    Args:
-        gcs_path: GCS path like 'profile_pictures/{user_id}/{uuid}.jpg'
-        
-    Returns:
-        Signed URL valid for 7 days, or None if generation fails
-    """
-    if not gcs_path:
-        return None
-    
-    try:
-        from google.cloud import storage
-        from datetime import timedelta
-        
-        storage_client = storage.Client()
-        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(gcs_path)
-        
-        # Check if blob exists before generating URL
-        if not blob.exists():
-            print(f"❌ GCS blob not found: {gcs_path}")
-            return None
-        
-        # Generate signed URL valid for 7 days
-        signed_url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(days=7),
-            method="GET"
-        )
-        
-        print(f"✅ Generated signed URL for: {gcs_path}")
-        return signed_url
-        
-    except Exception as e:
-        print(f"❌ Error generating signed URL for {gcs_path}: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
 
 @users_bp.route('/profile', methods=['GET'])
 def get_profile():
@@ -83,8 +42,8 @@ def get_profile():
                 'financialGoals': current_user.get('financialGoals', []),
                 'createdAt': current_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': current_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if current_user.get('lastLogin') else None,
-                # CRITICAL FIX: Generate signed URL for profile picture if GCS path exists
-                'profilePictureUrl': _generate_profile_picture_signed_url(current_user.get('gcsProfilePicturePath')),
+                # CRITICAL FIX: Generate URL for profile picture from GCS or GridFS
+                'profilePictureUrl': _generate_profile_picture_url(current_user),
                 'businessName': current_user.get('businessName'),
                 'businessType': current_user.get('businessType'),
                 'businessTypeOther': current_user.get('businessTypeOther'),
@@ -116,6 +75,39 @@ def get_profile():
             }), 500
     
     return _get_profile()
+
+@users_bp.route('/profile-picture/<gridfs_id>', methods=['GET'])
+def get_profile_picture(gridfs_id):
+    """Serve profile picture from GridFS"""
+    try:
+        import gridfs
+        from bson import ObjectId
+        from io import BytesIO
+        
+        fs = gridfs.GridFS(users_bp.mongo.db)
+        
+        # Get file from GridFS
+        try:
+            file_data = fs.get(ObjectId(gridfs_id))
+        except gridfs.NoFile:
+            return jsonify({
+                'success': False,
+                'message': 'Profile picture not found'
+            }), 404
+        
+        # Return image file
+        return send_file(
+            BytesIO(file_data.read()),
+            mimetype=file_data.content_type or 'image/jpeg',
+            as_attachment=False
+        )
+        
+    except Exception as e:
+        print(f"❌ Error serving GridFS profile picture: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to retrieve profile picture'
+        }), 500
 
 @users_bp.route('/profile', methods=['PUT'])
 def update_profile():
@@ -212,8 +204,8 @@ def update_profile():
                 'financialGoals': updated_user.get('financialGoals', []),
                 'createdAt': updated_user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                 'lastLogin': updated_user.get('lastLogin', datetime.utcnow()).isoformat() + 'Z' if updated_user.get('lastLogin') else None,
-                # CRITICAL FIX: Include profile picture URL and business info
-                'profilePictureUrl': updated_user.get('profilePictureUrl'),
+                # CRITICAL FIX: Generate profile picture URL from GCS or GridFS
+                'profilePictureUrl': _generate_profile_picture_url(updated_user),
                 'businessName': updated_user.get('businessName'),
                 'businessType': updated_user.get('businessType'),
                 'industry': updated_user.get('industry')

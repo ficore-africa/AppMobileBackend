@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Responsive Test - FiCore Admin</title>
+    <link rel="stylesheet" href="responsive.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #FFF8F0;
+            padding: 20px;
+        }
+
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .test-header {
+            background: #1E3A8A;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+
+        .screen-info {
+            background: #10B981;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .screen-info h2 {
+            margin: 0 0 10px 0;
+        }
+
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .test-card {
+            background: #F4F1EC;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #B88A44;
+        }
+
+        .test-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .test-btn {
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .test-table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow-x: auto;
+        }
+
+        .test-table th,
+        .test-table td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        .test-table th {
+            background: #1E3A8A;
+            color: white;
+        }
+
+        .status-pass {
+            background: #10B981;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+
+        .status-fail {
+            background: #EF4444;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+
+        .checklist li {
+            padding: 10px;
+            margin-bottom: 5px;
+            background: #F4F1EC;
+            border-radius: 5px;
+        }
+
+        .checklist li:before {
+            content: "✓ ";
+            color: #10B981;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Screen Info -->
+        <div class="screen-info">
+            <h2>📱 Responsive Test Page</h2>
+            <p><strong>Current Screen Width:</strong> <span id="screenWidth">-</span>px</p>
+            <p><strong>Device Type:</strong> <span id="deviceType">-</span></p>
+            <p><strong>Orientation:</strong> <span id="orientation">-</span></p>
+        </div>
+
+        <!-- Test Section 1: Header & Navigation -->
+        <div class="test-section">
+            <div class="test-header">
+                <h3>Test 1: Header & Navigation</h3>
+            </div>
+            <header style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: relative;">
+                <h1 style="color: #1E3A8A; font-size: 28px; margin-bottom: 5px;">FiCore Admin Dashboard</h1>
+                <p style="color: #6B7280; font-size: 14px;">Test responsive header</p>
+                <div class="header-actions">
+                    <button class="btn">Home</button>
+                    <button class="btn">Premium</button>
+                    <button class="btn">Analytics</button>
+                    <button class="btn">Users</button>
+                    <button class="btn" style="background: #DC2626;">Logout</button>
+                </div>
+            </header>
+            <p style="margin-top: 15px; color: #6B7280;">
+                <strong>Expected:</strong> Buttons should stack vertically on mobile, horizontal on desktop. No overlapping.
+            </p>
+        </div>
+
+        <!-- Test Section 2: Metrics Grid -->
+        <div class="test-section">
+            <div class="test-header">
+                <h3>Test 2: Metrics Grid</h3>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Total Users</div>
+                    <div class="metric-value">1,234</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Active Users</div>
+                    <div class="metric-value">567</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Premium Users</div>
+                    <div class="metric-value">89</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Revenue</div>
+                    <div class="metric-value">$12K</div>
+                </div>
+            </div>
+            <p style="color: #6B7280;">
+                <strong>Expected:</strong> 1 column on mobile, 2 on tablet, 4 on desktop. No horizontal scroll.
+            </p>
+        </div>
+
+        <!-- Test Section 3: Buttons -->
+        <div class="test-section">
+            <div class="test-header">
+                <h3>Test 3: Button Layout</h3>
+            </div>
+            <div class="test-buttons">
+                <button class="test-btn">Export Users</button>
+                <button class="test-btn">View Reports</button>
+                <button class="test-btn">Settings</button>
+                <button class="test-btn">Refresh Data</button>
+                <button class="test-btn">Download CSV</button>
+            </div>
+            <p style="color: #6B7280;">
+                <strong>Expected:</strong> Buttons wrap properly, full-width on small mobile, inline on desktop.
+            </p>
+        </div>
+
+        <!-- Test Section 4: Table -->
+        <div class="test-section">
+            <div class="test-header">
+                <h3>Test 4: Responsive Table</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="test-table">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Credits</th>
+                            <th>Last Login</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>user1@example.com</td>
+                            <td>John Doe</td>
+                            <td><span class="status-pass">Active</span></td>
+                            <td>1,500 FC</td>
+                            <td>2024-01-15</td>
+                            <td><button class="test-btn" style="padding: 5px 10px; font-size: 12px;">View</button></td>
+                        </tr>
+                        <tr>
+                            <td>user2@example.com</td>
+                            <td>Jane Smith</td>
+                            <td><span class="status-pass">Active</span></td>
+                            <td>2,300 FC</td>
+                            <td>2024-01-14</td>
+                            <td><button class="test-btn" style="padding: 5px 10px; font-size: 12px;">View</button></td>
+                        </tr>
+                        <tr>
+                            <td>user3@example.com</td>
+                            <td>Bob Johnson</td>
+                            <td><span class="status-fail">Inactive</span></td>
+                            <td>500 FC</td>
+                            <td>2023-12-20</td>
+                            <td><button class="test-btn" style="padding: 5px 10px; font-size: 12px;">View</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p style="color: #6B7280; margin-top: 15px;">
+                <strong>Expected:</strong> Table scrolls horizontally on mobile, some columns hidden on small screens.
+            </p>
+        </div>
+
+        <!-- Test Section 5: Checklist -->
+        <div class="test-section">
+            <div class="test-header">
+                <h3>Test 5: Responsive Checklist</h3>
+            </div>
+            <ul class="checklist">
+                <li>No horizontal scroll on page</li>
+                <li>All text is readable without zooming</li>
+                <li>Buttons are touch-friendly (min 44x44px)</li>
+                <li>Navigation adapts to screen size</li>
+                <li>Cards stack properly on mobile</li>
+                <li>Tables are scrollable</li>
+                <li>No element overlapping</li>
+                <li>Proper spacing between elements</li>
+            </ul>
+        </div>
+
+        <!-- Test Section 6: Device-Specific Tests -->
+        <div class="test-section">
+            <div class="test-header">
+                <h3>Test 6: Device-Specific Behavior</h3>
+            </div>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h4>📱 Mobile (< 768px)</h4>
+                    <ul style="font-size: 13px; padding-left: 20px;">
+                        <li>Single column layout</li>
+                        <li>Stacked navigation</li>
+                        <li>Full-width buttons</li>
+                        <li>Essential table columns</li>
+                    </ul>
+                </div>
+                <div class="test-card">
+                    <h4>📱 Tablet (768-1023px)</h4>
+                    <ul style="font-size: 13px; padding-left: 20px;">
+                        <li>2-column layout</li>
+                        <li>Compact navigation</li>
+                        <li>Wrapped buttons</li>
+                        <li>All table columns</li>
+                    </ul>
+                </div>
+                <div class="test-card">
+                    <h4>💻 Desktop (1024px+)</h4>
+                    <ul style="font-size: 13px; padding-left: 20px;">
+                        <li>Multi-column layout</li>
+                        <li>Horizontal navigation</li>
+                        <li>Inline buttons</li>
+                        <li>Full table display</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Results -->
+        <div class="test-section" style="background: #DBEAFE; border-left: 4px solid #3B82F6;">
+            <div class="test-header" style="background: #3B82F6;">
+                <h3>✅ Test Results</h3>
+            </div>
+            <div id="testResults">
+                <p><strong>Viewport Width:</strong> <span id="viewportWidth">-</span>px</p>
+                <p><strong>Viewport Height:</strong> <span id="viewportHeight">-</span>px</p>
+                <p><strong>Device Pixel Ratio:</strong> <span id="pixelRatio">-</span></p>
+                <p><strong>Touch Support:</strong> <span id="touchSupport">-</span></p>
+                <p><strong>Horizontal Scroll:</strong> <span id="horizontalScroll">-</span></p>
+            </div>
+        </div>
+
+        <!-- Navigation Links -->
+        <div class="test-section" style="background: #FEF3C7; border-left: 4px solid #F59E0B;">
+            <div class="test-header" style="background: #F59E0B;">
+                <h3>🔗 Test Other Pages</h3>
+            </div>
+            <div class="test-buttons">
+                <a href="analytics_dashboard.html" class="test-btn" style="text-decoration: none; display: inline-block;">Dashboard</a>
+                <a href="analytics_dashboard.html" class="test-btn" style="text-decoration: none; display: inline-block;">Analytics</a>
+                <a href="premium_users.html" class="test-btn" style="text-decoration: none; display: inline-block;">Premium Users</a>
+                <a href="user_management.html" class="test-btn" style="text-decoration: none; display: inline-block;">User Management</a>
+                <a href="audit_logs.html" class="test-btn" style="text-decoration: none; display: inline-block;">Audit Logs</a>
+                <a href="cancellation_requests.html" class="test-btn" style="text-decoration: none; display: inline-block;">Cancellations</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateScreenInfo() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const ratio = window.devicePixelRatio || 1;
+            const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            const hasHorizontalScroll = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+
+            // Determine device type
+            let deviceType = 'Desktop';
+            if (width < 480) deviceType = 'Small Mobile';
+            else if (width < 768) deviceType = 'Mobile';
+            else if (width < 1024) deviceType = 'Tablet';
+
+            // Determine orientation
+            const orientation = width > height ? 'Landscape' : 'Portrait';
+
+            // Update display
+            document.getElementById('screenWidth').textContent = width;
+            document.getElementById('deviceType').textContent = deviceType;
+            document.getElementById('orientation').textContent = orientation;
+            document.getElementById('viewportWidth').textContent = width;
+            document.getElementById('viewportHeight').textContent = height;
+            document.getElementById('pixelRatio').textContent = ratio;
+            document.getElementById('touchSupport').textContent = hasTouch ? '✅ Yes' : '❌ No';
+            
+            const scrollStatus = document.getElementById('horizontalScroll');
+            if (hasHorizontalScroll) {
+                scrollStatus.innerHTML = '<span class="status-fail">❌ FAIL - Horizontal scroll detected!</span>';
+            } else {
+                scrollStatus.innerHTML = '<span class="status-pass">✅ PASS - No horizontal scroll</span>';
+            }
+
+            // Update screen info background color based on device
+            const screenInfo = document.querySelector('.screen-info');
+            if (deviceType.includes('Mobile')) {
+                screenInfo.style.background = '#3B82F6';
+            } else if (deviceType === 'Tablet') {
+                screenInfo.style.background = '#F59E0B';
+            } else {
+                screenInfo.style.background = '#10B981';
+            }
+        }
+
+        // Update on load and resize
+        updateScreenInfo();
+        window.addEventListener('resize', updateScreenInfo);
+        window.addEventListener('orientationchange', updateScreenInfo);
+
+        // Check for horizontal scroll every second
+        setInterval(() => {
+            const hasHorizontalScroll = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+            const scrollStatus = document.getElementById('horizontalScroll');
+            if (hasHorizontalScroll) {
+                scrollStatus.innerHTML = '<span class="status-fail">❌ FAIL - Horizontal scroll detected!</span>';
+            } else {
+                scrollStatus.innerHTML = '<span class="status-pass">✅ PASS - No horizontal scroll</span>';
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

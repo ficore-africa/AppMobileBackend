@@ -1,0 +1,544 @@
+/* ============================================
+   FICORE ADMIN - RESPONSIVE CSS FRAMEWORK
+   Mobile-First Responsive Design
+   ============================================ */
+
+/* Base Responsive Utilities */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+}
+
+.container {
+    width: 100%;
+    max-width: 100%;
+    padding-left: 15px;
+    padding-right: 15px;
+    margin: 0 auto;
+}
+
+/* Responsive Header */
+header {
+    position: relative;
+    padding: 15px !important;
+}
+
+.header-actions {
+    position: static !important;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 15px;
+    width: 100%;
+}
+
+h1 {
+    font-size: clamp(20px, 5vw, 28px) !important;
+}
+
+/* Responsive Buttons */
+.btn {
+    white-space: nowrap;
+    font-size: 13px;
+    padding: 8px 12px;
+}
+
+/* Responsive Metrics Grid */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.metric-card {
+    min-width: 0;
+    padding: 15px !important;
+}
+
+.metric-value {
+    font-size: clamp(24px, 6vw, 36px) !important;
+}
+
+.metric-label {
+    font-size: 11px !important;
+}
+
+/* Responsive Tables */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+}
+
+.table {
+    min-width: 600px;
+    font-size: 13px;
+}
+
+.table th,
+.table td {
+    padding: 8px !important;
+    white-space: nowrap;
+}
+
+/* Responsive Sections */
+.section {
+    padding: 15px !important;
+    margin-bottom: 20px;
+}
+
+.section-title {
+    font-size: 18px !important;
+}
+
+/* Responsive Event Counts */
+.event-counts {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    gap: 10px !important;
+}
+
+.event-count-item {
+    padding: 10px !important;
+}
+
+.event-count-value {
+    font-size: 20px !important;
+}
+
+/* Responsive Modal */
+.modal-content {
+    margin: 20px !important;
+    max-width: calc(100vw - 40px) !important;
+    width: 100% !important;
+}
+
+.modal-body {
+    max-height: 60vh !important;
+}
+
+/* Responsive Forms */
+.form-group input,
+.form-group select {
+    width: 100%;
+    font-size: 14px;
+}
+
+/* Responsive Filter Section */
+.filter-section .row {
+    gap: 10px;
+}
+
+.filter-section .col-md-4 {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+/* ============================================
+   TABLET BREAKPOINT (768px and up)
+   ============================================ */
+@media (min-width: 768px) {
+    .container {
+        max-width: 1400px;
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+
+    header {
+        padding: 20px 30px !important;
+    }
+
+    .header-actions {
+        position: absolute !important;
+        right: 30px;
+        top: 20px;
+        margin-top: 0;
+        width: auto;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+    .metric-card {
+        padding: 25px !important;
+    }
+
+    .section {
+        padding: 30px !important;
+    }
+
+    .filter-section .col-md-4 {
+        width: auto;
+        flex: 1;
+        margin-bottom: 0;
+    }
+
+    .btn {
+        font-size: 14px;
+        padding: 10px 20px;
+    }
+}
+
+/* ============================================
+   MOBILE SPECIFIC (max-width: 767px)
+   ============================================ */
+@media (max-width: 767px) {
+    /* Hide less important columns on mobile */
+    .table th:nth-child(n+5),
+    .table td:nth-child(n+5) {
+        display: none;
+    }
+
+    /* Stack header actions vertically */
+    .header-actions {
+        flex-direction: column;
+    }
+
+    .header-actions .btn {
+        width: 100%;
+        text-align: center;
+    }
+
+    /* Single column metrics on mobile */
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Adjust font sizes for mobile */
+    body {
+        font-size: 14px;
+        padding: 10px;
+    }
+
+    h1 {
+        font-size: 20px !important;
+        margin-bottom: 8px;
+    }
+
+    h2, .section-title {
+        font-size: 16px !important;
+    }
+
+    /* Mobile-friendly cards */
+    .metric-card,
+    .section,
+    .table-container {
+        border-radius: 8px;
+        box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+    }
+
+    /* Compact activity list */
+    .activity-item {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 10px 0;
+    }
+
+    .activity-time {
+        margin-top: 5px;
+    }
+
+    /* Mobile modal */
+    .modal-content {
+        margin: 10px !important;
+        max-width: calc(100vw - 20px) !important;
+    }
+
+    .modal-header h2 {
+        font-size: 18px;
+    }
+
+    /* Mobile form adjustments */
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        font-size: 13px;
+    }
+
+    .form-group input {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    /* Mobile navigation */
+    .navbar-nav {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .nav-link {
+        padding: 10px 15px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    /* Mobile tabs */
+    .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .nav-tabs .nav-link {
+        white-space: nowrap;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+
+    /* Mobile badges */
+    .badge {
+        font-size: 10px;
+        padding: 3px 8px;
+    }
+
+    /* Mobile search box */
+    .search-box {
+        max-width: 100%;
+    }
+
+    /* Mobile filter section */
+    .filter-section {
+        padding: 10px;
+    }
+
+    .filter-section .row {
+        flex-direction: column;
+    }
+
+    .filter-section .text-end {
+        text-align: left !important;
+        margin-top: 10px;
+    }
+
+    .filter-section .btn {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+
+    /* Mobile event counts */
+    .event-counts {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Mobile top users table */
+    .top-users-table {
+        font-size: 12px;
+    }
+
+    .top-users-table th,
+    .top-users-table td {
+        padding: 8px 4px !important;
+    }
+
+    /* Hide complex sections on mobile, show simplified view */
+    .heavy-users-container,
+    .endpoint-stats-container,
+    .violations-container {
+        max-height: 300px !important;
+    }
+}
+
+/* ============================================
+   SMALL MOBILE (max-width: 480px)
+   ============================================ */
+@media (max-width: 480px) {
+    body {
+        padding: 5px;
+    }
+
+    .container {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    header {
+        padding: 10px !important;
+    }
+
+    h1 {
+        font-size: 18px !important;
+    }
+
+    .subtitle {
+        font-size: 12px;
+    }
+
+    .btn {
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+
+    .metric-value {
+        font-size: 24px !important;
+    }
+
+    .metric-label {
+        font-size: 10px !important;
+    }
+
+    .section {
+        padding: 10px !important;
+    }
+
+    /* Ultra-compact table for small screens */
+    .table {
+        font-size: 11px;
+        min-width: 100%;
+    }
+
+    .table th,
+    .table td {
+        padding: 5px 3px !important;
+    }
+
+    /* Show only essential columns */
+    .table th:nth-child(n+4),
+    .table td:nth-child(n+4) {
+        display: none;
+    }
+
+    /* Compact cards */
+    .metric-card {
+        padding: 10px !important;
+    }
+
+    .event-count-item {
+        padding: 8px !important;
+    }
+
+    .event-count-value {
+        font-size: 18px !important;
+    }
+
+    .event-count-label {
+        font-size: 11px !important;
+    }
+}
+
+/* ============================================
+   LANDSCAPE MOBILE (max-height: 500px)
+   ============================================ */
+@media (max-height: 500px) and (orientation: landscape) {
+    header {
+        padding: 10px !important;
+    }
+
+    .header-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .metric-card {
+        padding: 10px !important;
+    }
+
+    .metric-value {
+        font-size: 20px !important;
+    }
+
+    .section {
+        padding: 15px !important;
+    }
+
+    .modal-body {
+        max-height: 40vh !important;
+    }
+}
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+@media print {
+    .header-actions,
+    .btn,
+    .filter-section,
+    .modal {
+        display: none !important;
+    }
+
+    body {
+        background: white;
+    }
+
+    .section,
+    .metric-card {
+        box-shadow: none;
+        border: 1px solid #ddd;
+    }
+}
+
+/* ============================================
+   ACCESSIBILITY IMPROVEMENTS
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .btn {
+        border: 2px solid currentColor;
+    }
+
+    .metric-card,
+    .section {
+        border: 2px solid #000;
+    }
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+.mobile-only {
+    display: block;
+}
+
+.desktop-only {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .mobile-only {
+        display: none;
+    }
+
+    .desktop-only {
+        display: block;
+    }
+}
+
+/* Responsive text utilities */
+.text-responsive {
+    font-size: clamp(12px, 2vw, 16px);
+}
+
+/* Responsive spacing */
+.p-responsive {
+    padding: clamp(10px, 2vw, 30px);
+}
+
+.m-responsive {
+    margin: clamp(10px, 2vw, 30px);
+}
+
+/* Prevent horizontal scroll */
+.no-scroll-x {
+    overflow-x: hidden;
+    max-width: 100vw;
+}

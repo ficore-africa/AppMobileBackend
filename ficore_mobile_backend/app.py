@@ -35,6 +35,8 @@ from blueprints.analytics import init_analytics_blueprint
 from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprint
 from blueprints.admin_subscription_management import init_admin_subscription_management_blueprint
 from blueprints.atomic_entries import init_atomic_entries_blueprint
+from blueprints.reports import init_reports_blueprint
+from blueprints.voice_reporting import init_voice_reporting_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -60,7 +62,7 @@ mongo = PyMongo(app)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["50000 per day", "500 per hour"],  # Increased from 1000/200
+    default_limits=["50000 per day", "5000 per hour"],  # Increased from 1000/200
     storage_uri="memory://",
 )
 
@@ -275,6 +277,10 @@ admin_subscription_management_blueprint = init_admin_subscription_management_blu
 # CRITICAL: Initialize atomic entries blueprint for FC charging fix
 atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, serialize_doc)
 
+# Initialize reports blueprint for centralized export functionality
+reports_blueprint = init_reports_blueprint(mongo, token_required)
+voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
+
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
 rate_limit_monitoring_blueprint = init_rate_limit_monitoring_blueprint(mongo, token_required, admin_required, rate_limit_tracker)
@@ -309,6 +315,12 @@ app.register_blueprint(rate_limit_monitoring_blueprint)
 # CRITICAL: Register atomic entries blueprint for FC charging fix
 app.register_blueprint(atomic_entries_blueprint)
 print("✓ Atomic entries blueprint registered at /atomic")
+
+# Register reports blueprint for centralized export functionality
+app.register_blueprint(reports_blueprint)
+print("✓ Reports blueprint registered at /api/reports")
+app.register_blueprint(voice_reporting_blueprint)
+print("✓ Voice reporting blueprint registered at /api/voice")
 
 # Root redirect to admin login
 @app.route('/')
@@ -367,11 +379,11 @@ def gcs_health_check():
 @app.route('/upload/profile-picture', methods=['POST'])
 @token_required
 def upload_profile_picture(current_user):
-    """Upload profile picture for user to Google Cloud Storage"""
+    """Upload profile picture with GCS primary and GridFS fallback"""
     try:
-        from google.cloud import storage
         from werkzeug.utils import secure_filename
         import uuid
+        import base64
         
         # Check if file is in request
         if 'file' not in request.files:
@@ -399,96 +411,137 @@ def upload_profile_picture(current_user):
                 'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}'
             }), 400
         
-        # Initialize Google Cloud Storage
-        storage_client = storage.Client()
-        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        # Read file data once
+        file.seek(0)
+        file_data = file.read()
+        content_type = file.content_type or f'image/{file_ext}'
         
-        # Verify bucket exists
-        try:
-            bucket = storage_client.bucket(bucket_name)
-            if not bucket.exists():
-                print(f"❌ GCS bucket does not exist: {bucket_name}")
-                return jsonify({
-                    'success': False,
-                    'message': 'Storage configuration error. Please contact support.',
-                    'errors': {'general': ['Storage bucket not configured']}
-                }), 500
-        except Exception as e:
-            print(f"❌ Error accessing GCS bucket {bucket_name}: {e}")
-            return jsonify({
-                'success': False,
-                'message': 'Storage service unavailable. Please try again later.',
-                'errors': {'general': [str(e)]}
-            }), 503
-        
-        # Generate unique filename for GCS
         user_id = str(current_user['_id'])
         unique_id = str(uuid.uuid4())
-        gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
         
-        # Upload to Google Cloud Storage (private bucket)
+        # Try GCS first
+        gcs_success = False
+        signed_url = None
+        gcs_filename = None
+        
         try:
-            blob = bucket.blob(gcs_filename)
-            content_type = file.content_type or f'image/{file_ext}'
-            blob.upload_from_file(file, content_type=content_type)
-            print(f"✅ Profile picture uploaded to GCS: {gcs_filename}")
+            from google.cloud import storage
+            from datetime import timedelta
+            from io import BytesIO
+            
+            storage_client = storage.Client()
+            bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+            bucket = storage_client.bucket(bucket_name)
+            
+            if bucket.exists():
+                gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
+                blob = bucket.blob(gcs_filename)
+                blob.upload_from_file(BytesIO(file_data), content_type=content_type)
+                
+                # Generate signed URL
+                signed_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(days=7),
+                    method="GET"
+                )
+                
+                gcs_success = True
+                print(f"✅ Profile picture uploaded to GCS: {gcs_filename}")
+            else:
+                print(f"⚠️ GCS bucket does not exist: {bucket_name}, falling back to GridFS")
         except Exception as e:
-            print(f"❌ Error uploading to GCS: {e}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({
-                'success': False,
-                'message': 'Failed to upload image to storage',
-                'errors': {'general': [str(e)]}
-            }), 500
+            print(f"⚠️ GCS upload failed: {e}, falling back to GridFS")
         
-        # Generate signed URL (valid for 7 days)
-        # This allows private access without making the bucket public
-        from datetime import timedelta
-        try:
-            signed_url = blob.generate_signed_url(
-                version="v4",
-                expiration=timedelta(days=7),
-                method="GET"
-            )
-            print(f"✅ Generated signed URL for immediate use")
-        except Exception as e:
-            print(f"❌ Error generating signed URL: {e}")
-            # Continue anyway - we have the GCS path
-            signed_url = None
+        # Fallback to GridFS if GCS failed
+        if not gcs_success:
+            try:
+                import gridfs
+                fs = gridfs.GridFS(mongo.db)
+                
+                # Store in GridFS
+                gridfs_id = fs.put(
+                    file_data,
+                    filename=f"profile_{user_id}_{unique_id}.{file_ext}",
+                    content_type=content_type,
+                    user_id=user_id
+                )
+                
+                # Create data URL for immediate display (fallback)
+                base64_data = base64.b64encode(file_data).decode('utf-8')
+                data_url = f"data:{content_type};base64,{base64_data}"
+                
+                # CRITICAL FIX: Generate absolute GridFS URL for persistent access
+                base_url = os.environ.get('API_BASE_URL', 'https://mobilebackend.ficoreafrica.com')
+                gridfs_url = f"{base_url}/api/users/profile-picture/{str(gridfs_id)}"
+                
+                # Update user with GridFS reference
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {
+                        '$set': {
+                            'gridfsProfilePictureId': str(gridfs_id),
+                            'gcsProfilePicturePath': None,
+                            'profilePictureUrl': None,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                print(f"✅ Profile picture stored in GridFS: {gridfs_id}")
+                print(f"✅ GridFS URL: {gridfs_url}")
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'image_url': gridfs_url,  # Use persistent GridFS URL
+                        'url': gridfs_url,
+                        'data_url': data_url,  # Include data URL as fallback
+                        'storage': 'gridfs',
+                        'gridfs_id': str(gridfs_id)
+                    },
+                    'message': 'Profile picture uploaded successfully'
+                }), 200
+                
+            except Exception as gridfs_error:
+                print(f"❌ GridFS fallback failed: {gridfs_error}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to upload image',
+                    'errors': {'general': [str(gridfs_error)]}
+                }), 500
         
-        # CRITICAL FIX: Update user profile with GCS path (not the signed URL)
-        # We'll generate fresh signed URLs when needed via GET /users/profile
-        # This ensures URLs never expire from the user's perspective
+        # GCS succeeded - update user document
         try:
             mongo.db.users.update_one(
                 {'_id': current_user['_id']},
                 {
                     '$set': {
-                        'gcsProfilePicturePath': gcs_filename,  # Permanent GCS path
-                        'profilePictureUrl': None,  # Clear old URL if any
+                        'gcsProfilePicturePath': gcs_filename,
+                        'gridfsProfilePictureId': None,
+                        'profilePictureUrl': None,
                         'updatedAt': datetime.utcnow()
                     }
                 }
             )
             print(f"✅ Saved GCS path to user document: {gcs_filename}")
         except Exception as e:
-            print(f"❌ Error updating user document: {e}")
-            # Upload succeeded but DB update failed - not critical
-            # User can try again
+            print(f"⚠️ Error updating user document: {e}")
         
         return jsonify({
             'success': True,
             'data': {
-                'image_url': signed_url,  # Return signed URL for immediate use
-                'url': signed_url,  # Alias for compatibility
-                'gcs_path': gcs_filename  # Include path for reference
+                'image_url': signed_url,
+                'url': signed_url,
+                'storage': 'gcs',
+                'gcs_path': gcs_filename
             },
             'message': 'Profile picture uploaded successfully'
         }), 200
         
     except Exception as e:
-        print(f"Error uploading profile picture: {str(e)}")
+        print(f"❌ Error uploading profile picture: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({

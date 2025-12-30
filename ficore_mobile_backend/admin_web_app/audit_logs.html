@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>Audit Logs - FiCore Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="responsive.css">
     <script src="utils.js"></script>
     <style>
         * {
@@ -15,15 +16,15 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #f5f7fa;
+            background: #FFF8F0;
             color: #2E2E2E;
         }
         
         .header {
-            background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%);
-            color: white;
+            background: white;
+            color: #1E3A8A;
             padding: 20px 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         }
         
         .header-content {
@@ -244,12 +245,21 @@
             <h1><i class="fas fa-clipboard-list"></i> Audit Logs</h1>
             <div class="header-actions">
                 <a href="analytics_dashboard.html" class="btn btn-secondary">
-                    <i class="fas fa-chart-line"></i> Dashboard
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="premium_users.html" class="btn btn-secondary">
+                    <i class="fas fa-crown"></i> Premium
+                </a>
+                <a href="cancellation_requests.html" class="btn btn-secondary">
+                    <i class="fas fa-ban"></i> Cancellations
                 </a>
                 <a href="user_management.html" class="btn btn-secondary">
-                    <i class="fas fa-users"></i> User Management
+                    <i class="fas fa-users"></i> Users
                 </a>
-                <button onclick="logout()" class="btn btn-secondary">
+                <button onclick="logout()" class="btn btn-danger">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </button>
             </div>

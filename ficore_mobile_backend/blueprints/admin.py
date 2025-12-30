@@ -2855,5 +2855,962 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to retrieve audit logs',
                 'errors': {'general': [str(e)]}
             }), 500
+
+    # ===== CANCELLATION REQUESTS MANAGEMENT ENDPOINTS =====
+
+    @admin_bp.route('/cancellation-requests', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_cancellation_requests(current_user):
+        """Get all subscription cancellation requests"""
+        try:
+            # Get filter parameters
+            status = request.args.get('status', 'all')  # all, pending, approved, rejected, completed
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 100))
+            
+            # Build query
+            query = {}
+            if status != 'all':
+                query['status'] = status
+            
+            # Get total count
+            total = mongo.db.cancellation_requests.count_documents(query)
+            
+            # Get requests with pagination
+            skip = (page - 1) * limit
+            requests = list(mongo.db.cancellation_requests.find(query)
+                          .sort('requestedAt', -1)
+                          .skip(skip)
+                          .limit(limit))
+            
+            # Serialize requests
+            request_data = []
+            for req in requests:
+                req_info = {
+                    'id': str(req['_id']),
+                    'userId': str(req['userId']),
+                    'userEmail': req.get('userEmail', ''),
+                    'userName': req.get('userName', 'Unknown User'),
+                    'subscriptionType': req.get('subscriptionType', 'Premium'),
+                    'subscriptionStartDate': req.get('subscriptionStartDate').isoformat() + 'Z' if req.get('subscriptionStartDate') else None,
+                    'subscriptionEndDate': req.get('subscriptionEndDate').isoformat() + 'Z' if req.get('subscriptionEndDate') else None,
+                    'reason': req.get('reason'),
+                    'status': req.get('status', 'pending'),
+                    'requestedAt': req.get('requestedAt', datetime.utcnow()).isoformat() + 'Z',
+                    'processedAt': req.get('processedAt').isoformat() + 'Z' if req.get('processedAt') else None,
+                    'processedBy': str(req['processedBy']) if req.get('processedBy') else None,
+                    'processedByName': req.get('processedByName'),
+                    'adminNotes': req.get('adminNotes'),
+                    'autoRenewDisabled': req.get('autoRenewDisabled', False)
+                }
+                request_data.append(req_info)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'requests': request_data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit if total > 0 else 0
+                    }
+                },
+                'message': 'Cancellation requests retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting cancellation requests: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve cancellation requests',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/cancellation-requests/<request_id>/approve', methods=['POST'])
+    @token_required
+    @admin_required
+    def approve_cancellation_request(current_user, request_id):
+        """Approve a cancellation request"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = data.get('adminNotes', '').strip()
+            
+            # Find the cancellation request
+            cancellation_req = mongo.db.cancellation_requests.find_one({'_id': ObjectId(request_id)})
+            if not cancellation_req:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cancellation request not found'
+                }), 404
+            
+            if cancellation_req['status'] != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': f'Request already {cancellation_req["status"]}'
+                }), 400
+            
+            # Update cancellation request status
+            mongo.db.cancellation_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {'$set': {
+                    'status': 'approved',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'processedByName': current_user.get('displayName', 'Admin'),
+                    'adminNotes': admin_notes if admin_notes else None
+                }}
+            )
+            
+            # Ensure auto-renew is disabled for the user
+            mongo.db.users.update_one(
+                {'_id': cancellation_req['userId']},
+                {'$set': {'subscriptionAutoRenew': False}}
+            )
+            
+            # Log the approval in audit logs
+            audit_log = {
+                '_id': ObjectId(),
+                'eventType': 'subscription_cancellation_approved',
+                'timestamp': datetime.utcnow(),
+                'adminId': current_user['_id'],
+                'adminName': current_user.get('displayName', 'Admin'),
+                'userId': cancellation_req['userId'],
+                'reason': admin_notes if admin_notes else 'Cancellation request approved',
+                'metadata': {
+                    'requestId': str(request_id),
+                    'subscriptionType': cancellation_req.get('subscriptionType', 'Premium'),
+                    'userEmail': cancellation_req.get('userEmail', ''),
+                    'userName': cancellation_req.get('userName', '')
+                }
+            }
+            mongo.db.subscription_events.insert_one(audit_log)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Cancellation request approved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error approving cancellation request: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to approve cancellation request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/cancellation-requests/<request_id>/reject', methods=['POST'])
+    @token_required
+    @admin_required
+    def reject_cancellation_request(current_user, request_id):
+        """Reject a cancellation request"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = data.get('adminNotes', '').strip()
+            
+            if not admin_notes:
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin notes are required when rejecting a request'
+                }), 400
+            
+            # Find the cancellation request
+            cancellation_req = mongo.db.cancellation_requests.find_one({'_id': ObjectId(request_id)})
+            if not cancellation_req:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cancellation request not found'
+                }), 404
+            
+            if cancellation_req['status'] != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': f'Request already {cancellation_req["status"]}'
+                }), 400
+            
+            # Update cancellation request status
+            mongo.db.cancellation_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {'$set': {
+                    'status': 'rejected',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'processedByName': current_user.get('displayName', 'Admin'),
+                    'adminNotes': admin_notes
+                }}
+            )
+            
+            # Re-enable auto-renew for the user (since request was rejected)
+            mongo.db.users.update_one(
+                {'_id': cancellation_req['userId']},
+                {'$set': {'subscriptionAutoRenew': True}}
+            )
+            
+            # Log the rejection in audit logs
+            audit_log = {
+                '_id': ObjectId(),
+                'eventType': 'subscription_cancellation_rejected',
+                'timestamp': datetime.utcnow(),
+                'adminId': current_user['_id'],
+                'adminName': current_user.get('displayName', 'Admin'),
+                'userId': cancellation_req['userId'],
+                'reason': admin_notes,
+                'metadata': {
+                    'requestId': str(request_id),
+                    'subscriptionType': cancellation_req.get('subscriptionType', 'Premium'),
+                    'userEmail': cancellation_req.get('userEmail', ''),
+                    'userName': cancellation_req.get('userName', '')
+                }
+            }
+            mongo.db.subscription_events.insert_one(audit_log)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Cancellation request rejected successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error rejecting cancellation request: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reject cancellation request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/cancellation-requests/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_cancellation_stats(current_user):
+        """Get statistics about cancellation requests"""
+        try:
+            total = mongo.db.cancellation_requests.count_documents({})
+            pending = mongo.db.cancellation_requests.count_documents({'status': 'pending'})
+            approved = mongo.db.cancellation_requests.count_documents({'status': 'approved'})
+            rejected = mongo.db.cancellation_requests.count_documents({'status': 'rejected'})
+            
+            # Get today's stats
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            approved_today = mongo.db.cancellation_requests.count_documents({
+                'status': 'approved',
+                'processedAt': {'$gte': today_start}
+            })
+            rejected_today = mongo.db.cancellation_requests.count_documents({
+                'status': 'rejected',
+                'processedAt': {'$gte': today_start}
+            })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'total': total,
+                    'pending': pending,
+                    'approved': approved,
+                    'rejected': rejected,
+                    'approvedToday': approved_today,
+                    'rejectedToday': rejected_today
+                },
+                'message': 'Cancellation statistics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting cancellation stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve cancellation statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== PASSWORD RESET REQUESTS MANAGEMENT ENDPOINTS =====
+
+    @admin_bp.route('/password-reset-requests', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_password_reset_requests(current_user):
+        """Get all password reset requests"""
+        try:
+            # Get filter parameters
+            status = request.args.get('status', 'all')
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            
+            # Build query
+            query = {}
+            if status != 'all':
+                query['status'] = status
+            
+            # Get total count
+            total = mongo.db.password_reset_requests.count_documents(query)
+            
+            # Get requests with pagination
+            skip = (page - 1) * limit
+            requests = list(mongo.db.password_reset_requests.find(query)
+                          .sort('requestedAt', -1)
+                          .skip(skip)
+                          .limit(limit))
+            
+            # Format requests
+            formatted_requests = []
+            for req in requests:
+                formatted_req = {
+                    'id': str(req['_id']),
+                    'userId': str(req['userId']),
+                    'userEmail': req.get('userEmail', ''),
+                    'userName': req.get('userName', 'Unknown User'),
+                    'status': req.get('status', 'pending'),
+                    'requestedAt': req.get('requestedAt').isoformat() + 'Z' if req.get('requestedAt') else None,
+                    'processedAt': req.get('processedAt').isoformat() + 'Z' if req.get('processedAt') else None,
+                    'processedBy': str(req['processedBy']) if req.get('processedBy') else None,
+                    'processedByName': req.get('processedByName'),
+                    'expiresAt': req.get('expiresAt').isoformat() + 'Z' if req.get('expiresAt') else None,
+                    'isExpired': req.get('expiresAt') < datetime.utcnow() if req.get('expiresAt') else False
+                }
+                formatted_requests.append(formatted_req)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'requests': formatted_requests,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': 'Password reset requests retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting password reset requests: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve password reset requests',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/password-reset-requests/<request_id>/process', methods=['POST'])
+    @token_required
+    @admin_required
+    def process_password_reset_request(current_user, request_id):
+        """Process a password reset request by generating temporary password"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = data.get('adminNotes', '').strip()
+            
+            # Find the password reset request
+            reset_req = mongo.db.password_reset_requests.find_one({'_id': ObjectId(request_id)})
+            
+            if not reset_req:
+                return jsonify({
+                    'success': False,
+                    'message': 'Password reset request not found'
+                }), 404
+            
+            if reset_req.get('status') != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': 'Request has already been processed'
+                }), 400
+            
+            # Check if request has expired
+            if reset_req.get('expiresAt') and reset_req['expiresAt'] < datetime.utcnow():
+                # Mark as expired
+                mongo.db.password_reset_requests.update_one(
+                    {'_id': ObjectId(request_id)},
+                    {'$set': {'status': 'expired'}}
+                )
+                return jsonify({
+                    'success': False,
+                    'message': 'Request has expired'
+                }), 400
+            
+            # Generate temporary password (8 characters: letters + numbers)
+            import random
+            import string
+            temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            
+            # Update user password and set flag for forced password change
+            mongo.db.users.update_one(
+                {'_id': reset_req['userId']},
+                {'$set': {
+                    'password': generate_password_hash(temp_password),
+                    'passwordChangedAt': datetime.utcnow(),
+                    'mustChangePassword': True,  # Force password change on next login
+                    'updatedAt': datetime.utcnow()
+                }, '$unset': {
+                    'resetToken': '',
+                    'resetTokenExpiry': ''
+                }}
+            )
+            
+            # Update password reset request status
+            mongo.db.password_reset_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {'$set': {
+                    'status': 'completed',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'processedByName': current_user.get('displayName', 'Admin'),
+                    'temporaryPassword': temp_password,  # Store for admin reference
+                    'adminNotes': admin_notes if admin_notes else None
+                }}
+            )
+            
+            # Log the admin action
+            mongo.db.admin_actions.insert_one({
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'adminName': current_user.get('displayName', 'Admin'),
+                'action': 'password_reset_request_processed',
+                'targetUserId': reset_req['userId'],
+                'targetUserEmail': reset_req['userEmail'],
+                'reason': admin_notes if admin_notes else 'Password reset request from user',
+                'timestamp': datetime.utcnow(),
+                'metadata': {
+                    'requestId': str(request_id),
+                    'temporary_password_generated': True,
+                    'force_password_change': True
+                }
+            })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'temporaryPassword': temp_password,
+                    'userEmail': reset_req['userEmail'],
+                    'userName': reset_req['userName']
+                },
+                'message': 'Password reset request processed successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error processing password reset request: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to process password reset request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/password-reset-requests/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_password_reset_stats(current_user):
+        """Get statistics about password reset requests"""
+        try:
+            total = mongo.db.password_reset_requests.count_documents({})
+            pending = mongo.db.password_reset_requests.count_documents({'status': 'pending'})
+            completed = mongo.db.password_reset_requests.count_documents({'status': 'completed'})
+            expired = mongo.db.password_reset_requests.count_documents({'status': 'expired'})
+            
+            # Get today's stats
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            completed_today = mongo.db.password_reset_requests.count_documents({
+                'status': 'completed',
+                'processedAt': {'$gte': today_start}
+            })
+            
+            # Get pending requests that are about to expire (less than 2 hours left)
+            urgent_cutoff = datetime.utcnow() + timedelta(hours=2)
+            urgent_pending = mongo.db.password_reset_requests.count_documents({
+                'status': 'pending',
+                'expiresAt': {'$lte': urgent_cutoff, '$gte': datetime.utcnow()}
+            })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'total': total,
+                    'pending': pending,
+                    'completed': completed,
+                    'expired': expired,
+                    'completedToday': completed_today,
+                    'urgentPending': urgent_pending
+                },
+                'message': 'Password reset statistics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting password reset stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve password reset statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== USER ACTIVATION METRICS ENDPOINT =====
+
+    @admin_bp.route('/activation/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_activation_stats(current_user):
+        """Get user activation metrics (Phase 2 & 3 analytics)"""
+        try:
+            # Get timeframe parameter (default: 30 days)
+            timeframe_param = request.args.get('timeframe', '30')
+            
+            if timeframe_param == 'all':
+                timeframe_start = datetime(2020, 1, 1)  # Beginning of time
+                timeframe_days = None
+            else:
+                timeframe_days = int(timeframe_param)
+                timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            timeframe_end = datetime.utcnow()
+            
+            # 1. SIGNUPS
+            total_signups = mongo.db.users.count_documents({
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            
+            # Daily signups for trend
+            daily_signups = []
+            if timeframe_days and timeframe_days <= 90:
+                for i in range(timeframe_days):
+                    day_start = timeframe_start + timedelta(days=i)
+                    day_end = day_start + timedelta(days=1)
+                    count = mongo.db.users.count_documents({
+                        'createdAt': {'$gte': day_start, '$lt': day_end}
+                    })
+                    daily_signups.append(count)
+            
+            # 2. FIRST ENTRIES (Derived from income + expenses)
+            # Get unique users who created at least one entry
+            income_users = mongo.db.income.distinct('userId', {
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            expense_users = mongo.db.expenses.distinct('userId', {
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            
+            # Combine and deduplicate
+            users_with_entries = set(income_users + expense_users)
+            first_entries_count = len(users_with_entries)
+            
+            # Daily first entries for trend
+            daily_first_entries = []
+            if timeframe_days and timeframe_days <= 90:
+                for i in range(timeframe_days):
+                    day_start = timeframe_start + timedelta(days=i)
+                    day_end = day_start + timedelta(days=1)
+                    
+                    income_day = mongo.db.income.distinct('userId', {
+                        'createdAt': {'$gte': day_start, '$lt': day_end}
+                    })
+                    expense_day = mongo.db.expenses.distinct('userId', {
+                        'createdAt': {'$gte': day_start, '$lt': day_end}
+                    })
+                    
+                    count = len(set(income_day + expense_day))
+                    daily_first_entries.append(count)
+            
+            # 3. ACTIVATION RATE
+            activation_rate = (first_entries_count / total_signups * 100) if total_signups > 0 else 0
+            target_rate = 90.0
+            status = 'on_target' if activation_rate >= target_rate else 'below_target'
+            
+            # 4. AVERAGE TIME TO FIRST ENTRY
+            time_to_first_entries = []
+            distribution = {'0-5min': 0, '5-15min': 0, '15-60min': 0, '60min+': 0}
+            
+            # Sample users from timeframe (limit to 1000 for performance)
+            users_in_timeframe = list(mongo.db.users.find({
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            }).limit(1000))
+            
+            for user in users_in_timeframe:
+                user_id = user['_id']
+                signup_date = user.get('createdAt')
+                
+                if not signup_date:
+                    continue
+                
+                # Find first income entry
+                first_income = mongo.db.income.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                
+                # Find first expense entry
+                first_expense = mongo.db.expenses.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                
+                # Determine actual first entry
+                first_entry_date = None
+                if first_income and first_expense:
+                    first_entry_date = min(
+                        first_income['createdAt'],
+                        first_expense['createdAt']
+                    )
+                elif first_income:
+                    first_entry_date = first_income['createdAt']
+                elif first_expense:
+                    first_entry_date = first_expense['createdAt']
+                
+                if first_entry_date:
+                    time_diff = (first_entry_date - signup_date).total_seconds() / 60  # minutes
+                    time_to_first_entries.append(time_diff)
+                    
+                    # Categorize
+                    if time_diff <= 5:
+                        distribution['0-5min'] += 1
+                    elif time_diff <= 15:
+                        distribution['5-15min'] += 1
+                    elif time_diff <= 60:
+                        distribution['15-60min'] += 1
+                    else:
+                        distribution['60min+'] += 1
+            
+            avg_time = sum(time_to_first_entries) / len(time_to_first_entries) if time_to_first_entries else 0
+            median_time = sorted(time_to_first_entries)[len(time_to_first_entries) // 2] if time_to_first_entries else 0
+            
+            # 5. ENTRY TYPE SPLIT
+            income_first_count = 0
+            expense_first_count = 0
+            
+            for user in users_in_timeframe:
+                user_id = user['_id']
+                
+                first_income = mongo.db.income.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                first_expense = mongo.db.expenses.find_one(
+                    {'userId': user_id},
+                    sort=[('createdAt', 1)]
+                )
+                
+                if first_income and first_expense:
+                    if first_income['createdAt'] < first_expense['createdAt']:
+                        income_first_count += 1
+                    else:
+                        expense_first_count += 1
+                elif first_income:
+                    income_first_count += 1
+                elif first_expense:
+                    expense_first_count += 1
+            
+            total_first_entries = income_first_count + expense_first_count
+            income_percentage = (income_first_count / total_first_entries * 100) if total_first_entries > 0 else 0
+            expense_percentage = (expense_first_count / total_first_entries * 100) if total_first_entries > 0 else 0
+            
+            # 6. SECOND ENTRY RATE
+            users_with_second_entry = 0
+            users_with_second_entry_24h = 0
+            
+            for user_id in users_with_entries:
+                # Count total entries for this user
+                income_count = mongo.db.income.count_documents({'userId': user_id})
+                expense_count = mongo.db.expenses.count_documents({'userId': user_id})
+                total_entries = income_count + expense_count
+                
+                if total_entries >= 2:
+                    users_with_second_entry += 1
+                    
+                    # Check if second entry was within 24h of first
+                    all_entries = []
+                    
+                    incomes = list(mongo.db.income.find(
+                        {'userId': user_id},
+                        {'createdAt': 1}
+                    ).sort('createdAt', 1).limit(2))
+                    
+                    expenses = list(mongo.db.expenses.find(
+                        {'userId': user_id},
+                        {'createdAt': 1}
+                    ).sort('createdAt', 1).limit(2))
+                    
+                    all_entries = sorted(
+                        incomes + expenses,
+                        key=lambda x: x['createdAt']
+                    )
+                    
+                    if len(all_entries) >= 2:
+                        time_diff = (all_entries[1]['createdAt'] - all_entries[0]['createdAt']).total_seconds() / 3600  # hours
+                        if time_diff <= 24:
+                            users_with_second_entry_24h += 1
+            
+            second_entry_rate = (users_with_second_entry / first_entries_count * 100) if first_entries_count > 0 else 0
+            
+            # Build response
+            response_data = {
+                'timeframe': f'{timeframe_days}d' if timeframe_days else 'all',
+                'dateRange': {
+                    'start': timeframe_start.isoformat() + 'Z',
+                    'end': timeframe_end.isoformat() + 'Z'
+                },
+                'signups': {
+                    'total': total_signups,
+                    'daily': daily_signups if daily_signups else None
+                },
+                'firstEntries': {
+                    'total': first_entries_count,
+                    'daily': daily_first_entries if daily_first_entries else None
+                },
+                'activationRate': {
+                    'percentage': round(activation_rate, 1),
+                    'target': target_rate,
+                    'status': status
+                },
+                'avgTimeToFirstEntry': {
+                    'minutes': round(avg_time, 1),
+                    'median': round(median_time, 1),
+                    'distribution': distribution
+                },
+                'entryTypeSplit': {
+                    'income': income_first_count,
+                    'expense': expense_first_count,
+                    'incomePercentage': round(income_percentage, 1),
+                    'expensePercentage': round(expense_percentage, 1)
+                },
+                'secondEntryRate': {
+                    'total': users_with_second_entry,
+                    'percentage': round(second_entry_rate, 1),
+                    'within24h': users_with_second_entry_24h
+                }
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': response_data,
+                'message': 'Activation statistics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting activation stats: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve activation statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    # ===== PHASE 4B: ACTIVATION ANALYTICS AGGREGATION =====
+    
+    @admin_bp.route('/activation/nudge-performance', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_nudge_performance(current_user):
+        """
+        Get nudge effectiveness metrics (Phase 4B.1).
+        
+        Query params:
+        - timeframe: '7' | '30' | '90' | 'all' (default: '30')
+        
+        Returns nudge performance data:
+        - shown count
+        - dismissed count
+        - converted count (next state_transition after shown)
+        - conversion rate
+        - avg time to conversion
+        """
+        try:
+            # Get timeframe parameter
+            timeframe_param = request.args.get('timeframe', '30')
+            
+            if timeframe_param == 'all':
+                timeframe_start = datetime(2020, 1, 1)
+            else:
+                timeframe_days = int(timeframe_param)
+                timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            timeframe_end = datetime.utcnow()
+            
+            # Get all nudge types
+            nudge_types = ['noEntryYet', 'firstEntryDone', 'earlyStreak', 'sevenDayStreak']
+            
+            nudge_performance = []
+            
+            for nudge_type in nudge_types:
+                # Count "shown" events
+                shown_count = mongo.db.activation_events.count_documents({
+                    'eventType': 'shown',
+                    'nudgeType': nudge_type,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+                
+                # Count "dismissed" events
+                dismissed_count = mongo.db.activation_events.count_documents({
+                    'eventType': 'dismissed',
+                    'nudgeType': nudge_type,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+                
+                # Calculate conversions: users who had state_transition after shown
+                # CONVERSION ATTRIBUTION RULE (LOCKED):
+                # - First "shown" event before a state_transition gets credit
+                # - One conversion max per shown event
+                # - Unlimited time window (observational)
+                # - If multiple nudges shown before conversion, earliest gets credit
+                
+                # Get all shown events for this nudge
+                shown_events = list(mongo.db.activation_events.find({
+                    'eventType': 'shown',
+                    'nudgeType': nudge_type,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                }).sort('createdAt', 1))
+                
+                converted_count = 0
+                conversion_times = []
+                
+                for shown_event in shown_events:
+                    user_id = shown_event['userId']
+                    shown_time = shown_event['createdAt']
+                    
+                    # Find next state_transition for this user after shown
+                    next_transition = mongo.db.activation_events.find_one({
+                        'userId': user_id,
+                        'eventType': 'state_transition',
+                        'createdAt': {'$gt': shown_time}
+                    }, sort=[('createdAt', 1)])
+                    
+                    if next_transition:
+                        converted_count += 1
+                        # Calculate time to conversion in minutes
+                        time_diff = (next_transition['createdAt'] - shown_time).total_seconds() / 60
+                        conversion_times.append(time_diff)
+                
+                # Calculate conversion rate
+                conversion_rate = (converted_count / shown_count * 100) if shown_count > 0 else 0
+                
+                # Calculate avg time to conversion
+                avg_time_to_conversion = sum(conversion_times) / len(conversion_times) if conversion_times else 0
+                
+                nudge_performance.append({
+                    'type': nudge_type,
+                    'shown': shown_count,
+                    'dismissed': dismissed_count,
+                    'converted': converted_count,
+                    'conversionRate': round(conversion_rate, 1),
+                    'avgTimeToConversion': round(avg_time_to_conversion, 1)
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'timeframe': f'{timeframe_param}d' if timeframe_param != 'all' else 'all',
+                    'dateRange': {
+                        'start': timeframe_start.isoformat() + 'Z',
+                        'end': timeframe_end.isoformat() + 'Z'
+                    },
+                    'nudges': nudge_performance
+                },
+                'message': 'Nudge performance retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting nudge performance: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve nudge performance',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/activation/funnel', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_activation_funnel(current_user):
+        """
+        Get S0→S1→S2→S3 funnel metrics (Phase 4B.2).
+        
+        Query params:
+        - timeframe: '7' | '30' | '90' | 'all' (default: '30')
+        
+        Returns funnel data based on state_transition events only.
+        """
+        try:
+            # Get timeframe parameter
+            timeframe_param = request.args.get('timeframe', '30')
+            
+            if timeframe_param == 'all':
+                timeframe_start = datetime(2020, 1, 1)
+            else:
+                timeframe_days = int(timeframe_param)
+                timeframe_start = datetime.utcnow() - timedelta(days=timeframe_days)
+            
+            timeframe_end = datetime.utcnow()
+            
+            # Count unique users who reached each state (from state_transition events ONLY)
+            # PHASE 4 FIX: S0 must also come from activation_events for consistency
+            states = ['S0', 'S1', 'S2', 'S3']
+            funnel_data = []
+            
+            # Get baseline from S0 state_transition events (not users table)
+            s0_users = mongo.db.activation_events.distinct('userId', {
+                'eventType': 'state_transition',
+                'activationState': 'S0',
+                'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+            })
+            s0_count = len(s0_users)
+            
+            # If no S0 events yet, fall back to user signups (temporary during migration)
+            if s0_count == 0:
+                s0_count = mongo.db.users.count_documents({
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+            
+            funnel_data.append({
+                'state': 'S0',
+                'count': s0_count,
+                'percentage': 100.0
+            })
+            
+            # S1, S2, S3 = unique users who reached these states
+            for state in ['S1', 'S2', 'S3']:
+                # Get unique users who transitioned to this state
+                users_in_state = mongo.db.activation_events.distinct('userId', {
+                    'eventType': 'state_transition',
+                    'activationState': state,
+                    'createdAt': {'$gte': timeframe_start, '$lte': timeframe_end}
+                })
+                
+                count = len(users_in_state)
+                percentage = (count / s0_count * 100) if s0_count > 0 else 0
+                
+                funnel_data.append({
+                    'state': state,
+                    'count': count,
+                    'percentage': round(percentage, 1)
+                })
+            
+            # Calculate drop-off rates
+            drop_off = {}
+            for i in range(len(funnel_data) - 1):
+                current_state = funnel_data[i]['state']
+                next_state = funnel_data[i + 1]['state']
+                current_count = funnel_data[i]['count']
+                next_count = funnel_data[i + 1]['count']
+                
+                drop_off_rate = ((current_count - next_count) / current_count * 100) if current_count > 0 else 0
+                drop_off[f'{current_state}_to_{next_state}'] = round(drop_off_rate, 1)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'timeframe': f'{timeframe_param}d' if timeframe_param != 'all' else 'all',
+                    'dateRange': {
+                        'start': timeframe_start.isoformat() + 'Z',
+                        'end': timeframe_end.isoformat() + 'Z'
+                    },
+                    'funnel': funnel_data,
+                    'dropOff': drop_off
+                },
+                'message': 'Activation funnel retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting activation funnel: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve activation funnel',
+                'errors': {'general': [str(e)]}
+            }), 500
          
     return admin_bp
