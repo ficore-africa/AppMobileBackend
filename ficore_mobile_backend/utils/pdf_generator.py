@@ -1002,36 +1002,90 @@ class PDFGenerator:
         if not assets:
             story.append(Paragraph("No assets found.", self.styles['Normal']))
         else:
+            # Check if ANY asset has a meaningful name
+            has_any_names = any(
+                asset.get('name') or asset.get('assetName') 
+                for asset in assets 
+                if (asset.get('name') or asset.get('assetName', '')).strip()
+            )
+            
             # Assets Table
             story.append(Paragraph("Asset Details", self.styles['SectionHeader']))
             
-            asset_data = [['Asset Name', 'Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
-            total_cost = 0
-            total_value = 0
-            
-            for asset in assets:
-                purchase_date = parse_date_safe(asset.get('purchaseDate'))
-                cost = asset.get('purchaseCost', 0)
-                current_value = asset.get('currentValue', cost)
+            # Build table with or without Asset Name column
+            if not has_any_names:
+                # No names - hide Asset Name column entirely
+                asset_data = [['Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
+                total_cost = 0
+                total_value = 0
                 
-                asset_data.append([
-                    asset.get('name', 'N/A'),
-                    asset.get('category', 'N/A'),
-                    purchase_date.strftime('%Y-%m-%d'),
-                    f"₦{cost:,.2f}",
-                    f"₦{current_value:,.2f}"
-                ])
-                total_cost += cost
-                total_value += current_value
+                for asset in assets:
+                    purchase_date = parse_date_safe(asset.get('purchaseDate'))
+                    # CRITICAL FIX: Check both 'purchasePrice' and 'purchaseCost' for backend compatibility
+                    cost = asset.get('purchasePrice', asset.get('purchaseCost', 0))
+                    
+                    # DATA MIGRATION FIX: If cost is 0 but currentValue exists, use currentValue as cost
+                    # This handles legacy data where purchasePrice wasn't set
+                    if cost == 0:
+                        cost = asset.get('currentValue', 0)
+                    
+                    current_value = asset.get('currentValue', cost)
+                    
+                    asset_data.append([
+                        asset.get('category', '—'),
+                        purchase_date.strftime('%Y-%m-%d'),
+                        f"₦{cost:,.2f}",
+                        f"₦{current_value:,.2f}"
+                    ])
+                    total_cost += cost
+                    total_value += current_value
+                
+                asset_data.append(['', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
+                
+                asset_table = Table(asset_data, colWidths=[1.8*inch, 1.5*inch, 1.8*inch, 1.9*inch])
+            else:
+                # Some assets have names - keep column but use professional dash
+                asset_data = [['Asset Name', 'Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
+                total_cost = 0
+                total_value = 0
+                
+                for asset in assets:
+                    purchase_date = parse_date_safe(asset.get('purchaseDate'))
+                    # CRITICAL FIX: Check both 'purchasePrice' and 'purchaseCost' for backend compatibility
+                    cost = asset.get('purchasePrice', asset.get('purchaseCost', 0))
+                    
+                    # DATA MIGRATION FIX: If cost is 0 but currentValue exists, use currentValue as cost
+                    # This handles legacy data where purchasePrice wasn't set
+                    if cost == 0:
+                        cost = asset.get('currentValue', 0)
+                    
+                    current_value = asset.get('currentValue', cost)
+                    
+                    # Use professional em dash instead of 'N/A'
+                    name = (asset.get('name') or asset.get('assetName', '')).strip()
+                    display_name = name if name else '—'
+                    
+                    asset_data.append([
+                        display_name,
+                        asset.get('category', '—'),
+                        purchase_date.strftime('%Y-%m-%d'),
+                        f"₦{cost:,.2f}",
+                        f"₦{current_value:,.2f}"
+                    ])
+                    total_cost += cost
+                    total_value += current_value
+                
+                asset_data.append(['', '', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
+                
+                asset_table = Table(asset_data, colWidths=[1.8*inch, 1.3*inch, 1.2*inch, 1.3*inch, 1.4*inch])
             
-            asset_data.append(['', '', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
-            
-            asset_table = Table(asset_data, colWidths=[1.8*inch, 1.3*inch, 1.2*inch, 1.3*inch, 1.4*inch])
+            # Apply table styling
             asset_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (3, 0), (4, -1), 'RIGHT'),
+                # Align cost columns to the right (adjust based on whether name column exists)
+                ('ALIGN', (-2, 0), (-1, -1), 'RIGHT'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 9),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
@@ -1105,57 +1159,51 @@ class PDFGenerator:
             
             for asset in assets:
                 # CRITICAL FIX: Use correct field names from Asset schema
-                cost = asset.get('purchasePrice', 0)  # Was 'purchaseCost'
-                useful_life = asset.get('usefulLifeYears', 5)  # Was 'usefulLife', default 5 years
-                purchase_date = parse_date_safe(asset.get('purchaseDate'))
-                depreciation_method = asset.get('depreciationMethod', 'straight_line')
-                depreciation_rate = asset.get('depreciationRate', 0)
+                cost = asset.get('purchasePrice', asset.get('purchaseCost', 0))
                 
-                # OPTION A + C HYBRID: Use manual adjustment if exists, otherwise calculate
+                # If cost is 0 but currentValue exists, use currentValue as cost (data migration fix)
+                if cost == 0:
+                    cost = asset.get('currentValue', 0)
+                
+                useful_life = asset.get('usefulLifeYears', 5)  # Default 5 years
+                purchase_date = parse_date_safe(asset.get('purchaseDate'))
+                
+                # SIMPLIFIED: Only use straight-line depreciation method
+                # Formula: (Cost - Salvage Value) / Useful Life
+                # For now, salvage value is 0 (can be added later)
+                salvage_value = 0  # Future: asset.get('salvageValue', 0)
+                
+                # Calculate years owned
+                years_owned = (nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25
+                
+                # Check for manual adjustment first (Option C layer)
                 manual_adjustment = asset.get('manualValueAdjustment')
                 
                 if manual_adjustment is not None:
-                    # Use manual adjustment (Option C layer)
+                    # Use manual adjustment
                     book_value = manual_adjustment
                     accumulated_depreciation = cost - book_value
                     # Estimate annual depreciation based on current state
-                    years_owned = max((nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25, 0.01)
-                    annual_depreciation = accumulated_depreciation / years_owned if years_owned > 0 else 0
+                    annual_depreciation = accumulated_depreciation / max(years_owned, 0.01)
                 else:
-                    # Calculate on-the-fly (Option A core)
-                    years_owned = (nigerian_time.replace(tzinfo=None) - purchase_date.replace(tzinfo=None)).days / 365.25
-                    
-                    if depreciation_method == 'none' or depreciation_rate == 0:
-                        book_value = cost
-                        accumulated_depreciation = 0
-                        annual_depreciation = 0
-                    elif depreciation_method == 'straight_line':
-                        annual_depreciation = cost * (depreciation_rate / 100) if depreciation_rate > 0 else (cost / useful_life if useful_life > 0 else 0)
-                        accumulated_depreciation = min(annual_depreciation * years_owned, cost)
-                        book_value = cost - accumulated_depreciation
-                    elif depreciation_method == 'reducing_balance':
-                        book_value = cost
-                        full_years = int(years_owned)
-                        partial_year = years_owned - full_years
-                        
-                        # Apply full years
-                        for _ in range(full_years):
-                            book_value = book_value * (1 - (depreciation_rate / 100))
-                        
-                        # Apply partial year
-                        if partial_year > 0:
-                            book_value = book_value * (1 - (depreciation_rate / 100 * partial_year))
-                        
-                        accumulated_depreciation = cost - book_value
-                        annual_depreciation = book_value * (depreciation_rate / 100)
+                    # Straight-line depreciation: (Cost - Salvage) / Useful Life
+                    if useful_life > 0:
+                        annual_depreciation = (cost - salvage_value) / useful_life
                     else:
-                        # Fallback to simple calculation
-                        annual_depreciation = cost / useful_life if useful_life > 0 else 0
-                        accumulated_depreciation = min(annual_depreciation * years_owned, cost)
-                        book_value = cost - accumulated_depreciation
+                        annual_depreciation = 0
+                    
+                    # Accumulated depreciation = Annual × Years Owned (capped at cost)
+                    accumulated_depreciation = min(annual_depreciation * years_owned, cost - salvage_value)
+                    
+                    # Book Value = Cost - Accumulated Depreciation
+                    book_value = cost - accumulated_depreciation
+                
+                # Use professional em dash instead of 'N/A'
+                asset_name = (asset.get('name') or asset.get('assetName', '')).strip()
+                display_name = asset_name if asset_name else '—'
                 
                 depreciation_data.append([
-                    asset.get('assetName', 'N/A'),  # Was 'name'
+                    display_name,
                     f"₦{cost:,.2f}",
                     f"{useful_life} years",
                     f"₦{annual_depreciation:,.2f}",

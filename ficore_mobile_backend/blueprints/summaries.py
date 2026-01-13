@@ -48,7 +48,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Unknown'),
-                        'date': expense.get('date', expense.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                        'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                        'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                        'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                         'icon': 'expense',
                         'color': 'red'
                     }
@@ -80,7 +82,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
                         'amount': income.get('amount', 0),
                         'source': income.get('source', 'Unknown'),
-                        'date': income.get('dateReceived', income.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                        'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                        'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                        'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                         'icon': 'income',
                         'color': 'green'
                     }
@@ -150,7 +154,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
                             'amount': expense.get('amount', 0),
                             'category': expense.get('category', 'Unknown'),
-                            'date': expense.get('date', expense.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                            'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                            'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                            'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                             'icon': 'expense',
                             'color': 'red'
                         }
@@ -179,7 +185,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
                             'amount': income.get('amount', 0),
                             'source': income.get('source', 'Unknown'),
-                            'date': income.get('dateReceived', income.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                            'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                            'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                            'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                             'icon': 'income',
                             'color': 'green'
                         }

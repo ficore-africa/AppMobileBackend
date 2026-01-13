@@ -1145,24 +1145,26 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Get expense activities
             expenses = list(mongo.db.expenses.find({
                 'userId': ObjectId(user_id)
-            }).sort('date', -1).limit(10))
+            }).sort('createdAt', -1).limit(10))  # FIXED: Sort by createdAt instead of date
             
             for expense in expenses:
                 activities.append({
                     'action': 'Expense recorded',
-                    'timestamp': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                    'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                    'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                     'details': f'{expense["amount"]} NGN - {expense.get("description", expense.get("category", ""))}'
                 })
 
             # Get income activities
             incomes = list(mongo.db.incomes.find({
                 'userId': ObjectId(user_id)
-            }).sort('dateReceived', -1).limit(10))
+            }).sort('createdAt', -1).limit(10))  # FIXED: Sort by createdAt instead of dateReceived
             
             for income in incomes:
                 activities.append({
                     'action': 'Income recorded',
-                    'timestamp': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                    'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                    'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                     'details': f'{income["amount"]} NGN - {income.get("description", income.get("source", ""))}'
                 })
 
