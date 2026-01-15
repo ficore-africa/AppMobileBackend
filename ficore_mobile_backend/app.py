@@ -483,6 +483,25 @@ def email_health_check():
             'message': f'Email health check failed: {str(e)}',
             'status': 'error'
         }), 500
+
+# GCS health check endpoint  
+@app.route('/health/gcs', methods=['GET'])
+def gcs_health_check():
+    """Check if Google Cloud Storage is accessible"""
+    try:
+        from google.cloud import storage
+        
+        # Initialize client
+        client = storage.Client()
+        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+        
+        # Try to get bucket info
+        bucket = client.bucket(bucket_name)
+        if bucket.exists():
+            return jsonify({
+                'success': True,
+                'message': 'GCS bucket is accessible',
+                'bucket': bucket_name,
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             }), 200
         else:
