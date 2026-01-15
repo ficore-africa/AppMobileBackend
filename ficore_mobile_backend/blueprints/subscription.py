@@ -19,27 +19,27 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     
     # Subscription plans configuration
     SUBSCRIPTION_PLANS = {
-        # MONTHLY PLAN COMMENTED OUT - Only offering yearly subscription
-        # 'monthly': {
-        #     'name': 'Monthly Premium',
-        #     'price': 2500.0,  # ₦2,500 per month
-        #     'duration_days': 30,
-        #     'paystack_plan_code': 'PLN_monthly_premium',
-        #     'description': 'Unlimited operations for 30 days',
-        #     'features': [
-        #         'Unlimited Income/Expense entries',
-        #         'Unlimited PDF exports',
-        #         'All premium features',
-        #         'Priority support',
-        #         'No FC costs for any operations'
-        #     ]
-        # },
+        'monthly': {
+            'name': 'Monthly Premium',
+            'price': 1000.0,  # ₦1,000 per month
+            'duration_days': 30,
+            'paystack_plan_code': 'PLN_monthly_premium',
+            'description': 'Affordable monthly access to all premium features',
+            'features': [
+                'Unlimited Income/Expense entries',
+                'Full DIICE Business Suite access',
+                'Unlimited PDF exports & analytics',
+                'All premium features unlocked',
+                'Priority support',
+                'No FC costs for any operations'
+            ]
+        },
         'annually': {
             'name': 'Annual Premium',
-            'price': 10000.0,  # ₦10,000 per year - Simple, affordable yearly subscription
+            'price': 10000.0,  # ₦10,000 per year (Save ₦2,000 vs monthly)
             'duration_days': 365,
             'paystack_plan_code': 'PLN_annual_premium',
-            'description': 'One-time yearly payment - Full access for 365 days',
+            'description': 'Best value - Full access for 365 days',
             'features': [
                 'Unlimited Income/Expense entries',
                 'Full DIICE Business Suite access',
@@ -47,7 +47,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'All premium features unlocked',
                 'Priority support',
                 'No FC costs for any operations',
-                'Less than ₦1,000 per month'
+                'Save ₦2,000 compared to monthly',
+                'Less than ₦850 per month'
             ]
         }
     }
@@ -347,6 +348,27 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.subscriptions.insert_one(subscription_record)
             
+            # Record corporate revenue
+            corporate_revenue = {
+                '_id': ObjectId(),
+                'type': 'SUBSCRIPTION',
+                'category': 'MONTHLY' if plan_type == 'monthly' else 'ANNUAL',
+                'amount': plan['price'],
+                'userId': user_id,
+                'relatedTransaction': reference,
+                'description': f'{plan["name"]} subscription payment',
+                'status': 'RECORDED',
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'planType': plan_type,
+                    'planName': plan['name'],
+                    'durationDays': plan['duration_days'],
+                    'paystackTransactionId': transaction_data['id']
+                }
+            }
+            mongo.db.corporate_revenue.insert_one(corporate_revenue)
+            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} from subscription ({plan_type}) - User {user_id}')
+            
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(
                 {'_id': pending_sub['_id']},
@@ -461,6 +483,27 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             }
             
             mongo.db.subscriptions.insert_one(subscription_record)
+            
+            # Record corporate revenue
+            corporate_revenue = {
+                '_id': ObjectId(),
+                'type': 'SUBSCRIPTION',
+                'category': 'MONTHLY' if plan_type == 'monthly' else 'ANNUAL',
+                'amount': plan['price'],
+                'userId': current_user['_id'],
+                'relatedTransaction': reference,
+                'description': f'{plan["name"]} subscription payment',
+                'status': 'RECORDED',
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'planType': plan_type,
+                    'planName': plan['name'],
+                    'durationDays': plan['duration_days'],
+                    'paystackTransactionId': transaction_data['id']
+                }
+            }
+            mongo.db.corporate_revenue.insert_one(corporate_revenue)
+            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} from subscription ({plan_type}) - User {current_user["_id"]}')
             
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(

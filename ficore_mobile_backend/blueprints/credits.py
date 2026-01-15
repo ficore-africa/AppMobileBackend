@@ -474,6 +474,27 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.credit_transactions.insert_one(transaction)
             
+            # Record corporate revenue
+            corporate_revenue = {
+                '_id': ObjectId(),
+                'type': 'CREDITS_PURCHASE',
+                'category': 'FICORE_CREDITS',
+                'amount': pending_transaction['nairaAmount'],
+                'userId': current_user['_id'],
+                'relatedTransaction': reference,
+                'description': f'FiCore Credits purchase - {pending_transaction["creditAmount"]} FCs',
+                'status': 'RECORDED',
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'creditAmount': pending_transaction['creditAmount'],
+                    'nairaAmount': pending_transaction['nairaAmount'],
+                    'paystackTransactionId': payment_data.get('id'),
+                    'paymentChannel': payment_data.get('channel')
+                }
+            }
+            mongo.db.corporate_revenue.insert_one(corporate_revenue)
+            print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} from credits purchase ({pending_transaction["creditAmount"]} FCs) - User {current_user["_id"]}')
+            
             # Mark pending transaction as completed
             mongo.db.pending_credit_purchases.update_one(
                 {'_id': pending_transaction['_id']},
@@ -634,6 +655,27 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                     }
                     
                     mongo.db.credit_transactions.insert_one(transaction)
+                    
+                    # Record corporate revenue
+                    corporate_revenue = {
+                        '_id': ObjectId(),
+                        'type': 'CREDITS_PURCHASE',
+                        'category': 'FICORE_CREDITS',
+                        'amount': pending_transaction['nairaAmount'],
+                        'userId': user_id,
+                        'relatedTransaction': reference,
+                        'description': f'FiCore Credits purchase - {credit_amount} FCs (webhook)',
+                        'status': 'RECORDED',
+                        'createdAt': datetime.utcnow(),
+                        'metadata': {
+                            'creditAmount': credit_amount,
+                            'nairaAmount': pending_transaction['nairaAmount'],
+                            'paystackTransactionId': data.get('id'),
+                            'webhookEvent': event_type
+                        }
+                    }
+                    mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                    print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} from credits purchase ({credit_amount} FCs) via webhook - User {user_id}')
                     
                     # Mark pending transaction as completed
                     mongo.db.pending_credit_purchases.update_one(
