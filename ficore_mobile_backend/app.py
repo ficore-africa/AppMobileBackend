@@ -484,41 +484,6 @@ def email_health_check():
             'status': 'error'
         }), 500
 
-# GCS health check endpoint  
-@app.route('/health/gcs', methods=['GET'])
-def gcs_health_check():
-    """Check if Google Cloud Storage is accessible"""
-    try:
-        from google.cloud import storage
-        
-        # Initialize client
-        client = storage.Client()
-        bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
-        
-        # Try to get bucket info
-        bucket = client.bucket(bucket_name)
-        if bucket.exists():
-            return jsonify({
-                'success': True,
-                'message': 'GCS bucket is accessible',
-                'bucket': bucket_name,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'GCS bucket not found',
-                'bucket': bucket_name,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            }), 404
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'GCS error: {str(e)}',
-            'bucket': os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments'),
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
-        }), 500
 
 # Profile picture upload endpoint
 @app.route('/upload/profile-picture', methods=['POST'])
@@ -1054,6 +1019,7 @@ if __name__ == '__main__':
         # Don't fail app startup if scheduler fails
     
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
