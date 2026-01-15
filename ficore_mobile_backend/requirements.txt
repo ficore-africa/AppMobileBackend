@@ -10,4 +10,5 @@ gunicorn==21.2.0
 requests==2.32.3
 reportlab==4.0.7
 google-cloud-storage==2.14.0
+firebase-admin==6.4.0
 APScheduler==3.10.4

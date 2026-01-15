@@ -3,16 +3,20 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import os
 import uuid
-from google.cloud import storage
 from werkzeug.utils import secure_filename
+from config.credentials import credential_manager
 
 def init_attachments_blueprint(mongo, token_required, serialize_doc):
     """Initialize the attachments blueprint with database and auth decorator"""
     attachments_bp = Blueprint('attachments', __name__, url_prefix='/attachments')
     
-    # Initialize Google Cloud Storage client
-    storage_client = storage.Client()
+    # Get GCS client from credential manager
+    storage_client = credential_manager.get_gcs_client()
     bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
+    
+    # Check if GCS is available
+    if not credential_manager.is_gcs_available():
+        raise RuntimeError("Google Cloud Storage is not properly configured")
     
     # Allowed file extensions and max size
     ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'}

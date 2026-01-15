@@ -7,6 +7,7 @@ from bson import ObjectId
 from functools import wraps
 from utils.analytics_tracker import create_tracker
 from utils.profile_picture_helper import generate_profile_picture_url
+from utils.email_service import get_email_service
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -362,7 +363,7 @@ def forgot_password():
                 'message': 'If the email exists, a reset link has been sent'
             })
         
-        # Generate reset token (for future email service)
+        # Generate reset token
         reset_token = str(uuid.uuid4())
         auth_bp.mongo.db.users.update_one(
             {'_id': user['_id']},
@@ -372,8 +373,15 @@ def forgot_password():
             }}
         )
         
-        # TODO: Send email when email service is ready
-        # send_password_reset_email(user['email'], reset_token)
+        # ₦0 COMMUNICATION STRATEGY: Send email with reset link
+        email_service = get_email_service()
+        user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+        
+        email_result = email_service.send_password_reset(
+            to_email=user['email'],
+            reset_token=reset_token,
+            user_name=user_name if user_name else None
+        )
         
         # DUAL-TRACK APPROACH: Also create admin request for password reset
         # This allows admins to help users while email service is not ready
@@ -381,7 +389,7 @@ def forgot_password():
             '_id': ObjectId(),
             'userId': user['_id'],
             'userEmail': user.get('email', ''),
-            'userName': user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}".strip() or 'Unknown User'),
+            'userName': user_name or 'Unknown User',
             'status': 'pending',  # pending, completed, expired
             'requestedAt': datetime.utcnow(),
             'processedAt': None,
@@ -389,7 +397,9 @@ def forgot_password():
             'processedByName': None,
             'temporaryPassword': None,
             'resetToken': reset_token,  # Keep for future email service
-            'expiresAt': datetime.utcnow() + timedelta(hours=24)  # Admin has 24 hours to process
+            'expiresAt': datetime.utcnow() + timedelta(hours=24),  # Admin has 24 hours to process
+            'emailSent': email_result.get('success', False),
+            'emailMethod': email_result.get('method', 'disabled')
         }
         
         auth_bp.mongo.db.password_reset_requests.insert_one(password_reset_request)
@@ -401,7 +411,9 @@ def forgot_password():
                 event_type='password_reset_requested',
                 event_details={
                     'request_source': 'mobile_app',
-                    'has_email_service': False  # Update when email service is ready
+                    'email_sent': email_result.get('success', False),
+                    'email_method': email_result.get('method', 'disabled'),
+                    'has_admin_fallback': True
                 }
             )
         except Exception as e:

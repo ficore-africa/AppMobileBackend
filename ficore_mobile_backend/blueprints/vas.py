@@ -14,6 +14,8 @@ import requests
 import hmac
 import hashlib
 import uuid
+from utils.email_service import get_email_service
+from blueprints.notifications import create_user_notification
 
 def init_vas_blueprint(mongo, token_required, serialize_doc):
     vas_bp = Blueprint('vas', __name__, url_prefix='/api/vas')
@@ -55,8 +57,9 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
         """
         user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
         
-        # Check 1: Consecutive days
-        login_streak = user.get('loginStreak', 0)
+        # Check 1: Consecutive days - Use rewards.streak as authoritative source
+        rewards_record = mongo.db.rewards.find_one({'user_id': ObjectId(user_id)})
+        login_streak = rewards_record.get('streak', 0) if rewards_record else 0
         if login_streak >= 3:
             return True, "3-day streak"
         
@@ -81,7 +84,9 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
         """Get user's progress towards eligibility"""
         user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
         
-        login_streak = user.get('loginStreak', 0)
+        # Use rewards.streak as authoritative source for login streak
+        rewards_record = mongo.db.rewards.find_one({'user_id': ObjectId(user_id)})
+        login_streak = rewards_record.get('streak', 0) if rewards_record else 0
         total_txns = mongo.db.income.count_documents({'userId': ObjectId(user_id)})
         total_txns += mongo.db.expenses.count_documents({'userId': ObjectId(user_id)})
         quick_pay_count = mongo.db.vas_transactions.count_documents({
@@ -994,6 +999,56 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                             mongo.db.corporate_revenue.insert_one(corporate_revenue)
                             print(f'💰 Corporate revenue recorded: ₦{deposit_fee} from user {user_id}')
                         
+                        # ₦0 COMMUNICATION STRATEGY: Send transaction receipt via email
+                        try:
+                            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                            if user and user.get('email'):
+                                email_service = get_email_service()
+                                user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+                                
+                                transaction_data = {
+                                    'type': 'Liquid Wallet Funding',
+                                    'amount': f"{amount_to_credit:,.2f}",
+                                    'fee': f"{deposit_fee:,.2f}" if deposit_fee > 0 else "₦0 (Premium)",
+                                    'total_paid': f"{amount_paid:,.2f}",
+                                    'date': datetime.utcnow().strftime('%B %d, %Y at %I:%M %p'),
+                                    'reference': transaction_reference,
+                                    'new_balance': f"{new_balance:,.2f}",
+                                    'is_premium': is_premium
+                                }
+                                
+                                email_result = email_service.send_transaction_receipt(
+                                    to_email=user['email'],
+                                    transaction_data=transaction_data
+                                )
+                                
+                                print(f'📧 Transaction receipt email: {email_result.get("success", False)} to {user["email"]}')
+                                
+                                # PERSISTENT NOTIFICATIONS: Create server notification
+                                notification_id = create_user_notification(
+                                    mongo=mongo,
+                                    user_id=user_id,
+                                    category='wallet',
+                                    title='💰 Wallet Funded Successfully',
+                                    body=f'₦{amount_to_credit:,.2f} added to your Liquid Wallet. New balance: ₦{new_balance:,.2f}',
+                                    related_id=transaction_reference,
+                                    metadata={
+                                        'transaction_type': 'WALLET_FUNDING',
+                                        'amount_credited': amount_to_credit,
+                                        'deposit_fee': deposit_fee,
+                                        'new_balance': new_balance,
+                                        'is_premium': is_premium
+                                    },
+                                    priority='normal'
+                                )
+                                
+                                if notification_id:
+                                    print(f'🔔 Persistent notification created: {notification_id}')
+                                
+                        except Exception as e:
+                            print(f'📧 Failed to send transaction receipt email: {str(e)}')
+                            # Don't fail the transaction if email fails
+                        
                         print(f'✅ Quick Pay Wallet Funding: User {user_id}, Paid: ₦{amount_paid}, Fee: ₦{deposit_fee}, Credited: ₦{amount_to_credit}, New Balance: ₦{new_balance}')
                         return jsonify({'success': True, 'message': 'Wallet funded successfully'}), 200
                     
@@ -1081,6 +1136,34 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                         }
                         mongo.db.corporate_revenue.insert_one(corporate_revenue)
                         print(f'💰 Corporate revenue recorded: ₦{deposit_fee} from user {user_id}')
+                    
+                    # ₦0 COMMUNICATION STRATEGY: Send transaction receipt via email
+                    try:
+                        user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                        if user and user.get('email'):
+                            email_service = get_email_service()
+                            user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+                            
+                            transaction_data = {
+                                'type': 'Liquid Wallet Funding',
+                                'amount': f"{amount_to_credit:,.2f}",
+                                'fee': f"{deposit_fee:,.2f}" if deposit_fee > 0 else "₦0 (Premium)",
+                                'total_paid': f"{amount_paid:,.2f}",
+                                'date': datetime.utcnow().strftime('%B %d, %Y at %I:%M %p'),
+                                'reference': transaction_reference,
+                                'new_balance': f"{new_balance:,.2f}",
+                                'is_premium': is_premium
+                            }
+                            
+                            email_result = email_service.send_transaction_receipt(
+                                to_email=user['email'],
+                                transaction_data=transaction_data
+                            )
+                            
+                            print(f'📧 Transaction receipt email: {email_result.get("success", False)} to {user["email"]}')
+                    except Exception as e:
+                        print(f'📧 Failed to send transaction receipt email: {str(e)}')
+                        # Don't fail the transaction if email fails
                     
                     print(f'✅ Reserved Account Wallet Funding: User {user_id}, Paid: ₦{amount_paid}, Fee: ₦{deposit_fee}, Credited: ₦{amount_to_credit}, New Balance: ₦{new_balance}')
                     return jsonify({'success': True, 'message': 'Wallet funded successfully'}), 200
