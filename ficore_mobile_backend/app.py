@@ -37,6 +37,7 @@ from blueprints.admin_subscription_management import init_admin_subscription_man
 from blueprints.atomic_entries import init_atomic_entries_blueprint
 from blueprints.reports import init_reports_blueprint
 from blueprints.voice_reporting import init_voice_reporting_blueprint
+from blueprints.vas import init_vas_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -148,6 +149,17 @@ with app.app_context():
     
     # Initialize admin user
     initialize_admin_user()
+    
+    # Run immutability migration (idempotent - safe to run multiple times)
+    from utils.immutability_migrator import run_immutability_migration
+    migration_result = run_immutability_migration(mongo.db)
+    
+    if migration_result['success'] and not migration_result['already_run']:
+        print("✅ Immutability migration completed successfully")
+    elif migration_result['already_run']:
+        print("✅ Immutability migration already completed (skipped)")
+    else:
+        print(f"⚠️  Immutability migration failed: {migration_result.get('error', 'Unknown error')}")
 
 # Helper function to convert ObjectId to string
 def serialize_doc(doc):
@@ -281,6 +293,9 @@ atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, 
 reports_blueprint = init_reports_blueprint(mongo, token_required)
 voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
 
+# Initialize VAS blueprint for wallet and utility services
+vas_blueprint = init_vas_blueprint(mongo, token_required, serialize_doc)
+
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
 rate_limit_monitoring_blueprint = init_rate_limit_monitoring_blueprint(mongo, token_required, admin_required, rate_limit_tracker)
@@ -321,6 +336,10 @@ app.register_blueprint(reports_blueprint)
 print("✓ Reports blueprint registered at /api/reports")
 app.register_blueprint(voice_reporting_blueprint)
 print("✓ Voice reporting blueprint registered at /api/voice")
+
+# Register VAS blueprint for wallet and utility services
+app.register_blueprint(vas_blueprint)
+print("✓ VAS blueprint registered at /api/vas")
 
 # Root redirect to admin login
 @app.route('/')

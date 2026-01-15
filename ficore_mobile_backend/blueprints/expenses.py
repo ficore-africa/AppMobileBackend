@@ -20,6 +20,9 @@ def get_expenses():
     @expenses_bp.token_required
     def _get_expenses(current_user):
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             limit = min(int(request.args.get('limit', 50)), 100)
             offset = max(int(request.args.get('offset', 0)), 0)
             category = request.args.get('category')
@@ -28,7 +31,8 @@ def get_expenses():
             sort_by = request.args.get('sort_by', 'date')
             sort_order = request.args.get('sort_order', 'desc')
            
-            query = {'userId': current_user['_id']}
+            query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
+            
             if category:
                 query['category'] = category
             if start_date or end_date:
@@ -254,18 +258,39 @@ def create_expense():
 def update_expense(expense_id):
     @expenses_bp.token_required
     def _update_expense(current_user):
+        """
+        IMMUTABLE UPDATE: Supersede + create new version
+        
+        Instead of overwriting the record, we:
+        1. Mark the original as 'superseded'
+        2. Create a new version with updated data
+        3. Link them together for version history
+        """
         try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
             data = request.get_json()
-            expense = expenses_bp.mongo.db.expenses.find_one({
-                '_id': ObjectId(expense_id),
-                'userId': current_user['_id']
-            })
-            if not expense:
-                return jsonify({'success': False, 'message': 'Expense not found'}), 404
-           
+            if not data:
+                return jsonify({'success': False, 'message': 'No data provided'}), 400
+            
+            # Validation
+            errors = {}
+            if 'amount' in data and (not data.get('amount') or data.get('amount', 0) <= 0):
+                errors['amount'] = ['Valid amount is required']
+            if 'description' in data and not data.get('description'):
+                errors['description'] = ['Description is required']
+            if 'category' in data and not data.get('category'):
+                errors['category'] = ['Category is required']
+            
+            if errors:
+                return jsonify({'success': False, 'message': 'Validation failed', 'errors': errors}), 400
+            
+            # Prepare update data
             update_data = {}
+            
             updatable_fields = ['amount', 'description', 'category', 'date', 'budgetId', 'tags', 'paymentMethod', 'location', 'notes']
-           
+            
             for field in updatable_fields:
                 if field in data:
                     if field == 'amount':
@@ -282,26 +307,46 @@ def update_expense(expense_id):
                         update_data[field] = normalize_payment_method(data[field])
                     else:
                         update_data[field] = data[field]
-           
-            update_data['updatedAt'] = datetime.utcnow()
-           
-            expenses_bp.mongo.db.expenses.update_one(
-                {'_id': ObjectId(expense_id)},
-                {'$set': update_data}
+            
+            # Also update title field for consistency
+            if 'description' in update_data:
+                update_data['title'] = update_data['description']
+            
+            # Use the immutable ledger helper
+            from utils.immutable_ledger_helper import supersede_transaction
+            
+            result = supersede_transaction(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id,
+                user_id=current_user['_id'],
+                update_data=update_data
             )
-           
-            updated_expense = expenses_bp.mongo.db.expenses.find_one({'_id': ObjectId(expense_id)})
-            expense_data = expenses_bp.serialize_doc(updated_expense.copy())
+            
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
+            
+            # Serialize the new version for response
+            new_version = result['new_version']
+            expense_data = expenses_bp.serialize_doc(new_version.copy())
             expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
             expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
-           
+            
             return jsonify({
                 'success': True,
                 'data': expense_data,
-                'message': 'Expense updated successfully'
+                'message': result['message'],
+                'metadata': {
+                    'originalId': result['original_id'],
+                    'newId': result['new_id'],
+                    'version': new_version.get('version', 1)
+                }
             })
-           
+            
         except Exception as e:
             return jsonify({
                 'success': False,
@@ -315,19 +360,44 @@ def update_expense(expense_id):
 def delete_expense(expense_id):
     @expenses_bp.token_required
     def _delete_expense(current_user):
+        """
+        IMMUTABLE DELETE: Soft delete + reversal entry
+        
+        Instead of deleting the record, we:
+        1. Mark it as 'voided' and 'isDeleted=True'
+        2. Create a reversal entry with negative amount
+        3. Link them together for audit trail
+        """
         try:
-            result = expenses_bp.mongo.db.expenses.delete_one({
-                '_id': ObjectId(expense_id),
-                'userId': current_user['_id']
-            })
-            if result.deleted_count == 0:
-                return jsonify({'success': False, 'message': 'Expense not found'}), 404
-           
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Use the immutable ledger helper
+            from utils.immutable_ledger_helper import soft_delete_transaction
+            
+            result = soft_delete_transaction(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id,
+                user_id=current_user['_id']
+            )
+            
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
+            
             return jsonify({
                 'success': True,
-                'message': 'Expense deleted successfully'
+                'message': result['message'],
+                'data': {
+                    'originalId': result['original_id'],
+                    'reversalId': result['reversal_id'],
+                    'auditTrail': 'Transaction marked as deleted, reversal entry created'
+                }
             })
-           
+            
         except Exception as e:
             return jsonify({
                 'success': False,
@@ -342,6 +412,9 @@ def get_expense_summary():
     @expenses_bp.token_required
     def _get_expense_summary(current_user):
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
             now = datetime.utcnow()
@@ -351,7 +424,8 @@ def get_expense_summary():
             filter_start = datetime.fromisoformat(start_date.replace('Z', '')) if start_date else start_of_month
             filter_end = datetime.fromisoformat(end_date.replace('Z', '')) if end_date else now
            
-            all_expenses = list(expenses_bp.mongo.db.expenses.find({'userId': current_user['_id']}))
+            base_query = get_active_transactions_query(current_user['_id'])
+            all_expenses = list(expenses_bp.mongo.db.expenses.find(base_query))
             
             # CRITICAL DEBUG: Log expense summary calculation
             print(f"DEBUG EXPENSE SUMMARY - User: {current_user['_id']}")
@@ -410,9 +484,14 @@ def get_expense_categories():
     @expenses_bp.token_required
     def _get_expense_categories(current_user):
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
-            query = {'userId': current_user['_id']}
+            
+            query = get_active_transactions_query(current_user['_id'])
+            
             if start_date or end_date:
                 date_query = {}
                 if start_date:
@@ -465,17 +544,20 @@ def get_expense_statistics():
     @expenses_bp.token_required
     def _fetch_statistics(current_user):
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
             now = datetime.utcnow()
             filter_start = datetime.fromisoformat(start_date.replace('Z', '')) if start_date else now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             filter_end = datetime.fromisoformat(end_date.replace('Z', '')) if end_date else now
            
+            base_query = get_active_transactions_query(current_user['_id'])
+            base_query['date'] = {'$gte': filter_start, '$lte': filter_end}
+            
             pipeline = [
-                {'$match': {
-                    'userId': current_user['_id'],
-                    'date': {'$gte': filter_start, '$lte': filter_end}
-                }},
+                {'$match': base_query},
                 {'$group': {
                     '_id': None,
                     'totalAmount': {'$sum': '$amount'},
@@ -522,7 +604,11 @@ def get_expense_insights():
     @expenses_bp.token_required
     def _get_expense_insights(current_user):
         try:
-            expenses = list(expenses_bp.mongo.db.expenses.find({'userId': current_user['_id']}))
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            base_query = get_active_transactions_query(current_user['_id'])
+            expenses = list(expenses_bp.mongo.db.expenses.find(base_query))
             
             # CRITICAL DEBUG: Log insights calculation
             print(f"DEBUG EXPENSE INSIGHTS - User: {current_user['_id']}")

@@ -3814,5 +3814,458 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to retrieve activation funnel',
                 'errors': {'general': [str(e)]}
             }), 500
+
+    # ===== CERTIFIED LEDGER EXPORT ENDPOINT =====
+
+    @admin_bp.route('/ledger/certified/<user_id>', methods=['GET'])
+    @token_required
+    @admin_required
+    def generate_certified_ledger(current_user, user_id):
+        """
+        Generate Certified Ledger PDF for a specific user
+        
+        This is the "M-Pesa Standard" - a tamper-evident financial ledger that shows:
+        - Complete transaction lifecycle (original → superseded → voided)
+        - Reversal entries for deleted transactions
+        - Version history for edited transactions
+        - Verification QR code for authenticity
+        
+        Query Parameters:
+        - start_date: Start date (YYYY-MM-DD) - optional
+        - end_date: End date (YYYY-MM-DD) - optional
+        - include_all_statuses: Include voided/superseded transactions (default: true)
+        """
+        try:
+            from utils.pdf_generator import PDFGenerator
+            from flask import make_response
+            
+            # Get user
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get date range parameters
+            start_date_str = request.args.get('start_date')
+            end_date_str = request.args.get('end_date')
+            include_all_statuses = request.args.get('include_all_statuses', 'true').lower() == 'true'
+            
+            start_date = None
+            end_date = None
+            
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            
+            # Build query for transactions
+            query = {'userId': ObjectId(user_id)}
+            
+            if start_date or end_date:
+                date_filter = {}
+                if start_date:
+                    date_filter['$gte'] = start_date
+                if end_date:
+                    date_filter['$lte'] = end_date
+                # Note: We'll filter by date in the query
+            
+            # For certified ledger, we want ALL transactions (including voided/superseded)
+            # to show the complete audit trail
+            if not include_all_statuses:
+                # Only active transactions
+                query['status'] = 'active'
+                query['isDeleted'] = False
+            
+            # Get all incomes
+            income_query = query.copy()
+            if start_date or end_date:
+                date_filter = {}
+                if start_date:
+                    date_filter['$gte'] = start_date
+                if end_date:
+                    date_filter['$lte'] = end_date
+                income_query['dateReceived'] = date_filter
+            
+            incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', 1))
+            
+            # Get all expenses
+            expense_query = query.copy()
+            if start_date or end_date:
+                date_filter = {}
+                if start_date:
+                    date_filter['$gte'] = start_date
+                if end_date:
+                    date_filter['$lte'] = end_date
+                expense_query['date'] = date_filter
+            
+            expenses = list(mongo.db.expenses.find(expense_query).sort('date', 1))
+            
+            # Serialize transactions
+            transactions = {
+                'incomes': [serialize_doc(income) for income in incomes],
+                'expenses': [serialize_doc(expense) for expense in expenses]
+            }
+            
+            # Generate unique audit ID
+            audit_id = f"FCL-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{user_id[:8]}"
+            
+            # Generate PDF
+            pdf_generator = PDFGenerator()
+            user_data = serialize_doc(user)
+            pdf_buffer = pdf_generator.generate_certified_ledger(
+                user_data=user_data,
+                transactions=transactions,
+                start_date=start_date,
+                end_date=end_date,
+                audit_id=audit_id
+            )
+            
+            # Create response
+            response = make_response(pdf_buffer.read())
+            response.headers['Content-Type'] = 'application/pdf'
+            
+            # Generate filename
+            user_name = user.get('displayName', 'User').replace(' ', '_')
+            date_suffix = ''
+            if start_date and end_date:
+                date_suffix = f"_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}"
+            elif start_date:
+                date_suffix = f"_from_{start_date.strftime('%Y%m%d')}"
+            elif end_date:
+                date_suffix = f"_until_{end_date.strftime('%Y%m%d')}"
+            
+            filename = f"FiCore_Certified_Ledger_{user_name}{date_suffix}_{audit_id}.pdf"
+            response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+            
+            # Log the export for audit trail
+            mongo.db.admin_audit_logs.insert_one({
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email'),
+                'action': 'certified_ledger_export',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email'),
+                'auditId': audit_id,
+                'dateRange': {
+                    'start': start_date.isoformat() if start_date else None,
+                    'end': end_date.isoformat() if end_date else None
+                },
+                'includeAllStatuses': include_all_statuses,
+                'transactionCount': len(incomes) + len(expenses),
+                'timestamp': datetime.utcnow()
+            })
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error generating certified ledger: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to generate certified ledger',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/ledger/search-users', methods=['GET'])
+    @token_required
+    @admin_required
+    def search_users_for_ledger(current_user):
+        """
+        Search users for certified ledger export
+        
+        Query Parameters:
+        - q: Search query (email, name, phone)
+        - limit: Number of results (default: 20, max: 100)
+        """
+        try:
+            search_query = request.args.get('q', '').strip()
+            limit = min(int(request.args.get('limit', 20)), 100)
+            
+            if not search_query:
+                return jsonify({
+                    'success': False,
+                    'message': 'Search query is required'
+                }), 400
+            
+            # Build search query
+            query = {
+                '$or': [
+                    {'email': {'$regex': search_query, '$options': 'i'}},
+                    {'displayName': {'$regex': search_query, '$options': 'i'}},
+                    {'firstName': {'$regex': search_query, '$options': 'i'}},
+                    {'lastName': {'$regex': search_query, '$options': 'i'}},
+                    {'phone': {'$regex': search_query, '$options': 'i'}}
+                ]
+            }
+            
+            # Get users
+            users = list(mongo.db.users.find(query).limit(limit))
+            
+            # Format results
+            results = []
+            for user in users:
+                # Get transaction counts
+                income_count = mongo.db.incomes.count_documents({'userId': user['_id']})
+                expense_count = mongo.db.expenses.count_documents({'userId': user['_id']})
+                
+                results.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'displayName': user.get('displayName', ''),
+                    'phone': user.get('phone', ''),
+                    'businessName': user.get('businessName', ''),
+                    'transactionCount': income_count + expense_count,
+                    'incomeCount': income_count,
+                    'expenseCount': expense_count,
+                    'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'users': results,
+                    'count': len(results),
+                    'query': search_query
+                },
+                'message': 'Users found successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error searching users: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to search users',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    # ===== TREASURY COMMAND CENTER ENDPOINT =====
+    
+    @admin_bp.route('/treasury/metrics', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_treasury_metrics(current_user):
+        """
+        Treasury Command Center - Real-time liquidity monitoring
+        
+        Returns:
+        - Total Liabilities (sum of all user VAS wallet balances)
+        - Peyflex Balance (current inventory/liquidity)
+        - Liquidity Coverage Ratio (Peyflex / Liabilities * 100)
+        - Today's User Deposits (amountPaid)
+        - Today's Realized Revenue (corporate_revenue)
+        - Alert Status (RED if ratio < 20%, YELLOW if < 50%, GREEN otherwise)
+        """
+        try:
+            from datetime import datetime, timedelta
+            import requests
+            import os
+            
+            # 1. Calculate Total Liabilities (User Wallet Balances)
+            liabilities_pipeline = [
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalLiabilities': {'$sum': '$balance'}
+                    }
+                }
+            ]
+            
+            liabilities_result = list(mongo.db.vas_wallets.aggregate(liabilities_pipeline))
+            total_liabilities = liabilities_result[0]['totalLiabilities'] if liabilities_result else 0.0
+            
+            # 2. Get Peyflex Balance (Current Liquidity)
+            # Note: Peyflex doesn't have a direct balance endpoint
+            # We'll calculate it as: Total Deposits - Total Spent - Total Revenue
+            
+            # Get total deposits (what users paid)
+            deposits_pipeline = [
+                {
+                    '$match': {
+                        'type': 'WALLET_FUNDING',
+                        'status': 'SUCCESS'
+                    }
+                },
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalDeposits': {'$sum': '$amountPaid'}
+                    }
+                }
+            ]
+            
+            deposits_result = list(mongo.db.vas_transactions.aggregate(deposits_pipeline))
+            total_deposits = deposits_result[0]['totalDeposits'] if deposits_result else 0.0
+            
+            # Get total spent on VAS (airtime/data purchases)
+            vas_spent_pipeline = [
+                {
+                    '$match': {
+                        'type': {'$in': ['AIRTIME', 'DATA']},
+                        'status': 'SUCCESS'
+                    }
+                },
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalSpent': {'$sum': '$amount'}
+                    }
+                }
+            ]
+            
+            vas_spent_result = list(mongo.db.vas_transactions.aggregate(vas_spent_pipeline))
+            total_vas_spent = vas_spent_result[0]['totalSpent'] if vas_spent_result else 0.0
+            
+            # Get total corporate revenue
+            revenue_pipeline = [
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalRevenue': {'$sum': '$amount'}
+                    }
+                }
+            ]
+            
+            revenue_result = list(mongo.db.corporate_revenue.aggregate(revenue_pipeline))
+            total_revenue = revenue_result[0]['totalRevenue'] if revenue_result else 0.0
+            
+            # Estimated Peyflex Balance = Deposits - User Wallets - Revenue - VAS Spent
+            # This represents money that should be in Peyflex for purchasing
+            estimated_peyflex_balance = total_deposits - total_liabilities - total_revenue - total_vas_spent
+            
+            # 3. Calculate Liquidity Coverage Ratio
+            liquidity_ratio = (estimated_peyflex_balance / total_liabilities * 100) if total_liabilities > 0 else 100.0
+            
+            # 4. Determine Alert Status
+            if liquidity_ratio < 20:
+                alert_status = 'RED'
+                alert_message = '🚨 CRITICAL: Refill Peyflex immediately!'
+            elif liquidity_ratio < 50:
+                alert_status = 'YELLOW'
+                alert_message = '⚠️ WARNING: Low liquidity, plan refill soon'
+            else:
+                alert_status = 'GREEN'
+                alert_message = '✅ Healthy liquidity levels'
+            
+            # 5. Get Today's Metrics
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            
+            # Today's deposits
+            today_deposits_pipeline = [
+                {
+                    '$match': {
+                        'type': 'WALLET_FUNDING',
+                        'status': 'SUCCESS',
+                        'createdAt': {
+                            '$gte': today_start,
+                            '$lt': today_end
+                        }
+                    }
+                },
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalDeposits': {'$sum': '$amountPaid'},
+                        'count': {'$sum': 1}
+                    }
+                }
+            ]
+            
+            today_deposits_result = list(mongo.db.vas_transactions.aggregate(today_deposits_pipeline))
+            today_deposits = today_deposits_result[0]['totalDeposits'] if today_deposits_result else 0.0
+            today_deposits_count = today_deposits_result[0]['count'] if today_deposits_result else 0
+            
+            # Today's revenue
+            today_revenue_pipeline = [
+                {
+                    '$match': {
+                        'createdAt': {
+                            '$gte': today_start,
+                            '$lt': today_end
+                        }
+                    }
+                },
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalRevenue': {'$sum': '$amount'},
+                        'count': {'$sum': 1}
+                    }
+                }
+            ]
+            
+            today_revenue_result = list(mongo.db.corporate_revenue.aggregate(today_revenue_pipeline))
+            today_revenue = today_revenue_result[0]['totalRevenue'] if today_revenue_result else 0.0
+            today_revenue_count = today_revenue_result[0]['count'] if today_revenue_result else 0
+            
+            # 6. Get This Month's Metrics
+            month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            # This month's revenue
+            month_revenue_pipeline = [
+                {
+                    '$match': {
+                        'createdAt': {
+                            '$gte': month_start
+                        }
+                    }
+                },
+                {
+                    '$group': {
+                        '_id': None,
+                        'totalRevenue': {'$sum': '$amount'}
+                    }
+                }
+            ]
+            
+            month_revenue_result = list(mongo.db.corporate_revenue.aggregate(month_revenue_pipeline))
+            month_revenue = month_revenue_result[0]['totalRevenue'] if month_revenue_result else 0.0
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'liabilities': {
+                        'total': round(total_liabilities, 2),
+                        'description': 'Total user wallet balances (what we owe users)'
+                    },
+                    'liquidity': {
+                        'estimatedPeyflexBalance': round(estimated_peyflex_balance, 2),
+                        'description': 'Estimated funds available for VAS purchases'
+                    },
+                    'ratio': {
+                        'liquidityCoverageRatio': round(liquidity_ratio, 2),
+                        'alertStatus': alert_status,
+                        'alertMessage': alert_message
+                    },
+                    'today': {
+                        'deposits': round(today_deposits, 2),
+                        'depositsCount': today_deposits_count,
+                        'revenue': round(today_revenue, 2),
+                        'revenueCount': today_revenue_count
+                    },
+                    'thisMonth': {
+                        'revenue': round(month_revenue, 2)
+                    },
+                    'totals': {
+                        'allTimeDeposits': round(total_deposits, 2),
+                        'allTimeRevenue': round(total_revenue, 2),
+                        'allTimeVasSpent': round(total_vas_spent, 2)
+                    }
+                },
+                'message': 'Treasury metrics retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting treasury metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get treasury metrics',
+                'errors': {'general': [str(e)]}
+            }), 500
          
     return admin_bp

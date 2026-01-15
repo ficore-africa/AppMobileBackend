@@ -32,12 +32,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             sort_by = request.args.get('sort_by', 'dateReceived')
             sort_order = request.args.get('sort_order', 'desc')
             
-            # Build query - ONLY actual received incomes
+            # Build query - ONLY active, non-deleted incomes
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             now = datetime.utcnow()
-            query = {
-                'userId': current_user['_id'],
-                'dateReceived': {'$lte': now}  # Only past and present incomes
-            }
+            query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
+            query['dateReceived'] = {'$lte': now}  # Only past and present incomes
             
             if category:
                 query['category'] = category
@@ -306,13 +306,19 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 }), 500
             
             # CRITICAL: Calculate totals using MongoDB aggregation - NO LIMITS
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             try:
                 print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
                 print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
+                # Base query for active transactions only
+                base_query = get_active_transactions_query(current_user['_id'])
+                
                 total_this_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
-                        'userId': current_user['_id'],
+                        **base_query,
                         'dateReceived': {'$gte': start_of_month, '$lte': now}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
@@ -323,7 +329,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 
                 total_last_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
-                        'userId': current_user['_id'],
+                        **base_query,
                         'dateReceived': {'$gte': start_of_last_month, '$lt': start_of_month}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
@@ -333,7 +339,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 
                 year_to_date_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
-                        'userId': current_user['_id'],
+                        **base_query,
                         'dateReceived': {'$gte': start_of_year, '$lte': now}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
@@ -342,7 +348,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ytd_record_count = year_to_date_result[0]['count'] if year_to_date_result else 0
                 print(f"DEBUG: CALCULATED year_to_date = {year_to_date}, ytd_record_count = {ytd_record_count}")
                 
-                all_time_record_count = mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                all_time_record_count = mongo.db.incomes.count_documents(base_query)
                 print(f"DEBUG: CALCULATED all_time_record_count = {all_time_record_count}")
                 
                 final_record_count = ytd_record_count if ytd_record_count > 0 else all_time_record_count
@@ -351,7 +357,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 twelve_months_ago = now - timedelta(days=365)
                 monthly_totals = list(mongo.db.incomes.aggregate([
                     {'$match': {
-                        'userId': current_user['_id'],
+                        **base_query,
                         'dateReceived': {'$gte': twelve_months_ago, '$lte': now}
                     }},
                     {'$group': {
@@ -361,9 +367,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ]))
                 average_monthly = sum(item['total'] for item in monthly_totals) / max(len(monthly_totals), 1) if monthly_totals else 0
                 
-                recent_incomes = list(mongo.db.incomes.find({
-                    'userId': current_user['_id']
-                }).sort('dateReceived', -1).limit(5))
+                recent_incomes = list(mongo.db.incomes.find(base_query).sort('dateReceived', -1).limit(5))
                 
                 recent_incomes_data = []
                 for income in recent_incomes:
@@ -373,7 +377,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     recent_incomes_data.append(income_data)
                 
                 top_sources_data = list(mongo.db.incomes.aggregate([
-                    {'$match': {'userId': current_user['_id']}},
+                    {'$match': base_query},
                     {'$group': {'_id': '$source', 'total': {'$sum': '$amount'}}},
                     {'$sort': {'total': -1}},
                     {'$limit': 5}
@@ -438,25 +442,28 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'errors': {'general': ['Database not available']}
                 }), 500
             
+            # IMMUTABLE: Only count active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             now = datetime.utcnow()
             start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
             start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             
+            base_query = get_active_transactions_query(current_user['_id'])
+            
             print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
             
             ytd_count = mongo.db.incomes.count_documents({
-                'userId': current_user['_id'],
+                **base_query,
                 'dateReceived': {'$gte': start_of_year, '$lte': now}
             })
             print(f"DEBUG: YTD count = {ytd_count}")
             
-            all_time_count = mongo.db.incomes.count_documents({
-                'userId': current_user['_id']
-            })
+            all_time_count = mongo.db.incomes.count_documents(base_query)
             print(f"DEBUG: All-time count = {all_time_count}")
             
             this_month_count = mongo.db.incomes.count_documents({
-                'userId': current_user['_id'],
+                **base_query,
                 'dateReceived': {'$gte': start_of_month, '$lte': now}
             })
             print(f"DEBUG: This month count = {this_month_count}")
@@ -483,11 +490,14 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_income_insights(current_user):
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             now = datetime.utcnow()
-            incomes = list(mongo.db.incomes.find({
-                'userId': current_user['_id'],
-                'dateReceived': {'$lte': now}
-            }))
+            base_query = get_active_transactions_query(current_user['_id'])
+            base_query['dateReceived'] = {'$lte': now}
+            
+            incomes = list(mongo.db.incomes.find(base_query))
             
             print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
             print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
@@ -622,6 +632,14 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @income_bp.route('/<income_id>', methods=['PUT'])
     @token_required
     def update_income(current_user, income_id):
+        """
+        IMMUTABLE UPDATE: Supersede + create new version
+        
+        Instead of overwriting the record, we:
+        1. Mark the original as 'superseded'
+        2. Create a new version with updated data
+        3. Link them together for version history
+        """
         try:
             if not ObjectId.is_valid(income_id):
                 return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
@@ -630,13 +648,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if not data:
                 return jsonify({'success': False, 'message': 'No data provided'}), 400
 
-            existing_income = mongo.db.incomes.find_one({
-                '_id': ObjectId(income_id),
-                'userId': current_user['_id']
-            })
-            if not existing_income:
-                return jsonify({'success': False, 'message': 'Income record not found'}), 404
-
+            # Validation
             errors = {}
             if 'amount' in data and (not data.get('amount') or data.get('amount', 0) <= 0):
                 errors['amount'] = ['Valid amount is required']
@@ -650,7 +662,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if errors:
                 return jsonify({'success': False, 'message': 'Validation failed', 'errors': errors}), 400
 
-            update_data = {'updatedAt': datetime.utcnow()}
+            # Prepare update data
+            update_data = {}
             
             if 'amount' in data:
                 raw_amount = float(data['amount'])
@@ -669,25 +682,32 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if 'metadata' in data:
                 update_data['metadata'] = data['metadata']
 
+            # Force one-time frequency (simplified income tracking)
             update_data['isRecurring'] = False
             update_data['nextRecurringDate'] = None
             if 'frequency' in data:
                 update_data['frequency'] = 'one_time'
 
-            result = mongo.db.incomes.update_one(
-                {'_id': ObjectId(income_id), 'userId': current_user['_id']},
-                {'$set': update_data}
+            # Use the immutable ledger helper
+            from utils.immutable_ledger_helper import supersede_transaction
+            
+            result = supersede_transaction(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id,
+                user_id=current_user['_id'],
+                update_data=update_data
             )
 
-            if result.matched_count == 0:
-                return jsonify({'success': False, 'message': 'Income record not found'}), 404
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
 
-            updated_income = mongo.db.incomes.find_one({
-                '_id': ObjectId(income_id),
-                'userId': current_user['_id']
-            })
-
-            income_data = serialize_doc(updated_income.copy())
+            # Serialize the new version for response
+            new_version = result['new_version']
+            income_data = serialize_doc(new_version.copy())
             income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
@@ -697,7 +717,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             return jsonify({
                 'success': True,
                 'data': income_data,
-                'message': 'Income record updated successfully'
+                'message': result['message'],
+                'metadata': {
+                    'originalId': result['original_id'],
+                    'newId': result['new_id'],
+                    'version': new_version.get('version', 1)
+                }
             })
 
         except Exception as e:
@@ -716,24 +741,42 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @income_bp.route('/<income_id>', methods=['DELETE'])
     @token_required
     def delete_income(current_user, income_id):
+        """
+        IMMUTABLE DELETE: Soft delete + reversal entry
+        
+        Instead of deleting the record, we:
+        1. Mark it as 'voided' and 'isDeleted=True'
+        2. Create a reversal entry with negative amount
+        3. Link them together for audit trail
+        """
         try:
             if not ObjectId.is_valid(income_id):
                 return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
-
-            result = mongo.db.incomes.delete_one({
-                '_id': ObjectId(income_id),
-                'userId': current_user['_id']
-            })
-
-            if result.deleted_count == 0:
+            
+            # Use the immutable ledger helper
+            from utils.immutable_ledger_helper import soft_delete_transaction
+            
+            result = soft_delete_transaction(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id,
+                user_id=current_user['_id']
+            )
+            
+            if not result['success']:
                 return jsonify({
                     'success': False,
-                    'message': 'Income record not found or you do not have permission to delete it'
+                    'message': result['message']
                 }), 404
-
+            
             return jsonify({
                 'success': True,
-                'message': 'Income record deleted successfully'
+                'message': result['message'],
+                'data': {
+                    'originalId': result['original_id'],
+                    'reversalId': result['reversal_id'],
+                    'auditTrail': 'Transaction marked as deleted, reversal entry created'
+                }
             })
             
         except Exception as e:
@@ -748,6 +791,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     def get_income_statistics(current_user):
         """Get comprehensive income statistics in format expected by frontend"""
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             start_date_str = request.args.get('start_date')
             end_date_str = request.args.get('end_date')
             
@@ -762,10 +808,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             else:
                 end_date = now
             
-            query = {
-                'userId': current_user['_id'],
-                'dateReceived': {'$gte': start_date, '$lte': end_date}
-            }
+            query = get_active_transactions_query(current_user['_id'])
+            query['dateReceived'] = {'$gte': start_date, '$lte': end_date}
+            
             incomes = list(mongo.db.incomes.find(query))
             
             if not incomes:
@@ -845,14 +890,15 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_income_sources(current_user):
         try:
+            # IMMUTABLE: Only include active, non-deleted records
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
             
             now = datetime.utcnow()
-            query = {
-                'userId': current_user['_id'],
-                'dateReceived': {'$lte': now}
-            }
+            query = get_active_transactions_query(current_user['_id'])
+            query['dateReceived'] = {'$lte': now}
             
             if start_date or end_date:
                 date_query = query.get('dateReceived', {})

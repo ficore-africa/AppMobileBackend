@@ -1,7 +1,40 @@
 // ===== UTILITY FUNCTIONS FOR ADMIN WEB APP =====
 
-// Configuration
-const API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
+// Configuration - Smart Backend Selection
+const BACKENDS = {
+    production: 'https://mobilebackend.ficoreafrica.com',
+    dev: 'https://ficore-dev.onrender.com'
+};
+
+// Get or set backend preference
+function getBackendURL() {
+    // Check if user has a saved preference
+    let savedBackend = localStorage.getItem('admin_backend');
+    
+    // If no preference, default to production
+    if (!savedBackend) {
+        savedBackend = 'production';
+        localStorage.setItem('admin_backend', savedBackend);
+    }
+    
+    return BACKENDS[savedBackend] || BACKENDS.production;
+}
+
+// Switch backend
+function switchBackend(backend) {
+    if (BACKENDS[backend]) {
+        localStorage.setItem('admin_backend', backend);
+        showSuccess(`Switched to ${backend.toUpperCase()} backend. Refreshing...`);
+        setTimeout(() => location.reload(), 1000);
+    }
+}
+
+// Get current backend name
+function getCurrentBackend() {
+    return localStorage.getItem('admin_backend') || 'production';
+}
+
+const API_BASE_URL = getBackendURL();
 
 // Get admin token from localStorage
 function getAdminToken() {
@@ -228,6 +261,55 @@ function formatDate(dateString) {
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+// Fetch with authentication
+async function fetchWithAuth(url, options = {}) {
+    const token = getAdminToken();
+    
+    if (!token) {
+        window.location.href = 'admin_login.html';
+        throw new Error('No authentication token');
+    }
+    
+    // Prepend API_BASE_URL if not already present
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+    
+    // Merge headers
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    
+    const response = await fetch(fullUrl, {
+        ...options,
+        headers
+    });
+    
+    // Handle 401 Unauthorized
+    if (response.status === 401) {
+        logout();
+        throw new Error('Unauthorized');
+    }
+    
+    return response;
+}
+
+// Load admin info
+async function loadAdminInfo() {
+    try {
+        const adminUser = localStorage.getItem('admin_user');
+        if (adminUser) {
+            const user = JSON.parse(adminUser);
+            const adminNameElement = document.getElementById('adminName');
+            if (adminNameElement) {
+                adminNameElement.textContent = user.email || 'Admin';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading admin info:', error);
+    }
 }
 
 // Check authentication
