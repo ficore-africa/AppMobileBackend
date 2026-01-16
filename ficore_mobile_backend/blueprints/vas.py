@@ -1754,99 +1754,101 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                     print(f'⚠️ No pending transaction found for Monnify ref: {transaction_reference}')
                     return jsonify({'success': False, 'message': 'Transaction not found'}), 404
                 
-                user_id = str(pending_txn['userId'])
-                txn_type = pending_txn.get('type')
-                
-                print(f'✅ Found pending transaction: {pending_txn["transactionReference"]} (Type: {txn_type})')
-                
-                # Handle KYC_VERIFICATION payments
-                if txn_type == 'KYC_VERIFICATION':
-                    # Verify the payment amount is correct (₦70)
-                    if amount_paid < 70.0:
-                        print(f'⚠️ KYC verification payment insufficient: ₦{amount_paid} < ₦70')
-                        return jsonify({'success': False, 'message': 'Insufficient payment amount'}), 400
+                # Process the pending transaction
+                if pending_txn:
+                    user_id = str(pending_txn['userId'])
+                    txn_type = pending_txn.get('type')
                     
-                    # Update transaction status
-                    mongo.db.vas_transactions.update_one(
-                        {'_id': pending_txn['_id']},
-                        {'$set': {
-                            'status': 'SUCCESS',
-                            'amountPaid': amount_paid,
-                            'reference': transaction_reference,
-                            'provider': 'monnify',
-                            'metadata': transaction_data,
-                            'completedAt': datetime.utcnow()
-                        }}
-                    )
+                    print(f'✅ Found pending transaction: {pending_txn["transactionReference"]} (Type: {txn_type})')
                     
-                    # Record corporate revenue (₦70 KYC fee)
-                    corporate_revenue = {
-                        '_id': ObjectId(),
-                        'type': 'SERVICE_FEE',
-                        'category': 'KYC_VERIFICATION',
-                        'amount': 70.0,
-                        'userId': ObjectId(user_id),
-                        'relatedTransaction': transaction_reference,
-                        'description': f'KYC verification fee from user {user_id}',
-                        'status': 'RECORDED',
-                        'createdAt': datetime.utcnow(),
-                        'metadata': {
-                            'amountPaid': amount_paid,
-                            'verificationFee': 70.0
-                        }
-                    }
-                    mongo.db.corporate_revenue.insert_one(corporate_revenue)
-                    print(f'💰 KYC verification revenue recorded: ₦70 from user {user_id}')
-                    
-                    # Send confirmation email
-                    try:
-                        user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-                        if user and user.get('email'):
-                            email_service = get_email_service()
-                            user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
-                            
-                            transaction_data_email = {
-                                'type': 'KYC Verification Payment',
-                                'amount': '70.00',
-                                'fee': '0.00',
-                                'total_paid': f"{amount_paid:,.2f}",
-                                'date': datetime.utcnow().strftime('%B %d, %Y at %I:%M %p'),
+                    # Handle KYC_VERIFICATION payments
+                    if txn_type == 'KYC_VERIFICATION':
+                        # Verify the payment amount is correct (₦70)
+                        if amount_paid < 70.0:
+                            print(f'⚠️ KYC verification payment insufficient: ₦{amount_paid} < ₦70')
+                            return jsonify({'success': False, 'message': 'Insufficient payment amount'}), 400
+                        
+                        # Update transaction status
+                        mongo.db.vas_transactions.update_one(
+                            {'_id': pending_txn['_id']},
+                            {'$set': {
+                                'status': 'SUCCESS',
+                                'amountPaid': amount_paid,
                                 'reference': transaction_reference,
-                                'new_balance': 'N/A',
-                                'is_premium': False
+                                'provider': 'monnify',
+                                'metadata': transaction_data,
+                                'completedAt': datetime.utcnow()
+                            }}
+                        )
+                        
+                        # Record corporate revenue (₦70 KYC fee)
+                        corporate_revenue = {
+                            '_id': ObjectId(),
+                            'type': 'SERVICE_FEE',
+                            'category': 'KYC_VERIFICATION',
+                            'amount': 70.0,
+                            'userId': ObjectId(user_id),
+                            'relatedTransaction': transaction_reference,
+                            'description': f'KYC verification fee from user {user_id}',
+                            'status': 'RECORDED',
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'amountPaid': amount_paid,
+                                'verificationFee': 70.0
                             }
-                            
-                            email_result = email_service.send_transaction_receipt(
-                                to_email=user['email'],
-                                transaction_data=transaction_data_email
-                            )
-                            
-                            print(f'📧 KYC verification receipt email: {email_result.get("success", False)} to {user["email"]}')
-                            
-                            # Create notification
-                            notification_id = create_user_notification(
-                                mongo=mongo,
-                                user_id=user_id,
-                                category='account',
-                                title='✅ KYC Verification Payment Received',
-                                body='Your ₦70 verification payment has been confirmed. You can now create your dedicated account.',
-                                related_id=transaction_reference,
-                                metadata={
-                                    'transaction_type': 'KYC_VERIFICATION',
-                                    'amount_paid': amount_paid,
-                                    'verification_fee': 70.0
-                                },
-                                priority='high'
-                            )
-                            
-                            if notification_id:
-                                print(f'🔔 KYC verification notification created: {notification_id}')
-                    except Exception as email_error:
-                        print(f'⚠️ KYC verification email failed: {email_error}')
-                        # Don't fail the transaction if email fails
-                    
-                    print(f'✅ KYC Verification Payment: User {user_id}, Paid: ₦{amount_paid}, Fee: ₦70')
-                    return jsonify({'success': True, 'message': 'KYC verification payment processed successfully'}), 200
+                        }
+                        mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                        print(f'💰 KYC verification revenue recorded: ₦70 from user {user_id}')
+                        
+                        # Send confirmation email
+                        try:
+                            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                            if user and user.get('email'):
+                                email_service = get_email_service()
+                                user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+                                
+                                transaction_data_email = {
+                                    'type': 'KYC Verification Payment',
+                                    'amount': '70.00',
+                                    'fee': '0.00',
+                                    'total_paid': f"{amount_paid:,.2f}",
+                                    'date': datetime.utcnow().strftime('%B %d, %Y at %I:%M %p'),
+                                    'reference': transaction_reference,
+                                    'new_balance': 'N/A',
+                                    'is_premium': False
+                                }
+                                
+                                email_result = email_service.send_transaction_receipt(
+                                    to_email=user['email'],
+                                    transaction_data=transaction_data_email
+                                )
+                                
+                                print(f'📧 KYC verification receipt email: {email_result.get("success", False)} to {user["email"]}')
+                                
+                                # Create notification
+                                notification_id = create_user_notification(
+                                    mongo=mongo,
+                                    user_id=user_id,
+                                    category='account',
+                                    title='✅ KYC Verification Payment Received',
+                                    body='Your ₦70 verification payment has been confirmed. You can now create your dedicated account.',
+                                    related_id=transaction_reference,
+                                    metadata={
+                                        'transaction_type': 'KYC_VERIFICATION',
+                                        'amount_paid': amount_paid,
+                                        'verification_fee': 70.0
+                                    },
+                                    priority='high'
+                                )
+                                
+                                if notification_id:
+                                    print(f'🔔 KYC verification notification created: {notification_id}')
+                        except Exception as email_error:
+                            print(f'⚠️ KYC verification email failed: {email_error}')
+                            # Don't fail the transaction if email fails
+                        
+                        print(f'✅ KYC Verification Payment: User {user_id}, Paid: ₦{amount_paid}, Fee: ₦70')
+                        return jsonify({'success': True, 'message': 'KYC verification payment processed successfully'}), 200
                     
                     # Handle WALLET_FUNDING
                     elif txn_type == 'WALLET_FUNDING':
@@ -1972,117 +1974,117 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                     else:
                         print(f'⚠️ Unknown transaction type: {txn_type}')
                         return jsonify({'success': False, 'message': 'Unknown transaction type'}), 400
+            
+            # Handle Reserved Account transactions (existing logic)
+            elif account_reference and account_reference.startswith('FICORE_'):
+                user_id = account_reference.replace('FICORE_', '')
                 
-                # Handle Reserved Account transactions (existing logic)
-                elif account_reference and account_reference.startswith('FICORE_'):
-                    user_id = account_reference.replace('FICORE_', '')
-                    
-                    # Check for duplicate webhook (idempotency)
-                    existing_txn = mongo.db.vas_transactions.find_one({
-                        'reference': transaction_reference,
-                        'type': 'WALLET_FUNDING'
-                    })
-                    
-                    if existing_txn:
-                        print(f'⚠️ Duplicate webhook ignored: {transaction_reference}')
-                        return jsonify({'success': True, 'message': 'Already processed'}), 200
-                    
-                    wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
-                    if not wallet:
-                        print(f'❌ Wallet not found for user: {user_id}')
-                        return jsonify({'success': False, 'message': 'Wallet not found'}), 404
-                    
-                    # Check if user is premium (no deposit fee)
-                    user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-                    is_premium = user.get('subscriptionStatus') == 'active' if user else False
-                    
-                    # Apply deposit fee (₦30 for non-premium users)
-                    deposit_fee = 0.0 if is_premium else VAS_TRANSACTION_FEE
-                    amount_to_credit = amount_paid - deposit_fee
-                    
-                    # Ensure we don't credit negative amounts
-                    if amount_to_credit <= 0:
-                        print(f'⚠️ Amount too small after fee: ₦{amount_paid} - ₦{deposit_fee} = ₦{amount_to_credit}')
-                        return jsonify({'success': False, 'message': 'Amount too small to process'}), 400
-                    
-                    new_balance = wallet.get('balance', 0.0) + amount_to_credit
-                    
-                    mongo.db.vas_wallets.update_one(
-                        {'userId': ObjectId(user_id)},
-                        {'$set': {'balance': new_balance, 'updatedAt': datetime.utcnow()}}
-                    )
-                    
-                    transaction = {
+                # Check for duplicate webhook (idempotency)
+                existing_txn = mongo.db.vas_transactions.find_one({
+                    'reference': transaction_reference,
+                    'type': 'WALLET_FUNDING'
+                })
+                
+                if existing_txn:
+                    print(f'⚠️ Duplicate webhook ignored: {transaction_reference}')
+                    return jsonify({'success': True, 'message': 'Already processed'}), 200
+                
+                wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+                if not wallet:
+                    print(f'❌ Wallet not found for user: {user_id}')
+                    return jsonify({'success': False, 'message': 'Wallet not found'}), 404
+                
+                # Check if user is premium (no deposit fee)
+                user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                is_premium = user.get('subscriptionStatus') == 'active' if user else False
+                
+                # Apply deposit fee (₦30 for non-premium users)
+                deposit_fee = 0.0 if is_premium else VAS_TRANSACTION_FEE
+                amount_to_credit = amount_paid - deposit_fee
+                
+                # Ensure we don't credit negative amounts
+                if amount_to_credit <= 0:
+                    print(f'⚠️ Amount too small after fee: ₦{amount_paid} - ₦{deposit_fee} = ₦{amount_to_credit}')
+                    return jsonify({'success': False, 'message': 'Amount too small to process'}), 400
+                
+                new_balance = wallet.get('balance', 0.0) + amount_to_credit
+                
+                mongo.db.vas_wallets.update_one(
+                    {'userId': ObjectId(user_id)},
+                    {'$set': {'balance': new_balance, 'updatedAt': datetime.utcnow()}}
+                )
+                
+                transaction = {
+                    '_id': ObjectId(),
+                    'userId': ObjectId(user_id),
+                    'type': 'WALLET_FUNDING',
+                    'amount': amount_to_credit,
+                    'amountPaid': amount_paid,
+                    'depositFee': deposit_fee,
+                    'reference': transaction_reference,
+                    'status': 'SUCCESS',
+                    'provider': 'monnify',
+                    'metadata': transaction_data,
+                    'createdAt': datetime.utcnow()
+                }
+                
+                mongo.db.vas_transactions.insert_one(transaction)
+                
+                # Record corporate revenue (₦30 fee)
+                if deposit_fee > 0:
+                    corporate_revenue = {
                         '_id': ObjectId(),
+                        'type': 'SERVICE_FEE',
+                        'category': 'DEPOSIT_FEE',
+                        'amount': deposit_fee,
                         'userId': ObjectId(user_id),
-                        'type': 'WALLET_FUNDING',
-                        'amount': amount_to_credit,
-                        'amountPaid': amount_paid,
-                        'depositFee': deposit_fee,
-                        'reference': transaction_reference,
-                        'status': 'SUCCESS',
-                        'provider': 'monnify',
-                        'metadata': transaction_data,
-                        'createdAt': datetime.utcnow()
-                    }
-                    
-                    mongo.db.vas_transactions.insert_one(transaction)
-                    
-                    # Record corporate revenue (₦30 fee)
-                    if deposit_fee > 0:
-                        corporate_revenue = {
-                            '_id': ObjectId(),
-                            'type': 'SERVICE_FEE',
-                            'category': 'DEPOSIT_FEE',
-                            'amount': deposit_fee,
-                            'userId': ObjectId(user_id),
-                            'relatedTransaction': transaction_reference,
-                            'description': f'Deposit fee from user {user_id}',
-                            'status': 'RECORDED',
-                            'createdAt': datetime.utcnow(),
-                            'metadata': {
-                                'amountPaid': amount_paid,
-                                'amountCredited': amount_to_credit,
-                                'isPremium': is_premium
-                            }
+                        'relatedTransaction': transaction_reference,
+                        'description': f'Deposit fee from user {user_id}',
+                        'status': 'RECORDED',
+                        'createdAt': datetime.utcnow(),
+                        'metadata': {
+                            'amountPaid': amount_paid,
+                            'amountCredited': amount_to_credit,
+                            'isPremium': is_premium
                         }
-                        mongo.db.corporate_revenue.insert_one(corporate_revenue)
-                        print(f'💰 Corporate revenue recorded: ₦{deposit_fee} from user {user_id}')
-                    
-                    # ₦0 COMMUNICATION STRATEGY: Send transaction receipt via email
-                    try:
-                        user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-                        if user and user.get('email'):
-                            email_service = get_email_service()
-                            user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
-                            
-                            transaction_data = {
-                                'type': 'Liquid Wallet Funding',
-                                'amount': f"{amount_to_credit:,.2f}",
-                                'fee': f"{deposit_fee:,.2f}" if deposit_fee > 0 else "₦0 (Premium)",
-                                'total_paid': f"{amount_paid:,.2f}",
-                                'date': datetime.utcnow().strftime('%B %d, %Y at %I:%M %p'),
-                                'reference': transaction_reference,
-                                'new_balance': f"{new_balance:,.2f}",
-                                'is_premium': is_premium
-                            }
-                            
-                            email_result = email_service.send_transaction_receipt(
-                                to_email=user['email'],
-                                transaction_data=transaction_data
-                            )
-                            
-                            print(f'📧 Transaction receipt email: {email_result.get("success", False)} to {user["email"]}')
-                    except Exception as e:
-                        print(f'📧 Failed to send transaction receipt email: {str(e)}')
-                        # Don't fail the transaction if email fails
-                    
-                    print(f'✅ Reserved Account Wallet Funding: User {user_id}, Paid: ₦{amount_paid}, Fee: ₦{deposit_fee}, Credited: ₦{amount_to_credit}, New Balance: ₦{new_balance}')
-                    return jsonify({'success': True, 'message': 'Wallet funded successfully'}), 200
+                    }
+                    mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                    print(f'💰 Corporate revenue recorded: ₦{deposit_fee} from user {user_id}')
                 
-                else:
-                    print(f'⚠️ Invalid transaction reference format: {transaction_reference}')
-                    return jsonify({'success': False, 'message': 'Invalid transaction reference'}), 400
+                # ₦0 COMMUNICATION STRATEGY: Send transaction receipt via email
+                try:
+                    user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                    if user and user.get('email'):
+                        email_service = get_email_service()
+                        user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+                        
+                        transaction_data = {
+                            'type': 'Liquid Wallet Funding',
+                            'amount': f"{amount_to_credit:,.2f}",
+                            'fee': f"{deposit_fee:,.2f}" if deposit_fee > 0 else "₦0 (Premium)",
+                            'total_paid': f"{amount_paid:,.2f}",
+                            'date': datetime.utcnow().strftime('%B %d, %Y at %I:%M %p'),
+                            'reference': transaction_reference,
+                            'new_balance': f"{new_balance:,.2f}",
+                            'is_premium': is_premium
+                        }
+                        
+                        email_result = email_service.send_transaction_receipt(
+                            to_email=user['email'],
+                            transaction_data=transaction_data
+                        )
+                        
+                        print(f'📧 Transaction receipt email: {email_result.get("success", False)} to {user["email"]}')
+                except Exception as e:
+                    print(f'📧 Failed to send transaction receipt email: {str(e)}')
+                    # Don't fail the transaction if email fails
+                
+                print(f'✅ Reserved Account Wallet Funding: User {user_id}, Paid: ₦{amount_paid}, Fee: ₦{deposit_fee}, Credited: ₦{amount_to_credit}, New Balance: ₦{new_balance}')
+                return jsonify({'success': True, 'message': 'Wallet funded successfully'}), 200
+            
+            else:
+                print(f'⚠️ Invalid transaction reference format: {transaction_reference}')
+                return jsonify({'success': False, 'message': 'Invalid transaction reference'}), 400
             
             return jsonify({'success': True, 'message': 'Event received'}), 200
             
