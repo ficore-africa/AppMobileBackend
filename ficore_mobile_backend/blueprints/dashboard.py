@@ -188,7 +188,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             # Recent income transactions
             recent_incomes = list(mongo.db.incomes.find({
                 'userId': user_id
-            }).sort('dateReceived', -1).limit(limit // 4))
+            }).sort('createdAt', -1).limit(limit // 4))  # FIXED: Sort by createdAt instead of dateReceived
             
             for income in recent_incomes:
                 activities.append({
@@ -196,7 +196,9 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                     'title': f'Income: {income["source"]}',
                     'description': income.get('description', ''),
                     'amount': income['amount'],
-                    'date': income['dateReceived'],
+                    'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                    'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                    'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                     'category': income.get('category', ''),
                     'id': str(income['_id'])
                 })
@@ -204,7 +206,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             # Recent expense transactions
             recent_expenses = list(mongo.db.expenses.find({
                 'userId': user_id
-            }).sort('date', -1).limit(limit // 4))
+            }).sort('createdAt', -1).limit(limit // 4))  # FIXED: Sort by createdAt instead of date
             
             for expense in recent_expenses:
                 activities.append({
@@ -212,7 +214,9 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                     'title': f'Expense: {expense.get("title", expense["description"])}',
                     'description': expense['description'],
                     'amount': expense['amount'],
-                    'date': expense['date'],
+                    'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                    'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                    'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                     'category': expense.get('category', ''),
                     'id': str(expense['_id'])
                 })

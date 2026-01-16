@@ -24,10 +24,20 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             
             activities = []
             
-            # Get recent expenses
+            # HYBRID QUERY: Get recent expenses with smart filtering
+            # Shows entries where EITHER:
+            # 1. date is past/present (prevents future inflation)
+            # 2. OR createdAt is within last minute (shows just-created entries immediately)
             try:
+                now = datetime.utcnow()
+                one_minute_ago = now - timedelta(minutes=1)
+                
                 recent_expenses = list(mongo.db.expenses.find({
-                    'userId': current_user['_id']
+                    'userId': current_user['_id'],
+                    '$or': [
+                        {'date': {'$lte': now}},  # Past & present entries
+                        {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                    ]
                 }).sort('createdAt', -1).limit(limit))
                 
                 for expense in recent_expenses:
@@ -38,7 +48,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Unknown'),
-                        'date': expense.get('date', expense.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                        'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                        'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                        'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                         'icon': 'expense',
                         'color': 'red'
                     }
@@ -46,12 +58,20 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             except Exception as e:
                 print(f"Error fetching expenses: {e}")
 
-            # FIXED: Get recent incomes - ONLY actual received incomes
+            # HYBRID QUERY: Get recent incomes with smart filtering
+            # Shows entries where EITHER:
+            # 1. dateReceived is past/present (prevents future inflation)
+            # 2. OR createdAt is within last minute (shows just-created entries immediately)
             try:
                 now = datetime.utcnow()
+                one_minute_ago = now - timedelta(minutes=1)
+                
                 recent_incomes = list(mongo.db.incomes.find({
                     'userId': current_user['_id'],
-                    'dateReceived': {'$lte': now}  # Only past and present incomes
+                    '$or': [
+                        {'dateReceived': {'$lte': now}},  # Past & present entries
+                        {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                    ]
                 }).sort('createdAt', -1).limit(limit))
                 
                 for income in recent_incomes:
@@ -62,7 +82,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
                         'amount': income.get('amount', 0),
                         'source': income.get('source', 'Unknown'),
-                        'date': income.get('dateReceived', income.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                        'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                        'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                        'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                         'icon': 'income',
                         'color': 'green'
                     }
@@ -107,10 +129,21 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             activities = []
             
             # Get activities based on type filter
+            # HYBRID QUERY: Applied to all_activities endpoint for consistency
+            now = datetime.utcnow()
+            one_minute_ago = now - timedelta(minutes=1)
+            
             if activity_type in ['all', 'expense']:
                 try:
+                    # HYBRID QUERY: Shows expenses where EITHER:
+                    # 1. date is past/present (prevents future inflation)
+                    # 2. OR createdAt is within last minute (shows just-created entries immediately)
                     expenses = list(mongo.db.expenses.find({
-                        'userId': current_user['_id']
+                        'userId': current_user['_id'],
+                        '$or': [
+                            {'date': {'$lte': now}},  # Past & present entries
+                            {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                        ]
                     }).sort('createdAt', -1))
                     
                     for expense in expenses:
@@ -121,7 +154,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
                             'amount': expense.get('amount', 0),
                             'category': expense.get('category', 'Unknown'),
-                            'date': expense.get('date', expense.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                            'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                            'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                            'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                             'icon': 'expense',
                             'color': 'red'
                         }
@@ -131,11 +166,15 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
 
             if activity_type in ['all', 'income']:
                 try:
-                    # FIXED: Only get actual received incomes, no projections
-                    now = datetime.utcnow()
+                    # HYBRID QUERY: Shows incomes where EITHER:
+                    # 1. dateReceived is past/present (prevents future inflation)
+                    # 2. OR createdAt is within last minute (shows just-created entries immediately)
                     incomes = list(mongo.db.incomes.find({
                         'userId': current_user['_id'],
-                        'dateReceived': {'$lte': now}  # Only past and present incomes
+                        '$or': [
+                            {'dateReceived': {'$lte': now}},  # Past & present entries
+                            {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                        ]
                     }).sort('createdAt', -1))
                     
                     for income in incomes:
@@ -146,7 +185,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
                             'amount': income.get('amount', 0),
                             'source': income.get('source', 'Unknown'),
-                            'date': income.get('dateReceived', income.get('createdAt', datetime.utcnow())).isoformat() + 'Z',
+                            'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
+                            'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
+                            'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                             'icon': 'income',
                             'color': 'green'
                         }

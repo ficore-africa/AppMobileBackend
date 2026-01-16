@@ -19,27 +19,27 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     
     # Subscription plans configuration
     SUBSCRIPTION_PLANS = {
-        # MONTHLY PLAN COMMENTED OUT - Only offering yearly subscription
-        # 'monthly': {
-        #     'name': 'Monthly Premium',
-        #     'price': 2500.0,  # ₦2,500 per month
-        #     'duration_days': 30,
-        #     'paystack_plan_code': 'PLN_monthly_premium',
-        #     'description': 'Unlimited operations for 30 days',
-        #     'features': [
-        #         'Unlimited Income/Expense entries',
-        #         'Unlimited PDF exports',
-        #         'All premium features',
-        #         'Priority support',
-        #         'No FC costs for any operations'
-        #     ]
-        # },
+        'monthly': {
+            'name': 'Monthly Premium',
+            'price': 1000.0,  # ₦1,000 per month
+            'duration_days': 30,
+            'paystack_plan_code': 'PLN_monthly_premium',
+            'description': 'Affordable monthly access to all premium features',
+            'features': [
+                'Unlimited Income/Expense entries',
+                'Full DIICE Business Suite access',
+                'Unlimited PDF exports & analytics',
+                'All premium features unlocked',
+                'Priority support',
+                'No FC costs for any operations'
+            ]
+        },
         'annually': {
             'name': 'Annual Premium',
-            'price': 10000.0,  # ₦10,000 per year - Simple, affordable yearly subscription
+            'price': 10000.0,  # ₦10,000 per year (Save ₦2,000 vs monthly)
             'duration_days': 365,
             'paystack_plan_code': 'PLN_annual_premium',
-            'description': 'One-time yearly payment - Full access for 365 days',
+            'description': 'Best value - Full access for 365 days',
             'features': [
                 'Unlimited Income/Expense entries',
                 'Full DIICE Business Suite access',
@@ -47,7 +47,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'All premium features unlocked',
                 'Priority support',
                 'No FC costs for any operations',
-                'Less than ₦1,000 per month'
+                'Save ₦2,000 compared to monthly',
+                'Less than ₦850 per month'
             ]
         }
     }
@@ -347,6 +348,27 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.subscriptions.insert_one(subscription_record)
             
+            # Record corporate revenue
+            corporate_revenue = {
+                '_id': ObjectId(),
+                'type': 'SUBSCRIPTION',
+                'category': 'MONTHLY' if plan_type == 'monthly' else 'ANNUAL',
+                'amount': plan['price'],
+                'userId': user_id,
+                'relatedTransaction': reference,
+                'description': f'{plan["name"]} subscription payment',
+                'status': 'RECORDED',
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'planType': plan_type,
+                    'planName': plan['name'],
+                    'durationDays': plan['duration_days'],
+                    'paystackTransactionId': transaction_data['id']
+                }
+            }
+            mongo.db.corporate_revenue.insert_one(corporate_revenue)
+            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} from subscription ({plan_type}) - User {user_id}')
+            
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(
                 {'_id': pending_sub['_id']},
@@ -462,6 +484,27 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.subscriptions.insert_one(subscription_record)
             
+            # Record corporate revenue
+            corporate_revenue = {
+                '_id': ObjectId(),
+                'type': 'SUBSCRIPTION',
+                'category': 'MONTHLY' if plan_type == 'monthly' else 'ANNUAL',
+                'amount': plan['price'],
+                'userId': current_user['_id'],
+                'relatedTransaction': reference,
+                'description': f'{plan["name"]} subscription payment',
+                'status': 'RECORDED',
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'planType': plan_type,
+                    'planName': plan['name'],
+                    'durationDays': plan['duration_days'],
+                    'paystackTransactionId': transaction_data['id']
+                }
+            }
+            mongo.db.corporate_revenue.insert_one(corporate_revenue)
+            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} from subscription ({plan_type}) - User {current_user["_id"]}')
+            
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(
                 {'_id': pending_sub['_id']},
@@ -541,8 +584,12 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 days_remaining = (end_date - datetime.utcnow()).days
                 status_data['days_remaining'] = max(0, days_remaining)
                 
-                if subscription_type in SUBSCRIPTION_PLANS:
-                    status_data['plan_details'] = SUBSCRIPTION_PLANS[subscription_type]
+                # ✅ FIX: Add plan ID to plan_details for proper frontend parsing
+                if subscription_type and subscription_type in SUBSCRIPTION_PLANS:
+                    status_data['plan_details'] = {
+                        'id': subscription_type,  # ✅ Add the plan ID
+                        **SUBSCRIPTION_PLANS[subscription_type]  # Include all plan fields
+                    }
             
             return jsonify({
                 'success': True,
@@ -593,17 +640,49 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 
                 print(f"[MANAGE_SUBSCRIPTION] Update result: matched={result.matched_count}, modified={result.modified_count}")
                 
-                # Verify the update
+                # ✅ FIX: Return complete subscription status after update
+                # This eliminates the need for a separate refresh call and prevents race conditions
                 updated_user = mongo.db.users.find_one({'_id': current_user['_id']})
-                actual_value = updated_user.get('subscriptionAutoRenew', False)
-                print(f"[MANAGE_SUBSCRIPTION] Verified auto_renew value in DB: {actual_value}")
+                
+                # Get validated subscription info
+                start_date = updated_user.get('subscriptionStartDate')
+                end_date = updated_user.get('subscriptionEndDate')
+                auto_renew = updated_user.get('subscriptionAutoRenew', False)
+                subscription_type = updated_user.get('subscriptionType')
+                
+                print(f"[MANAGE_SUBSCRIPTION] Verified auto_renew value in DB: {auto_renew}")
+                
+                # Calculate days remaining
+                days_remaining = None
+                if is_subscribed and end_date:
+                    days_remaining = (end_date - datetime.utcnow()).days
+                    days_remaining = max(0, days_remaining)
+                
+                # Build complete status response
+                # ✅ FIX: Add plan ID to plan_details for proper frontend parsing
+                plan_details = None
+                if subscription_type and subscription_type in SUBSCRIPTION_PLANS:
+                    plan_details = {
+                        'id': subscription_type,  # ✅ Add the plan ID
+                        **SUBSCRIPTION_PLANS[subscription_type]  # Include all plan fields
+                    }
+                
+                status_data = {
+                    'is_subscribed': is_subscribed,
+                    'subscription_type': subscription_type,
+                    'tier': monthly_stats.get('tier', 'Free'),
+                    'is_admin': monthly_stats.get('is_admin', False),
+                    'start_date': start_date.isoformat() + 'Z' if start_date else None,
+                    'end_date': end_date.isoformat() + 'Z' if end_date else None,
+                    'auto_renew': auto_renew,
+                    'days_remaining': days_remaining,
+                    'plan_details': plan_details
+                }
                 
                 return jsonify({
                     'success': True,
                     'message': 'Subscription settings updated successfully',
-                    'data': {
-                        'auto_renew': actual_value
-                    }
+                    'data': status_data
                 })
             else:
                 return jsonify({

@@ -227,10 +227,25 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                 'cap_message': 'You\'ve reached your max FC wallet limit! Upgrade to Premium or spend FCs to earn more.' if current_fc_balance >= MAX_EARNED_FC_CAP else None
             }
             
+            # Get FC breakdown (earned vs purchased)
+            try:
+                from utils.fc_expiration_manager import FCExpirationManager
+                fc_manager = FCExpirationManager(mongo)
+                fc_breakdown = fc_manager.get_user_fc_breakdown(current_user['_id'])
+                earned_fc = fc_breakdown.get('earned_fc', 0.0)
+                purchased_fc = fc_breakdown.get('purchased_fc', 0.0)
+            except Exception as e:
+                print(f"Error getting FC breakdown: {str(e)}")
+                # Fallback: assume all FC is earned if we can't get breakdown
+                earned_fc = current_fc_balance
+                purchased_fc = 0.0
+            
             return jsonify({
                 'success': True,
                 'data': {
                     'fc_balance': current_fc_balance,
+                    'earned_fc': earned_fc,  # NEW: Earned FC breakdown
+                    'purchased_fc': purchased_fc,  # NEW: Purchased FC breakdown
                     'fc_cap_info': fc_cap_info,  # NEW: FC cap information
                     'streak': current_streak,
                     'entry_streak': entry_streak,

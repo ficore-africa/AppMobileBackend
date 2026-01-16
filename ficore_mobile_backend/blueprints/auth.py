@@ -7,6 +7,7 @@ from bson import ObjectId
 from functools import wraps
 from utils.analytics_tracker import create_tracker
 from utils.profile_picture_helper import generate_profile_picture_url
+from utils.email_service import get_email_service
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -210,7 +211,7 @@ def signup():
             # Prefer explicit displayName if provided by client (business name), else generate from names
             'displayName': display_name.strip() if display_name and isinstance(display_name, str) and display_name.strip() else f"{first_name} {last_name}",
             'role': 'personal',
-            'ficoreCreditBalance': 5.0,  # REDUCED: Starting balance reduced from 10 FC to 5 FC (Recommendation #1)
+            'ficoreCreditBalance': 10.0,  # Starting balance: 10 FC (Welcome bonus)
             'financialGoals': financial_goals,
             'createdAt': datetime.utcnow(),
             'lastLogin': None,
@@ -219,6 +220,26 @@ def signup():
         
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
+        
+        # Create signup bonus transaction record for transparency
+        signup_transaction = {
+            '_id': ObjectId(),
+            'userId': result.inserted_id,
+            'type': 'credit',
+            'amount': 10.0,
+            'description': 'Welcome bonus - Thank you for joining Ficore!',
+            'operation': 'signup_bonus',
+            'balanceBefore': 0.0,
+            'balanceAfter': 10.0,
+            'status': 'completed',
+            'createdAt': datetime.utcnow(),
+            'metadata': {
+                'isWelcomeBonus': True,
+                'isEarned': False,  # This is a gift, not earned
+                'source': 'registration'
+            }
+        }
+        auth_bp.mongo.db.credit_transactions.insert_one(signup_transaction)
         
         # Track registration event
         try:
@@ -336,7 +357,7 @@ def forgot_password():
         
         user = auth_bp.mongo.db.users.find_one({'email': email})
         if not user:
-            # Don't reveal if email exists or not
+            # Don't reveal if email exists or not - but still return success
             return jsonify({
                 'success': True,
                 'message': 'If the email exists, a reset link has been sent'
@@ -352,6 +373,53 @@ def forgot_password():
             }}
         )
         
+        # ₦0 COMMUNICATION STRATEGY: Send email with reset link
+        email_service = get_email_service()
+        user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+        
+        email_result = email_service.send_password_reset(
+            to_email=user['email'],
+            reset_token=reset_token,
+            user_name=user_name if user_name else None
+        )
+        
+        # DUAL-TRACK APPROACH: Also create admin request for password reset
+        # This allows admins to help users while email service is not ready
+        password_reset_request = {
+            '_id': ObjectId(),
+            'userId': user['_id'],
+            'userEmail': user.get('email', ''),
+            'userName': user_name or 'Unknown User',
+            'status': 'pending',  # pending, completed, expired
+            'requestedAt': datetime.utcnow(),
+            'processedAt': None,
+            'processedBy': None,
+            'processedByName': None,
+            'temporaryPassword': None,
+            'resetToken': reset_token,  # Keep for future email service
+            'expiresAt': datetime.utcnow() + timedelta(hours=24),  # Admin has 24 hours to process
+            'emailSent': email_result.get('success', False),
+            'emailMethod': email_result.get('method', 'disabled')
+        }
+        
+        auth_bp.mongo.db.password_reset_requests.insert_one(password_reset_request)
+        
+        # Track analytics event
+        try:
+            auth_bp.tracker.track_event(
+                user_id=user['_id'],
+                event_type='password_reset_requested',
+                event_details={
+                    'request_source': 'mobile_app',
+                    'email_sent': email_result.get('success', False),
+                    'email_method': email_result.get('method', 'disabled'),
+                    'has_admin_fallback': True
+                }
+            )
+        except Exception as e:
+            print(f"Analytics tracking failed: {e}")
+        
+        # Always return success to user (don't reveal if email exists)
         return jsonify({
             'success': True,
             'message': 'Password reset instructions sent to your email'
