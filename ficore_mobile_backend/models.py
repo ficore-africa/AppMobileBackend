@@ -695,6 +695,37 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
         ]
 
+    # ==================== ACTIVATION_EVENTS COLLECTION (PHASE 4) ====================
+    
+    @staticmethod
+    def get_activation_event_schema() -> Dict[str, Any]:
+        """
+        Schema for activation_events collection.
+        Tracks user activation events for Phase 4 analytics.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'eventType': str,  # Required: 'shown' | 'dismissed' | 'state_transition'
+            'activationState': str,  # Required: 'S0' | 'S1' | 'S2' | 'S3'
+            'nudgeType': Optional[str],  # Optional: 'noEntryYet' | 'firstEntryDone' | 'earlyStreak' | 'sevenDayStreak'
+            'streakCount': int,  # Current streak count
+            'occurredAt': datetime,  # Device time when event occurred
+            'timezoneOffset': int,  # Minutes from UTC
+            'createdAt': datetime,  # Server time when event was recorded
+        }
+    
+    @staticmethod
+    def get_activation_event_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for activation_events collection."""
+        return [
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('eventType', 1), ('createdAt', -1)], 'name': 'event_type_created_desc'},
+            {'keys': [('activationState', 1), ('createdAt', -1)], 'name': 'activation_state_created_desc'},
+            {'keys': [('nudgeType', 1), ('createdAt', -1)], 'name': 'nudge_type_created_desc', 'sparse': True},
+            {'keys': [('createdAt', -1)], 'name': 'created_desc'},
+        ]
+
     # ==================== ADMIN_ACTIONS COLLECTION ====================
     
     @staticmethod
@@ -740,6 +771,103 @@ class DatabaseSchema:
             {'keys': [('userEmail', 1)], 'name': 'user_email'},
         ]
 
+    # ==================== VOICE_REPORTS COLLECTION ====================
+
+    @staticmethod
+    def get_voice_report_schema() -> Dict[str, Any]:
+        """
+        Schema for voice_reports collection.
+        Stores voice recordings, transcriptions, and extracted financial data.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'idempotencyKey': str,  # Required, unique UUID for retry safety
+            'transcription': str,  # Required, transcribed text from audio
+            'audioUrl': Optional[str],  # Optional, URL to audio file (GCS or cloud storage)
+            'audioFileName': Optional[str],  # Original filename for display
+            'audioFileSize': Optional[int],  # Size in bytes for tracking storage
+            
+            # Extracted financial data
+            'extractedAmount': float,  # Extracted monetary amount
+            'currencyCode': str,  # Currency code (e.g., 'NGN', 'USD'), default: 'NGN'
+            'category': str,  # Category of transaction ('income', 'expense', 'debt', 'credit', etc.)
+            'transactionType': Optional[str],  # More specific type (e.g., 'salary', 'purchase', 'loan')
+            'description': str,  # Human-readable description
+            'confidence': float,  # Extraction confidence score (0.0-1.0)
+            
+            # Processing status
+            'status': str,  # 'pending', 'processing', 'completed', 'error', default: 'pending'
+            'transcriptionStatus': str,  # 'pending', 'completed', 'failed'
+            'syncStatus': str,  # 'synced', 'pending', 'failed'
+            'processingError': Optional[str],  # Error message if processing failed
+            
+            # Transaction creation (after successful processing)
+            'linkedTransactionId': Optional[ObjectId],  # Reference to created income/expense/debtor/creditor entry
+            'linkedTransactionType': Optional[str],  # Type of linked transaction ('income', 'expense', 'debtor', 'creditor')
+            
+            # FCM notification tracking
+            'notificationSent': bool,  # Whether FCM notification was sent, default: False
+            'userNotified': bool,  # Whether user was notified in app, default: False
+            
+            # Timestamps
+            'recordedAt': datetime,  # When audio was recorded
+            'uploadedAt': datetime,  # When uploaded to backend
+            'transcribedAt': Optional[datetime],  # When transcription completed
+            'processedAt': Optional[datetime],  # When data extraction completed
+            'syncedAt': Optional[datetime],  # When synced to backend
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+
+    @staticmethod
+    def get_voice_report_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for voice_reports collection."""
+        return [
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('idempotencyKey', 1)], 'unique': True, 'name': 'idempotency_key_unique'},
+            {'keys': [('status', 1), ('createdAt', -1)], 'name': 'status_created_desc'},
+            {'keys': [('syncStatus', 1), ('createdAt', -1)], 'name': 'sync_status_created_desc'},
+            {'keys': [('linkedTransactionId', 1)], 'sparse': True, 'name': 'linked_transaction_id'},
+            {'keys': [('recordedAt', -1)], 'name': 'recorded_at_desc'},
+            {'keys': [('uploadedAt', -1)], 'name': 'uploaded_at_desc'},
+        ]
+
+    # ==================== IDEMPOTENCY_KEYS COLLECTION ====================
+
+    @staticmethod
+    def get_idempotency_key_schema() -> Dict[str, Any]:
+        """
+        Schema for idempotency_keys collection.
+        Stores request responses for idempotency on retries.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'idempotencyKey': str,  # Required, unique UUID from client request
+            'userId': ObjectId,  # Required, reference to users._id
+            'endpoint': str,  # Required, API endpoint that was called (e.g., '/api/voice/create')
+            'requestHash': str,  # Hash of request body for validation
+            
+            # Cached response for retry requests
+            'responseStatus': int,  # HTTP status code (200, 201, 400, 500, etc.)
+            'responseBody': Dict[str, Any],  # Full response JSON
+            'responseHeaders': Optional[Dict[str, str]],  # Relevant response headers
+            
+            # Metadata
+            'createdAt': datetime,  # When first request was processed
+            'expiresAt': datetime,  # When this cache entry expires (24 hours from creation)
+        }
+
+    @staticmethod
+    def get_idempotency_key_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for idempotency_keys collection."""
+        return [
+            {'keys': [('idempotencyKey', 1)], 'unique': True, 'name': 'idempotency_key_unique'},
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('endpoint', 1), ('createdAt', -1)], 'name': 'endpoint_created_desc'},
+            {'keys': [('expiresAt', 1)], 'name': 'expires_at', 'expireAfterSeconds': 86400},  # TTL: 24 hours
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -781,6 +909,9 @@ class DatabaseInitializer:
             'analytics_events': self.schema.get_analytics_event_indexes(),
             'admin_actions': self.schema.get_admin_action_indexes(),
             'cancellation_requests': self.schema.get_cancellation_request_indexes(),
+            # Voice reporting collections
+            'voice_reports': self.schema.get_voice_report_indexes(),
+            'idempotency_keys': self.schema.get_idempotency_key_indexes(),
         }
         
         results = {

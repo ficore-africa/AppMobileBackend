@@ -182,6 +182,7 @@ class DatabaseOptimizer:
         Get optimized aggregation pipeline for monthly totals.
         Uses compound indexes and efficient query patterns with enhanced performance.
         CRITICAL FIX: Ensures amount field is properly converted to numeric type before aggregation.
+        CRITICAL FIX: For incomes, only include past/present (dateReceived <= now) to match Recent Activity behavior.
         
         Args:
             user_id: User's ObjectId

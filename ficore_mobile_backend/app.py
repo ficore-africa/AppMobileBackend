@@ -17,6 +17,9 @@ from blueprints.income import init_income_blueprint
 from blueprints.expenses import expenses_bp, init_expenses_blueprint
 from blueprints.financial_aggregation import init_financial_aggregation_blueprint
 from blueprints.attachments import init_attachments_blueprint
+from blueprints.otp import init_otp_blueprint  # ₦0 Communication Strategy
+from blueprints.engagement import init_engagement_blueprint  # Weekly engagement reminders
+from blueprints.notifications import init_notifications_blueprint  # Persistent notifications
 
 from blueprints.credits import init_credits_blueprint
 from blueprints.summaries import init_summaries_blueprint
@@ -36,6 +39,8 @@ from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprin
 from blueprints.admin_subscription_management import init_admin_subscription_management_blueprint
 from blueprints.atomic_entries import init_atomic_entries_blueprint
 from blueprints.reports import init_reports_blueprint
+from blueprints.voice_reporting import init_voice_reporting_blueprint
+from blueprints.vas import init_vas_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -43,6 +48,9 @@ from models import DatabaseInitializer
 # Import rate limit tracking utilities
 from utils.rate_limit_tracker import RateLimitTracker
 from utils.api_logging_middleware import setup_api_logging
+
+# Import credential manager
+from config.credentials import credential_manager
 
 app = Flask(__name__)
 
@@ -147,6 +155,17 @@ with app.app_context():
     
     # Initialize admin user
     initialize_admin_user()
+    
+    # Run immutability migration (idempotent - safe to run multiple times)
+    from utils.immutability_migrator import run_immutability_migration
+    migration_result = run_immutability_migration(mongo.db)
+    
+    if migration_result['success'] and not migration_result['already_run']:
+        print("✅ Immutability migration completed successfully")
+    elif migration_result['already_run']:
+        print("✅ Immutability migration already completed (skipped)")
+    else:
+        print(f"⚠️  Immutability migration failed: {migration_result.get('error', 'Unknown error')}")
 
 # Helper function to convert ObjectId to string
 def serialize_doc(doc):
@@ -257,6 +276,15 @@ expenses_blueprint = init_expenses_blueprint(mongo, token_required, serialize_do
 financial_aggregation_blueprint = init_financial_aggregation_blueprint(mongo, token_required, serialize_doc)
 attachments_blueprint = init_attachments_blueprint(mongo, token_required, serialize_doc)
 
+# ₦0 Communication Strategy - OTP Management
+otp_blueprint = init_otp_blueprint(mongo, app.config)
+
+# ₦0 Communication Strategy - Weekly Engagement Reminders
+engagement_blueprint = init_engagement_blueprint(mongo, app.config)
+
+# Persistent Notifications System
+notifications_blueprint = init_notifications_blueprint(mongo, token_required, serialize_doc)
+
 credits_blueprint = init_credits_blueprint(mongo, token_required, serialize_doc)
 summaries_blueprint = init_summaries_blueprint(mongo, token_required, serialize_doc)
 admin_blueprint = init_admin_blueprint(mongo, token_required, admin_required, serialize_doc)
@@ -278,6 +306,10 @@ atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, 
 
 # Initialize reports blueprint for centralized export functionality
 reports_blueprint = init_reports_blueprint(mongo, token_required)
+voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
+
+# Initialize VAS blueprint for wallet and utility services
+vas_blueprint = init_vas_blueprint(mongo, token_required, serialize_doc)
 
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
@@ -292,6 +324,16 @@ app.register_blueprint(income_blueprint)
 app.register_blueprint(expenses_blueprint)
 app.register_blueprint(financial_aggregation_blueprint)
 app.register_blueprint(attachments_blueprint)
+
+# ₦0 Communication Strategy
+app.register_blueprint(otp_blueprint)
+print("✓ OTP blueprint registered at /otp")
+
+app.register_blueprint(engagement_blueprint)
+print("✓ Engagement blueprint registered at /engagement")
+
+app.register_blueprint(notifications_blueprint)
+print("✓ Notifications blueprint registered at /api/notifications")
 
 app.register_blueprint(credits_blueprint)
 app.register_blueprint(summaries_blueprint)
@@ -317,6 +359,12 @@ print("✓ Atomic entries blueprint registered at /atomic")
 # Register reports blueprint for centralized export functionality
 app.register_blueprint(reports_blueprint)
 print("✓ Reports blueprint registered at /api/reports")
+app.register_blueprint(voice_reporting_blueprint)
+print("✓ Voice reporting blueprint registered at /api/voice")
+
+# Register VAS blueprint for wallet and utility services
+app.register_blueprint(vas_blueprint)
+print("✓ VAS blueprint registered at /api/vas")
 
 # Root redirect to admin login
 @app.route('/')
@@ -339,9 +387,16 @@ def health_check():
 def gcs_health_check():
     """Check if Google Cloud Storage is accessible"""
     try:
-        from google.cloud import storage
+        # Use credential manager instead of direct import
+        if not credential_manager.is_gcs_available():
+            return jsonify({
+                'success': False,
+                'message': 'GCS client not initialized',
+                'bucket': None,
+                'status': 'unavailable'
+            }), 503
         
-        storage_client = storage.Client()
+        storage_client = credential_manager.get_gcs_client()
         bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
         bucket = storage_client.bucket(bucket_name)
         
@@ -353,23 +408,83 @@ def gcs_health_check():
                 'success': True,
                 'message': 'GCS is accessible',
                 'bucket': bucket_name,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            }), 200
+                'status': 'available'
+            })
         else:
             return jsonify({
                 'success': False,
-                'message': 'GCS bucket not found',
+                'message': 'GCS bucket not found or not accessible',
                 'bucket': bucket_name,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                'status': 'unavailable'
             }), 404
             
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'GCS error: {str(e)}',
-            'bucket': os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments'),
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
+            'message': f'GCS health check failed: {str(e)}',
+            'bucket': bucket_name,
+            'status': 'error'
         }), 500
+
+# Firebase health check endpoint
+@app.route('/health/firebase', methods=['GET'])
+def firebase_health_check():
+    """Check if Firebase is properly initialized"""
+    try:
+        if credential_manager.is_firebase_available():
+            return jsonify({
+                'success': True,
+                'message': 'Firebase is available',
+                'status': 'initialized'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Firebase is not initialized',
+                'status': 'unavailable'
+            }), 503
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Firebase health check failed: {str(e)}',
+            'status': 'error'
+        }), 500
+
+# Email service health check endpoint
+@app.route('/health/email', methods=['GET'])
+def email_health_check():
+    """Check if Email service is properly configured"""
+    try:
+        from utils.email_service import get_email_service
+        
+        email_service = get_email_service()
+        status = email_service.get_service_status()
+        
+        if status['enabled']:
+            return jsonify({
+                'success': True,
+                'message': 'Email service is available',
+                'status': 'enabled',
+                'sender_email': status['sender_email'],
+                'mode': status['mode']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Email service is not configured',
+                'status': 'disabled',
+                'mode': status['mode']
+            }), 503
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Email health check failed: {str(e)}',
+            'status': 'error'
+        }), 500
+
+
 
 # Profile picture upload endpoint
 @app.route('/upload/profile-picture', methods=['POST'])
@@ -462,9 +577,13 @@ def upload_profile_picture(current_user):
                     user_id=user_id
                 )
                 
-                # Create data URL for immediate display
+                # Create data URL for immediate display (fallback)
                 base64_data = base64.b64encode(file_data).decode('utf-8')
-                signed_url = f"data:{content_type};base64,{base64_data}"
+                data_url = f"data:{content_type};base64,{base64_data}"
+                
+                # CRITICAL FIX: Generate absolute GridFS URL for persistent access
+                base_url = os.environ.get('API_BASE_URL', 'https://mobilebackend.ficoreafrica.com')
+                gridfs_url = f"{base_url}/api/users/profile-picture/{str(gridfs_id)}"
                 
                 # Update user with GridFS reference
                 mongo.db.users.update_one(
@@ -480,12 +599,14 @@ def upload_profile_picture(current_user):
                 )
                 
                 print(f"✅ Profile picture stored in GridFS: {gridfs_id}")
+                print(f"✅ GridFS URL: {gridfs_url}")
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'image_url': signed_url,
-                        'url': signed_url,
+                        'image_url': gridfs_url,  # Use persistent GridFS URL
+                        'url': gridfs_url,
+                        'data_url': data_url,  # Include data URL as fallback
                         'storage': 'gridfs',
                         'gridfs_id': str(gridfs_id)
                     },

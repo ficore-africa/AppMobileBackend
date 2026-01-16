@@ -1,0 +1,65 @@
+/* Backend Switcher - Shared Styles */
+.backend-switcher {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    padding: 15px 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+}
+
+.backend-switcher label {
+    font-weight: 600;
+    color: #6B7280;
+}
+
+.backend-toggle {
+    display: flex;
+    background: #F3F4F6;
+    border-radius: 6px;
+    padding: 3px;
+}
+
+.backend-toggle button {
+    padding: 6px 16px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6B7280;
+    transition: all 0.2s;
+}
+
+.backend-toggle button.active {
+    background: white;
+    color: #1E3A8A;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.backend-toggle button:hover:not(.active) {
+    color: #1E3A8A;
+}
+
+.backend-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.backend-indicator.production {
+    background: #16A34A;
+}
+
+.backend-indicator.dev {
+    background: #F59E0B;
+}
