@@ -485,6 +485,7 @@ def email_health_check():
         }), 500
 
 
+
 # Profile picture upload endpoint
 @app.route('/upload/profile-picture', methods=['POST'])
 @token_required
@@ -1019,7 +1020,6 @@ if __name__ == '__main__':
         # Don't fail app startup if scheduler fails
     
     app.run(debug=True, host='0.0.0.0', port=5000)
-
 
 
 
