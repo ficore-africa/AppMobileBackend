@@ -4,6 +4,7 @@ Handles wallet management and utility purchases (Airtime, Data, etc.)
 
 Security: API keys in environment variables, idempotency protection, webhook verification
 Providers: Monnify (wallet), Peyflex (primary VAS), VTpass (backup)
+Pricing: Dynamic pricing engine with subscription tiers and psychological pricing
 """
 
 from flask import Blueprint, request, jsonify
@@ -15,6 +16,8 @@ import hmac
 import hashlib
 import uuid
 from utils.email_service import get_email_service
+from utils.dynamic_pricing_engine import get_pricing_engine, calculate_vas_price
+from utils.emergency_pricing_recovery import tag_emergency_transaction
 from blueprints.notifications import create_user_notification
 
 def init_vas_blueprint(mongo, token_required, serialize_doc):
@@ -39,6 +42,408 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
     BVN_VERIFICATION_COST = 10.0
     NIN_VERIFICATION_COST = 60.0
     
+    # ==================== PRICING ENDPOINTS ====================
+    
+    @vas_bp.route('/pricing/calculate', methods=['POST'])
+    @token_required
+    def calculate_pricing(current_user):
+        """
+        Calculate dynamic pricing for VAS services
+        Supports both airtime and data with subscription-based discounts
+        """
+        try:
+            data = request.json
+            service_type = data.get('type', '').lower()  # 'airtime' or 'data'
+            network = data.get('network', '').upper()
+            amount = float(data.get('amount', 0))
+            plan_id = data.get('planId')  # Required for data
+            
+            if service_type not in ['airtime', 'data']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid service type. Must be airtime or data.'
+                }), 400
+            
+            if not network or amount <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Network and amount are required.'
+                }), 400
+            
+            if service_type == 'data' and not plan_id:
+                return jsonify({
+                    'success': False,
+                    'message': 'Plan ID is required for data pricing.'
+                }), 400
+            
+            # Determine user tier
+            user_tier = 'basic'
+            if current_user.get('subscriptionStatus') == 'active':
+                subscription_plan = current_user.get('subscriptionPlan', 'premium')
+                user_tier = subscription_plan.lower()
+            
+            # Calculate pricing using dynamic engine
+            pricing_engine = get_pricing_engine(mongo.db)
+            pricing_result = pricing_engine.calculate_selling_price(
+                service_type=service_type,
+                network=network,
+                base_amount=amount,
+                user_tier=user_tier,
+                plan_id=plan_id
+            )
+            
+            # Get competitive analysis
+            competitive_analysis = pricing_engine.get_competitive_analysis(
+                service_type, network, amount
+            )
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'pricing': pricing_result,
+                    'competitive': competitive_analysis,
+                    'userTier': user_tier,
+                    'timestamp': datetime.utcnow().isoformat() + 'Z'
+                },
+                'message': 'Pricing calculated successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error calculating pricing: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to calculate pricing',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @vas_bp.route('/pricing/plans/<network>', methods=['GET'])
+    @token_required
+    def get_data_plans_with_pricing(current_user, network):
+        """
+        Get data plans with dynamic pricing for a specific network
+        """
+        try:
+            # Determine user tier
+            user_tier = 'basic'
+            if current_user.get('subscriptionStatus') == 'active':
+                subscription_plan = current_user.get('subscriptionPlan', 'premium')
+                user_tier = subscription_plan.lower()
+            
+            # Get pricing engine
+            pricing_engine = get_pricing_engine(mongo.db)
+            
+            # Get data plans from Peyflex
+            data_plans = pricing_engine.get_peyflex_rates('data', network)
+            
+            # Add dynamic pricing to each plan
+            enhanced_plans = []
+            for plan_id, plan_data in data_plans.items():
+                base_price = plan_data.get('price', 0)
+                
+                # Calculate pricing for this plan
+                pricing_result = pricing_engine.calculate_selling_price(
+                    service_type='data',
+                    network=network,
+                    base_amount=base_price,
+                    user_tier=user_tier,
+                    plan_id=plan_id
+                )
+                
+                enhanced_plan = {
+                    'id': plan_id,
+                    'name': plan_data.get('name', ''),
+                    'validity': plan_data.get('validity', 30),
+                    'originalPrice': base_price,
+                    'sellingPrice': pricing_result['selling_price'],
+                    'savings': pricing_result['discount_applied'],
+                    'savingsMessage': pricing_result['savings_message'],
+                    'margin': pricing_result['margin'],
+                    'strategy': pricing_result['strategy_used']
+                }
+                
+                enhanced_plans.append(enhanced_plan)
+            
+            # Sort by price (cheapest first)
+            enhanced_plans.sort(key=lambda x: x['sellingPrice'])
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'network': network.upper(),
+                    'plans': enhanced_plans,
+                    'userTier': user_tier,
+                    'totalPlans': len(enhanced_plans)
+                },
+                'message': 'Data plans with pricing retrieved successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error getting data plans with pricing: {str(e)}')
+            
+            # Fallback to original endpoint
+            return get_data_plans(network)
+
+    # ==================== EMERGENCY RECOVERY ENDPOINTS ====================
+    
+    @vas_bp.route('/emergency-recovery/process', methods=['POST'])
+    @token_required
+    def process_emergency_recovery(current_user):
+        """
+        Process emergency pricing recovery (Admin only)
+        Run this periodically to compensate users who paid emergency rates
+        """
+        try:
+            # Check if user is admin
+            if not current_user.get('isAdmin', False):
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin access required'
+                }), 403
+            
+            data = request.json
+            limit = int(data.get('limit', 50))
+            
+            from utils.emergency_pricing_recovery import process_emergency_recoveries
+            
+            recovery_results = process_emergency_recoveries(mongo.db, limit)
+            
+            # Summary statistics
+            total_processed = len(recovery_results)
+            completed_recoveries = [r for r in recovery_results if r['status'] == 'completed']
+            total_compensated = sum(r.get('overage', 0) for r in completed_recoveries)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'total_processed': total_processed,
+                    'completed_recoveries': len(completed_recoveries),
+                    'total_compensated': total_compensated,
+                    'results': recovery_results
+                },
+                'message': f'Processed {total_processed} emergency recoveries, compensated ₦{total_compensated:.2f}'
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error processing emergency recovery: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to process emergency recovery',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @vas_bp.route('/emergency-recovery/stats', methods=['GET'])
+    @token_required
+    def get_emergency_recovery_stats(current_user):
+        """
+        Get emergency recovery statistics (Admin only)
+        """
+        try:
+            # Check if user is admin
+            if not current_user.get('isAdmin', False):
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin access required'
+                }), 403
+            
+            days = int(request.args.get('days', 30))
+            
+            from utils.emergency_pricing_recovery import EmergencyPricingRecovery
+            recovery_system = EmergencyPricingRecovery(mongo.db)
+            
+            stats = recovery_system.get_recovery_stats(days)
+            
+            return jsonify({
+                'success': True,
+                'data': stats,
+                'message': f'Emergency recovery stats for last {days} days'
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error getting recovery stats: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get recovery stats',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @vas_bp.route('/emergency-recovery/trigger', methods=['POST'])
+    @token_required
+    def trigger_emergency_recovery_job(current_user):
+        """
+        Manually trigger emergency recovery job (Admin only)
+        This is the integration point for the automated recovery script
+        """
+        try:
+            # Check if user is admin
+            if not current_user.get('isAdmin', False):
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin access required'
+                }), 403
+            
+            data = request.json or {}
+            limit = int(data.get('limit', 50))
+            dry_run = data.get('dryRun', False)
+            
+            print(f'🚨 Manual emergency recovery triggered by admin {current_user.get("email", "unknown")}')
+            
+            if dry_run:
+                # Count pending recoveries for dry run
+                pending_count = mongo.db.emergency_pricing_tags.count_documents({
+                    'status': 'PENDING_RECOVERY',
+                    'recoveryDeadline': {'$gt': datetime.utcnow()}
+                })
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'dry_run': True,
+                        'pending_recoveries': pending_count,
+                        'would_process': min(pending_count, limit)
+                    },
+                    'message': f'Dry run: {pending_count} pending recoveries found'
+                }), 200
+            
+            # Execute actual recovery processing
+            from utils.emergency_pricing_recovery import process_emergency_recoveries
+            
+            recovery_results = process_emergency_recoveries(mongo.db, limit)
+            
+            # Enhanced response with detailed results
+            if recovery_results.get('status') == 'completed':
+                results = recovery_results.get('results', [])
+                completed_recoveries = [r for r in results if r.get('status') == 'completed']
+                total_compensated = sum(r.get('overage', 0) for r in completed_recoveries)
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'total_processed': len(results),
+                        'completed_recoveries': len(completed_recoveries),
+                        'total_compensated': total_compensated,
+                        'results': results,
+                        'triggered_by': current_user.get('email', 'unknown'),
+                        'triggered_at': datetime.utcnow().isoformat() + 'Z'
+                    },
+                    'message': f'Recovery job completed: {len(completed_recoveries)} recoveries processed, ₦{total_compensated:.2f} compensated'
+                }), 200
+            
+            elif recovery_results.get('status') == 'skipped':
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'skipped': True,
+                        'reason': recovery_results.get('reason', 'unknown'),
+                        'message': recovery_results.get('message', '')
+                    },
+                    'message': f'Recovery job skipped: {recovery_results.get("reason", "unknown")}'
+                }), 200
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'Recovery job failed: {recovery_results.get("error", "unknown")}',
+                    'errors': {'general': [recovery_results.get('error', 'unknown')]}
+                }), 500
+            
+        except Exception as e:
+            print(f'❌ Error triggering recovery job: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to trigger recovery job',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @vas_bp.route('/emergency-recovery/schedule', methods=['POST'])
+    @token_required
+    def schedule_emergency_recovery(current_user):
+        """
+        Schedule automated emergency recovery job (Admin only)
+        This endpoint can be called by external schedulers (cron, etc.)
+        """
+        try:
+            # Check if user is admin or if this is a system call
+            api_key = request.headers.get('X-API-Key')
+            system_api_key = os.environ.get('SYSTEM_API_KEY', '')
+            
+            is_admin = current_user.get('isAdmin', False) if current_user else False
+            is_system_call = api_key and api_key == system_api_key and system_api_key
+            
+            if not (is_admin or is_system_call):
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin access or valid API key required'
+                }), 403
+            
+            # Process recoveries automatically
+            from utils.emergency_pricing_recovery import process_emergency_recoveries
+            
+            recovery_results = process_emergency_recoveries(mongo.db, limit=100)
+            
+            # Log the scheduled job execution
+            caller = current_user.get('email', 'unknown') if current_user else 'system_scheduler'
+            print(f'🕐 Scheduled emergency recovery executed by: {caller}')
+            
+            if recovery_results.get('status') == 'completed':
+                results = recovery_results.get('results', [])
+                completed_recoveries = [r for r in results if r.get('status') == 'completed']
+                total_compensated = sum(r.get('overage', 0) for r in completed_recoveries)
+                
+                # Create admin notification for significant recoveries
+                if len(completed_recoveries) > 10 or total_compensated > 5000:
+                    create_user_notification(
+                        mongo=mongo.db,
+                        user_id='admin',  # Special admin notification
+                        category='system',
+                        title='🚨 Large Emergency Recovery Batch',
+                        body=f'Processed {len(completed_recoveries)} recoveries totaling ₦{total_compensated:.2f}',
+                        metadata={
+                            'recovery_count': len(completed_recoveries),
+                            'total_compensated': total_compensated,
+                            'triggered_by': caller
+                        },
+                        priority='high'
+                    )
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'scheduled_execution': True,
+                        'total_processed': len(results),
+                        'completed_recoveries': len(completed_recoveries),
+                        'total_compensated': total_compensated,
+                        'executed_by': caller,
+                        'executed_at': datetime.utcnow().isoformat() + 'Z'
+                    },
+                    'message': f'Scheduled recovery completed: {len(completed_recoveries)} recoveries, ₦{total_compensated:.2f} compensated'
+                }), 200
+            
+            elif recovery_results.get('status') == 'skipped':
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'scheduled_execution': True,
+                        'skipped': True,
+                        'reason': recovery_results.get('reason', 'unknown')
+                    },
+                    'message': f'Scheduled recovery skipped: {recovery_results.get("reason", "unknown")}'
+                }), 200
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'Scheduled recovery failed: {recovery_results.get("error", "unknown")}',
+                    'errors': {'general': [recovery_results.get('error', 'unknown')]}
+                }), 500
+            
+        except Exception as e:
+            print(f'❌ Error in scheduled recovery: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to execute scheduled recovery',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     # ==================== HELPER FUNCTIONS ====================
     
     def generate_request_id(user_id, transaction_type):
@@ -371,6 +776,31 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                 raise Exception(f'VTpass error: {data.get("response_description", "Unknown error")}')
         else:
             raise Exception(f'VTpass API error: {response.status_code} - {response.text}')
+    
+    def generate_retention_description(base_description, savings_message, user_tier, discount_applied):
+        """
+        Generate retention-focused expense description that reinforces subscription value
+        🎯 PASSIVE RETENTION ENGINE: Every expense entry becomes a subscription value reminder
+        """
+        if not savings_message or discount_applied <= 0:
+            return base_description
+        
+        # Tier-specific retention messaging
+        if user_tier == 'gold':
+            if discount_applied >= 50:
+                retention_suffix = f" • 💎 Gold Tier saved you ₦{discount_applied:.0f}! Your ₦25k/year subscription pays for itself."
+            else:
+                retention_suffix = f" • 💎 Gold Tier benefit: ₦{discount_applied:.0f} saved"
+        elif user_tier == 'premium':
+            if discount_applied >= 30:
+                retention_suffix = f" • ✨ Premium saved you ₦{discount_applied:.0f}! Your ₦10k/year subscription is working."
+            else:
+                retention_suffix = f" • ✨ Premium benefit: ₦{discount_applied:.0f} saved"
+        else:
+            # Basic users see what they're missing
+            return base_description
+        
+        return base_description + retention_suffix
     
     # ==================== WALLET ENDPOINTS ====================
     
@@ -1187,7 +1617,7 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
     @vas_bp.route('/buy-airtime', methods=['POST'])
     @token_required
     def buy_airtime(current_user):
-        """Purchase airtime with idempotency protection"""
+        """Purchase airtime with dynamic pricing and idempotency protection"""
         try:
             data = request.json
             phone_number = data.get('phoneNumber', '').strip()
@@ -1209,8 +1639,33 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
             
             user_id = str(current_user['_id'])
             
+            # Determine user tier for pricing
+            user_tier = 'basic'
+            if current_user.get('subscriptionStatus') == 'active':
+                subscription_plan = current_user.get('subscriptionPlan', 'premium')
+                user_tier = subscription_plan.lower()
+            
+            # Calculate dynamic pricing
+            pricing_result = calculate_vas_price(
+                mongo.db, 'airtime', network, amount, user_tier, None, user_id
+            )
+            
+            selling_price = pricing_result['selling_price']
+            cost_price = pricing_result['cost_price']
+            margin = pricing_result['margin']
+            savings_message = pricing_result['savings_message']
+            
+            # 🚨 EMERGENCY PRICING DETECTION
+            emergency_multiplier = 2.0
+            normal_expected_cost = amount * 0.99  # Expected normal cost for airtime
+            is_emergency_pricing = cost_price >= (normal_expected_cost * emergency_multiplier * 0.8)  # 80% threshold
+            
+            if is_emergency_pricing:
+                print(f"🚨 EMERGENCY PRICING DETECTED: Cost ₦{cost_price} vs Expected ₦{normal_expected_cost}")
+                # Will tag after successful transaction
+            
             # CRITICAL: Check for pending duplicate transaction (idempotency)
-            pending_txn = check_pending_transaction(user_id, 'AIRTIME', amount, phone_number)
+            pending_txn = check_pending_transaction(user_id, 'AIRTIME', selling_price, phone_number)
             if pending_txn:
                 print(f'⚠️ Duplicate airtime request blocked for user {user_id}')
                 return jsonify({
@@ -1226,9 +1681,8 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Wallet not found. Please create a wallet first.'
                 }), 404
             
-            # NO transaction fee on purchases (fee is only on deposits)
-            transaction_fee = 0.0
-            total_amount = amount
+            # Use selling price as total amount (no additional fees)
+            total_amount = selling_price
             
             if wallet.get('balance', 0.0) < total_amount:
                 return jsonify({
@@ -1246,8 +1700,13 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                 'type': 'AIRTIME',
                 'network': network,
                 'phoneNumber': phone_number,
-                'amount': amount,
-                'transactionFee': transaction_fee,
+                'amount': amount,  # Face value amount
+                'sellingPrice': selling_price,
+                'costPrice': cost_price,
+                'margin': margin,
+                'userTier': user_tier,
+                'pricingStrategy': pricing_result['strategy_used'],
+                'savingsMessage': savings_message,
                 'totalAmount': total_amount,
                 'status': 'PENDING',
                 'provider': None,
@@ -1264,6 +1723,7 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
             api_response = None
             
             try:
+                # Use face value amount for API call (not selling price)
                 api_response = call_peyflex_airtime(network, amount, phone_number, request_id)
                 success = True
                 print(f'✅ Peyflex airtime purchase successful: {request_id}')
@@ -1292,7 +1752,7 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                     'errors': {'general': [error_message]}
                 }), 500
             
-            # Deduct from wallet
+            # Deduct selling price from wallet (not face value)
             new_balance = wallet.get('balance', 0.0) - total_amount
             mongo.db.vas_wallets.update_one(
                 {'userId': ObjectId(user_id)},
@@ -1312,37 +1772,134 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                 }
             )
             
+            # Record corporate revenue (margin earned)
+            if margin > 0:
+                corporate_revenue = {
+                    '_id': ObjectId(),
+                    'type': 'VAS_MARGIN',
+                    'category': 'AIRTIME_MARGIN',
+                    'amount': margin,
+                    'userId': ObjectId(user_id),
+                    'relatedTransaction': str(transaction_id),
+                    'description': f'Airtime margin from user {user_id} - {network}',
+                    'status': 'RECORDED',
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'network': network,
+                        'faceValue': amount,
+                        'sellingPrice': selling_price,
+                        'costPrice': cost_price,
+                        'userTier': user_tier,
+                        'strategy': pricing_result['strategy_used'],
+                        'emergencyPricing': is_emergency_pricing
+                    }
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                print(f'💰 Corporate revenue recorded: ₦{margin} from airtime sale to user {user_id}')
+            
+            # 🚨 TAG EMERGENCY TRANSACTIONS FOR RECOVERY
+            if is_emergency_pricing:
+                try:
+                    emergency_tag_id = tag_emergency_transaction(
+                        mongo.db, str(transaction_id), cost_price, 'airtime', network
+                    )
+                    print(f'🏥 Emergency transaction tagged for recovery: {emergency_tag_id}')
+                    
+                    # Create immediate notification about emergency pricing
+                    create_user_notification(
+                        mongo=mongo.db,
+                        user_id=user_id,
+                        category='system',
+                        title='⚡ Emergency Pricing Used',
+                        body=f'Your {network} airtime purchase used emergency pricing during system maintenance. We\'ll automatically adjust any overcharges within 24 hours.',
+                        related_id=str(transaction_id),
+                        metadata={
+                            'emergency_cost': cost_price,
+                            'transaction_id': str(transaction_id),
+                            'recovery_expected': True
+                        },
+                        priority='high'
+                    )
+                    
+                except Exception as e:
+                    print(f'⚠️ Failed to tag emergency transaction: {str(e)}')
+                    # Don't fail the transaction if tagging fails
+            
             # Auto-create expense entry (auto-bookkeeping)
+            base_description = f'Airtime - {network} ₦{amount} for {phone_number[-4:]}****'
+            
+            # 🎯 PASSIVE RETENTION ENGINE: Generate retention-focused description
+            retention_description = generate_retention_description(
+                base_description,
+                savings_message,
+                user_tier,
+                pricing_result.get('discount_applied', 0)
+            )
+            
             expense_entry = {
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
-                'amount': amount,
+                'amount': selling_price,  # Record selling price as expense
                 'category': 'Utilities',
-                'description': f'Airtime - {network} for {phone_number[-4:]}****',
+                'description': retention_description,  # Use retention-enhanced description
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Airtime', network],
                 'vasTransactionId': transaction_id,
+                'metadata': {
+                    'faceValue': amount,
+                    'actualCost': selling_price,
+                    'userTier': user_tier,
+                    'savingsMessage': savings_message,
+                    'originalPrice': pricing_result.get('cost_price', 0) + pricing_result.get('margin', 0),
+                    'discountApplied': pricing_result.get('discount_applied', 0),
+                    'pricingStrategy': pricing_result.get('strategy_used', 'standard'),
+                    'freeFeesApplied': pricing_result.get('free_fee_applied', False),
+                    'baseDescription': base_description,  # Store original for reference
+                    'retentionEnhanced': True  # Flag to indicate retention messaging applied
+                },
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
             
             mongo.db.expenses.insert_one(expense_entry)
             
-            print(f'✅ Airtime purchase complete: User {user_id}, Amount: ₦{amount}, Provider: {provider}')
+            print(f'✅ Airtime purchase complete: User {user_id}, Face Value: ₦{amount}, Charged: ₦{selling_price}, Margin: ₦{margin}, Provider: {provider}')
             
+            # 🎯 RETENTION DATA for Frontend Trust Building
+            retention_data = {
+                'userTier': user_tier,
+                'originalPrice': amount,
+                'finalPrice': selling_price,
+                'totalSaved': amount - selling_price,
+                'savingsMessage': savings_message,
+                'subscriptionROI': {
+                    'tierName': user_tier.title() if user_tier != 'basic' else 'Basic',
+                    'annualCost': 25000 if user_tier == 'gold' else (10000 if user_tier == 'premium' else 0),
+                    'monthlyProgress': f"You've saved ₦{amount - selling_price:.0f} this transaction",
+                    'loyaltyNudge': f"Your {user_tier.title()} subscription is working!" if user_tier != 'basic' else "Upgrade to Premium to start saving on every purchase!"
+                },
+                'retentionDescription': retention_description,
+                'emergencyPricing': is_emergency_pricing,
+                'priceProtectionActive': is_emergency_pricing
+            }
+
             return jsonify({
                 'success': True,
                 'data': {
                     'transactionId': str(transaction_id),
                     'requestId': request_id,
-                    'amount': amount,
-                    'transactionFee': transaction_fee,
-                    'totalAmount': total_amount,
+                    'faceValue': amount,
+                    'amountCharged': selling_price,
+                    'margin': margin,
                     'newBalance': new_balance,
                     'provider': provider,
-                    'expenseRecorded': True
+                    'userTier': user_tier,
+                    'savingsMessage': savings_message,
+                    'pricingStrategy': pricing_result['strategy_used'],
+                    'expenseRecorded': True,
+                    'retentionData': retention_data  # 🎯 NEW: Frontend trust data
                 },
-                'message': 'Airtime purchased successfully! Transaction recorded as expense.'
+                'message': f'Airtime purchased successfully! {savings_message}' if savings_message else 'Airtime purchased successfully!'
             }), 200
             
         except Exception as e:
@@ -1356,7 +1913,7 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
     @vas_bp.route('/buy-data', methods=['POST'])
     @token_required
     def buy_data(current_user):
-        """Purchase data with idempotency protection"""
+        """Purchase data with dynamic pricing and idempotency protection"""
         try:
             data = request.json
             phone_number = data.get('phoneNumber', '').strip()
@@ -1374,8 +1931,33 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
             
             user_id = str(current_user['_id'])
             
+            # Determine user tier for pricing
+            user_tier = 'basic'
+            if current_user.get('subscriptionStatus') == 'active':
+                subscription_plan = current_user.get('subscriptionPlan', 'premium')
+                user_tier = subscription_plan.lower()
+            
+            # Calculate dynamic pricing
+            pricing_result = calculate_vas_price(
+                mongo.db, 'data', network, amount, user_tier, data_plan_id, user_id
+            )
+            
+            selling_price = pricing_result['selling_price']
+            cost_price = pricing_result['cost_price']
+            margin = pricing_result['margin']
+            savings_message = pricing_result['savings_message']
+            
+            # 🚨 EMERGENCY PRICING DETECTION
+            emergency_multiplier = 2.0
+            normal_expected_cost = amount  # For data, amount is usually the expected cost
+            is_emergency_pricing = cost_price >= (normal_expected_cost * emergency_multiplier * 0.8)  # 80% threshold
+            
+            if is_emergency_pricing:
+                print(f"🚨 EMERGENCY PRICING DETECTED: Cost ₦{cost_price} vs Expected ₦{normal_expected_cost}")
+                # Will tag after successful transaction
+            
             # CRITICAL: Check for pending duplicate transaction (idempotency)
-            pending_txn = check_pending_transaction(user_id, 'DATA', amount, phone_number)
+            pending_txn = check_pending_transaction(user_id, 'DATA', selling_price, phone_number)
             if pending_txn:
                 print(f'⚠️ Duplicate data request blocked for user {user_id}')
                 return jsonify({
@@ -1391,9 +1973,8 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Wallet not found. Please create a wallet first.'
                 }), 404
             
-            # NO transaction fee on purchases (fee is only on deposits)
-            transaction_fee = 0.0
-            total_amount = amount
+            # Use selling price as total amount
+            total_amount = selling_price
             
             if wallet.get('balance', 0.0) < total_amount:
                 return jsonify({
@@ -1413,8 +1994,13 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                 'phoneNumber': phone_number,
                 'dataPlan': data_plan_name,
                 'dataPlanId': data_plan_id,
-                'amount': amount,
-                'transactionFee': transaction_fee,
+                'amount': amount,  # Original plan amount
+                'sellingPrice': selling_price,
+                'costPrice': cost_price,
+                'margin': margin,
+                'userTier': user_tier,
+                'pricingStrategy': pricing_result['strategy_used'],
+                'savingsMessage': savings_message,
                 'totalAmount': total_amount,
                 'status': 'PENDING',
                 'provider': None,
@@ -1459,7 +2045,7 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                     'errors': {'general': [error_message]}
                 }), 500
             
-            # Deduct from wallet
+            # Deduct selling price from wallet
             new_balance = wallet.get('balance', 0.0) - total_amount
             mongo.db.vas_wallets.update_one(
                 {'userId': ObjectId(user_id)},
@@ -1479,37 +2065,140 @@ def init_vas_blueprint(mongo, token_required, serialize_doc):
                 }
             )
             
+            # Record corporate revenue (margin earned)
+            if margin > 0:
+                corporate_revenue = {
+                    '_id': ObjectId(),
+                    'type': 'VAS_MARGIN',
+                    'category': 'DATA_MARGIN',
+                    'amount': margin,
+                    'userId': ObjectId(user_id),
+                    'relatedTransaction': str(transaction_id),
+                    'description': f'Data margin from user {user_id} - {network} {data_plan_name}',
+                    'status': 'RECORDED',
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'network': network,
+                        'planName': data_plan_name,
+                        'planId': data_plan_id,
+                        'originalAmount': amount,
+                        'sellingPrice': selling_price,
+                        'costPrice': cost_price,
+                        'userTier': user_tier,
+                        'strategy': pricing_result['strategy_used'],
+                        'emergencyPricing': is_emergency_pricing
+                    }
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                print(f'💰 Corporate revenue recorded: ₦{margin} from data sale to user {user_id}')
+            
+            # 🚨 TAG EMERGENCY TRANSACTIONS FOR RECOVERY
+            if is_emergency_pricing:
+                try:
+                    emergency_tag_id = tag_emergency_transaction(
+                        mongo.db, str(transaction_id), cost_price, 'data', network
+                    )
+                    print(f'🏥 Emergency transaction tagged for recovery: {emergency_tag_id}')
+                    
+                    # Create immediate notification about emergency pricing
+                    create_user_notification(
+                        mongo=mongo.db,
+                        user_id=user_id,
+                        category='system',
+                        title='⚡ Emergency Pricing Used',
+                        body=f'Your {network} {data_plan_name} purchase used emergency pricing during system maintenance. We\'ll automatically adjust any overcharges within 24 hours.',
+                        related_id=str(transaction_id),
+                        metadata={
+                            'emergency_cost': cost_price,
+                            'transaction_id': str(transaction_id),
+                            'recovery_expected': True,
+                            'plan_name': data_plan_name
+                        },
+                        priority='high'
+                    )
+                    
+                except Exception as e:
+                    print(f'⚠️ Failed to tag emergency transaction: {str(e)}')
+                    # Don't fail the transaction if tagging fails
+            
+            # 🎯 PASSIVE RETENTION ENGINE: Generate retention-focused description
+            base_description = f'Data - {network} {data_plan_name} for {phone_number[-4:]}****'
+            discount_applied = amount - selling_price  # Calculate actual discount
+            retention_description = generate_retention_description(
+                base_description,
+                savings_message,
+                user_tier,
+                discount_applied
+            )
+            
             # Auto-create expense entry (auto-bookkeeping)
             expense_entry = {
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
-                'amount': amount,
+                'amount': selling_price,  # Record selling price as expense
                 'category': 'Utilities',
-                'description': f'Data - {network} {data_plan_name} for {phone_number[-4:]}****',
+                'description': retention_description,  # 🎯 Use retention-focused description
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Data', network],
                 'vasTransactionId': transaction_id,
+                'metadata': {
+                    'planName': data_plan_name,
+                    'originalAmount': amount,
+                    'actualCost': selling_price,
+                    'userTier': user_tier,
+                    'savingsMessage': savings_message,
+                    'discountApplied': discount_applied,  # Track discount for analytics
+                    'retentionMessaging': True  # Flag for retention analytics
+                },
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
             
             mongo.db.expenses.insert_one(expense_entry)
             
-            print(f'✅ Data purchase complete: User {user_id}, Amount: ₦{amount}, Provider: {provider}')
+            # 🎯 RETENTION DATA for Frontend Trust Building
+            retention_data = {
+                'userTier': user_tier,
+                'originalPrice': amount,
+                'finalPrice': selling_price,
+                'totalSaved': discount_applied,
+                'savingsMessage': savings_message,
+                'subscriptionROI': {
+                    'tierName': user_tier.title() if user_tier != 'basic' else 'Basic',
+                    'annualCost': 25000 if user_tier == 'gold' else (10000 if user_tier == 'premium' else 0),
+                    'monthlyProgress': f"You've saved ₦{discount_applied:.0f} this transaction",
+                    'loyaltyNudge': f"Your {user_tier.title()} subscription is working!" if user_tier != 'basic' else "Upgrade to Premium to start saving on every purchase!"
+                },
+                'retentionDescription': retention_description,
+                'emergencyPricing': is_emergency_pricing,
+                'priceProtectionActive': is_emergency_pricing,
+                'planDetails': {
+                    'network': network,
+                    'planName': data_plan_name,
+                    'validity': '30 days'  # Could be dynamic based on plan
+                }
+            }
+
+            print(f'✅ Data purchase complete: User {user_id}, Plan: {data_plan_name}, Original: ₦{amount}, Charged: ₦{selling_price}, Margin: ₦{margin}, Provider: {provider}')
             
             return jsonify({
                 'success': True,
                 'data': {
                     'transactionId': str(transaction_id),
                     'requestId': request_id,
-                    'amount': amount,
-                    'transactionFee': transaction_fee,
-                    'totalAmount': total_amount,
+                    'planName': data_plan_name,
+                    'originalAmount': amount,
+                    'amountCharged': selling_price,
+                    'margin': margin,
                     'newBalance': new_balance,
                     'provider': provider,
-                    'expenseRecorded': True
+                    'userTier': user_tier,
+                    'savingsMessage': savings_message,
+                    'pricingStrategy': pricing_result['strategy_used'],
+                    'expenseRecorded': True,
+                    'retentionData': retention_data  # 🎯 NEW: Frontend trust data
                 },
-                'message': 'Data purchased successfully! Transaction recorded as expense.'
+                'message': f'Data purchased successfully! {savings_message}' if savings_message else 'Data purchased successfully!'
             }), 200
             
         except Exception as e:
