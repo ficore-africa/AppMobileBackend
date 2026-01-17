@@ -141,22 +141,8 @@ class DynamicPricingEngine:
             else:
                 url = f'{self.peyflex_base_url}/api/data/networks/'
             
-            logger.info(f"🔍 Attempting to fetch data rates from: {url}")
-            
-            # Use the most reliable strategy first (Simple Request)
+            # Try multiple connection strategies to work around connection resets
             strategies = [
-                {
-                    'name': 'Simple Request (Most Reliable)',
-                    'headers': {
-                        'Authorization': f'Token {self.peyflex_token}',
-                        'User-Agent': 'FiCore-Backend/1.0',
-                        'Accept': 'application/json',
-                        'Connection': 'close'
-                    },
-                    'timeout': 30,
-                    'retry_count': 2,
-                    'session_config': {'pool_connections': 1, 'pool_maxsize': 1}
-                },
                 {
                     'name': 'Standard Request',
                     'headers': {
@@ -165,19 +151,31 @@ class DynamicPricingEngine:
                         'Accept': 'application/json',
                         'Content-Type': 'application/json'
                     },
-                    'timeout': 25,
-                    'session_config': {'pool_connections': 1, 'pool_maxsize': 1}
+                    'timeout': 10
                 },
                 {
-                    'name': 'Fallback Request',
+                    'name': 'Browser-like Request',
                     'headers': {
                         'Authorization': f'Token {self.peyflex_token}',
-                        'User-Agent': 'FiCore-Fallback/1.0',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json, text/plain, */*',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Referer': 'https://client.peyflex.com.ng/',
+                        'Connection': 'keep-alive',
+                        'Sec-Fetch-Dest': 'empty',
+                        'Sec-Fetch-Mode': 'cors',
+                        'Sec-Fetch-Site': 'same-origin'
+                    },
+                    'timeout': 15
+                },
+                {
+                    'name': 'Simple Request (No Auth)',
+                    'headers': {
+                        'User-Agent': 'FiCore-Backend/1.0',
                         'Accept': 'application/json'
                     },
-                    'timeout': 20,
-                    'retry_count': 1,
-                    'session_config': {'pool_connections': 1, 'pool_maxsize': 1}
+                    'timeout': 10
                 }
             ]
             
@@ -187,90 +185,33 @@ class DynamicPricingEngine:
                 try:
                     logger.info(f"Trying {strategy['name']} for Peyflex API")
                     
-                    # Create a fresh session for each strategy
-                    session = requests.Session()
-                    if 'session_config' in strategy:
-                        adapter = requests.adapters.HTTPAdapter(**strategy['session_config'])
-                        session.mount('https://', adapter)
-                        session.mount('http://', adapter)
+                    response = requests.get(
+                        url,
+                        headers=strategy['headers'],
+                        timeout=strategy['timeout'],
+                        verify=True,  # Ensure SSL verification
+                        allow_redirects=True
+                    )
                     
-                    retry_count = strategy.get('retry_count', 1)
-                    
-                    for attempt in range(retry_count):
-                        try:
-                            if attempt > 0:
-                                import time
-                                time.sleep(2 ** attempt)  # Exponential backoff
-                                logger.info(f"Retry attempt {attempt + 1}/{retry_count}")
-                            
-                            response = session.get(
-                                url,
-                                headers=strategy['headers'],
-                                timeout=strategy['timeout'],
-                                verify=True,
-                                allow_redirects=True
-                            )
-                            
-                            logger.info(f"📡 Peyflex API response: {response.status_code}")
-                            
-                            if response.status_code == 200:
-                                data = response.json()
-                                logger.info(f"✅ Successfully fetched data from Peyflex: {len(str(data))} chars")
-                                
-                                # Transform Peyflex response to our format
-                                if isinstance(data, list):
-                                    rates = {}
-                                    for plan in data:
-                                        plan_id = plan.get('plan_code', plan.get('id', ''))
-                                        rates[plan_id] = {
-                                            'name': plan.get('name', plan.get('plan_name', '')),
-                                            'price': float(plan.get('price', plan.get('amount', 0))),
-                                            'validity': plan.get('validity', 30),
-                                            'network': network.upper() if network else 'UNKNOWN'
-                                        }
-                                    logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
-                                    session.close()
-                                    return rates
-                                elif isinstance(data, dict) and 'plans' in data:
-                                    rates = {}
-                                    for plan in data['plans']:
-                                        plan_id = plan.get('plan_code', plan.get('id', ''))
-                                        rates[plan_id] = {
-                                            'name': plan.get('name', plan.get('plan_name', '')),
-                                            'price': float(plan.get('price', plan.get('amount', 0))),
-                                            'validity': plan.get('validity', 30),
-                                            'network': network.upper() if network else 'UNKNOWN'
-                                        }
-                                    logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
-                                    session.close()
-                                    return rates
-                                else:
-                                    logger.warning(f"❌ {strategy['name']} unexpected response format: {type(data)}")
-                                    last_error = f"Unexpected response format: {type(data)}"
-                            else:
-                                logger.warning(f"❌ {strategy['name']} failed: HTTP {response.status_code}")
-                                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-                                
-                        except requests.exceptions.ConnectionError as e:
-                            logger.warning(f"❌ {strategy['name']} connection error (attempt {attempt + 1}): {str(e)}")
-                            last_error = f"Connection error: {str(e)}"
-                            if attempt == retry_count - 1:  # Last attempt
-                                break
-                            continue
-                        except requests.exceptions.Timeout as e:
-                            logger.warning(f"❌ {strategy['name']} timeout (attempt {attempt + 1}): {str(e)}")
-                            last_error = f"Timeout error: {str(e)}"
-                            if attempt == retry_count - 1:  # Last attempt
-                                break
-                            continue
-                        except Exception as e:
-                            logger.warning(f"❌ {strategy['name']} error (attempt {attempt + 1}): {str(e)}")
-                            last_error = str(e)
-                            if attempt == retry_count - 1:  # Last attempt
-                                break
-                            continue
-                    
-                    session.close()
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        # Transform Peyflex response to our format
+                        if isinstance(data, list):
+                            rates = {}
+                            for plan in data:
+                                plan_id = plan.get('plan_code', plan.get('id', ''))
+                                rates[plan_id] = {
+                                    'name': plan.get('name', plan.get('plan_name', '')),
+                                    'price': float(plan.get('price', plan.get('amount', 0))),
+                                    'validity': plan.get('validity', 30),
+                                    'network': network.upper() if network else 'UNKNOWN'
+                                }
+                            logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
+                            return rates
+                    else:
+                        logger.warning(f"❌ {strategy['name']} failed: HTTP {response.status_code}")
+                        last_error = f"HTTP {response.status_code}: {response.text[:200]}"
                         
                 except requests.exceptions.ConnectionError as e:
                     logger.warning(f"❌ {strategy['name']} connection error: {str(e)}")

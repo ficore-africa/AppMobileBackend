@@ -771,27 +771,41 @@
             }
         });
         
-        // API Helper
-        async function apiCall(endpoint) {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                headers: {
-                    'Authorization': `Bearer ${ADMIN_TOKEN}`,
-                    'Content-Type': 'application/json'
+        // API Helper with timeout
+        async function apiCall(endpoint, timeout = 10000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    headers: {
+                        'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.status === 401 || response.status === 403) {
+                    alert('Session expired. Please login again.');
+                    localStorage.removeItem('admin_token');
+                    window.location.href = 'admin_login.html';
+                    return;
                 }
-            });
-            
-            if (response.status === 401 || response.status === 403) {
-                alert('Session expired. Please login again.');
-                localStorage.removeItem('admin_token');
-                window.location.href = 'admin_login.html';
-                return;
+                
+                if (!response.ok) {
+                    throw new Error(`API call failed: ${response.statusText}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    throw new Error('Request timeout - please try again');
+                }
+                throw error;
             }
-            
-            if (!response.ok) {
-                throw new Error(`API call failed: ${response.statusText}`);
-            }
-            
-            return await response.json();
         }
         
         // Format event type for display
@@ -825,81 +839,115 @@
                 document.getElementById('dashboard-content').style.display = 'none';
                 document.getElementById('error-container').innerHTML = '';
                 
-                // Load treasury metrics first (most important)
-                await loadTreasuryMetrics();
+                // Load treasury metrics first (most important) - with error handling
+                try {
+                    await loadTreasuryMetrics();
+                } catch (error) {
+                    console.error('Treasury metrics failed:', error);
+                    // Continue loading other data even if treasury fails
+                }
                 
-                // Load overview
-                const overview = await apiCall('/api/analytics/dashboard/overview');
+                // Load overview - with error handling
+                try {
+                    const overview = await apiCall('/api/analytics/dashboard/overview');
+                    
+                    // Update metrics
+                    document.getElementById('total-users').textContent = overview.data.users.total.toLocaleString();
+                    document.getElementById('dau').textContent = overview.data.users.dailyActive.toLocaleString();
+                    document.getElementById('wau').textContent = overview.data.users.weeklyActive.toLocaleString();
+                    document.getElementById('mau').textContent = overview.data.users.monthlyActive.toLocaleString();
+                    document.getElementById('total-income').textContent = overview.data.entries.totalIncome.toLocaleString();
+                    document.getElementById('total-expense').textContent = overview.data.entries.totalExpense.toLocaleString();
+                    document.getElementById('income-month').textContent = overview.data.entries.incomeThisMonth.toLocaleString();
+                    document.getElementById('expense-month').textContent = overview.data.entries.expenseThisMonth.toLocaleString();
+                    
+                    // Update recent activity
+                    const activityList = document.getElementById('recent-activity');
+                    activityList.innerHTML = '';
+                    
+                    overview.data.recentActivity.forEach(activity => {
+                        const item = document.createElement('li');
+                        item.className = 'activity-item';
+                        item.innerHTML = `
+                            <div class="activity-info">
+                                <div class="activity-type">${formatEventType(activity.eventType)}</div>
+                                <div class="activity-user">${activity.userName} (${activity.userEmail})</div>
+                            </div>
+                            <div class="activity-time">${formatTime(activity.timestamp)}</div>
+                        `;
+                        activityList.appendChild(item);
+                    });
+                } catch (error) {
+                    console.error('Overview loading failed:', error);
+                    // Set default values
+                    document.getElementById('total-users').textContent = 'Error';
+                    document.getElementById('dau').textContent = 'Error';
+                    document.getElementById('wau').textContent = 'Error';
+                    document.getElementById('mau').textContent = 'Error';
+                    document.getElementById('total-income').textContent = 'Error';
+                    document.getElementById('total-expense').textContent = 'Error';
+                    document.getElementById('income-month').textContent = 'Error';
+                    document.getElementById('expense-month').textContent = 'Error';
+                }
                 
-                // Update metrics
-                document.getElementById('total-users').textContent = overview.data.users.total.toLocaleString();
-                document.getElementById('dau').textContent = overview.data.users.dailyActive.toLocaleString();
-                document.getElementById('wau').textContent = overview.data.users.weeklyActive.toLocaleString();
-                document.getElementById('mau').textContent = overview.data.users.monthlyActive.toLocaleString();
-                document.getElementById('total-income').textContent = overview.data.entries.totalIncome.toLocaleString();
-                document.getElementById('total-expense').textContent = overview.data.entries.totalExpense.toLocaleString();
-                document.getElementById('income-month').textContent = overview.data.entries.incomeThisMonth.toLocaleString();
-                document.getElementById('expense-month').textContent = overview.data.entries.expenseThisMonth.toLocaleString();
+                // Load event counts - with error handling
+                try {
+                    const eventCounts = await apiCall('/api/analytics/dashboard/event-counts?period=month');
+                    const eventCountsContainer = document.getElementById('event-counts');
+                    eventCountsContainer.innerHTML = '';
+                    
+                    Object.entries(eventCounts.data.eventCounts).forEach(([eventType, count]) => {
+                        const item = document.createElement('div');
+                        item.className = 'event-count-item';
+                        item.innerHTML = `
+                            <div class="event-count-label">${formatEventType(eventType)}</div>
+                            <div class="event-count-value">${count.toLocaleString()}</div>
+                        `;
+                        eventCountsContainer.appendChild(item);
+                    });
+                } catch (error) {
+                    console.error('Event counts loading failed:', error);
+                    const eventCountsContainer = document.getElementById('event-counts');
+                    eventCountsContainer.innerHTML = '<div style="color: #DC2626;">Failed to load event data</div>';
+                }
                 
-                // Load event counts
-                const eventCounts = await apiCall('/api/analytics/dashboard/event-counts?period=month');
-                const eventCountsContainer = document.getElementById('event-counts');
-                eventCountsContainer.innerHTML = '';
+                // Load top users - with error handling
+                try {
+                    const topUsers = await apiCall('/api/analytics/dashboard/top-users?limit=10&period=month');
+                    const topUsersBody = document.getElementById('top-users-body');
+                    topUsersBody.innerHTML = '';
+                    
+                    topUsers.data.topUsers.forEach((user, index) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td><span class="badge">#${index + 1}</span></td>
+                            <td>${user.name || 'Unknown'}</td>
+                            <td>${user.email}</td>
+                            <td>${user.eventCount.toLocaleString()}</td>
+                        `;
+                        topUsersBody.appendChild(row);
+                    });
+                } catch (error) {
+                    console.error('Top users loading failed:', error);
+                    const topUsersBody = document.getElementById('top-users-body');
+                    topUsersBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #DC2626;">Failed to load top users</td></tr>';
+                }
                 
-                Object.entries(eventCounts.data.eventCounts).forEach(([eventType, count]) => {
-                    const item = document.createElement('div');
-                    item.className = 'event-count-item';
-                    item.innerHTML = `
-                        <div class="event-count-label">${formatEventType(eventType)}</div>
-                        <div class="event-count-value">${count.toLocaleString()}</div>
-                    `;
-                    eventCountsContainer.appendChild(item);
-                });
-                
-                // Load top users
-                const topUsers = await apiCall('/api/analytics/dashboard/top-users?limit=10&period=month');
-                const topUsersBody = document.getElementById('top-users-body');
-                topUsersBody.innerHTML = '';
-                
-                topUsers.data.topUsers.forEach((user, index) => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td><span class="badge">#${index + 1}</span></td>
-                        <td>${user.name || 'Unknown'}</td>
-                        <td>${user.email}</td>
-                        <td>${user.eventCount.toLocaleString()}</td>
-                    `;
-                    topUsersBody.appendChild(row);
-                });
-                
-                // Update recent activity
-                const activityList = document.getElementById('recent-activity');
-                activityList.innerHTML = '';
-                
-                overview.data.recentActivity.forEach(activity => {
-                    const item = document.createElement('li');
-                    item.className = 'activity-item';
-                    item.innerHTML = `
-                        <div class="activity-info">
-                            <div class="activity-type">${formatEventType(activity.eventType)}</div>
-                            <div class="activity-user">${activity.userName} (${activity.userEmail})</div>
-                        </div>
-                        <div class="activity-time">${formatTime(activity.timestamp)}</div>
-                    `;
-                    activityList.appendChild(item);
-                });
-                
+                // Always show the dashboard content, even if some parts failed
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('dashboard-content').style.display = 'block';
                 
             } catch (error) {
-                console.error('Error loading dashboard:', error);
+                console.error('Critical error loading dashboard:', error);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error-container').innerHTML = `
                     <div class="error">
-                        <strong>Error:</strong> ${error.message}
+                        <strong>Dashboard Loading Error:</strong> ${error.message}
+                        <br><small>Some features may not be available. Try refreshing the page.</small>
                     </div>
                 `;
+                // Still show the dashboard content even with errors
+                document.getElementById('dashboard-content').style.display = 'block';
             }
         }
         
@@ -1398,12 +1446,13 @@
             try {
                 const hours = document.getElementById('rateLimitTimeframe').value;
                 
-                // Load overview
-                const overviewResponse = await apiCall(`/admin/rate-limits/overview?hours=${hours}`);
-                if (overviewResponse.success) {
-                    const overview = overviewResponse.data.overview;
-                    document.getElementById('rl-total-calls').textContent = overview.totalCalls.toLocaleString();
-                    document.getElementById('rl-calls-per-min').textContent = `${overview.callsPerMinute} calls/min`;
+                // Load overview with error handling
+                try {
+                    const overviewResponse = await apiCall(`/admin/rate-limits/overview?hours=${hours}`);
+                    if (overviewResponse.success) {
+                        const overview = overviewResponse.data.overview;
+                        document.getElementById('rl-total-calls').textContent = overview.totalCalls.toLocaleString();
+                        document.getElementById('rl-calls-per-min').textContent = `${overview.callsPerMinute} calls/min`;
                     document.getElementById('rl-limit-hits').textContent = overview.rateLimitHits.toLocaleString();
                     document.getElementById('rl-limit-rate').textContent = `${overview.rateLimitRate}% of calls`;
                     document.getElementById('rl-error-rate').textContent = `${overview.errorRate}%`;
@@ -1483,7 +1532,19 @@
                 
             } catch (error) {
                 console.error('Error loading rate limit data:', error);
-                alert('Error loading rate limit data: ' + error.message);
+                // Don't block the dashboard - just show empty state
+                document.getElementById('rl-total-calls').textContent = '0';
+                document.getElementById('rl-calls-per-min').textContent = '0 calls/min';
+                document.getElementById('rl-limit-hits').textContent = '0';
+                document.getElementById('rl-limit-rate').textContent = '0% of calls';
+                document.getElementById('rl-error-rate').textContent = '0%';
+                document.getElementById('rl-error-count').textContent = '0 errors';
+                document.getElementById('rl-avg-response').textContent = '0ms';
+                
+                // Show empty states for tables
+                document.getElementById('heavy-users-body').innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #6B7280;">Rate limit monitoring temporarily unavailable</td></tr>';
+                document.getElementById('endpoint-stats-body').innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #6B7280;">Rate limit monitoring temporarily unavailable</td></tr>';
+                document.getElementById('violations-body').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #6B7280;">Rate limit monitoring temporarily unavailable</td></tr>';
             }
         }
         

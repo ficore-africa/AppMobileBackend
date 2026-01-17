@@ -4267,5 +4267,249 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to get treasury metrics',
                 'errors': {'general': [str(e)]}
             }), 500
+    
+    # ===== RATE LIMIT MONITORING ENDPOINTS =====
+    
+    @admin_bp.route('/rate-limits/overview', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_rate_limits_overview(current_user):
+        """Get rate limit overview statistics"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            time_start = datetime.utcnow() - timedelta(hours=hours)
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            overview = {
+                'totalCalls': 0,
+                'callsPerMinute': 0,
+                'rateLimitHits': 0,
+                'rateLimitRate': 0,
+                'errorRate': 0,
+                'errorCalls': 0,
+                'avgResponseTime': 0
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'overview': overview
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting rate limits overview: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get rate limits overview',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/heavy-users', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_heavy_users(current_user):
+        """Get users with high API usage"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            min_calls = int(request.args.get('min_calls', 100))
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            heavy_users = []
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'heavyUsers': heavy_users
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting heavy users: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get heavy users',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/endpoint-stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_endpoint_stats(current_user):
+        """Get endpoint usage statistics"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            endpoints = []
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'endpoints': endpoints
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting endpoint stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get endpoint stats',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/violations', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_rate_limit_violations(current_user):
+        """Get rate limit violations"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            violations = []
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'violations': violations
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting rate limit violations: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get rate limit violations',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/user/<user_id>', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_rate_limit_details(current_user, user_id):
+        """Get detailed rate limit information for a specific user"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            
+            # Get user info
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            user_data = {
+                'user': {
+                    'displayName': user.get('displayName', 'Unknown'),
+                    'email': user.get('email', 'Unknown'),
+                    'isSubscribed': user.get('isSubscribed', False)
+                },
+                'totalCalls': 0,
+                'callsPerMinute': 0,
+                'timeframe': f'Last {hours} hours',
+                'endpoints': []
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': user_data
+            })
+            
+        except Exception as e:
+            print(f"Error getting user rate limit details: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get user rate limit details',
+                'error': str(e)
+            }), 500
+    
+    # ===== LIQUID WALLET MANAGEMENT ENDPOINTS =====
+    
+    @admin_bp.route('/users/<user_id>/wallet', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_wallet(current_user, user_id):
+        """Get user's liquid wallet information"""
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get wallet data
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet not found for this user'
+                }), 404
+            
+            # Serialize wallet data
+            wallet_data = serialize_doc(wallet)
+            
+            return jsonify({
+                'success': True,
+                'data': wallet_data,
+                'message': 'Wallet information retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting user wallet: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get wallet information',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/transactions', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_wallet_transactions(current_user, user_id):
+        """Get user's wallet transaction history"""
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get transaction history from VAS transactions
+            limit = int(request.args.get('limit', 50))
+            
+            transactions = list(mongo.db.vas_transactions.find({
+                'userId': ObjectId(user_id)
+            }).sort('createdAt', -1).limit(limit))
+            
+            # Serialize transactions
+            transaction_data = []
+            for tx in transactions:
+                tx_data = serialize_doc(tx)
+                transaction_data.append(tx_data)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactions': transaction_data,
+                    'count': len(transaction_data)
+                },
+                'message': 'Wallet transactions retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting wallet transactions: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get wallet transactions',
+                'errors': {'general': [str(e)]}
+            }), 500
          
     return admin_bp

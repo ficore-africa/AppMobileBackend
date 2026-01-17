@@ -413,6 +413,9 @@
                 <button class="tab" onclick="switchTab('subscription')">
                     <i class="fas fa-crown"></i> Subscription
                 </button>
+                <button class="tab" onclick="switchTab('liquidWallet')">
+                    <i class="fas fa-wallet"></i> Liquid Wallet
+                </button>
             </div>
             
             <!-- Overview Tab -->
@@ -507,6 +510,43 @@
                         </button>
                         <button class="btn btn-danger" onclick="showCancelSubscriptionModal()">
                             <i class="fas fa-times-circle"></i> Cancel Subscription
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Liquid Wallet Tab -->
+            <div id="liquidWalletTab" class="tab-content">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Wallet Balance</label>
+                        <value id="walletBalance" style="font-size: 24px; color: #1E3A8A;">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Account Name</label>
+                        <value id="walletAccountName">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Wallet Status</label>
+                        <value id="walletStatus">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Account Numbers</label>
+                        <value id="walletAccounts">-</value>
+                    </div>
+                </div>
+                
+                <div class="action-section" id="walletActions">
+                    <h3>Liquid Wallet Management</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" onclick="refreshWalletData()">
+                            <i class="fas fa-sync-alt"></i> Refresh Wallet Data
+                        </button>
+                        <button class="btn btn-success" onclick="showFundWalletModal()">
+                            <i class="fas fa-plus-circle"></i> Fund Wallet (Admin)
+                        </button>
+                        <button class="btn btn-warning" onclick="showWalletHistoryModal()">
+                            <i class="fas fa-history"></i> Transaction History
                         </button>
                     </div>
                 </div>
@@ -657,6 +697,10 @@
                 statusBadge.textContent = 'Inactive';
                 statusBadge.className = 'badge badge-danger';
             }
+            
+            // Load additional data
+            loadSubscriptionDetails(user.id);
+            loadWalletDetails(user.id);
         }
         
         // Load subscription details
@@ -685,6 +729,119 @@
             document.getElementById('subStartDate').textContent = formatDate(subscription.startDate);
             document.getElementById('subEndDate').textContent = formatDate(subscription.endDate);
             document.getElementById('subDaysRemaining').textContent = subscription.daysRemaining !== null ? subscription.daysRemaining + ' days' : 'N/A';
+        }
+        
+        // Load wallet details
+        async function loadWalletDetails(userId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/wallet`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayWalletDetails(data.data);
+                } else {
+                    // No wallet found - show empty state
+                    displayWalletDetails(null);
+                }
+            } catch (error) {
+                console.error('Error loading wallet:', error);
+                displayWalletDetails(null);
+            }
+        }
+        
+        // Display wallet details
+        function displayWalletDetails(wallet) {
+            if (!wallet) {
+                document.getElementById('walletBalance').textContent = 'No wallet found';
+                document.getElementById('walletAccountName').textContent = '-';
+                document.getElementById('walletStatus').textContent = 'Not created';
+                document.getElementById('walletAccounts').textContent = '-';
+                return;
+            }
+            
+            document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0);
+            document.getElementById('walletAccountName').textContent = wallet.accountName || '-';
+            document.getElementById('walletStatus').textContent = wallet.status || 'unknown';
+            
+            // Format account numbers
+            if (wallet.accounts && wallet.accounts.length > 0) {
+                const accountNumbers = wallet.accounts.map(acc => acc.accountNumber || acc).join(', ');
+                document.getElementById('walletAccounts').textContent = accountNumbers;
+            } else {
+                document.getElementById('walletAccounts').textContent = 'No accounts';
+            }
+        }
+        
+        // Refresh wallet data
+        async function refreshWalletData() {
+            if (!currentUser) return;
+            
+            try {
+                await loadWalletDetails(currentUser.id);
+                showSuccess('Wallet data refreshed successfully');
+            } catch (error) {
+                showError('Failed to refresh wallet data: ' + error.message);
+            }
+        }
+        
+        // Show fund wallet modal (placeholder)
+        async function showFundWalletModal() {
+            alert('Fund Wallet feature coming soon - this would integrate with admin funding capabilities');
+        }
+        
+        // Show wallet history modal
+        async function showWalletHistoryModal() {
+            if (!currentUser) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/transactions`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let html = '<h3>Wallet Transaction History</h3>';
+                    html += '<div style="max-height: 400px; overflow-y: auto;">';
+                    
+                    if (data.data.transactions && data.data.transactions.length > 0) {
+                        html += '<table style="width: 100%; border-collapse: collapse;">';
+                        html += '<thead><tr style="background: #F4F1EC;">';
+                        html += '<th style="padding: 10px; text-align: left;">Date</th>';
+                        html += '<th style="padding: 10px; text-align: left;">Type</th>';
+                        html += '<th style="padding: 10px; text-align: right;">Amount</th>';
+                        html += '<th style="padding: 10px; text-align: left;">Status</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        data.data.transactions.forEach(tx => {
+                            html += '<tr style="border-bottom: 1px solid #eee;">';
+                            html += `<td style="padding: 10px;">${formatDate(tx.createdAt)}</td>`;
+                            html += `<td style="padding: 10px;">${tx.type || 'Unknown'}</td>`;
+                            html += `<td style="padding: 10px; text-align: right;">${formatCurrency(tx.amount || 0)}</td>`;
+                            html += `<td style="padding: 10px;">${tx.status || 'Unknown'}</td>`;
+                            html += '</tr>';
+                        });
+                        
+                        html += '</tbody></table>';
+                    } else {
+                        html += '<p style="text-align: center; padding: 20px; color: #6B7280;">No transactions found</p>';
+                    }
+                    
+                    html += '</div>';
+                    showModal('Wallet History', html);
+                } else {
+                    showError('Failed to load wallet history: ' + data.message);
+                }
+            } catch (error) {
+                showError('Failed to load wallet history: ' + error.message);
+            }
         }
         
         // Switch tabs
