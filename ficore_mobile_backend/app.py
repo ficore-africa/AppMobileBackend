@@ -230,6 +230,17 @@ with app.app_context():
         print("✅ Immutability migration already completed (skipped)")
     else:
         print(f"⚠️  Immutability migration failed: {migration_result.get('error', 'Unknown error')}")
+    
+    # CRITICAL FIX: Run dashboard performance indexes migration
+    from migrations.add_dashboard_performance_indexes import run_dashboard_performance_migration
+    dashboard_migration_result = run_dashboard_performance_migration(mongo.db)
+    
+    if dashboard_migration_result['success'] and not dashboard_migration_result['already_run']:
+        print("✅ Dashboard performance migration completed successfully")
+    elif dashboard_migration_result['already_run']:
+        print("✅ Dashboard performance migration already completed (skipped)")
+    else:
+        print(f"⚠️  Dashboard performance migration failed: {dashboard_migration_result.get('error', 'Unknown error')}")
 
 # Helper function to convert ObjectId to string
 def serialize_doc(doc):

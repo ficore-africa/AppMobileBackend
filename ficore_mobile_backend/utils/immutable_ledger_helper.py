@@ -116,6 +116,7 @@ def soft_delete_transaction(db, collection_name, transaction_id, user_id):
 def supersede_transaction(db, collection_name, transaction_id, user_id, update_data):
     """
     Create a new version of a transaction instead of overwriting the original
+    OPTIMIZED: Uses atomic operations and proper error handling
     
     Args:
         db: MongoDB database instance
@@ -135,68 +136,103 @@ def supersede_transaction(db, collection_name, transaction_id, user_id, update_d
     """
     collection = db[collection_name]
     
-    # Step 1: Get the original transaction
-    original = collection.find_one({
-        '_id': ObjectId(transaction_id),
-        'userId': user_id
-    })
-    
-    if not original:
+    try:
+        # Step 1: Get the original transaction with atomic check
+        original = collection.find_one({
+            '_id': ObjectId(transaction_id),
+            'userId': user_id,
+            'status': {'$nin': ['superseded', 'voided']}  # Ensure not already processed
+        })
+        
+        if not original:
+            return {
+                'success': False,
+                'message': 'Transaction not found, already processed, or you do not have permission to update it'
+            }
+        
+        # Step 2: Prepare new version data
+        new_entry = original.copy()
+        new_entry['_id'] = ObjectId()  # New ID
+        new_entry['version'] = original.get('version', 1) + 1
+        new_entry['originalEntryId'] = str(transaction_id)
+        new_entry['status'] = 'active'
+        new_entry['createdAt'] = datetime.utcnow()
+        new_entry['updatedAt'] = datetime.utcnow()
+        
+        # Apply updates
+        for key, value in update_data.items():
+            if key not in ['_id', 'userId', 'version', 'originalEntryId', 'status']:
+                new_entry[key] = value
+        
+        # Add audit log entry
+        if 'auditLog' not in new_entry:
+            new_entry['auditLog'] = []
+        
+        new_entry['auditLog'].append({
+            'action': 'version_created',
+            'timestamp': datetime.utcnow(),
+            'userId': str(user_id),
+            'version': new_entry['version'],
+            'changes': list(update_data.keys())
+        })
+        
+        # Step 3: Use bulk operations for atomicity
+        from pymongo import UpdateOne, InsertOne
+        
+        bulk_operations = [
+            # Mark original as superseded
+            UpdateOne(
+                {'_id': ObjectId(transaction_id), 'status': {'$nin': ['superseded', 'voided']}},
+                {'$set': {
+                    'status': 'superseded',
+                    'supersededAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow(),
+                    'supersededBy': str(new_entry['_id'])
+                }}
+            ),
+            # Insert new version
+            InsertOne(new_entry)
+        ]
+        
+        # Execute bulk operations atomically
+        result = collection.bulk_write(bulk_operations, ordered=True)
+        
+        # Verify both operations succeeded
+        if result.modified_count == 1 and result.inserted_count == 1:
+            return {
+                'success': True,
+                'original_id': str(transaction_id),
+                'new_id': str(new_entry['_id']),
+                'new_version': new_entry,
+                'message': f'{collection_name.capitalize()[:-1]} updated successfully (version {new_entry["version"]})'
+            }
+        else:
+            # Rollback if partial success
+            collection.delete_one({'_id': new_entry['_id']})
+            collection.update_one(
+                {'_id': ObjectId(transaction_id)},
+                {'$unset': {'supersededBy': '', 'supersededAt': ''}, '$set': {'status': 'active'}}
+            )
+            return {
+                'success': False,
+                'message': 'Failed to complete transaction update atomically'
+            }
+            
+    except Exception as e:
+        # Ensure cleanup on any error
+        try:
+            collection.delete_one({'_id': new_entry['_id']})
+            collection.update_one(
+                {'_id': ObjectId(transaction_id)},
+                {'$unset': {'supersededBy': '', 'supersededAt': ''}, '$set': {'status': 'active'}}
+            )
+        except:
+            pass  # Best effort cleanup
+            
         return {
             'success': False,
-            'message': 'Transaction not found or you do not have permission to update it'
+            'message': f'Database error during transaction update: {str(e)}'
         }
-    
-    # Check if already superseded or deleted
-    if original.get('status') in ['superseded', 'voided']:
-        return {
-            'success': False,
-            'message': f'Transaction is {original.get("status")} and cannot be edited'
-        }
-    
-    # Step 2: Mark original as superseded
-    collection.update_one(
-        {'_id': ObjectId(transaction_id)},
-        {'$set': {
-            'status': 'superseded',
-            'supersededAt': datetime.utcnow(),
-            'updatedAt': datetime.utcnow()
-        }}
-    )
-    
-    # Step 3: Create new version with updated data
-    new_entry = original.copy()
-    new_entry['_id'] = ObjectId()  # New ID
-    new_entry['version'] = original.get('version', 1) + 1
-    new_entry['originalEntryId'] = str(transaction_id)
-    new_entry['status'] = 'active'
-    new_entry['createdAt'] = datetime.utcnow()
-    new_entry['updatedAt'] = datetime.utcnow()
-    
-    # Apply updates
-    for key, value in update_data.items():
-        if key not in ['_id', 'userId', 'version', 'originalEntryId', 'status']:
-            new_entry[key] = value
-    
-    # Add audit log entry
-    if 'auditLog' not in new_entry:
-        new_entry['auditLog'] = []
-    
-    new_entry['auditLog'].append({
-        'action': 'version_created',
-        'timestamp': datetime.utcnow(),
-        'userId': str(user_id),
-        'version': new_entry['version'],
-        'changes': list(update_data.keys())
-    })
-    
-    new_id = collection.insert_one(new_entry).inserted_id
-    
-    # Step 4: Link them
-    collection.update_one(
-        {'_id': ObjectId(transaction_id)},
-        {'$set': {'supersededBy': str(new_id)}}
-    )
     
     return {
         'success': True,

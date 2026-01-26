@@ -147,14 +147,18 @@ class DatabaseSchema:
         }
     
     @staticmethod
+    @staticmethod
     def get_income_indexes() -> List[Dict[str, Any]]:
         """Define indexes for incomes collection."""
         return [
             {'keys': [('userId', 1), ('dateReceived', -1)], 'name': 'user_date_desc'},
             {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
             {'keys': [('userId', 1), ('frequency', 1)], 'name': 'user_frequency'},
-            # Removed recurring index - simplified income tracking
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            # CRITICAL FIX: Add compound index for dashboard aggregations
+            {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
+            # CRITICAL FIX: Add index for immutable ledger queries
+            {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
         ]
     
     # ==================== EXPENSES COLLECTION ====================
@@ -188,6 +192,10 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('date', -1)], 'name': 'user_date_desc'},
             {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            # CRITICAL FIX: Add compound index for dashboard aggregations
+            {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
+            # CRITICAL FIX: Add index for immutable ledger queries
+            {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
         ]
     
     # ==================== CREDIT_TRANSACTIONS COLLECTION ====================
