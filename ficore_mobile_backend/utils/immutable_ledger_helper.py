@@ -245,7 +245,10 @@ def supersede_transaction(db, collection_name, transaction_id, user_id, update_d
 
 def get_active_transactions_query(user_id):
     """
-    Get the standard query filter for active (non-deleted, non-voided) transactions
+    Get the standard query filter for active (non-deleted, non-voided, non-superseded) transactions
+    
+    CRITICAL FIX: Exclude superseded entries to prevent duplicate counting
+    in balance calculations after edits
     
     Args:
         user_id: ObjectId of the user
@@ -255,7 +258,7 @@ def get_active_transactions_query(user_id):
     """
     return {
         'userId': user_id,
-        'status': 'active',
+        'status': 'active',  # Only active entries (excludes voided AND superseded)
         'isDeleted': False
     }
 
