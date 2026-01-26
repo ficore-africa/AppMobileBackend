@@ -517,13 +517,12 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             })
             
         except Exception as e:
-                    }
-                }}
-            ])
-            creditors_summary = list(creditors_summary)
-            creditors_data = creditors_summary[0] if creditors_summary else {
-                'totalVendors': 0, 'totalOwed': 0, 'totalOutstanding': 0, 'overdueVendors': 0
-            }
+            print(f"Dashboard overview error: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve dashboard overview',
+                'error': str(e)
+            }), 500
             
             # Inventory summary
             inventory_summary = mongo.db.inventory_items.aggregate([
