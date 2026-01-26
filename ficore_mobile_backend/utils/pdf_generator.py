@@ -66,7 +66,8 @@ class PDFGenerator:
     
     def generate_financial_report(self, user_data, export_data, data_type='all'):
         """Generate comprehensive financial report PDF"""
-        print(f"DEBUG PDF GENERATOR: generate_financial_report called with data_type='{data_type}'")
+        # DISABLED FOR VAS FOCUS
+        # print(f"DEBUG PDF GENERATOR: generate_financial_report called with data_type='{data_type}'")
         
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -228,7 +229,8 @@ class PDFGenerator:
             net_profit_loss = total_income - total_expenses
             
             # DEBUG: Log that we're adding the summary
-            print(f"DEBUG P&L SUMMARY: Adding Financial Summary - Income: ₦{total_income:,.2f}, Expenses: ₦{total_expenses:,.2f}, Net: ₦{net_profit_loss:,.2f}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG P&L SUMMARY: Adding Financial Summary - Income: ₦{total_income:,.2f}, Expenses: ₦{total_expenses:,.2f}, Net: ₦{net_profit_loss:,.2f}")
             
             # Add summary section
             story.append(Spacer(1, 10))

@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>FiCore Analytics Dashboard</title>
     <link rel="stylesheet" href="responsive.css">
-    <link rel="stylesheet" href="backend_switcher.css">
-    <script src="utils.js"></script>
-    <script src="backend_switcher.js"></script>
     <style>
         * {
             margin: 0;
@@ -314,8 +311,6 @@
                 <a href="password_reset_requests.html" class="btn" style="text-decoration: none;">Password Resets</a>
                 <a href="user_management.html" class="btn" style="text-decoration: none;">User Management</a>
                 <a href="audit_logs.html" class="btn" style="text-decoration: none;">Audit Logs</a>
-                <a href="certified_ledger.html" class="btn" style="text-decoration: none; background: #34a853;">🏛️ Certified Ledger</a>
-                <a href="emergency_recovery.html" class="btn" style="text-decoration: none; background: #ef4444; color: white;">🚨 Emergency Recovery</a>
                 <button class="btn btn-secondary" onclick="showChangePasswordModal()">Change Password</button>
                 <button class="btn btn-danger" onclick="logout()">Logout</button>
             </div>
@@ -328,67 +323,6 @@
         </div>
         
         <div id="dashboard-content" style="display: none;">
-            <!-- 🏛️ TREASURY COMMAND CENTER -->
-            <div class="section" style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); color: white; border-radius: 12px; padding: 30px; margin-bottom: 30px; box-shadow: 0 8px 20px rgba(30, 58, 138, 0.3);">
-                <h2 style="margin: 0 0 25px 0; font-size: 24px; display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-university"></i> Treasury Command Center
-                </h2>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 25px;">
-                    <!-- Total Liabilities -->
-                    <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">System Liability</div>
-                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 5px;" id="treasury-liabilities">₦0.00</div>
-                        <div style="font-size: 12px; opacity: 0.8;">What we owe users</div>
-                    </div>
-                    
-                    <!-- Peyflex Balance -->
-                    <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Peyflex Balance</div>
-                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 5px;" id="treasury-peyflex">₦0.00</div>
-                        <div style="font-size: 12px; opacity: 0.8;">Inventory level</div>
-                    </div>
-                    
-                    <!-- Liquidity Ratio -->
-                    <div id="treasury-ratio-card" style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Coverage Ratio</div>
-                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 5px;" id="treasury-ratio">0%</div>
-                        <div style="font-size: 12px; opacity: 0.8;" id="treasury-alert">Calculating...</div>
-                    </div>
-                    
-                    <!-- Today's Deposits -->
-                    <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">User Deposits (Today)</div>
-                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 5px;" id="treasury-deposits-today">₦0.00</div>
-                        <div style="font-size: 12px; opacity: 0.8;"><span id="treasury-deposits-count">0</span> transactions</div>
-                    </div>
-                    
-                    <!-- Today's Revenue -->
-                    <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Realized Revenue (Today)</div>
-                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 5px;" id="treasury-revenue-today">₦0.00</div>
-                        <div style="font-size: 12px; opacity: 0.8;">Profit tracking</div>
-                    </div>
-                    
-                    <!-- This Month's Revenue -->
-                    <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2);">
-                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Revenue (This Month)</div>
-                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 5px;" id="treasury-revenue-month">₦0.00</div>
-                        <div style="font-size: 12px; opacity: 0.8;">Monthly growth</div>
-                    </div>
-                </div>
-                
-                <!-- Action Buttons -->
-                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    <button onclick="refreshTreasury()" style="background: white; color: #1E3A8A; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
-                        <i class="fas fa-sync-alt"></i> Refresh Metrics
-                    </button>
-                    <a href="certified_ledger.html" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
-                        <i class="fas fa-file-invoice"></i> View Certified Ledger
-                    </a>
-                </div>
-            </div>
-            
             <!-- Key Metrics -->
             <div class="metrics-grid">
                 <div class="metric-card">
@@ -771,41 +705,27 @@
             }
         });
         
-        // API Helper with timeout
-        async function apiCall(endpoint, timeout = 10000) {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
+        // API Helper
+        async function apiCall(endpoint) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                headers: {
+                    'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            });
             
-            try {
-                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                    headers: {
-                        'Authorization': `Bearer ${ADMIN_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    },
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (response.status === 401 || response.status === 403) {
-                    alert('Session expired. Please login again.');
-                    localStorage.removeItem('admin_token');
-                    window.location.href = 'admin_login.html';
-                    return;
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`API call failed: ${response.statusText}`);
-                }
-                
-                return await response.json();
-            } catch (error) {
-                clearTimeout(timeoutId);
-                if (error.name === 'AbortError') {
-                    throw new Error('Request timeout - please try again');
-                }
-                throw error;
+            if (response.status === 401 || response.status === 403) {
+                alert('Session expired. Please login again.');
+                localStorage.removeItem('admin_token');
+                window.location.href = 'admin_login.html';
+                return;
             }
+            
+            if (!response.ok) {
+                throw new Error(`API call failed: ${response.statusText}`);
+            }
+            
+            return await response.json();
         }
         
         // Format event type for display
@@ -839,190 +759,78 @@
                 document.getElementById('dashboard-content').style.display = 'none';
                 document.getElementById('error-container').innerHTML = '';
                 
-                // Load treasury metrics first (most important) - with error handling
-                try {
-                    await loadTreasuryMetrics();
-                } catch (error) {
-                    console.error('Treasury metrics failed:', error);
-                    // Continue loading other data even if treasury fails
-                }
+                // Load overview
+                const overview = await apiCall('/api/analytics/dashboard/overview');
                 
-                // Load overview - with error handling
-                try {
-                    const overview = await apiCall('/api/analytics/dashboard/overview');
-                    
-                    // Update metrics
-                    document.getElementById('total-users').textContent = overview.data.users.total.toLocaleString();
-                    document.getElementById('dau').textContent = overview.data.users.dailyActive.toLocaleString();
-                    document.getElementById('wau').textContent = overview.data.users.weeklyActive.toLocaleString();
-                    document.getElementById('mau').textContent = overview.data.users.monthlyActive.toLocaleString();
-                    document.getElementById('total-income').textContent = overview.data.entries.totalIncome.toLocaleString();
-                    document.getElementById('total-expense').textContent = overview.data.entries.totalExpense.toLocaleString();
-                    document.getElementById('income-month').textContent = overview.data.entries.incomeThisMonth.toLocaleString();
-                    document.getElementById('expense-month').textContent = overview.data.entries.expenseThisMonth.toLocaleString();
-                    
-                    // Update recent activity
-                    const activityList = document.getElementById('recent-activity');
-                    activityList.innerHTML = '';
-                    
-                    overview.data.recentActivity.forEach(activity => {
-                        const item = document.createElement('li');
-                        item.className = 'activity-item';
-                        item.innerHTML = `
-                            <div class="activity-info">
-                                <div class="activity-type">${formatEventType(activity.eventType)}</div>
-                                <div class="activity-user">${activity.userName} (${activity.userEmail})</div>
-                            </div>
-                            <div class="activity-time">${formatTime(activity.timestamp)}</div>
-                        `;
-                        activityList.appendChild(item);
-                    });
-                } catch (error) {
-                    console.error('Overview loading failed:', error);
-                    // Set default values
-                    document.getElementById('total-users').textContent = 'Error';
-                    document.getElementById('dau').textContent = 'Error';
-                    document.getElementById('wau').textContent = 'Error';
-                    document.getElementById('mau').textContent = 'Error';
-                    document.getElementById('total-income').textContent = 'Error';
-                    document.getElementById('total-expense').textContent = 'Error';
-                    document.getElementById('income-month').textContent = 'Error';
-                    document.getElementById('expense-month').textContent = 'Error';
-                }
+                // Update metrics
+                document.getElementById('total-users').textContent = overview.data.users.total.toLocaleString();
+                document.getElementById('dau').textContent = overview.data.users.dailyActive.toLocaleString();
+                document.getElementById('wau').textContent = overview.data.users.weeklyActive.toLocaleString();
+                document.getElementById('mau').textContent = overview.data.users.monthlyActive.toLocaleString();
+                document.getElementById('total-income').textContent = overview.data.entries.totalIncome.toLocaleString();
+                document.getElementById('total-expense').textContent = overview.data.entries.totalExpense.toLocaleString();
+                document.getElementById('income-month').textContent = overview.data.entries.incomeThisMonth.toLocaleString();
+                document.getElementById('expense-month').textContent = overview.data.entries.expenseThisMonth.toLocaleString();
                 
-                // Load event counts - with error handling
-                try {
-                    const eventCounts = await apiCall('/api/analytics/dashboard/event-counts?period=month');
-                    const eventCountsContainer = document.getElementById('event-counts');
-                    eventCountsContainer.innerHTML = '';
-                    
-                    Object.entries(eventCounts.data.eventCounts).forEach(([eventType, count]) => {
-                        const item = document.createElement('div');
-                        item.className = 'event-count-item';
-                        item.innerHTML = `
-                            <div class="event-count-label">${formatEventType(eventType)}</div>
-                            <div class="event-count-value">${count.toLocaleString()}</div>
-                        `;
-                        eventCountsContainer.appendChild(item);
-                    });
-                } catch (error) {
-                    console.error('Event counts loading failed:', error);
-                    const eventCountsContainer = document.getElementById('event-counts');
-                    eventCountsContainer.innerHTML = '<div style="color: #DC2626;">Failed to load event data</div>';
-                }
+                // Load event counts
+                const eventCounts = await apiCall('/api/analytics/dashboard/event-counts?period=month');
+                const eventCountsContainer = document.getElementById('event-counts');
+                eventCountsContainer.innerHTML = '';
                 
-                // Load top users - with error handling
-                try {
-                    const topUsers = await apiCall('/api/analytics/dashboard/top-users?limit=10&period=month');
-                    const topUsersBody = document.getElementById('top-users-body');
-                    topUsersBody.innerHTML = '';
-                    
-                    topUsers.data.topUsers.forEach((user, index) => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td><span class="badge">#${index + 1}</span></td>
-                            <td>${user.name || 'Unknown'}</td>
-                            <td>${user.email}</td>
-                            <td>${user.eventCount.toLocaleString()}</td>
-                        `;
-                        topUsersBody.appendChild(row);
-                    });
-                } catch (error) {
-                    console.error('Top users loading failed:', error);
-                    const topUsersBody = document.getElementById('top-users-body');
-                    topUsersBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #DC2626;">Failed to load top users</td></tr>';
-                }
+                Object.entries(eventCounts.data.eventCounts).forEach(([eventType, count]) => {
+                    const item = document.createElement('div');
+                    item.className = 'event-count-item';
+                    item.innerHTML = `
+                        <div class="event-count-label">${formatEventType(eventType)}</div>
+                        <div class="event-count-value">${count.toLocaleString()}</div>
+                    `;
+                    eventCountsContainer.appendChild(item);
+                });
                 
-                // Always show the dashboard content, even if some parts failed
+                // Load top users
+                const topUsers = await apiCall('/api/analytics/dashboard/top-users?limit=10&period=month');
+                const topUsersBody = document.getElementById('top-users-body');
+                topUsersBody.innerHTML = '';
+                
+                topUsers.data.topUsers.forEach((user, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><span class="badge">#${index + 1}</span></td>
+                        <td>${user.name || 'Unknown'}</td>
+                        <td>${user.email}</td>
+                        <td>${user.eventCount.toLocaleString()}</td>
+                    `;
+                    topUsersBody.appendChild(row);
+                });
+                
+                // Update recent activity
+                const activityList = document.getElementById('recent-activity');
+                activityList.innerHTML = '';
+                
+                overview.data.recentActivity.forEach(activity => {
+                    const item = document.createElement('li');
+                    item.className = 'activity-item';
+                    item.innerHTML = `
+                        <div class="activity-info">
+                            <div class="activity-type">${formatEventType(activity.eventType)}</div>
+                            <div class="activity-user">${activity.userName} (${activity.userEmail})</div>
+                        </div>
+                        <div class="activity-time">${formatTime(activity.timestamp)}</div>
+                    `;
+                    activityList.appendChild(item);
+                });
+                
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('dashboard-content').style.display = 'block';
                 
             } catch (error) {
-                console.error('Critical error loading dashboard:', error);
+                console.error('Error loading dashboard:', error);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error-container').innerHTML = `
                     <div class="error">
-                        <strong>Dashboard Loading Error:</strong> ${error.message}
-                        <br><small>Some features may not be available. Try refreshing the page.</small>
+                        <strong>Error:</strong> ${error.message}
                     </div>
                 `;
-                // Still show the dashboard content even with errors
-                document.getElementById('dashboard-content').style.display = 'block';
-            }
-        }
-        
-        // Treasury Command Center Functions
-        async function loadTreasuryMetrics() {
-            try {
-                const response = await apiCall('/admin/treasury/metrics');
-                
-                if (response.success) {
-                    const data = response.data;
-                    
-                    // Update liabilities
-                    document.getElementById('treasury-liabilities').textContent = 
-                        `₦${data.liabilities.total.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                    
-                    // Update Peyflex balance
-                    document.getElementById('treasury-peyflex').textContent = 
-                        `₦${data.liquidity.estimatedPeyflexBalance.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                    
-                    // Update ratio with color coding
-                    const ratio = data.ratio.liquidityCoverageRatio;
-                    const ratioCard = document.getElementById('treasury-ratio-card');
-                    document.getElementById('treasury-ratio').textContent = `${ratio.toFixed(1)}%`;
-                    document.getElementById('treasury-alert').textContent = data.ratio.alertMessage;
-                    
-                    // Color code the ratio card based on alert status
-                    if (data.ratio.alertStatus === 'RED') {
-                        ratioCard.style.background = 'rgba(220, 38, 38, 0.3)';
-                        ratioCard.style.border = '2px solid rgba(220, 38, 38, 0.5)';
-                    } else if (data.ratio.alertStatus === 'YELLOW') {
-                        ratioCard.style.background = 'rgba(245, 158, 11, 0.3)';
-                        ratioCard.style.border = '2px solid rgba(245, 158, 11, 0.5)';
-                    } else {
-                        ratioCard.style.background = 'rgba(22, 163, 74, 0.3)';
-                        ratioCard.style.border = '2px solid rgba(22, 163, 74, 0.5)';
-                    }
-                    
-                    // Update today's metrics
-                    document.getElementById('treasury-deposits-today').textContent = 
-                        `₦${data.today.deposits.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                    document.getElementById('treasury-deposits-count').textContent = data.today.depositsCount;
-                    
-                    document.getElementById('treasury-revenue-today').textContent = 
-                        `₦${data.today.revenue.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                    
-                    // Update this month's revenue
-                    document.getElementById('treasury-revenue-month').textContent = 
-                        `₦${data.thisMonth.revenue.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                }
-            } catch (error) {
-                console.error('Error loading treasury metrics:', error);
-                // Show error but don't block dashboard loading
-                document.getElementById('treasury-alert').textContent = '⚠️ Failed to load metrics';
-            }
-        }
-        
-        async function refreshTreasury() {
-            const btn = event.target.closest('button');
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
-            btn.disabled = true;
-            
-            try {
-                await loadTreasuryMetrics();
-                btn.innerHTML = '<i class="fas fa-check"></i> Updated!';
-                setTimeout(() => {
-                    btn.innerHTML = originalHTML;
-                    btn.disabled = false;
-                }, 2000);
-            } catch (error) {
-                btn.innerHTML = '<i class="fas fa-times"></i> Failed';
-                setTimeout(() => {
-                    btn.innerHTML = originalHTML;
-                    btn.disabled = false;
-                }, 2000);
             }
         }
         
@@ -1446,13 +1254,12 @@
             try {
                 const hours = document.getElementById('rateLimitTimeframe').value;
                 
-                // Load overview with error handling
-                try {
-                    const overviewResponse = await apiCall(`/admin/rate-limits/overview?hours=${hours}`);
-                    if (overviewResponse.success) {
-                        const overview = overviewResponse.data.overview;
-                        document.getElementById('rl-total-calls').textContent = overview.totalCalls.toLocaleString();
-                        document.getElementById('rl-calls-per-min').textContent = `${overview.callsPerMinute} calls/min`;
+                // Load overview
+                const overviewResponse = await apiCall(`/admin/rate-limits/overview?hours=${hours}`);
+                if (overviewResponse.success) {
+                    const overview = overviewResponse.data.overview;
+                    document.getElementById('rl-total-calls').textContent = overview.totalCalls.toLocaleString();
+                    document.getElementById('rl-calls-per-min').textContent = `${overview.callsPerMinute} calls/min`;
                     document.getElementById('rl-limit-hits').textContent = overview.rateLimitHits.toLocaleString();
                     document.getElementById('rl-limit-rate').textContent = `${overview.rateLimitRate}% of calls`;
                     document.getElementById('rl-error-rate').textContent = `${overview.errorRate}%`;
@@ -1532,19 +1339,7 @@
                 
             } catch (error) {
                 console.error('Error loading rate limit data:', error);
-                // Don't block the dashboard - just show empty state
-                document.getElementById('rl-total-calls').textContent = '0';
-                document.getElementById('rl-calls-per-min').textContent = '0 calls/min';
-                document.getElementById('rl-limit-hits').textContent = '0';
-                document.getElementById('rl-limit-rate').textContent = '0% of calls';
-                document.getElementById('rl-error-rate').textContent = '0%';
-                document.getElementById('rl-error-count').textContent = '0 errors';
-                document.getElementById('rl-avg-response').textContent = '0ms';
-                
-                // Show empty states for tables
-                document.getElementById('heavy-users-body').innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #6B7280;">Rate limit monitoring temporarily unavailable</td></tr>';
-                document.getElementById('endpoint-stats-body').innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #6B7280;">Rate limit monitoring temporarily unavailable</td></tr>';
-                document.getElementById('violations-body').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #6B7280;">Rate limit monitoring temporarily unavailable</td></tr>';
+                alert('Error loading rate limit data: ' + error.message);
             }
         }
         

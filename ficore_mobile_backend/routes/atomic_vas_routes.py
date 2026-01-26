@@ -98,8 +98,10 @@ def process_atomic_vas_transaction():
                 'phoneNumber': data.get('phoneNumber'),
                 'network': data.get('network'),
                 'dataPlan': data.get('dataPlan'),
-                'status': 'PENDING',
+                'status': 'FAILED',  # 🔒 ATOMIC PATTERN: Start as FAILED, update to SUCCESS only when complete
+                'failureReason': 'Transaction in progress',  # Will be updated if it actually fails
                 'provider': 'peyflex',  # or determine dynamically
+                'transactionReference': idempotency_key,  # CRITICAL: Add this field for unique index
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),
                 'tierChanged': tier_changed,
@@ -109,7 +111,7 @@ def process_atomic_vas_transaction():
                 'auditLog': [{
                     'action': 'CREATED',
                     'timestamp': datetime.utcnow(),
-                    'details': 'Transaction created with atomic protection'
+                    'details': 'Transaction created with atomic protection - starts as FAILED'
                 }]
             }
             
@@ -121,7 +123,7 @@ def process_atomic_vas_transaction():
                 'userId': ObjectId(user_id),
                 'type': 'VAS_TRANSACTION',
                 'category': transaction_type,
-                'amount': total_amount,
+                'amount': amount,  # Use actual purchase amount, not total_amount (fees eliminated)
                 'description': f'{transaction_type} - {data.get("network", "")} {data.get("phoneNumber", "")}',
                 'transactionId': transaction_id,
                 'idempotencyKey': idempotency_key,
@@ -133,7 +135,7 @@ def process_atomic_vas_transaction():
                 'auditLog': [{
                     'action': 'CREATED',
                     'timestamp': datetime.utcnow(),
-                    'details': 'Expense entry created atomically with VAS transaction'
+                    'details': 'Expense entry created atomically with VAS transaction - fees eliminated'
                 }]
             }
             
@@ -144,15 +146,15 @@ def process_atomic_vas_transaction():
                 wallet_update_result = db.user_wallets.update_one(
                     {'userId': ObjectId(user_id)},
                     {
-                        '$inc': {'balance': -total_amount},
+                        '$inc': {'balance': -amount},  # Debit actual purchase amount (fees eliminated)
                         '$set': {'updatedAt': datetime.utcnow()},
                         '$push': {
                             'auditLog': {
                                 'action': 'VAS_DEBIT',
-                                'amount': -total_amount,
+                                'amount': -amount,  # Debit actual purchase amount
                                 'transactionId': transaction_id,
                                 'timestamp': datetime.utcnow(),
-                                'details': f'VAS transaction: {transaction_type}'
+                                'details': f'VAS transaction: {transaction_type} - fees eliminated'
                             }
                         }
                     },
@@ -169,22 +171,31 @@ def process_atomic_vas_transaction():
             # 5. Update transaction status based on provider response
             final_status = 'SUCCESS' if provider_response['success'] else 'FAILED'
             
+            # Prepare update operation
+            update_operation = {
+                '$set': {
+                    'status': final_status,
+                    'providerResponse': provider_response,
+                    'updatedAt': datetime.utcnow()
+                },
+                '$push': {
+                    'auditLog': {
+                        'action': 'PROVIDER_RESPONSE',
+                        'timestamp': datetime.utcnow(),
+                        'details': f'Provider returned: {final_status}'
+                    }
+                }
+            }
+            
+            # 🔒 Clear failureReason on success, update it on failure
+            if final_status == 'SUCCESS':
+                update_operation['$unset'] = {'failureReason': ""}
+            else:
+                update_operation['$set']['failureReason'] = provider_response.get('message', 'Provider transaction failed')
+            
             db.vas_transactions.update_one(
                 {'_id': transaction_id},
-                {
-                    '$set': {
-                        'status': final_status,
-                        'providerResponse': provider_response,
-                        'updatedAt': datetime.utcnow()
-                    },
-                    '$push': {
-                        'auditLog': {
-                            'action': 'PROVIDER_RESPONSE',
-                            'timestamp': datetime.utcnow(),
-                            'details': f'Provider returned: {final_status}'
-                        }
-                    }
-                },
+                update_operation,
                 session=session
             )
             
@@ -216,8 +227,8 @@ def process_atomic_vas_transaction():
                     'status': final_status,
                     'type': transaction_type,
                     'amount': amount,
-                    'transactionFee': data.get('transactionFee', 0),
-                    'totalAmount': total_amount,
+                    'transactionFee': 0.0,  # Fees eliminated for VAS purchases
+                    'totalAmount': amount,  # Total is now same as amount (fees eliminated)
                     'tier': current_tier,
                     'tierChanged': tier_changed,
                     'network': data.get('network'),
@@ -225,7 +236,8 @@ def process_atomic_vas_transaction():
                     'dataPlan': data.get('dataPlan'),
                     'provider': 'peyflex',
                     'createdAt': datetime.utcnow().isoformat(),
-                    'idempotencyKey': idempotency_key
+                    'idempotencyKey': idempotency_key,
+                    'feesEliminated': True  # Flag to indicate fees have been eliminated
                 }
             })
             

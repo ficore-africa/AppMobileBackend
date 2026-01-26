@@ -126,8 +126,9 @@ def create_immutable_expense_endpoints(expenses_bp, mongo, token_required, seria
                         else:
                             update_data[field] = data[field]
                 
-                # Also update title field for consistency
-                if 'description' in update_data:
+                # Don't automatically override title with description on updates
+                # Only set title if it's explicitly provided or missing
+                if 'description' in update_data and not update_data.get('title'):
                     update_data['title'] = update_data['description']
                 
                 # Use the immutable ledger helper

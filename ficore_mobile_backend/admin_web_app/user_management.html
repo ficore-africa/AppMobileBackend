@@ -543,7 +543,10 @@
                             <i class="fas fa-sync-alt"></i> Refresh Wallet Data
                         </button>
                         <button class="btn btn-success" onclick="showFundWalletModal()">
-                            <i class="fas fa-plus-circle"></i> Fund Wallet (Admin)
+                            <i class="fas fa-plus-circle"></i> Process Refund
+                        </button>
+                        <button class="btn btn-danger" onclick="showDeductWalletModal()">
+                            <i class="fas fa-minus-circle"></i> Process Deduction
                         </button>
                         <button class="btn btn-warning" onclick="showWalletHistoryModal()">
                             <i class="fas fa-history"></i> Transaction History
@@ -764,7 +767,7 @@
                 return;
             }
             
-            document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0);
+            document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0, 'NGN');
             document.getElementById('walletAccountName').textContent = wallet.accountName || '-';
             document.getElementById('walletStatus').textContent = wallet.status || 'unknown';
             
@@ -791,7 +794,141 @@
         
         // Show fund wallet modal (placeholder)
         async function showFundWalletModal() {
-            alert('Fund Wallet feature coming soon - this would integrate with admin funding capabilities');
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            const amount = prompt('Enter refund amount (₦):');
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                if (amount !== null) showError('Invalid amount');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for refund (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const referenceTransactionId = prompt('Enter reference transaction ID (optional):') || '';
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Wallet Refund',
+                message: `Process refund of ₦${parseFloat(amount).toLocaleString()} to ${currentUser.displayName}?`,
+                details: {
+                    'User': currentUser.displayName,
+                    'Email': currentUser.email,
+                    'Refund Amount': `₦${parseFloat(amount).toLocaleString()}`,
+                    'Reason': reason,
+                    'Reference Transaction': referenceTransactionId || 'None'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/refund`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: parseFloat(amount),
+                        reason: reason,
+                        referenceTransactionId: referenceTransactionId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Refund processed successfully! ₦${data.data.amount.toLocaleString()} added to wallet.`);
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to process refund');
+                }
+            } catch (error) {
+                showError('Error processing refund: ' + error.message);
+            }
+        }
+        
+        // Show deduct wallet modal
+        async function showDeductWalletModal() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            // Check current balance first
+            const currentBalance = parseFloat(document.getElementById('liquidWalletBalance').textContent.replace(/[₦,]/g, ''));
+            
+            const amount = prompt('Enter deduction amount (₦):');
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                if (amount !== null) showError('Invalid amount');
+                return;
+            }
+            
+            const deductionAmount = parseFloat(amount);
+            
+            // Check if user has sufficient balance
+            if (deductionAmount > currentBalance) {
+                showError(`Insufficient balance. User has ₦${currentBalance.toLocaleString()}, cannot deduct ₦${deductionAmount.toLocaleString()}`);
+                return;
+            }
+            
+            const reason = prompt('Enter reason for deduction (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const referenceTransactionId = prompt('Enter reference transaction ID (optional):') || '';
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Wallet Deduction',
+                message: `Process deduction of ₦${deductionAmount.toLocaleString()} from ${currentUser.displayName}?`,
+                details: {
+                    'User': currentUser.displayName,
+                    'Email': currentUser.email,
+                    'Current Balance': `₦${currentBalance.toLocaleString()}`,
+                    'Deduction Amount': `₦${deductionAmount.toLocaleString()}`,
+                    'New Balance': `₦${(currentBalance - deductionAmount).toLocaleString()}`,
+                    'Reason': reason,
+                    'Reference Transaction': referenceTransactionId || 'None'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/deduct`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: deductionAmount,
+                        reason: reason,
+                        referenceTransactionId: referenceTransactionId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Deduction processed successfully! ₦${data.data.amount.toLocaleString()} deducted from wallet.`);
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to process deduction');
+                }
+            } catch (error) {
+                showError('Error processing deduction: ' + error.message);
+            }
         }
         
         // Show wallet history modal
@@ -824,7 +961,7 @@
                             html += '<tr style="border-bottom: 1px solid #eee;">';
                             html += `<td style="padding: 10px;">${formatDate(tx.createdAt)}</td>`;
                             html += `<td style="padding: 10px;">${tx.type || 'Unknown'}</td>`;
-                            html += `<td style="padding: 10px; text-align: right;">${formatCurrency(tx.amount || 0)}</td>`;
+                            html += `<td style="padding: 10px; text-align: right;">${formatCurrency(tx.amount || 0, 'NGN')}</td>`;
                             html += `<td style="padding: 10px;">${tx.status || 'Unknown'}</td>`;
                             html += '</tr>';
                         });

@@ -564,7 +564,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             end_date = user.get('subscriptionEndDate')
             auto_renew = user.get('subscriptionAutoRenew', False)
             
-            print(f"[SUBSCRIPTION_STATUS] User {current_user['_id']}: auto_renew from DB = {auto_renew}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"[SUBSCRIPTION_STATUS] User {current_user['_id']}: auto_renew from DB = {auto_renew}")
             
             # Build status response with validated data
             status_data = {

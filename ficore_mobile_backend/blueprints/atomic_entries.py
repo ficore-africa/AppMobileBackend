@@ -82,6 +82,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     'errors': errors
                 }), 400
             
+            # Import auto-population utility
+            from ..utils.expense_utils import auto_populate_expense_fields
+            
             # Validate payment method
             raw_payment = data.get('paymentMethod')
             normalized_payment = normalize_payment_method(raw_payment) if raw_payment is not None else 'cash'
@@ -91,6 +94,25 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Invalid payment method',
                     'errors': {'paymentMethod': ['Unrecognized payment method']}
                 }), 400
+            
+            # STEP 3: Create expense data
+            expense_data = {
+                'userId': current_user['_id'],
+                'amount': float(data['amount']),
+                'description': data['description'],
+                'category': data['category'],
+                'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
+                'budgetId': data.get('budgetId'),
+                'tags': data.get('tags', []),
+                'paymentMethod': normalized_payment,
+                'location': data.get('location', ''),
+                'notes': data.get('notes', ''),
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()
+            }
+            
+            # Auto-populate title and description if missing
+            expense_data = auto_populate_expense_fields(expense_data)
             
             # STEP 2: Check user status (Premium/Admin/Free)
             user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
@@ -273,7 +295,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             # STEP 9: Prepare response
             created_expense = atomic_entries_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
-            created_expense['title'] = created_expense.get('description', 'Expense')
+            # Keep auto-generated title, don't override with description
+            if not created_expense.get('title'):
+                created_expense['title'] = created_expense.get('description', 'Expense')
             created_expense['date'] = created_expense.get('date', datetime.utcnow()).isoformat() + 'Z'
             created_expense['createdAt'] = created_expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_expense['updatedAt'] = created_expense.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
@@ -487,6 +511,10 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'fcChargeAmount': fc_cost,
                 'fcChargeAttemptedAt': None
             }
+            
+            # Import and apply auto-population for proper source/description
+            from ..utils.income_utils import auto_populate_income_fields
+            income_data = auto_populate_income_fields(income_data)
             
             # STEP 6: Insert income into database
             result = atomic_entries_bp.mongo.db.incomes.insert_one(income_data)

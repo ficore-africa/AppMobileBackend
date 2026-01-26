@@ -275,7 +275,8 @@ def create_user_notification(mongo, user_id, category, title, body,
         return str(result.inserted_id)
         
     except Exception as e:
-        print(f'Failed to create notification: {str(e)}')
+        # DISABLED FOR LIQUID WALLET FOCUS
+        # print(f'Failed to create notification: {str(e)}')
         return None
 
 # Notification categories (matching frontend)

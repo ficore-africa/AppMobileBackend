@@ -54,7 +54,9 @@ def get_expenses():
             expense_list = []
             for expense in expenses:
                 expense_data = expenses_bp.serialize_doc(expense.copy())
-                expense_data['title'] = expense_data.get('description', expense_data.get('title', 'Expense'))
+                # Keep auto-generated title, don't override with description
+                if not expense_data.get('title'):
+                    expense_data['title'] = expense_data.get('description', 'Expense')
                 expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
@@ -171,6 +173,9 @@ def create_expense():
                     'errors': {'paymentMethod': ['Unrecognized payment method']}
                 }), 400
 
+            # Import auto-population utility
+            from ..utils.expense_utils import auto_populate_expense_fields
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -185,6 +190,9 @@ def create_expense():
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
+            
+            # Auto-populate title and description if missing
+            expense_data = auto_populate_expense_fields(expense_data)
            
             result = expenses_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
@@ -234,7 +242,9 @@ def create_expense():
            
             created_expense = expenses_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
-            created_expense['title'] = created_expense.get('description', 'Expense')
+            # Keep auto-generated title, don't override with description
+            if not created_expense.get('title'):
+                created_expense['title'] = created_expense.get('description', 'Expense')
             created_expense['date'] = created_expense.get('date', datetime.utcnow()).isoformat() + 'Z'
             created_expense['createdAt'] = created_expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_expense['updatedAt'] = created_expense.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
@@ -309,7 +319,9 @@ def update_expense(expense_id):
                         update_data[field] = data[field]
             
             # Also update title field for consistency
-            if 'description' in update_data:
+            # Don't automatically override title with description on updates
+            # Only set title if it's explicitly provided or missing
+            if 'description' in update_data and not update_data.get('title'):
                 update_data['title'] = update_data['description']
             
             # Use the immutable ledger helper
@@ -428,16 +440,18 @@ def get_expense_summary():
             all_expenses = list(expenses_bp.mongo.db.expenses.find(base_query))
             
             # CRITICAL DEBUG: Log expense summary calculation
-            print(f"DEBUG EXPENSE SUMMARY - User: {current_user['_id']}")
-            print(f"DEBUG: Total expenses retrieved: {len(all_expenses)}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE SUMMARY - User: {current_user['_id']}")
+            # print(f"DEBUG: Total expenses retrieved: {len(all_expenses)}")
             
             filtered_expenses = [exp for exp in all_expenses if exp.get('date') and filter_start <= exp['date'] <= filter_end]
            
             total_this_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month)
             total_last_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month)
             
-            print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
-            print(f"DEBUG EXPENSE SUMMARY: Last month total: {total_last_month}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
+            # print(f"DEBUG EXPENSE SUMMARY: Last month total: {total_last_month}")
            
             category_totals = {}
             for expense in filtered_expenses:
@@ -448,7 +462,9 @@ def get_expense_summary():
             recent_expenses_data = []
             for expense in recent_expenses:
                 e = expenses_bp.serialize_doc(expense.copy())
-                e['title'] = e.get('description', e.get('title', 'Expense'))
+                # Keep auto-generated title, don't override with description
+                if not e.get('title'):
+                    e['title'] = e.get('description', 'Expense')
                 e['date'] = e.get('date', datetime.utcnow()).isoformat() + 'Z'
                 e['createdAt'] = e.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 e['updatedAt'] = e.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
@@ -611,8 +627,9 @@ def get_expense_insights():
             expenses = list(expenses_bp.mongo.db.expenses.find(base_query))
             
             # CRITICAL DEBUG: Log insights calculation
-            print(f"DEBUG EXPENSE INSIGHTS - User: {current_user['_id']}")
-            print(f"DEBUG: Total expenses retrieved: {len(expenses)}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE INSIGHTS - User: {current_user['_id']}")
+            # print(f"DEBUG: Total expenses retrieved: {len(expenses)}")
             
             if not expenses:
                 return jsonify({
@@ -631,16 +648,18 @@ def get_expense_insights():
             current_total = sum(e.get('amount', 0) for e in current_month_expenses)
             last_total = sum(e.get('amount', 0) for e in last_month_expenses)
             
-            print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")
-            print(f"DEBUG EXPENSE INSIGHTS: This month total: {current_total}")
-            print(f"DEBUG EXPENSE INSIGHTS: Last month expenses count: {len(last_month_expenses)}")
-            print(f"DEBUG EXPENSE INSIGHTS: Last month total: {last_total}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")
+            # print(f"DEBUG EXPENSE INSIGHTS: This month total: {current_total}")
+            # print(f"DEBUG EXPENSE INSIGHTS: Last month expenses count: {len(last_month_expenses)}")
+            # print(f"DEBUG EXPENSE INSIGHTS: Last month total: {last_total}")
            
             insights = []
             # CRITICAL FIX: Consistent calculation with proper severity field
             if last_total > 0:
                 change = ((current_total - last_total) / last_total) * 100
-                print(f"DEBUG EXPENSE INSIGHTS: Calculated change = {change}%")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG EXPENSE INSIGHTS: Calculated change = {change}%")
                 
                 if change > 15:
                     insights.append({

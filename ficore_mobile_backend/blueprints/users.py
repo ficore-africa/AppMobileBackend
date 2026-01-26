@@ -117,7 +117,7 @@ def update_profile():
             data = request.get_json()
             
             # Fields that can be updated
-            updatable_fields = ['firstName', 'lastName', 'phone', 'address', 'dateOfBirth', 'displayName']
+            updatable_fields = ['firstName', 'lastName', 'phone', 'address', 'dateOfBirth', 'displayName', 'bvn', 'nin']
             update_data = {}
             
             for field in updatable_fields:
@@ -305,7 +305,8 @@ def change_password():
             
             return jsonify({
                 'success': True,
-                'message': 'Password changed successfully'
+                'message': 'Password changed successfully',
+                'data': None
             })
             
         except Exception as e:

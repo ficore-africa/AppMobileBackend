@@ -360,7 +360,8 @@ def forgot_password():
             # Don't reveal if email exists or not - but still return success
             return jsonify({
                 'success': True,
-                'message': 'If the email exists, a reset link has been sent'
+                'message': 'If the email exists, a reset link has been sent',
+                'data': None
             })
         
         # Generate reset token
@@ -422,7 +423,8 @@ def forgot_password():
         # Always return success to user (don't reveal if email exists)
         return jsonify({
             'success': True,
-            'message': 'Password reset instructions sent to your email'
+            'message': 'Password reset instructions sent to your email',
+            'data': None
         })
         
     except Exception as e:

@@ -26,7 +26,11 @@ class DatabaseSchema:
             'displayName': str,  # Auto-generated from firstName + lastName
             'phone': Optional[str],  # Optional phone number
             'address': Optional[str],  # Optional address
-            'dateOfBirth': Optional[str],  # Optional, ISO date string
+            'dateOfBirth': Optional[str],  # Optional, ISO date string or DD/MM/YYYY
+            'bvn': Optional[str],  # Bank Verification Number (11 digits)
+            'nin': Optional[str],  # National Identification Number (11 digits)
+            'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
+            'kycVerifiedAt': Optional[datetime],  # KYC verification timestamp
             'role': str,  # 'personal' or 'admin', default: 'personal'
             'ficoreCreditBalance': float,  # FiCore Credits balance, default: 1000.0
             'isActive': bool,  # Account active status, default: True

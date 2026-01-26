@@ -72,7 +72,8 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             }
             
         except Exception as e:
-            print(f"Error calculating profit metrics: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error calculating profit metrics: {str(e)}")
             return {
                 'totalRevenue': 0,
                 'totalCogs': 0,
@@ -177,7 +178,8 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             return alerts
             
         except Exception as e:
-            print(f"Error getting alerts: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error getting alerts: {str(e)}")
             return []
 
     def get_recent_activity(user_id, limit=20):
@@ -276,7 +278,8 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             return activities[:limit]
             
         except Exception as e:
-            print(f"Error getting recent activity: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error getting recent activity: {str(e)}")
             return []
 
     # ==================== DASHBOARD ENDPOINTS ====================
@@ -290,7 +293,9 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             try:
                 tracker.track_dashboard_view(current_user['_id'])
             except Exception as e:
-                print(f"Analytics tracking failed: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Analytics tracking failed: {e}")
+                pass
             
             period = request.args.get('period', 'monthly')
             start_date, end_date = get_date_range(period)

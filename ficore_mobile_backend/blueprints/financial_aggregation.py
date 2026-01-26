@@ -426,16 +426,27 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
             total_expense_amount = sum(item['totalAmount'] for item in expense_counts)
             
             # Get earliest and latest transaction dates for period info
-            earliest_income = self.db.incomes.find_one({'userId': user_id}, sort=[('dateReceived', 1)])
-            earliest_expense = self.db.expenses.find_one({'userId': user_id}, sort=[('date', 1)])
-            
-            earliest_date = None
-            if earliest_income and earliest_expense:
-                earliest_date = min(earliest_income['dateReceived'], earliest_expense['date'])
-            elif earliest_income:
-                earliest_date = earliest_income['dateReceived']
-            elif earliest_expense:
-                earliest_date = earliest_expense['date']
+            try:
+                earliest_income = self.db.incomes.find_one({'userId': user_id}, sort=[('dateReceived', 1)])
+                earliest_expense = self.db.expenses.find_one({'userId': user_id}, sort=[('date', 1)])
+                
+                earliest_date = None
+                if earliest_income and earliest_expense:
+                    income_date = earliest_income.get('dateReceived')
+                    expense_date = earliest_expense.get('date')
+                    if income_date and expense_date:
+                        earliest_date = min(income_date, expense_date)
+                    elif income_date:
+                        earliest_date = income_date
+                    elif expense_date:
+                        earliest_date = expense_date
+                elif earliest_income:
+                    earliest_date = earliest_income.get('dateReceived')
+                elif earliest_expense:
+                    earliest_date = earliest_expense.get('date')
+            except Exception as date_error:
+                print(f"ERROR: Error getting earliest transaction dates: {str(date_error)}")
+                earliest_date = None
             
             now = datetime.utcnow()
             

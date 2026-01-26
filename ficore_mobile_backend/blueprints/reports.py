@@ -115,7 +115,9 @@ def init_reports_blueprint(mongo, token_required):
             }
             mongo.db.export_logs.insert_one(export_log)
         except Exception as e:
-            print(f"Error logging export event: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error logging export event: {str(e)}")
+            pass
     
     def parse_date_range(request_data):
         """

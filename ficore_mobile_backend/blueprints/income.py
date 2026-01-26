@@ -184,6 +184,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # NOTE: If within free limit, no FC deduction needed
             # If over limit, FC will be deducted after successful creation
             
+            # Import auto-population utility
+            from ..utils.income_utils import auto_populate_income_fields
+            
             # Simplified: No recurring logic - all incomes are one-time entries
             
             # CRITICAL FIX: Ensure amount is stored exactly as provided, no multipliers
@@ -208,8 +211,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'updatedAt': datetime.utcnow()
             }
             
+            # Auto-populate title and description if missing
+            income_data = auto_populate_income_fields(income_data)
+            
             # DEBUG: Log the exact amount being stored
-            print(f"DEBUG: Creating income record with amount: {raw_amount} for user: {current_user['_id']}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: Creating income record with amount: {raw_amount} for user: {current_user['_id']}")
             
             result = mongo.db.incomes.insert_one(income_data)
             income_id = str(result.inserted_id)
@@ -310,8 +317,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             try:
-                print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
-                print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
+            # print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
                 # Base query for active transactions only
                 base_query = get_active_transactions_query(current_user['_id'])
@@ -325,7 +333,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ]))
                 total_this_month = total_this_month_result[0]['total'] if total_this_month_result else 0.0
                 this_month_count = total_this_month_result[0]['count'] if total_this_month_result else 0
-                print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
                 
                 total_last_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
@@ -335,7 +344,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
                 ]))
                 total_last_month = total_last_month_result[0]['total'] if total_last_month_result else 0.0
-                print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
                 
                 year_to_date_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
@@ -346,13 +356,16 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ]))
                 year_to_date = year_to_date_result[0]['total'] if year_to_date_result else 0.0
                 ytd_record_count = year_to_date_result[0]['count'] if year_to_date_result else 0
-                print(f"DEBUG: CALCULATED year_to_date = {year_to_date}, ytd_record_count = {ytd_record_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED year_to_date = {year_to_date}, ytd_record_count = {ytd_record_count}")
                 
                 all_time_record_count = mongo.db.incomes.count_documents(base_query)
-                print(f"DEBUG: CALCULATED all_time_record_count = {all_time_record_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED all_time_record_count = {all_time_record_count}")
                 
                 final_record_count = ytd_record_count if ytd_record_count > 0 else all_time_record_count
-                print(f"DEBUG: FINAL record_count (with fallback) = {final_record_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: FINAL record_count (with fallback) = {final_record_count}")
                 
                 twelve_months_ago = now - timedelta(days=365)
                 monthly_totals = list(mongo.db.incomes.aggregate([
@@ -390,7 +403,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 elif total_this_month > 0 and total_last_month == 0:
                     growth_percentage = 100.0
                 
-                print(f"DEBUG: CALCULATED growth_percentage = {growth_percentage}% (this_month={total_this_month}, last_month={total_last_month})")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED growth_percentage = {growth_percentage}% (this_month={total_this_month}, last_month={total_last_month})")
                 
                 summary_data = {
                     'total_this_month': total_this_month,
@@ -403,12 +417,13 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'growth_percentage': growth_percentage
                 }
                 
-                print(f"DEBUG: FINAL INCOME SUMMARY RESPONSE:")
-                print(f"  total_this_month: {total_this_month}")
-                print(f"  total_last_month: {total_last_month}")
-                print(f"  year_to_date: {year_to_date}")
-                print(f"  total_records: {final_record_count} (YTD: {ytd_record_count}, All-time: {all_time_record_count})")
-                print(f"  growth_percentage: {growth_percentage}%")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: FINAL INCOME SUMMARY RESPONSE:")
+                # print(f"  total_this_month: {total_this_month}")
+                # print(f"  total_last_month: {total_last_month}")
+                # print(f"  year_to_date: {year_to_date}")
+                # print(f"  total_records: {final_record_count} (YTD: {ytd_record_count}, All-time: {all_time_record_count})")
+                # print(f"  growth_percentage: {growth_percentage}%")
                 
                 return jsonify({
                     'success': True,
@@ -451,22 +466,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             base_query = get_active_transactions_query(current_user['_id'])
             
-            print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
             
             ytd_count = mongo.db.incomes.count_documents({
                 **base_query,
                 'dateReceived': {'$gte': start_of_year, '$lte': now}
             })
-            print(f"DEBUG: YTD count = {ytd_count}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: YTD count = {ytd_count}")
             
             all_time_count = mongo.db.incomes.count_documents(base_query)
-            print(f"DEBUG: All-time count = {all_time_count}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: All-time count = {all_time_count}")
             
             this_month_count = mongo.db.incomes.count_documents({
                 **base_query,
                 'dateReceived': {'$gte': start_of_month, '$lte': now}
             })
-            print(f"DEBUG: This month count = {this_month_count}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: This month count = {this_month_count}")
             
             return jsonify({
                 'success': True,
@@ -499,8 +518,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             incomes = list(mongo.db.incomes.find(base_query))
             
-            print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
-            print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
+            # print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
             
             if not incomes:
                 return jsonify({
@@ -668,7 +688,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if 'amount' in data:
                 raw_amount = float(data['amount'])
                 update_data['amount'] = raw_amount
-                print(f"DEBUG: Updating income record {income_id} with amount: {raw_amount} for user: {current_user['_id']}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: Updating income record {income_id} with amount: {raw_amount} for user: {current_user['_id']}")
             if 'source' in data:
                 update_data['source'] = data['source']
             if 'description' in data:

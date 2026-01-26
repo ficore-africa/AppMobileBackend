@@ -40,7 +40,10 @@ from blueprints.admin_subscription_management import init_admin_subscription_man
 from blueprints.atomic_entries import init_atomic_entries_blueprint
 from blueprints.reports import init_reports_blueprint
 from blueprints.voice_reporting import init_voice_reporting_blueprint
-from blueprints.vas import init_vas_blueprint
+# VAS modules - broken down from monolithic blueprint
+from blueprints.vas_wallet import init_vas_wallet_blueprint
+from blueprints.vas_purchase import init_vas_purchase_blueprint
+from blueprints.vas_bills import init_vas_bills_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -53,6 +56,67 @@ from utils.api_logging_middleware import setup_api_logging
 from config.credentials import credential_manager
 
 app = Flask(__name__)
+
+# Enhanced logging configuration
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Configure logging
+if not app.debug:
+    # Create logs directory if it doesn't exist
+    import os
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    
+    # Set up file handler with rotation
+    file_handler = RotatingFileHandler('logs/ficore_backend.log', maxBytes=10240000, backupCount=10)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    
+    # Set up console handler for immediate feedback
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s'
+    ))
+    console_handler.setLevel(logging.INFO)
+    app.logger.addHandler(console_handler)
+    
+    app.logger.setLevel(logging.INFO)
+    app.logger.info('FiCore Backend startup')
+
+# Add request logging middleware - DISABLED FOR LIQUID WALLET FOCUS
+@app.before_request
+def log_request_info():
+    # DISABLED FOR LIQUID WALLET FOCUS - Uncomment to re-enable request logging
+    pass
+    # try:
+    #     # Only log request body for non-file uploads to avoid logging large files
+    #     body_preview = ""
+    #     if request.content_type and 'multipart/form-data' not in request.content_type:
+    #         body_data = request.get_data(as_text=True)
+    #         body_preview = body_data[:500] if body_data else ""
+    #     
+    #     app.logger.info(f'Request: {request.method} {request.url} - Headers: {dict(request.headers)} - Body: {body_preview}')
+    # except Exception as e:
+    #     app.logger.info(f'Request: {request.method} {request.url} - (Error reading request: {str(e)})')
+
+@app.after_request
+def log_response_info(response):
+    # DISABLED FOR LIQUID WALLET FOCUS - Uncomment to re-enable response logging
+    # try:
+    #     # Only try to read response data for JSON responses, not file downloads
+    #     if response.content_type and 'application/json' in response.content_type:
+    #         app.logger.info(f'Response: {response.status_code} - {response.get_data(as_text=True)[:500]}')
+    #     else:
+    #         # For file responses, just log the status and content type
+    #         app.logger.info(f'Response: {response.status_code} - Content-Type: {response.content_type}')
+    # except Exception as e:
+    #     # Fallback logging if response data can't be read
+    #     app.logger.info(f'Response: {response.status_code} - (Content not readable: {str(e)})')
+    return response
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'ficore-mobile-secret-key-2025')
@@ -308,8 +372,10 @@ atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, 
 reports_blueprint = init_reports_blueprint(mongo, token_required)
 voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
 
-# Initialize VAS blueprint for wallet and utility services
-vas_blueprint = init_vas_blueprint(mongo, token_required, serialize_doc)
+# Initialize VAS modules - broken down from monolithic blueprint
+vas_wallet_blueprint = init_vas_wallet_blueprint(mongo, token_required, serialize_doc)
+vas_purchase_blueprint = init_vas_purchase_blueprint(mongo, token_required, serialize_doc)
+vas_bills_blueprint = init_vas_bills_blueprint(mongo, token_required, serialize_doc)
 
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
@@ -362,14 +428,27 @@ print("✓ Reports blueprint registered at /api/reports")
 app.register_blueprint(voice_reporting_blueprint)
 print("✓ Voice reporting blueprint registered at /api/voice")
 
-# Register VAS blueprint for wallet and utility services
-app.register_blueprint(vas_blueprint)
-print("✓ VAS blueprint registered at /api/vas")
+# Register VAS modules - broken down from monolithic blueprint
+app.register_blueprint(vas_wallet_blueprint)
+print("✓ VAS Wallet blueprint registered at /api/vas/wallet")
+app.register_blueprint(vas_purchase_blueprint)
+print("✓ VAS Purchase blueprint registered at /api/vas/purchase")
+app.register_blueprint(vas_bills_blueprint)
+print("✓ VAS Bills blueprint registered at /api/vas/bills")
 
 # Root redirect to admin login
-@app.route('/')
+@app.route('/', methods=['GET', 'HEAD'])
 def index():
-    """Redirect root URL to admin login page"""
+    """Redirect root URL to admin login page, but return 200 for health checks"""
+    # Check if this is a health check request (HEAD request or specific user agent)
+    if request.method == 'HEAD' or 'Go-http-client' in request.headers.get('User-Agent', ''):
+        return jsonify({
+            'status': 'healthy',
+            'service': 'FiCore Backend',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+    
+    # Regular browser requests get redirected to admin
     return redirect('/admin/admin_login.html')
 
 # Health check endpoint
@@ -1019,7 +1098,19 @@ if __name__ == '__main__':
         print(f"⚠️  Scheduler initialization error (non-fatal): {str(e)}\n")
         # Don't fail app startup if scheduler fails
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Only run Flask development server if not running under Gunicorn
+    # Check if we're running under Gunicorn by looking for gunicorn in the process
+    import sys
+    if 'gunicorn' not in sys.modules and 'gunicorn' not in ' '.join(sys.argv):
+        print("🔧 Running Flask development server...")
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    else:
+        print("🚀 Running under Gunicorn - Flask development server disabled")
+
+# Ensure app is available at module level for Gunicorn
+# This is critical for Gunicorn to find the app object
+if __name__ != '__main__':
+    print(f"🔍 Module imported by Gunicorn - app object available at: {__name__}.app")
 
 
 

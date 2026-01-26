@@ -344,6 +344,7 @@ class EmergencyPricingRecovery:
                     'amount': amount,
                     'description': f'Price protection adjustment',
                     'status': 'SUCCESS',
+                    'transactionReference': f'recovery_{user_id}_{int(datetime.utcnow().timestamp())}',  # CRITICAL: Add this field for unique index
                     'createdAt': datetime.utcnow(),
                     'metadata': {
                         'reason': 'EMERGENCY_PRICING_COMPENSATION',
