@@ -264,7 +264,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @vas_wallet_bp.route('/create', methods=['POST'])
     @token_required
     def create_wallet(current_user):
-        """Create virtual account number (VAN) for user via Monnify"""
+        """Create virtual account number (VAN) for user via Monnify - REQUIRES KYC for compliance"""
         try:
             user_id = str(current_user['_id'])
             
@@ -275,6 +275,23 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'data': serialize_doc(existing_wallet),
                     'message': 'Wallet already exists'
                 }), 200
+            
+            # CRITICAL COMPLIANCE FIX: Check if user has completed KYC verification
+            user_doc = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            user_bvn = user_doc.get('bvn') if user_doc else None
+            user_nin = user_doc.get('nin') if user_doc else None
+            
+            if not user_bvn or not user_nin:
+                print(f'COMPLIANCE: Blocked wallet creation for user {user_id} - missing BVN/NIN verification')
+                return jsonify({
+                    'success': False,
+                    'message': 'KYC verification required before creating wallet',
+                    'errors': {
+                        'kyc': ['Please complete BVN and NIN verification first'],
+                        'compliance': ['Wallets require full identity verification for regulatory compliance']
+                    },
+                    'requiresKyc': True
+                }), 400
             
             auth_response = requests.post(
                 f'{MONNIFY_BASE_URL}/api/v1/auth/login',
@@ -295,6 +312,8 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'contractCode': MONNIFY_CONTRACT_CODE,
                 'customerEmail': current_user.get('email', ''),
                 'customerName': f"{current_user.get('firstName', '')} {current_user.get('lastName', '')}".strip()[:50],  # Monnify 50-char limit
+                'bvn': user_bvn,  # REQUIRED for compliance
+                'nin': user_nin,  # REQUIRED for compliance
                 'getAllAvailableBanks': True
             }
             
@@ -321,6 +340,11 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accountName': van_data['accountName'],
                 'accounts': van_data['accounts'],
                 'status': 'active',
+                'tier': 'TIER_2',  # KYC-verified account
+                'kycVerified': True,
+                'kycStatus': 'verified',
+                'bvn': user_bvn,
+                'nin': user_nin,
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
@@ -1006,7 +1030,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @vas_wallet_bp.route('/reserved-account/create', methods=['POST'])
     @token_required
     def create_reserved_account(current_user):
-        """Create a basic reserved account for the user (without KYC)"""
+        """Create a reserved account - REQUIRES KYC verification for compliance"""
         try:
             user_id = str(current_user['_id'])
             
@@ -1025,10 +1049,27 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Reserved account already exists'
                 }), 200
             
+            # CRITICAL COMPLIANCE FIX: Check if user has completed KYC verification
+            user_doc = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            user_bvn = user_doc.get('bvn') if user_doc else None
+            user_nin = user_doc.get('nin') if user_doc else None
+            
+            if not user_bvn or not user_nin:
+                print(f'COMPLIANCE: Blocked reserved account creation for user {user_id} - missing BVN/NIN verification')
+                return jsonify({
+                    'success': False,
+                    'message': 'KYC verification required before creating reserved account',
+                    'errors': {
+                        'kyc': ['Please complete BVN and NIN verification first'],
+                        'compliance': ['Reserved accounts require full identity verification for regulatory compliance']
+                    },
+                    'requiresKyc': True
+                }), 400
+            
             # Get Monnify access token
             access_token = call_monnify_auth()
             
-            # Create basic reserved account (Tier 1 - no BVN/NIN required)
+            # Create KYC-verified reserved account (Tier 2 - with BVN/NIN)
             account_data = {
                 'accountReference': user_id,  # STANDARDIZED: Use ObjectId string only
                 'accountName': current_user.get('fullName', f"FiCore User {user_id[:8]}")[:50],  # Monnify 50-char limit
@@ -1036,6 +1077,8 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'contractCode': MONNIFY_CONTRACT_CODE,
                 'customerEmail': current_user.get('email', ''),
                 'customerName': current_user.get('fullName', f"FiCore User {user_id[:8]}")[:50],  # Monnify 50-char limit
+                'bvn': user_bvn,  # REQUIRED for compliance
+                'nin': user_nin,  # REQUIRED for compliance
                 'getAllAvailableBanks': True  # Moniepoint default, user choice
             }
             
@@ -1054,7 +1097,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
             van_data = van_response.json()['responseBody']
             
-            # Create wallet record
+            # Create wallet record with KYC verification
             wallet_data = {
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
@@ -1063,14 +1106,18 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'contractCode': van_data['contractCode'],
                 'accounts': van_data['accounts'],
                 'status': 'ACTIVE',
-                'tier': 'TIER_1',  # Basic account without KYC
+                'tier': 'TIER_2',  # KYC-verified account with BVN/NIN
+                'kycVerified': True,
+                'kycStatus': 'verified',
+                'bvn': user_bvn,
+                'nin': user_nin,
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
             
             mongo.db.vas_wallets.insert_one(wallet_data)
             
-            print(f'SUCCESS: Basic reserved account created for user {user_id}')
+            print(f'SUCCESS: KYC-verified reserved account created for user {user_id}')
             
             # Return all accounts for frontend to choose from
             return jsonify({
@@ -1079,8 +1126,8 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'accounts': van_data['accounts'],  # All available bank accounts
                     'accountReference': van_data['accountReference'],
                     'contractCode': van_data['contractCode'],
-                    'tier': 'TIER_1',
-                    'kycVerified': False,
+                    'tier': 'TIER_2',
+                    'kycVerified': True,
                     'createdAt': wallet_data['createdAt'].isoformat() + 'Z',
                     # Keep backward compatibility - return first account as default
                     'defaultAccount': {
@@ -1090,7 +1137,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'bankCode': van_data['accounts'][0].get('bankCode', '035') if van_data['accounts'] else '035',
                     }
                 },
-                'message': f'Reserved account created successfully with {len(van_data["accounts"])} available banks'
+                'message': f'KYC-verified reserved account created successfully with {len(van_data["accounts"])} available banks'
             }), 201
             
         except Exception as e:
@@ -1506,7 +1553,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     if response.status_code == 404:
                         # For accounts created before getAllBanks feature, gracefully handle
                         print(f'INFO: Account {account_reference} was created before multi-bank feature')
-                        return jsonify({
+                        success_response = {
                             'success': True,
                             'data': {
                                 'accounts': existing_accounts,
@@ -1515,7 +1562,9 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                                 'isLegacyAccount': True
                             },
                             'message': 'Account created before multi-bank feature - existing accounts available'
-                        }), 200
+                        }
+                        print(f'DEBUG: Returning legacy account success response: {success_response}')
+                        return jsonify(success_response), 200
                     elif response.status_code == 400:
                         if 'not qualified' in error_msg.lower():
                             error_msg = 'Your account is not qualified to add additional bank accounts. Please complete your profile verification.'
@@ -1526,8 +1575,25 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     elif response.status_code >= 500:
                         error_msg = 'Payment provider is temporarily unavailable. Please try again later.'
                         
-                except:
-                    pass
+                except Exception as json_error:
+                    print(f'DEBUG: Error parsing JSON response: {json_error}')
+                    # If we can't parse the JSON but it's a 404, still handle as legacy account
+                    if response.status_code == 404:
+                        print(f'INFO: Account {account_reference} was created before multi-bank feature (JSON parse failed)')
+                        success_response = {
+                            'success': True,
+                            'data': {
+                                'accounts': existing_accounts,
+                                'totalBanksNow': len(existing_accounts),
+                                'message': 'Your account was created before the multi-bank feature. You currently have access to your existing bank account(s).',
+                                'isLegacyAccount': True
+                            },
+                            'message': 'Account created before multi-bank feature - existing accounts available'
+                        }
+                        print(f'DEBUG: Returning legacy account success response (fallback): {success_response}')
+                        return jsonify(success_response), 200
+                
+                print(f'ERROR: Returning error response: {error_msg}')
                 return jsonify({
                     'success': False,
                     'message': f'Failed to add additional bank accounts: {error_msg}'
@@ -1536,6 +1602,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
         except Exception as e:
             print(f'ERROR: Error adding linked accounts: {str(e)}')
             import traceback
+            print(f'ERROR: Full traceback:')
             traceback.print_exc()
             return jsonify({
                 'success': False,
