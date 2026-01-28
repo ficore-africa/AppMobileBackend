@@ -126,6 +126,12 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Sort activities by timestamp
             recent_activities.sort(key=lambda x: x['timestamp'], reverse=True)
             recent_activities = recent_activities[:10]
+            
+            # Transaction statistics (income + expenses + VAS)
+            total_income_transactions = mongo.db.income.count_documents({})
+            total_expense_transactions = mongo.db.expenses.count_documents({})
+            total_vas_transactions = mongo.db.vas_transactions.count_documents({})
+            total_transactions = total_income_transactions + total_expense_transactions + total_vas_transactions
 
             stats = {
                 'totalUsers': total_users,
@@ -140,6 +146,10 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'pendingCreditRequests': pending_credit_requests,
                 'totalCreditsIssued': total_credits_issued,
                 'creditsThisMonth': credits_this_month,
+                'totalTransactions': total_transactions,
+                'totalIncomeTransactions': total_income_transactions,
+                'totalExpenseTransactions': total_expense_transactions,
+                'totalVASTransactions': total_vas_transactions,
                 'recentActivities': recent_activities
             }
 

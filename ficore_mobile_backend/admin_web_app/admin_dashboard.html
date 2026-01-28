@@ -339,11 +339,39 @@
                     }
                 }
 
-                // You can add more stats loading here for other metrics
-                // For now, setting placeholder values
-                document.getElementById('totalUsers').textContent = '1,234';
-                document.getElementById('activeUsers').textContent = '856';
-                document.getElementById('totalTransactions').textContent = '12,456';
+                // Load real dashboard statistics from backend API
+                const statsResponse = await fetch('/admin/dashboard/stats', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (statsResponse.ok) {
+                    const statsData = await statsResponse.json();
+                    if (statsData.success) {
+                        const stats = statsData.data;
+                        
+                        // Update UI with real data
+                        document.getElementById('totalUsers').textContent = stats.totalUsers.toLocaleString();
+                        document.getElementById('activeUsers').textContent = stats.activeUsers.toLocaleString();
+                        document.getElementById('totalTransactions').textContent = stats.totalTransactions.toLocaleString();
+                        
+                        console.log('✅ Dashboard stats loaded successfully:', stats);
+                    } else {
+                        console.error('❌ Failed to load dashboard stats:', statsData.message);
+                        // Fallback to show dashes
+                        document.getElementById('totalUsers').textContent = '-';
+                        document.getElementById('activeUsers').textContent = '-';
+                        document.getElementById('totalTransactions').textContent = '-';
+                    }
+                } else {
+                    console.error('❌ Dashboard stats API request failed:', statsResponse.status);
+                    // Fallback to show dashes
+                    document.getElementById('totalUsers').textContent = '-';
+                    document.getElementById('activeUsers').textContent = '-';
+                    document.getElementById('totalTransactions').textContent = '-';
+                }
 
             } catch (error) {
                 console.error('Error loading dashboard stats:', error);

@@ -229,17 +229,17 @@
                     }
                     
                     // Store admin token and user info
-                    localStorage.setItem('admin_token', data.data.access_token);
-                    localStorage.setItem('admin_email', data.data.user.email);
-                    localStorage.setItem('admin_name', data.data.user.displayName || data.data.user.name);
-                    localStorage.setItem('admin_user_id', data.data.user.id);
+                    localStorage.setItem('adminToken', data.data.access_token);
+                    localStorage.setItem('adminEmail', data.data.user.email);
+                    localStorage.setItem('adminName', data.data.user.displayName || data.data.user.name);
+                    localStorage.setItem('adminUserId', data.data.user.id);
                     
                     // CRITICAL: Store admin permissions for RBAC
                     if (data.data.permissions) {
-                        localStorage.setItem('admin_permissions', JSON.stringify(data.data.permissions));
+                        localStorage.setItem('adminPermissions', JSON.stringify(data.data.permissions));
                     } else {
                         // Fallback: grant all permissions if not provided
-                        localStorage.setItem('admin_permissions', JSON.stringify(['admin:*']));
+                        localStorage.setItem('adminPermissions', JSON.stringify(['admin:*']));
                     }
                     
                     // Show success message
@@ -276,7 +276,7 @@
         
         // Check if already logged in
         window.addEventListener('load', () => {
-            const token = localStorage.getItem('admin_token');
+            const token = localStorage.getItem('adminToken');
             if (token) {
                 // Verify token is still valid
                 fetch(`${API_BASE_URL}/admin/health`, {
@@ -293,7 +293,7 @@
                 })
                 .catch(() => {
                     // Token invalid, stay on login page
-                    localStorage.removeItem('admin_token');
+                    localStorage.removeItem('adminToken');
                 });
             }
         });

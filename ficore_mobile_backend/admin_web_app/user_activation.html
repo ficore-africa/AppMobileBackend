@@ -460,7 +460,7 @@
             content.style.display = 'none';
             
             try {
-                const token = localStorage.getItem('admin_token');
+                const token = localStorage.getItem('adminToken');
                 if (!token) {
                     window.location.href = 'admin_login.html';
                     return;
@@ -542,7 +542,7 @@
         // PHASE 4C: Load nudge performance data
         async function loadNudgePerformance() {
             try {
-                const token = localStorage.getItem('admin_token');
+                const token = localStorage.getItem('adminToken');
                 if (!token) return;
                 
                 const response = await fetch(`https://mobilebackend.ficoreafrica.com/admin/activation/nudge-performance?timeframe=${currentTimeframe}`, {
@@ -601,7 +601,7 @@
         // PHASE 4C: Load funnel data
         async function loadFunnelData() {
             try {
-                const token = localStorage.getItem('admin_token');
+                const token = localStorage.getItem('adminToken');
                 if (!token) return;
                 
                 const response = await fetch(`https://mobilebackend.ficoreafrica.com/admin/activation/funnel?timeframe=${currentTimeframe}`, {
