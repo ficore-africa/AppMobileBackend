@@ -4049,141 +4049,190 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     
     # ===== TREASURY COMMAND CENTER ENDPOINT =====
     
-    @admin_bp.route('/treasury/metrics', methods=['GET'])
+    @admin_bp.route('/treasury/analytics', methods=['GET'])
     @token_required
     @admin_required
-    def get_treasury_metrics(current_user):
+    def get_treasury_analytics(current_user):
         """
-        Treasury Command Center - Real-time liquidity monitoring (OPTIMIZED)
-        
-        Returns basic metrics quickly to avoid blocking dashboard
+        Comprehensive Treasury Analytics - VAS Revenue, Commissions & Corporate Finance
         """
         try:
             from datetime import datetime, timedelta
             
-            # Quick timeout for all queries (5 seconds max)
-            import signal
+            # Get time period filter
+            period = request.args.get('period', 'all')
             
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Treasury metrics query timed out")
+            # Calculate date filter
+            date_filter = {}
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
             
-            # Set 5-second timeout
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(5)
+            # 1. Get all successful VAS transactions
+            vas_query = {'status': 'SUCCESS'}
+            vas_query.update(date_filter)
             
-            try:
-                # 1. Quick Total Liabilities (with limit to avoid full scan)
-                liabilities_sample = list(mongo.db.vas_wallets.find({}, {'balance': 1}).limit(1000))
-                total_liabilities = sum(wallet.get('balance', 0) for wallet in liabilities_sample)
+            vas_transactions = list(mongo.db.vas_transactions.find(vas_query).sort('createdAt', -1))
+            
+            # 2. Calculate overview metrics
+            total_revenue = 0
+            total_cost = 0
+            monnify_commission = 0
+            provider_breakdown = {}
+            transaction_types = {}
+            
+            for txn in vas_transactions:
+                # User amount (what they paid)
+                amount = txn.get('amount', 0)
+                selling_price = txn.get('sellingPrice', txn.get('totalAmount', amount))
+                cost_price = txn.get('costPrice', selling_price * 0.97)  # Assume 3% margin if not specified
                 
-                # 2. Quick estimate of Peyflex balance (simplified)
-                # Just get recent successful deposits
-                recent_deposits = list(mongo.db.vas_transactions.find({
-                    'type': 'WALLET_FUNDING',
-                    'status': 'SUCCESS'
-                }, {'amountPaid': 1}).limit(500))
+                provider = txn.get('provider', 'unknown')
+                txn_type = txn.get('type', 'UNKNOWN')
                 
-                total_deposits = sum(txn.get('amountPaid', 0) for txn in recent_deposits)
+                # Accumulate totals
+                total_revenue += amount
+                total_cost += cost_price
                 
-                # 3. Simple liquidity ratio calculation
-                estimated_peyflex_balance = max(0, total_deposits - total_liabilities)
-                liquidity_ratio = (estimated_peyflex_balance / total_liabilities * 100) if total_liabilities > 0 else 100.0
+                # Calculate Monnify 3% commission
+                if provider == 'monnify':
+                    monnify_commission += amount * 0.03
                 
-                # 4. Alert status
-                if liquidity_ratio < 20:
-                    alert_status = 'RED'
-                    alert_message = '🚨 CRITICAL: Low liquidity detected'
-                elif liquidity_ratio < 50:
-                    alert_status = 'YELLOW'
-                    alert_message = '⚠️ WARNING: Monitor liquidity'
+                # Provider breakdown
+                if provider not in provider_breakdown:
+                    provider_breakdown[provider] = {'count': 0, 'amount': 0}
+                provider_breakdown[provider]['count'] += 1
+                provider_breakdown[provider]['amount'] += amount
+                
+                # Transaction type breakdown
+                if txn_type not in transaction_types:
+                    transaction_types[txn_type] = {'count': 0, 'amount': 0}
+                transaction_types[txn_type]['count'] += 1
+                transaction_types[txn_type]['amount'] += amount
+            
+            # 3. Get user details for recent transactions
+            recent_transactions = vas_transactions[:50]  # Last 50 transactions
+            for txn in recent_transactions:
+                user_id = txn.get('userId')
+                if user_id:
+                    user = mongo.db.users.find_one({'_id': user_id}, {'email': 1})
+                    txn['userEmail'] = user.get('email') if user else 'N/A'
                 else:
-                    alert_status = 'GREEN'
-                    alert_message = '✅ Liquidity appears healthy'
-                
-                # 5. Today's quick metrics
-                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-                
-                today_deposits = list(mongo.db.vas_transactions.find({
-                    'type': 'WALLET_FUNDING',
-                    'status': 'SUCCESS',
-                    'createdAt': {'$gte': today_start}
-                }, {'amountPaid': 1}).limit(100))
-                
-                today_deposits_total = sum(txn.get('amountPaid', 0) for txn in today_deposits)
-                today_deposits_count = len(today_deposits)
-                
-                # Cancel timeout
-                signal.alarm(0)
-                
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'overview': {
-                            'totalLiabilities': round(total_liabilities, 2),
-                            'estimatedPeyflexBalance': round(estimated_peyflex_balance, 2),
-                            'liquidityCoverageRatio': round(liquidity_ratio, 2),
-                            'alertStatus': alert_status,
-                            'alertMessage': alert_message
-                        },
-                        'todayMetrics': {
-                            'deposits': {
-                                'amount': round(today_deposits_total, 2),
-                                'count': today_deposits_count
-                            },
-                            'revenue': {
-                                'amount': 0,  # Simplified for speed
-                                'count': 0
-                            }
-                        },
-                        'note': 'Simplified metrics for dashboard performance'
-                    },
-                    'message': 'Treasury metrics retrieved successfully (fast mode)'
+                    txn['userEmail'] = 'N/A'
+            
+            # 4. Format provider breakdown for frontend
+            providers_list = []
+            for provider, data in sorted(provider_breakdown.items(), key=lambda x: x[1]['amount'], reverse=True):
+                providers_list.append({
+                    'name': provider,
+                    'count': data['count'],
+                    'amount': data['amount']
                 })
-                
-            except TimeoutError:
-                # Cancel timeout
-                signal.alarm(0)
-                
-                # Return minimal data if queries timeout
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'overview': {
-                            'totalLiabilities': 0,
-                            'estimatedPeyflexBalance': 0,
-                            'liquidityCoverageRatio': 0,
-                            'alertStatus': 'YELLOW',
-                            'alertMessage': '⚠️ Treasury data loading slowly'
-                        },
-                        'todayMetrics': {
-                            'deposits': {'amount': 0, 'count': 0},
-                            'revenue': {'amount': 0, 'count': 0}
-                        },
-                        'note': 'Timeout occurred - showing placeholder data'
-                    },
-                    'message': 'Treasury metrics timed out, showing minimal data'
+            
+            # 5. Format transaction types for frontend
+            types_list = []
+            for txn_type, data in sorted(transaction_types.items(), key=lambda x: x[1]['amount'], reverse=True):
+                types_list.append({
+                    'type': txn_type,
+                    'count': data['count'],
+                    'amount': data['amount']
                 })
-                
-        except Exception as e:
-            print(f"Error getting treasury metrics: {str(e)}")
+            
+            # 6. Get corporate revenue data
+            corporate_revenue_query = {}
+            corporate_revenue_query.update(date_filter)
+            
+            corporate_revenue = list(mongo.db.corporate_revenue.find(corporate_revenue_query))
+            total_corporate_revenue = sum(rev.get('amount', 0) for rev in corporate_revenue)
+            
+            # 7. Calculate profit margin
+            total_margin = total_revenue - total_cost
+            
             return jsonify({
-                'success': True,  # Return success to not block dashboard
+                'success': True,
                 'data': {
                     'overview': {
-                        'totalLiabilities': 0,
-                        'estimatedPeyflexBalance': 0,
-                        'liquidityCoverageRatio': 0,
-                        'alertStatus': 'RED',
-                        'alertMessage': '❌ Treasury data unavailable'
+                        'totalRevenue': round(total_revenue, 2),
+                        'totalCost': round(total_cost, 2),
+                        'totalMargin': round(total_margin, 2),
+                        'monnifyCommission': round(monnify_commission, 2),
+                        'totalTransactions': len(vas_transactions),
+                        'corporateRevenue': round(total_corporate_revenue, 2)
                     },
-                    'todayMetrics': {
-                        'deposits': {'amount': 0, 'count': 0},
-                        'revenue': {'amount': 0, 'count': 0}
-                    },
-                    'note': 'Error occurred - showing placeholder data'
+                    'providers': providers_list,
+                    'transactionTypes': types_list,
+                    'recentTransactions': recent_transactions,
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if period != 'all' else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
                 },
-                'message': 'Treasury metrics error, showing fallback data'
+                'message': f'Treasury analytics retrieved successfully ({period} period)'
             })
+            
+        except Exception as e:
+            print(f"Error getting treasury analytics: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get treasury analytics',
+                'error': str(e)
+            }), 500
+
+    @admin_bp.route('/treasury/corporate-revenue/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_corporate_revenue(current_user):
+        """Export corporate revenue to CSV"""
+        try:
+            from flask import make_response
+            import csv
+            import io
+            
+            # Get corporate revenue records
+            corporate_revenue = list(mongo.db.corporate_revenue.find({}).sort('createdAt', -1))
+            
+            # Create CSV content
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write headers
+            writer.writerow([
+                'Date', 'Type', 'Category', 'Amount', 'Description', 
+                'User ID', 'Related Transaction', 'Created At'
+            ])
+            
+            # Write data
+            for rev in corporate_revenue:
+                writer.writerow([
+                    rev.get('createdAt', '').strftime('%Y-%m-%d') if rev.get('createdAt') else '',
+                    rev.get('type', ''),
+                    rev.get('category', ''),
+                    rev.get('amount', 0),
+                    rev.get('description', ''),
+                    str(rev.get('userId', '')),
+                    str(rev.get('relatedTransaction', '')),
+                    rev.get('createdAt', '').isoformat() if rev.get('createdAt') else ''
+                ])
+            
+            # Create response
+            csv_content = output.getvalue()
+            output.close()
+            
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=corporate_revenue_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting corporate revenue: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export corporate revenue',
+                'error': str(e)
+            }), 500
     
     # ===== RATE LIMIT MONITORING ENDPOINTS =====
     

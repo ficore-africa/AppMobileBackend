@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconciliation Management - FiCore Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card .icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+
+        .stat-card.pending .icon { color: #f39c12; }
+        .stat-card.total .icon { color: #3498db; }
+        .stat-card.amount .icon { color: #e74c3c; }
+        .stat-card.users .icon { color: #27ae60; }
+
+        .stat-card .number {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .controls {
+            padding: 30px;
+            background: white;
+            border-bottom: 1px solid #eee;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 45px 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .search-box .search-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #666;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .btn-export {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-export:hover {
+            background: #e67e22;
+        }
+
+        .transactions-table {
+            padding: 30px;
+            background: white;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.needs-reconciliation {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .amount {
+            font-weight: 600;
+            color: #e74c3c;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .user-email {
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
+
+        .btn-success-sm {
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .btn-success-sm:hover {
+            background: #229954;
+        }
+
+        .btn-danger-sm {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .btn-danger-sm:hover {
+            background: #c0392b;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+
+        .loading i {
+            font-size: 2rem;
+            margin-bottom: 15px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #666;
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .backend-switcher {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .backend-toggle {
+            display: flex;
+            gap: 5px;
+        }
+
+        .backend-toggle button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .backend-toggle button.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .backend-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .backend-indicator.production {
+            background: #27ae60;
+        }
+
+        .backend-indicator.dev {
+            background: #f39c12;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #27ae60;
+        }
+
+        .notification.error {
+            background: #e74c3c;
+        }
+
+        .failure-reason {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .phone-number {
+            font-family: monospace;
+            font-weight: 600;
+        }
+
+        @media (max-width: 768px) {
+            .controls-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            table {
+                font-size: 0.9rem;
+            }
+            
+            th, td {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-balance-scale"></i> Reconciliation Management</h1>
+            <p>Review and resolve VAS transactions that need manual verification</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card pending">
+                <div class="icon"><i class="fas fa-clock"></i></div>
+                <div class="number" id="pendingCount">-</div>
+                <div class="label">Pending Reconciliations</div>
+            </div>
+            <div class="stat-card total">
+                <div class="icon"><i class="fas fa-list"></i></div>
+                <div class="number" id="totalTransactions">-</div>
+                <div class="label">Total VAS Transactions</div>
+            </div>
+            <div class="stat-card amount">
+                <div class="icon"><i class="fas fa-naira-sign"></i></div>
+                <div class="number" id="totalAmount">-</div>
+                <div class="label">Total Amount Pending</div>
+            </div>
+            <div class="stat-card users">
+                <div class="icon"><i class="fas fa-users"></i></div>
+                <div class="number" id="affectedUsers">-</div>
+                <div class="label">Affected Users</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="controls-grid">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search by user email, phone, or transaction ID...">
+                    <i class="fas fa-search search-icon"></i>
+                </div>
+                <button class="btn btn-export" onclick="exportReconciliations()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+                <button class="btn btn-primary" onclick="refreshData()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="transactions-table">
+            <div id="loadingState" class="loading">
+                <i class="fas fa-spinner"></i>
+                <h3>Loading reconciliation data...</h3>
+            </div>
+
+            <div id="emptyState" class="empty-state" style="display: none;">
+                <i class="fas fa-check-circle"></i>
+                <h3>No Pending Reconciliations</h3>
+                <p>All transactions have been resolved. Great job!</p>
+            </div>
+
+            <div id="tableContainer" class="table-container" style="display: none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Transaction</th>
+                            <th>Amount</th>
+                            <th>Phone</th>
+                            <th>Date</th>
+                            <th>Failure Reason</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionsTableBody">
+                        <!-- Transactions will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backend Switcher -->
+    <div class="backend-switcher">
+        <label>Backend:</label>
+        <div class="backend-toggle">
+            <button id="prodBtn" onclick="switchBackend('production')" class="active">
+                <span class="backend-indicator production"></span>
+                Production
+            </button>
+            <button id="devBtn" onclick="switchBackend('dev')">
+                <span class="backend-indicator dev"></span>
+                Dev
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="notification" class="notification"></div>
+
+    <script>
+        // Configuration
+        let API_BASE_URL = 'https://mobilebackend.ficoreafrica.com/api';
+        let currentBackend = 'production';
+        let allTransactions = [];
+        let filteredTransactions = [];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadReconciliationData();
+            setupSearch();
+        });
+
+        // Backend switching
+        function switchBackend(backend) {
+            currentBackend = backend;
+            
+            if (backend === 'production') {
+                API_BASE_URL = 'https://mobilebackend.ficoreafrica.com/api';
+                document.getElementById('prodBtn').classList.add('active');
+                document.getElementById('devBtn').classList.remove('active');
+            } else {
+                API_BASE_URL = 'http://localhost:5000/api';
+                document.getElementById('devBtn').classList.add('active');
+                document.getElementById('prodBtn').classList.remove('active');
+            }
+            
+            loadReconciliationData();
+        }
+
+        // Get admin token
+        function getAdminToken() {
+            return localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken');
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+
+        // Load reconciliation data
+        async function loadReconciliationData() {
+            try {
+                showLoading();
+                
+                const token = getAdminToken();
+                if (!token) {
+                    showNotification('Please login first', 'error');
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                // Load pending reconciliations
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/pending?limit=1000`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    allTransactions = data.data || [];
+                    filteredTransactions = [...allTransactions];
+                    
+                    // Load user details for each transaction
+                    await loadUserDetails();
+                    
+                    updateStats();
+                    displayTransactions();
+                } else {
+                    throw new Error(data.message || 'Failed to load reconciliation data');
+                }
+
+            } catch (error) {
+                console.error('Error loading reconciliation data:', error);
+                showNotification('Failed to load reconciliation data: ' + error.message, 'error');
+                showEmptyState();
+            }
+        }
+
+        // Load user details for transactions
+        async function loadUserDetails() {
+            const token = getAdminToken();
+            
+            for (let transaction of allTransactions) {
+                try {
+                    const userResponse = await fetch(`${API_BASE_URL}/admin/users/${transaction.userId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (userResponse.ok) {
+                        const userData = await userResponse.json();
+                        if (userData.success) {
+                            transaction.userDetails = userData.data;
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error loading user details for ${transaction.userId}:`, error);
+                }
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            const pendingCount = filteredTransactions.length;
+            const totalAmount = filteredTransactions.reduce((sum, txn) => sum + (txn.amount || 0), 0);
+            const uniqueUsers = new Set(filteredTransactions.map(txn => txn.userId)).size;
+            
+            document.getElementById('pendingCount').textContent = pendingCount.toLocaleString();
+            document.getElementById('totalTransactions').textContent = pendingCount.toLocaleString();
+            document.getElementById('totalAmount').textContent = '₦' + totalAmount.toLocaleString();
+            document.getElementById('affectedUsers').textContent = uniqueUsers.toLocaleString();
+        }
+
+        // Display transactions
+        function displayTransactions() {
+            const tbody = document.getElementById('transactionsTableBody');
+            
+            if (filteredTransactions.length === 0) {
+                showEmptyState();
+                return;
+            }
+            
+            tbody.innerHTML = filteredTransactions.map(transaction => createTransactionRow(transaction)).join('');
+            showTable();
+        }
+
+        // Create transaction row
+        function createTransactionRow(transaction) {
+            const userDetails = transaction.userDetails || {};
+            const userName = userDetails.displayName || userDetails.name || 'Unknown User';
+            const userEmail = userDetails.email || 'No email';
+            const createdDate = new Date(transaction.createdAt).toLocaleDateString();
+            const failureReason = transaction.failureReason || 'No reason provided';
+            
+            return `
+                <tr>
+                    <td>
+                        <div class="user-info">
+                            <div class="user-name">${userName}</div>
+                            <div class="user-email">${userEmail}</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div>
+                            <strong>${transaction.type || 'VAS'}</strong>
+                            <br>
+                            <small style="color: #666;">${transaction._id}</small>
+                        </div>
+                    </td>
+                    <td class="amount">₦${(transaction.amount || 0).toLocaleString()}</td>
+                    <td class="phone-number">${transaction.phoneNumber || 'N/A'}</td>
+                    <td>${createdDate}</td>
+                    <td>
+                        <div class="failure-reason" title="${failureReason}">
+                            ${failureReason}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn-success-sm" onclick="resolveTransaction('${transaction._id}', 'SUCCESS')">
+                                <i class="fas fa-check"></i> Success
+                            </button>
+                            <button class="btn-danger-sm" onclick="resolveTransaction('${transaction._id}', 'FAILED')">
+                                <i class="fas fa-times"></i> Failed
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Resolve transaction
+        async function resolveTransaction(transactionId, status) {
+            const reason = prompt(`Enter reason for marking as ${status} (minimum 10 characters):`);
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showNotification('Reason must be at least 10 characters', 'error');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to mark this transaction as ${status}?`)) {
+                return;
+            }
+
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/resolve`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        status: status,
+                        adminNotes: reason
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification(`Transaction resolved as ${status} successfully!`);
+                    loadReconciliationData(); // Refresh data
+                } else {
+                    showNotification('Failed to resolve transaction: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error resolving transaction: ' + error.message, 'error');
+            }
+        }
+
+        // Setup search functionality
+        function setupSearch() {
+            const searchInput = document.getElementById('searchInput');
+            searchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                
+                if (searchTerm === '') {
+                    filteredTransactions = [...allTransactions];
+                } else {
+                    filteredTransactions = allTransactions.filter(transaction => {
+                        const userDetails = transaction.userDetails || {};
+                        const userName = (userDetails.displayName || userDetails.name || '').toLowerCase();
+                        const userEmail = (userDetails.email || '').toLowerCase();
+                        const phoneNumber = (transaction.phoneNumber || '').toLowerCase();
+                        const transactionId = (transaction._id || '').toLowerCase();
+                        const type = (transaction.type || '').toLowerCase();
+                        
+                        return userName.includes(searchTerm) ||
+                               userEmail.includes(searchTerm) ||
+                               phoneNumber.includes(searchTerm) ||
+                               transactionId.includes(searchTerm) ||
+                               type.includes(searchTerm);
+                    });
+                }
+                
+                updateStats();
+                displayTransactions();
+            });
+        }
+
+        // Export reconciliations to CSV
+        function exportReconciliations() {
+            if (filteredTransactions.length === 0) {
+                showNotification('No data to export', 'error');
+                return;
+            }
+
+            const headers = ['User Name', 'User Email', 'Transaction Type', 'Amount', 'Phone Number', 'Date', 'Transaction ID', 'Failure Reason'];
+            
+            const csvData = filteredTransactions.map(transaction => {
+                const userDetails = transaction.userDetails || {};
+                const userName = userDetails.displayName || userDetails.name || 'Unknown User';
+                const userEmail = userDetails.email || 'No email';
+                const createdDate = new Date(transaction.createdAt).toLocaleDateString();
+                const failureReason = (transaction.failureReason || 'No reason provided').replace(/"/g, '""');
+                
+                return [
+                    `"${userName}"`,
+                    `"${userEmail}"`,
+                    `"${transaction.type || 'VAS'}"`,
+                    `"₦${(transaction.amount || 0).toLocaleString()}"`,
+                    `"${transaction.phoneNumber || 'N/A'}"`,
+                    `"${createdDate}"`,
+                    `"${transaction._id}"`,
+                    `"${failureReason}"`
+                ].join(',');
+            });
+
+            const csv = [headers.join(','), ...csvData].join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `reconciliation_report_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showNotification('Reconciliation report exported successfully!');
+        }
+
+        // Refresh data
+        function refreshData() {
+            loadReconciliationData();
+        }
+
+        // Show loading state
+        function showLoading() {
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'none';
+        }
+
+        // Show empty state
+        function showEmptyState() {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('tableContainer').style.display = 'none';
+        }
+
+        // Show table
+        function showTable() {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

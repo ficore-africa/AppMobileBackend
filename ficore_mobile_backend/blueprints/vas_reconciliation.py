@@ -162,6 +162,23 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
                 'reconciliationResolvedAt': {'$gte': datetime.utcnow() - timedelta(days=30)}
             })
             
+            # Get total amount pending reconciliation
+            pending_amount_pipeline = [
+                {'$match': {'status': 'NEEDS_RECONCILIATION'}},
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]
+            pending_amount_result = list(mongo.db.vas_transactions.aggregate(pending_amount_pipeline))
+            pending_amount = pending_amount_result[0]['total'] if pending_amount_result else 0
+            
+            # Count affected users
+            affected_users_pipeline = [
+                {'$match': {'status': 'NEEDS_RECONCILIATION'}},
+                {'$group': {'_id': '$userId'}},
+                {'$count': 'uniqueUsers'}
+            ]
+            affected_users_result = list(mongo.db.vas_transactions.aggregate(affected_users_pipeline))
+            affected_users = affected_users_result[0]['uniqueUsers'] if affected_users_result else 0
+            
             # Get recent reconciliation activity
             recent_activity = list(mongo.db.vas_transactions.find(
                 {
@@ -184,6 +201,8 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
                 'data': {
                     'pendingCount': pending_count,
                     'resolvedLast30Days': resolved_count,
+                    'pendingAmount': pending_amount,
+                    'affectedUsers': affected_users,
                     'recentActivity': recent_activity
                 }
             })

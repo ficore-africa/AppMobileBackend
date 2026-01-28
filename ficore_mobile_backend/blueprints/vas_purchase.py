@@ -2170,15 +2170,24 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
-                # Update transaction to FAILED with proper failure reason
+                # CRITICAL CHANGE: Mark as NEEDS_RECONCILIATION instead of FAILED
+                # User is the only one who knows if they actually received the airtime
+                # Admin will contact user to verify and resolve manually
                 mongo.db.vas_transactions.update_one(
                     {'_id': transaction_id},
-                    {'$set': {'status': 'FAILED', 'failureReason': error_message, 'updatedAt': datetime.utcnow()}}
+                    {'$set': {
+                        'status': 'NEEDS_RECONCILIATION',
+                        'failureReason': error_message,
+                        'reconciliationRequired': True,
+                        'reconciliationTimestamp': datetime.utcnow(),
+                        'reconciliationReason': 'Provider APIs failed - user verification needed to confirm if airtime was delivered',
+                        'updatedAt': datetime.utcnow()
+                    }}
                 )
                 return jsonify({
                     'success': False,
-                    'message': 'Purchase failed',
-                    'errors': {'general': [error_message]}
+                    'message': 'Purchase failed - our team will verify and resolve this shortly',
+                    'errors': {'general': ['Transaction failed but will be reviewed for potential delivery']}
                 }), 500
             
             # 🔒 ATOMIC TRANSACTION PATTERN: SUCCESS ONLY AFTER COMPLETE VERIFICATION
@@ -2695,15 +2704,24 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
-                # Update transaction to FAILED with proper failure reason
+                # CRITICAL CHANGE: Mark as NEEDS_RECONCILIATION instead of FAILED
+                # User is the only one who knows if they actually received the data
+                # Admin will contact user to verify and resolve manually
                 mongo.db.vas_transactions.update_one(
                     {'_id': transaction_id},
-                    {'$set': {'status': 'FAILED', 'failureReason': error_message, 'updatedAt': datetime.utcnow()}}
+                    {'$set': {
+                        'status': 'NEEDS_RECONCILIATION',
+                        'failureReason': error_message,
+                        'reconciliationRequired': True,
+                        'reconciliationTimestamp': datetime.utcnow(),
+                        'reconciliationReason': 'Provider APIs failed - user verification needed to confirm if data was delivered',
+                        'updatedAt': datetime.utcnow()
+                    }}
                 )
                 return jsonify({
                     'success': False,
-                    'message': 'Purchase failed',
-                    'errors': {'general': [error_message]}
+                    'message': 'Purchase failed - our team will verify and resolve this shortly',
+                    'errors': {'general': ['Transaction failed but will be reviewed for potential delivery']}
                 }), 500
             
             # CRITICAL FIX: Update BOTH balances using centralized utility
