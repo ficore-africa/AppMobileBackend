@@ -447,6 +447,17 @@ print("✓ VAS Purchase blueprint registered at /api/vas/purchase")
 app.register_blueprint(vas_bills_blueprint)
 print("✓ VAS Bills blueprint registered at /api/vas/bills")
 
+# Register VAS reconciliation blueprint for admin transaction management
+from blueprints.vas_reconciliation import vas_reconciliation_bp
+app.register_blueprint(vas_reconciliation_bp, url_prefix='/api/admin')
+print("✓ VAS Reconciliation blueprint registered at /api/admin")
+
+# Register admin user transactions blueprint
+from blueprints.admin_user_transactions import init_admin_user_transactions_blueprint
+admin_user_transactions_blueprint = init_admin_user_transactions_blueprint()
+app.register_blueprint(admin_user_transactions_blueprint, url_prefix='/api/admin')
+print("✓ Admin User Transactions blueprint registered at /api/admin")
+
 # Root redirect to admin login
 @app.route('/', methods=['GET', 'HEAD'])
 def index():

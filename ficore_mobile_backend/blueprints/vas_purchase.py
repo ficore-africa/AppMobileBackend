@@ -19,6 +19,7 @@ import sys
 from utils.dynamic_pricing_engine import get_pricing_engine, calculate_vas_price
 from utils.emergency_pricing_recovery import tag_emergency_transaction
 from blueprints.notifications import create_user_notification
+from utils.atomic_transactions import check_recent_duplicate_transaction
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):
@@ -281,7 +282,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'payableAmount': vend_result.get('payableAmount', amount),
                     'commission': vend_result.get('commission', 0),
                     # Include productName for consistency with data plans
-                    'productName': vend_result.get('productName', f'₦{amount} {network.upper()} Airtime')
+                    'productName': vend_result.get('productName', f'₦{amount} {network_key.upper()} Airtime')
                 }
             elif vend_result.get('vendStatus') == 'IN_PROGRESS':
                 # Poll for status
@@ -308,7 +309,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'payableAmount': final_result.get('payableAmount', amount),
                         'commission': final_result.get('commission', 0),
                         # Include productName for consistency with data plans
-                        'productName': final_result.get('productName', f'₦{amount} {network.upper()} Airtime')
+                        'productName': final_result.get('productName', f'₦{amount} {network_key.upper()} Airtime')
                     }
                 else:
                     print(f'❌ ERROR: Monnify transaction failed after requery: {final_result.get("description", "Unknown error")}')
@@ -2068,7 +2069,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 print(f"WARNING: EMERGENCY PRICING DETECTED: Cost ₦ {cost_price} vs Expected ₦ {normal_expected_cost}")
                 # Will tag after successful transaction
             
-            # CRITICAL: Check for pending duplicate transaction (idempotency)
+            # CRITICAL: Enhanced idempotency protection - Check for BOTH pending AND completed transactions
             pending_txn = check_pending_transaction(user_id, 'AIRTIME', selling_price, phone_number)
             if pending_txn:
                 print(f'WARNING: Duplicate airtime request blocked for user {user_id}')
@@ -2076,6 +2077,26 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'success': False,
                     'message': 'A similar transaction is already being processed. Please wait.',
                     'errors': {'general': ['Duplicate transaction detected']}
+                }), 409
+            
+            # CRITICAL FIX: Check for recent successful transactions to prevent double-charging
+            # This prevents users from retrying after seeing "Failed" status
+            recent_success = mongo.db.vas_transactions.find_one({
+                'userId': ObjectId(user_id),
+                'type': 'AIRTIME',
+                'phoneNumber': phone_number,
+                'amount': amount,
+                'status': {'$in': ['SUCCESS', 'NEEDS_RECONCILIATION']},
+                'createdAt': {'$gte': datetime.utcnow() - timedelta(minutes=5)}  # Within last 5 minutes
+            })
+            
+            if recent_success:
+                print(f'WARNING: Recent successful airtime transaction found for user {user_id} - preventing duplicate')
+                return jsonify({
+                    'success': False,
+                    'message': 'You recently completed a similar transaction. Please check your transaction history.',
+                    'errors': {'general': ['Recent duplicate transaction detected']},
+                    'reference': recent_success.get('requestId', 'N/A')
                 }), 409
             
             wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
@@ -2160,44 +2181,128 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'errors': {'general': [error_message]}
                 }), 500
             
-            # CRITICAL FIX: Update BOTH balances using centralized utility
-            new_balance = wallet.get('balance', 0.0) - total_amount
+            # 🔒 ATOMIC TRANSACTION PATTERN: SUCCESS ONLY AFTER COMPLETE VERIFICATION
+            # This prevents the critical bug where wallet is deducted but status shows FAILED
             
-            from utils.balance_sync import update_liquid_wallet_balance
-            
-            # Use centralized balance update utility
-            success = update_liquid_wallet_balance(
-                mongo=mongo,
-                user_id=user_id,
-                new_balance=new_balance,
-                transaction_reference=request_id,
-                transaction_type='AIRTIME_PURCHASE',
-                push_sse_update=True,
-                sse_data={
-                    'amount_debited': total_amount,
-                    'network': network,
-                    'phone_number': phone_number[-4:] + '****'
-                }
-            )
-            
-            if not success:
-                print(f'WARNING: Balance update may have failed for user {user_id}')
-            else:
-                print(f'SUCCESS: Updated BOTH balances using utility after airtime purchase - New balance: ₦{new_balance:,.2f}')
-            
-            # Update transaction to SUCCESS
-            update_result = mongo.db.vas_transactions.update_one(
-                {'_id': transaction_id},
-                {
-                    '$set': {
-                        'status': 'SUCCESS',
-                        'provider': provider,
-                        'providerResponse': api_response,
-                        'updatedAt': datetime.utcnow()
-                    },
-                    '$unset': {
-                        'failureReason': ""  # 🔒 Clear failure reason on success
-                    }
+            try:
+                # Step 1: Calculate new balance
+                new_balance = wallet.get('balance', 0.0) - total_amount
+                
+                # Step 2: Prepare all updates in a single atomic operation
+                from utils.balance_sync import update_liquid_wallet_balance
+                
+                # Step 3: ATOMIC UPDATE - Both wallet balance AND transaction status
+                # Use MongoDB transaction to ensure atomicity
+                with mongo.cx.start_session() as session:
+                    with session.start_transaction():
+                        # Update wallet balance
+                        wallet_update_result = mongo.db.vas_wallets.update_one(
+                            {'userId': ObjectId(user_id)},
+                            {
+                                '$set': {'balance': new_balance, 'updatedAt': datetime.utcnow()},
+                                '$push': {
+                                    'transactionHistory': {
+                                        'transactionId': str(transaction_id),
+                                        'type': 'DEBIT',
+                                        'amount': total_amount,
+                                        'description': f'{network} Airtime - {phone_number}',
+                                        'timestamp': datetime.utcnow()
+                                    }
+                                }
+                            },
+                            session=session
+                        )
+                        
+                        # Update transaction status to SUCCESS
+                        transaction_update_result = mongo.db.vas_transactions.update_one(
+                            {'_id': transaction_id},
+                            {
+                                '$set': {
+                                    'status': 'SUCCESS',
+                                    'provider': provider,
+                                    'providerResponse': api_response,
+                                    'walletBalanceAfter': new_balance,
+                                    'updatedAt': datetime.utcnow()
+                                },
+                                '$unset': {
+                                    'failureReason': ""  # 🔒 Clear failure reason on success
+                                }
+                            },
+                            session=session
+                        )
+                        
+                        # Verify both updates succeeded
+                        if wallet_update_result.modified_count == 0:
+                            raise Exception(f'Failed to update wallet balance for user {user_id}')
+                        
+                        if transaction_update_result.modified_count == 0:
+                            raise Exception(f'Failed to update transaction {transaction_id} to SUCCESS')
+                        
+                        print(f'SUCCESS: ATOMIC UPDATE completed - Wallet: ₦{new_balance:,.2f}, Transaction: SUCCESS')
+                
+                # Step 4: Send SSE update after successful atomic operation
+                try:
+                    update_liquid_wallet_balance(
+                        mongo=mongo,
+                        user_id=user_id,
+                        new_balance=new_balance,
+                        transaction_reference=request_id,
+                        transaction_type='AIRTIME_PURCHASE',
+                        push_sse_update=True,
+                        sse_data={
+                            'amount_debited': total_amount,
+                            'network': network,
+                            'phone_number': phone_number[-4:] + '****'
+                        },
+                        skip_wallet_update=True  # Already updated atomically above
+                    )
+                except Exception as sse_error:
+                    print(f'WARNING: SSE update failed but transaction completed: {sse_error}')
+                    # Don't fail the transaction for SSE errors
+                
+            except Exception as atomic_error:
+                print(f'CRITICAL ERROR: Atomic transaction failed: {atomic_error}')
+                
+                # CRITICAL: Provider succeeded but our update failed
+                # This is the exact scenario causing the bug
+                # We need to mark transaction as NEEDS_RECONCILIATION for manual review
+                
+                try:
+                    mongo.db.vas_transactions.update_one(
+                        {'_id': transaction_id},
+                        {
+                            '$set': {
+                                'status': 'NEEDS_RECONCILIATION',
+                                'failureReason': f'Provider succeeded but atomic update failed: {atomic_error}',
+                                'providerResponse': api_response,
+                                'provider': provider,
+                                'reconciliationRequired': True,
+                                'updatedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    
+                    # Alert admin immediately
+                    print(f'ALERT: Transaction {transaction_id} needs manual reconciliation - Provider succeeded but wallet update failed')
+                    
+                    # Return error to user to prevent confusion
+                    return jsonify({
+                        'success': False,
+                        'message': 'Transaction processing error. Please contact support with reference: ' + request_id,
+                        'errors': {'general': ['System error during transaction completion']},
+                        'reference': request_id
+                    }), 500
+                    
+                except Exception as reconciliation_error:
+                    print(f'CRITICAL: Failed to mark transaction for reconciliation: {reconciliation_error}')
+                    
+                    # Last resort - return error
+                    return jsonify({
+                        'success': False,
+                        'message': 'Critical system error. Please contact support immediately with reference: ' + request_id,
+                        'errors': {'general': ['Critical system error']},
+                        'reference': request_id
+                    }), 500
                 }
             )
             

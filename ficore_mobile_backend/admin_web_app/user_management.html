@@ -344,6 +344,147 @@
         .backend-indicator.dev {
             background: #F59E0B;
         }
+        
+        /* Reconciliation Styles */
+        .reconciliation-results {
+            background: white;
+            border-radius: 8px;
+            margin-top: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .reconciliation-header {
+            background: #F9FAFB;
+            padding: 15px 20px;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .reconciliation-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .transaction-item {
+            padding: 20px;
+            border-bottom: 1px solid #E5E7EB;
+            transition: background-color 0.2s;
+        }
+        
+        .transaction-item:hover {
+            background: #F9FAFB;
+        }
+        
+        .transaction-item:last-child {
+            border-bottom: none;
+        }
+        
+        .transaction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
+        .transaction-info h5 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .transaction-info p {
+            margin: 0;
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .transaction-status {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+        
+        .transaction-amount {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1E3A8A;
+        }
+        
+        .transaction-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .transaction-detail {
+            background: #F9FAFB;
+            padding: 10px 15px;
+            border-radius: 6px;
+        }
+        
+        .transaction-detail label {
+            display: block;
+            font-size: 12px;
+            color: #6B7280;
+            margin-bottom: 3px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .transaction-detail value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2E2E2E;
+        }
+        
+        .transaction-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-badge.pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .status-badge.failed {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .status-badge.success {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .status-badge.needs-reconciliation {
+            background: #FECACA;
+            color: #B91C1C;
+        }
+        
+        .status-badge.processing {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
     </style>
 </head>
 <body>
@@ -415,6 +556,9 @@
                 </button>
                 <button class="tab" onclick="switchTab('liquidWallet')">
                     <i class="fas fa-wallet"></i> Liquid Wallet
+                </button>
+                <button class="tab" onclick="switchTab('reconciliations')">
+                    <i class="fas fa-balance-scale"></i> Reconciliations
                 </button>
             </div>
             
@@ -551,6 +695,41 @@
                         <button class="btn btn-warning" onclick="showWalletHistoryModal()">
                             <i class="fas fa-history"></i> Transaction History
                         </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Reconciliations Tab -->
+            <div id="reconciliationsTab" class="tab-content">
+                <div class="action-section">
+                    <h3>Transaction Reconciliation</h3>
+                    <p style="color: #6B7280; margin-bottom: 20px;">
+                        Manage VAS transactions that need manual review or status correction.
+                    </p>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" onclick="loadPendingReconciliations()">
+                            <i class="fas fa-clock"></i> View Pending Reconciliations
+                        </button>
+                        <button class="btn btn-warning" onclick="loadFailedTransactions()">
+                            <i class="fas fa-exclamation-triangle"></i> View Failed Transactions
+                        </button>
+                        <button class="btn btn-success" onclick="loadSuccessfulTransactions()">
+                            <i class="fas fa-check-circle"></i> View Recent Successful
+                        </button>
+                        <button class="btn btn-secondary" onclick="refreshReconciliationData()">
+                            <i class="fas fa-sync-alt"></i> Refresh Data
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="reconciliationResults" class="reconciliation-results" style="display: none;">
+                    <div class="reconciliation-header">
+                        <h4 id="reconciliationTitle">Transactions</h4>
+                        <span id="reconciliationCount" class="badge badge-primary">0</span>
+                    </div>
+                    
+                    <div id="reconciliationList" class="reconciliation-list">
+                        <!-- Transaction list will be populated here -->
                     </div>
                 </div>
             </div>
@@ -863,7 +1042,8 @@
             }
             
             // Check current balance first
-            const currentBalance = parseFloat(document.getElementById('liquidWalletBalance').textContent.replace(/[₦,]/g, ''));
+            const currentBalanceText = document.getElementById('walletBalance').textContent;
+            const currentBalance = parseFloat(currentBalanceText.replace(/[₦,]/g, ''));
             
             const amount = prompt('Enter deduction amount (₦):');
             if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
@@ -1460,6 +1640,379 @@
                     modal.remove();
                 }
             }, 30000);
+        }
+        
+        // ==================== RECONCILIATION FUNCTIONS ====================
+        
+        // Load pending reconciliations for current user
+        async function loadPendingReconciliations() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/reconciliations/pending`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayReconciliationResults('Pending Reconciliations', data.data.transactions, 'pending');
+                } else {
+                    showError('Failed to load pending reconciliations: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading pending reconciliations: ' + error.message);
+            }
+        }
+        
+        // Load failed transactions for current user
+        async function loadFailedTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/transactions?status=FAILED&limit=50`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayReconciliationResults('Failed Transactions', data.data.transactions, 'failed');
+                } else {
+                    showError('Failed to load failed transactions: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading failed transactions: ' + error.message);
+            }
+        }
+        
+        // Load successful transactions for current user
+        async function loadSuccessfulTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/transactions?status=SUCCESS&limit=20`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayReconciliationResults('Recent Successful Transactions', data.data.transactions, 'success');
+                } else {
+                    showError('Failed to load successful transactions: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading successful transactions: ' + error.message);
+            }
+        }
+        
+        // Display reconciliation results
+        function displayReconciliationResults(title, transactions, type) {
+            const resultsDiv = document.getElementById('reconciliationResults');
+            const titleElement = document.getElementById('reconciliationTitle');
+            const countElement = document.getElementById('reconciliationCount');
+            const listElement = document.getElementById('reconciliationList');
+            
+            titleElement.textContent = title;
+            countElement.textContent = transactions.length;
+            
+            if (transactions.length === 0) {
+                listElement.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #6B7280;">
+                        <i class="fas fa-inbox" style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;"></i>
+                        <h4>No transactions found</h4>
+                        <p>No ${title.toLowerCase()} for this user.</p>
+                    </div>
+                `;
+            } else {
+                listElement.innerHTML = transactions.map(tx => createTransactionItem(tx, type)).join('');
+            }
+            
+            resultsDiv.style.display = 'block';
+        }
+        
+        // Create transaction item HTML
+        function createTransactionItem(transaction, type) {
+            const statusClass = getStatusClass(transaction.status);
+            const canChangeStatus = type === 'failed' || type === 'pending' || transaction.status === 'NEEDS_RECONCILIATION';
+            
+            return `
+                <div class="transaction-item">
+                    <div class="transaction-header">
+                        <div class="transaction-info">
+                            <h5>${transaction.type || 'VAS Transaction'} - ${transaction.phoneNumber || 'N/A'}</h5>
+                            <p>ID: ${transaction._id || transaction.id} | ${formatDate(transaction.createdAt)}</p>
+                        </div>
+                        <div class="transaction-status">
+                            <div class="transaction-amount">₦${(transaction.amount || 0).toLocaleString()}</div>
+                            <span class="status-badge ${statusClass}">${transaction.status || 'Unknown'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="transaction-details">
+                        <div class="transaction-detail">
+                            <label>Network</label>
+                            <value>${transaction.network || 'N/A'}</value>
+                        </div>
+                        <div class="transaction-detail">
+                            <label>Provider</label>
+                            <value>${transaction.provider || 'N/A'}</value>
+                        </div>
+                        <div class="transaction-detail">
+                            <label>Reference</label>
+                            <value>${transaction.reference || transaction.requestId || 'N/A'}</value>
+                        </div>
+                        <div class="transaction-detail">
+                            <label>Selling Price</label>
+                            <value>₦${(transaction.sellingPrice || transaction.totalAmount || 0).toLocaleString()}</value>
+                        </div>
+                        ${transaction.failureReason ? `
+                        <div class="transaction-detail" style="grid-column: 1 / -1;">
+                            <label>Failure Reason</label>
+                            <value style="color: #DC2626;">${transaction.failureReason}</value>
+                        </div>
+                        ` : ''}
+                        ${transaction.reconciliationRequired ? `
+                        <div class="transaction-detail" style="grid-column: 1 / -1;">
+                            <label>Reconciliation Notes</label>
+                            <value style="color: #F59E0B;">${transaction.reconciliationTimestamp ? 'Marked on ' + formatDate(transaction.reconciliationTimestamp) : 'Needs manual review'}</value>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="transaction-actions">
+                        ${canChangeStatus ? `
+                            <button class="btn btn-success btn-sm" onclick="changeTransactionStatus('${transaction._id || transaction.id}', 'SUCCESS')">
+                                <i class="fas fa-check"></i> Mark Success
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="changeTransactionStatus('${transaction._id || transaction.id}', 'FAILED')">
+                                <i class="fas fa-times"></i> Mark Failed
+                            </button>
+                        ` : ''}
+                        <button class="btn btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction._id || transaction.id}')">
+                            <i class="fas fa-eye"></i> View Details
+                        </button>
+                        ${transaction.status === 'FAILED' ? `
+                            <button class="btn btn-warning btn-sm" onclick="markForReconciliation('${transaction._id || transaction.id}')">
+                                <i class="fas fa-balance-scale"></i> Mark for Reconciliation
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Get status class for styling
+        function getStatusClass(status) {
+            switch (status?.toUpperCase()) {
+                case 'SUCCESS':
+                case 'COMPLETED':
+                    return 'success';
+                case 'FAILED':
+                case 'ERROR':
+                    return 'failed';
+                case 'PENDING':
+                    return 'pending';
+                case 'PROCESSING':
+                    return 'processing';
+                case 'NEEDS_RECONCILIATION':
+                    return 'needs-reconciliation';
+                default:
+                    return 'pending';
+            }
+        }
+        
+        // Change transaction status
+        async function changeTransactionStatus(transactionId, newStatus) {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            const reason = prompt(`Enter reason for changing status to ${newStatus} (minimum 10 characters):`);
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: `Confirm Status Change`,
+                message: `Change transaction status to ${newStatus}?`,
+                details: {
+                    'Transaction ID': transactionId,
+                    'User': currentUser.displayName,
+                    'New Status': newStatus,
+                    'Reason': reason,
+                    'Warning': newStatus === 'SUCCESS' ? 'This will ensure wallet balance is properly adjusted' : 'This action cannot be undone'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/resolve`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        status: newStatus,
+                        adminNotes: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Transaction status changed to ${newStatus} successfully!`);
+                    // Refresh the current view
+                    refreshReconciliationData();
+                    // Refresh wallet data to show updated balance
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError('Failed to change transaction status: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error changing transaction status: ' + error.message);
+            }
+        }
+        
+        // Mark transaction for reconciliation
+        async function markForReconciliation(transactionId) {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for marking for reconciliation (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Mark for Reconciliation',
+                message: 'Mark this transaction for manual reconciliation?',
+                details: {
+                    'Transaction ID': transactionId,
+                    'User': currentUser.displayName,
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/mark`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Transaction marked for reconciliation successfully!');
+                    refreshReconciliationData();
+                } else {
+                    showError('Failed to mark transaction for reconciliation: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error marking transaction for reconciliation: ' + error.message);
+            }
+        }
+        
+        // View transaction details
+        async function viewTransactionDetails(transactionId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/transactions/${transactionId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const transaction = data.data;
+                    
+                    let html = '<h3>Transaction Details</h3>';
+                    html += '<div style="max-height: 500px; overflow-y: auto;">';
+                    html += '<table style="width: 100%; border-collapse: collapse;">';
+                    
+                    // Display all transaction fields
+                    Object.entries(transaction).forEach(([key, value]) => {
+                        if (value !== null && value !== undefined && value !== '') {
+                            html += `<tr style="border-bottom: 1px solid #eee;">`;
+                            html += `<td style="padding: 8px; font-weight: 600; text-transform: capitalize;">${key.replace(/([A-Z])/g, ' $1').trim()}:</td>`;
+                            html += `<td style="padding: 8px;">${formatTransactionValue(key, value)}</td>`;
+                            html += `</tr>`;
+                        }
+                    });
+                    
+                    html += '</table>';
+                    html += '</div>';
+                    
+                    showModal('Transaction Details', html);
+                } else {
+                    showError('Failed to load transaction details: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading transaction details: ' + error.message);
+            }
+        }
+        
+        // Format transaction value for display
+        function formatTransactionValue(key, value) {
+            if (key.toLowerCase().includes('date') || key.toLowerCase().includes('at')) {
+                return formatDate(value);
+            } else if (key.toLowerCase().includes('amount') || key.toLowerCase().includes('price') || key.toLowerCase().includes('balance')) {
+                return typeof value === 'number' ? `₦${value.toLocaleString()}` : value;
+            } else if (typeof value === 'object') {
+                return JSON.stringify(value, null, 2);
+            } else {
+                return value;
+            }
+        }
+        
+        // Refresh reconciliation data
+        function refreshReconciliationData() {
+            const resultsDiv = document.getElementById('reconciliationResults');
+            if (resultsDiv.style.display !== 'none') {
+                // Re-run the last action based on the current title
+                const title = document.getElementById('reconciliationTitle').textContent;
+                if (title.includes('Pending')) {
+                    loadPendingReconciliations();
+                } else if (title.includes('Failed')) {
+                    loadFailedTransactions();
+                } else if (title.includes('Successful')) {
+                    loadSuccessfulTransactions();
+                }
+            }
         }
     </script>
 </body>

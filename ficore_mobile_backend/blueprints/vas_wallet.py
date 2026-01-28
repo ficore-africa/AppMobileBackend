@@ -1484,25 +1484,47 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Failed to authenticate with payment provider'
                 }), 500
             
-            # Use the CORRECT Monnify API URL and payload structure from their docs
-            url = f"{MONNIFY_BASE_URL}/api/v1/bank-transfer/reserved-accounts/{account_reference}/add-linked-accounts"
+            # CRITICAL FIX: The add-linked-accounts endpoint doesn't exist in current Monnify API
+            # Instead, we need to recreate the reserved account with getAllAvailableBanks=true
+            # This is the correct approach according to Monnify v2 API documentation
             
-            # Prepare payload according to Monnify documentation
+            print(f'INFO: Recreating reserved account with all available banks for user {user_id}')
+            
+            # Get user details for account recreation
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Prepare payload for creating new reserved account with all banks
             payload = {
-                'getAllAvailableBanks': get_all_available_banks,
-                'preferredBanks': preferred_banks if not get_all_available_banks else []
+                'accountReference': f"{account_reference}_all_banks",  # New reference to avoid conflicts
+                'accountName': f"FiCore - {user.get('firstName', '')} {user.get('lastName', '')}".strip(),
+                'currencyCode': 'NGN',
+                'contractCode': MONNIFY_CONTRACT_CODE,
+                'customerEmail': user.get('email', ''),
+                'customerName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip(),
+                'getAllAvailableBanks': True  # This gets accounts from all partner banks
             }
             
-            print(f'DEBUG: Calling Monnify: {url}')
-            print(f'DEBUG: Payload: {payload}')
+            # Add BVN/NIN if available
+            if user.get('bvn'):
+                payload['bvn'] = user['bvn']
+            if user.get('nin'):
+                payload['nin'] = user['nin']
             
+            print(f'DEBUG: Creating new reserved account with payload: {payload}')
+            
+            # Use v2 API to create reserved account with all banks
+            url = f"{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts"
             headers = {
                 'Authorization': f'Bearer {monnify_token}',
                 'Content-Type': 'application/json'
             }
             
-            # Use PUT method as shown in Monnify docs
-            response = requests.put(url, headers=headers, json=payload, timeout=30)
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
             print(f'DEBUG: Monnify response status: {response.status_code}')
             print(f'DEBUG: Monnify response: {response.text}')
             
@@ -1512,12 +1534,14 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 if monnify_data.get('requestSuccessful'):
                     response_body = monnify_data.get('responseBody', {})
                     accounts = response_body.get('accounts', [])
+                    new_account_reference = response_body.get('accountReference')
                     
-                    # Update wallet document with new accounts
+                    # Update wallet document with new accounts and reference
                     mongo.db.vas_wallets.update_one(
                         {'userId': ObjectId(user_id)},
                         {
                             '$set': {
+                                'accountReference': new_account_reference,  # Update to new reference
                                 'accounts': accounts,
                                 'updatedAt': datetime.utcnow()
                             }
