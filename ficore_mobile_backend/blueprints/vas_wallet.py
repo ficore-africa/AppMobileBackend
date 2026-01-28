@@ -341,6 +341,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accounts': van_data['accounts'],
                 'status': 'active',
                 'tier': 'TIER_2',  # KYC-verified account
+                'kycTier': 2,  # CRITICAL FIX: Set kycTier for proper frontend display
                 'kycVerified': True,
                 'kycStatus': 'verified',
                 'bvn': user_bvn,
@@ -778,6 +779,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accounts': van_data['accounts'],
                 'status': 'ACTIVE',
                 'tier': 'TIER_2',  # Full KYC verified account
+                'kycTier': 2,  # CRITICAL FIX: Set kycTier for proper frontend display
                 'kycVerified': True,
                 'kycStatus': 'verified',
                 'bvn': bvn,
@@ -1107,6 +1109,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accounts': van_data['accounts'],
                 'status': 'ACTIVE',
                 'tier': 'TIER_2',  # KYC-verified account with BVN/NIN
+                'kycTier': 2,  # CRITICAL FIX: Set kycTier for proper frontend display
                 'kycVerified': True,
                 'kycStatus': 'verified',
                 'bvn': user_bvn,
