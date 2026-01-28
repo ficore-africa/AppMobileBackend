@@ -1484,144 +1484,44 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Failed to authenticate with payment provider'
                 }), 500
             
-            # CRITICAL FIX: The add-linked-accounts endpoint doesn't exist in current Monnify API
-            # Instead, we need to recreate the reserved account with getAllAvailableBanks=true
-            # This is the correct approach according to Monnify v2 API documentation
+            # CRITICAL INSIGHT: Monnify only allows ONE reserved account per customer
+            # There is NO API endpoint to add banks to existing accounts
+            # The only way to get all banks is to create the account with getAllAvailableBanks=true initially
+            # Since Hassan already has a reserved account, we cannot create another one
             
-            print(f'INFO: Recreating reserved account with all available banks for user {user_id}')
+            print(f'INFO: User {user_id} already has a reserved account: {account_reference}')
+            print(f'INFO: Monnify only allows one reserved account per customer')
+            print(f'INFO: Cannot add additional banks to existing accounts via API')
             
-            # Get user details for account recreation
-            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-            if not user:
+            # Check if user already has multiple bank accounts (created with getAllAvailableBanks=true)
+            if len(existing_accounts) > 1:
+                print(f'INFO: User already has {len(existing_accounts)} bank accounts available')
                 return jsonify({
-                    'success': False,
-                    'message': 'User not found'
-                }), 404
+                    'success': True,
+                    'data': {
+                        'accounts': existing_accounts,
+                        'totalBanksNow': len(existing_accounts),
+                        'message': f'You already have access to {len(existing_accounts)} bank accounts from different banks.',
+                        'alreadyHasMultipleBanks': True
+                    },
+                    'message': 'Multiple bank accounts already available'
+                }), 200
             
-            # Prepare payload for creating new reserved account with all banks
-            payload = {
-                'accountReference': f"{account_reference}_all_banks",  # New reference to avoid conflicts
-                'accountName': f"FiCore - {user.get('firstName', '')} {user.get('lastName', '')}".strip(),
-                'currencyCode': 'NGN',
-                'contractCode': MONNIFY_CONTRACT_CODE,
-                'customerEmail': user.get('email', ''),
-                'customerName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip(),
-                'getAllAvailableBanks': True  # This gets accounts from all partner banks
-            }
+            # For accounts with only one bank (legacy accounts), explain the limitation
+            print(f'INFO: User has legacy account with only {len(existing_accounts)} bank(s)')
             
-            # Add BVN/NIN if available
-            if user.get('bvn'):
-                payload['bvn'] = user['bvn']
-            if user.get('nin'):
-                payload['nin'] = user['nin']
-            
-            print(f'DEBUG: Creating new reserved account with payload: {payload}')
-            
-            # Use v2 API to create reserved account with all banks
-            url = f"{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts"
-            headers = {
-                'Authorization': f'Bearer {monnify_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            print(f'DEBUG: Monnify response status: {response.status_code}')
-            print(f'DEBUG: Monnify response: {response.text}')
-            
-            if response.status_code == 200:
-                monnify_data = response.json()
-                
-                if monnify_data.get('requestSuccessful'):
-                    response_body = monnify_data.get('responseBody', {})
-                    accounts = response_body.get('accounts', [])
-                    new_account_reference = response_body.get('accountReference')
-                    
-                    # Update wallet document with new accounts and reference
-                    mongo.db.vas_wallets.update_one(
-                        {'userId': ObjectId(user_id)},
-                        {
-                            '$set': {
-                                'accountReference': new_account_reference,  # Update to new reference
-                                'accounts': accounts,
-                                'updatedAt': datetime.utcnow()
-                            }
-                        }
-                    )
-                    
-                    print(f'SUCCESS: Successfully updated wallet with {len(accounts)} linked accounts')
-                    
-                    return jsonify({
-                        'success': True,
-                        'data': {
-                            'accounts': accounts,
-                            'totalBanksNow': len(accounts),
-                            'message': f'Successfully added additional bank accounts'
-                        },
-                        'message': 'Additional bank accounts added successfully'
-                    }), 200
-                else:
-                    error_msg = monnify_data.get('responseMessage', 'Failed to add linked accounts')
-                    print(f'ERROR: Monnify error: {error_msg}')
-                    return jsonify({
-                        'success': False,
-                        'message': error_msg
-                    }), 400
-            else:
-                print(f'ERROR: Monnify API error: {response.status_code}')
-                error_msg = response.text
-                try:
-                    error_data = response.json()
-                    error_msg = error_data.get('responseMessage') or error_data.get('message') or error_msg
-                    
-                    # Handle specific error cases
-                    if response.status_code == 404:
-                        # For accounts created before getAllBanks feature, gracefully handle
-                        print(f'INFO: Account {account_reference} was created before multi-bank feature')
-                        success_response = {
-                            'success': True,
-                            'data': {
-                                'accounts': existing_accounts,
-                                'totalBanksNow': len(existing_accounts),
-                                'message': 'Your account was created before the multi-bank feature. You currently have access to your existing bank account(s).',
-                                'isLegacyAccount': True
-                            },
-                            'message': 'Account created before multi-bank feature - existing accounts available'
-                        }
-                        print(f'DEBUG: Returning legacy account success response: {success_response}')
-                        return jsonify(success_response), 200
-                    elif response.status_code == 400:
-                        if 'not qualified' in error_msg.lower():
-                            error_msg = 'Your account is not qualified to add additional bank accounts. Please complete your profile verification.'
-                        elif 'already exists' in error_msg.lower():
-                            error_msg = 'These bank accounts are already linked to your account.'
-                    elif response.status_code == 403:
-                        error_msg = 'Access denied. Please contact support.'
-                    elif response.status_code >= 500:
-                        error_msg = 'Payment provider is temporarily unavailable. Please try again later.'
-                        
-                except Exception as json_error:
-                    print(f'DEBUG: Error parsing JSON response: {json_error}')
-                    # If we can't parse the JSON but it's a 404, still handle as legacy account
-                    if response.status_code == 404:
-                        print(f'INFO: Account {account_reference} was created before multi-bank feature (JSON parse failed)')
-                        success_response = {
-                            'success': True,
-                            'data': {
-                                'accounts': existing_accounts,
-                                'totalBanksNow': len(existing_accounts),
-                                'message': 'Your account was created before the multi-bank feature. You currently have access to your existing bank account(s).',
-                                'isLegacyAccount': True
-                            },
-                            'message': 'Account created before multi-bank feature - existing accounts available'
-                        }
-                        print(f'DEBUG: Returning legacy account success response (fallback): {success_response}')
-                        return jsonify(success_response), 200
-                
-                print(f'ERROR: Returning error response: {error_msg}')
-                return jsonify({
-                    'success': False,
-                    'message': f'Failed to add additional bank accounts: {error_msg}'
-                }), response.status_code
+            # Return graceful response explaining the limitation
+            return jsonify({
+                'success': True,
+                'data': {
+                    'accounts': existing_accounts,
+                    'totalBanksNow': len(existing_accounts),
+                    'message': 'Your account was created with a single bank. Monnify only allows one reserved account per customer, so additional banks cannot be added to existing accounts.',
+                    'isLegacyAccount': True,
+                    'limitation': 'Cannot add banks to existing reserved accounts'
+                },
+                'message': 'Single bank account - additional banks not supported for existing accounts'
+            }), 200
                 
         except Exception as e:
             print(f'ERROR: Error adding linked accounts: {str(e)}')
