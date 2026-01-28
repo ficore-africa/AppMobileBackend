@@ -8,15 +8,16 @@ Critical for resolving "Failed but Succeeded" transactions.
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
-from ..auth import token_required, admin_required
-from ..database import mongo
-from ..utils.atomic_transactions import (
-    get_reconciliation_transactions,
-    resolve_reconciliation_transaction,
-    mark_transaction_for_reconciliation
-)
 
-vas_reconciliation_bp = Blueprint('vas_reconciliation', __name__)
+def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
+    """Initialize VAS reconciliation blueprint with dependencies"""
+    from utils.atomic_transactions import (
+        get_reconciliation_transactions,
+        resolve_reconciliation_transaction,
+        mark_transaction_for_reconciliation
+    )
+    
+    vas_reconciliation_bp = Blueprint('vas_reconciliation', __name__)
 
 @vas_reconciliation_bp.route('/reconciliation/pending', methods=['GET'])
 @token_required
@@ -235,3 +236,5 @@ def mark_for_reconciliation(current_user):
             'message': 'Failed to mark transaction for reconciliation',
             'error': str(e)
         }), 500
+
+    return vas_reconciliation_bp

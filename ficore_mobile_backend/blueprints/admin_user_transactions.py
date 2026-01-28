@@ -8,10 +8,8 @@ Integrates with the reconciliation system for transaction status management.
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
-from ..auth import token_required, admin_required
-from ..database import mongo
 
-def init_admin_user_transactions_blueprint():
+def init_admin_user_transactions_blueprint(mongo, token_required, admin_required):
     admin_user_transactions_bp = Blueprint('admin_user_transactions', __name__)
     
     @admin_user_transactions_bp.route('/users/<user_id>/transactions', methods=['GET'])

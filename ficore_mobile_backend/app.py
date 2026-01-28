@@ -448,13 +448,14 @@ app.register_blueprint(vas_bills_blueprint)
 print("✓ VAS Bills blueprint registered at /api/vas/bills")
 
 # Register VAS reconciliation blueprint for admin transaction management
-from blueprints.vas_reconciliation import vas_reconciliation_bp
-app.register_blueprint(vas_reconciliation_bp, url_prefix='/api/admin')
+from blueprints.vas_reconciliation import init_vas_reconciliation_blueprint
+vas_reconciliation_blueprint = init_vas_reconciliation_blueprint(mongo, token_required, admin_required)
+app.register_blueprint(vas_reconciliation_blueprint, url_prefix='/api/admin')
 print("✓ VAS Reconciliation blueprint registered at /api/admin")
 
 # Register admin user transactions blueprint
 from blueprints.admin_user_transactions import init_admin_user_transactions_blueprint
-admin_user_transactions_blueprint = init_admin_user_transactions_blueprint()
+admin_user_transactions_blueprint = init_admin_user_transactions_blueprint(mongo, token_required, admin_required)
 app.register_blueprint(admin_user_transactions_blueprint, url_prefix='/api/admin')
 print("✓ Admin User Transactions blueprint registered at /api/admin")
 
