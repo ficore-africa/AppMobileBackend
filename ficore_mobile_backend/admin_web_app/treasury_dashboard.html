@@ -560,7 +560,7 @@
 
     <script>
         // Configuration
-        let API_BASE_URL = 'https://mobilebackend.ficoreafrica.com/api';
+        let API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
         let currentBackend = 'production';
         let treasuryData = {};
 
@@ -574,11 +574,11 @@
             currentBackend = backend;
             
             if (backend === 'production') {
-                API_BASE_URL = 'https://mobilebackend.ficoreafrica.com/api';
+                API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
                 document.getElementById('prodBtn').classList.add('active');
                 document.getElementById('devBtn').classList.remove('active');
             } else {
-                API_BASE_URL = 'http://localhost:5000/api';
+                API_BASE_URL = 'http://localhost:5000';
                 document.getElementById('devBtn').classList.add('active');
                 document.getElementById('prodBtn').classList.remove('active');
             }
