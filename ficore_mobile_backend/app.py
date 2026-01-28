@@ -1094,9 +1094,23 @@ def bad_request(error):
     }), 400
 
 if __name__ == '__main__':
-    # Run database migrations before starting the app
+    # Run database initialization before starting the app
     try:
-        print("\n🔄 Running database migrations...")
+        print("\n🔄 Running database initialization...")
+        from database_initializer import initialize_database_for_deployment
+        mongo_uri = app.config.get('MONGO_URI')
+        success = initialize_database_for_deployment(mongo_uri)
+        if success:
+            print("✅ Database initialization completed\n")
+        else:
+            print("⚠️  Database initialization failed (non-fatal)\n")
+    except Exception as e:
+        print(f"⚠️  Database initialization error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if initialization fails
+    
+    # Run database migrations after initialization
+    try:
+        print("🔄 Running database migrations...")
         from run_migrations import run_all_migrations
         mongo_uri = app.config.get('MONGO_URI')
         run_all_migrations(mongo_uri)
@@ -1134,6 +1148,20 @@ if __name__ == '__main__':
 # This is critical for Gunicorn to find the app object
 if __name__ != '__main__':
     print(f"🔍 Module imported by Gunicorn - app object available at: {__name__}.app")
+    
+    # Run database initialization for production deployment
+    try:
+        print("🔄 Running production database initialization...")
+        from database_initializer import initialize_database_for_deployment
+        mongo_uri = app.config.get('MONGO_URI')
+        success = initialize_database_for_deployment(mongo_uri)
+        if success:
+            print("✅ Production database initialization completed")
+        else:
+            print("⚠️  Production database initialization failed (non-fatal)")
+    except Exception as e:
+        print(f"⚠️  Production database initialization error (non-fatal): {str(e)}")
+        # Don't fail app startup if initialization fails
 
 
 

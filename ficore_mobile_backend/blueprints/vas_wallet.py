@@ -1581,17 +1581,21 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @vas_wallet_bp.route('/transactions/all', methods=['GET'])
     @token_required
     def get_all_user_transactions(current_user):
-        """Get all user transactions (VAS + Income + Expenses) in unified chronological order"""
+        """
+        Get all user transactions (VAS + Income + Expenses) in unified chronological order
+        ENHANCED: Ensures proper VAS transaction flags and comprehensive data for frontend sync
+        """
         try:
             user_id = str(current_user['_id'])
             limit = int(request.args.get('limit', 50))
             skip = int(request.args.get('skip', 0))
+            vas_only = request.args.get('vas_only', 'false').lower() == 'true'
             
-            print(f"Loading all transactions for user {user_id} (limit={limit}, skip={skip})")
+            print(f"Loading {'VAS-only' if vas_only else 'all'} transactions for user {user_id} (limit={limit}, skip={skip})")
             
             all_transactions = []
             
-            # Get VAS transactions
+            # Get VAS transactions with enhanced data
             vas_transactions = list(
                 mongo.db.vas_transactions.find({'userId': ObjectId(user_id)})
                 .sort('createdAt', -1)
@@ -1603,42 +1607,62 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     created_at = datetime.utcnow()
                 
                 txn_type = txn.get('type', 'UNKNOWN')
+                subtype = txn.get('subtype', txn_type.lower())
                 description = f"{txn_type.replace('_', ' ').title()}"
                 
+                # Enhanced description generation
                 if txn_type == 'WALLET_FUNDING':
-                    description = f"Wallet Funding - ₦ {txn.get('amount', 0):,.2f}"
+                    description = f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
                 elif txn_type == 'AIRTIME':
                     phone = txn.get('phoneNumber', 'Unknown')
-                    description = f"Airtime - {phone} - ₦ {txn.get('amount', 0):,.2f}"
+                    network = txn.get('network', '')
+                    description = f"Airtime - {network} {phone} - ₦{txn.get('amount', 0):,.2f}"
                 elif txn_type == 'DATA':
                     phone = txn.get('phoneNumber', 'Unknown')
-                    plan = txn.get('planName', 'Data Plan')
-                    description = f"Data - {phone} - {plan}"
-                elif txn_type == 'BILL':
-                    description = f"Bill Payment - ₦ {txn.get('amount', 0):,.2f}"
+                    network = txn.get('network', '')
+                    plan = txn.get('dataPlanName') or txn.get('dataPlan', 'Data Plan')
+                    description = f"Data - {network} {phone} - {plan}"
+                elif txn_type == 'BILLS' or txn_type == 'BILL':
+                    bill_provider = txn.get('billProvider', 'Bill')
+                    description = f"{bill_provider} Bill Payment - ₦{txn.get('amount', 0):,.2f}"
+                elif 'REFUND' in txn_type:
+                    description = f"Refund - ₦{txn.get('amount', 0):,.2f}"
                 
-                all_transactions.append({
+                # 🎯 CRITICAL FIX: Ensure all VAS transactions have proper flags
+                enhanced_transaction = {
                     '_id': str(txn['_id']),
-                    'type': 'VAS',
-                    'subtype': txn_type,
+                    'id': str(txn['_id']),  # Alternative ID field for frontend compatibility
+                    'type': 'VAS',  # Main type for unified transactions
+                    'subtype': subtype,  # Specific VAS type
                     'amount': txn.get('amount', 0),
-                    'amountPaid': txn.get('amountPaid', 0),
-                    'fee': txn.get('depositFee', 0),
+                    'amountPaid': txn.get('amountPaid', txn.get('amount', 0)),
+                    'fee': txn.get('depositFee', txn.get('fee', 0)),
+                    'depositFee': txn.get('depositFee', 0),
+                    'serviceFee': txn.get('serviceFee', 0),
+                    'totalAmount': txn.get('totalAmount', txn.get('amount', 0)),
                     'description': description,
-                    'reference': txn.get('reference', ''),
+                    'reference': txn.get('reference', txn.get('transactionReference', '')),
+                    'transactionReference': txn.get('transactionReference', ''),
                     'status': txn.get('status', 'UNKNOWN'),
                     'provider': txn.get('provider', ''),
                     'createdAt': created_at.isoformat() + 'Z',
+                    'completedAt': txn.get('completedAt').isoformat() + 'Z' if txn.get('completedAt') else None,
                     'date': created_at.isoformat() + 'Z',
+                    'displayDate': created_at,
                     'category': 'VAS',
                     
-                    # 🎯 CRITICAL FIX: Include ALL VAS transaction fields for proper receipt display
+                    # 🎯 CRITICAL: Navigation flags for proper routing
+                    'isVAS': True,  # Always True for VAS transactions
+                    'isIncome': txn_type == 'WALLET_FUNDING' or 'REFUND' in txn_type,  # Wallet funding and refunds are income
+                    'isExpense': txn_type in ['AIRTIME', 'DATA', 'BILLS', 'BILL'],  # VAS purchases are expenses
+                    'isOptimistic': False,  # Backend transactions are never optimistic
+                    
+                    # VAS-specific fields
                     'network': txn.get('network', ''),
                     'phoneNumber': txn.get('phoneNumber', ''),
                     'dataPlan': txn.get('dataPlan', ''),
                     'dataPlanId': txn.get('dataPlanId', ''),
                     'dataPlanName': txn.get('dataPlanName', ''),
-                    'transactionReference': txn.get('transactionReference', ''),
                     
                     # Bills-specific fields
                     'billCategory': txn.get('billCategory', ''),
@@ -1648,15 +1672,21 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'packageId': txn.get('packageId', ''),
                     'packageName': txn.get('packageName', ''),
                     
+                    # Enhanced metadata for frontend
                     'metadata': {
+                        'originalType': txn_type,
+                        'subtype': subtype,
                         'phoneNumber': txn.get('phoneNumber', ''),
                         'network': txn.get('network', ''),
-                        'planName': txn.get('dataPlan', '') or txn.get('dataPlanName', ''),
+                        'planName': txn.get('dataPlanName') or txn.get('dataPlan', ''),
                         'dataPlan': txn.get('dataPlan', ''),
                         'dataPlanName': txn.get('dataPlanName', ''),
                         'dataPlanId': txn.get('dataPlanId', ''),
                         'transactionReference': txn.get('transactionReference', ''),
                         'provider': txn.get('provider', ''),
+                        'isVAS': True,
+                        'isIncome': txn_type == 'WALLET_FUNDING' or 'REFUND' in txn_type,
+                        'isExpense': txn_type in ['AIRTIME', 'DATA', 'BILLS', 'BILL'],
                         
                         # Bills-specific metadata
                         'billCategory': txn.get('billCategory', ''),
@@ -1666,58 +1696,74 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'packageId': txn.get('packageId', ''),
                         'packageName': txn.get('packageName', ''),
                     }
-                })
-            
-            # Get Income transactions
-            income_transactions = list(
-                mongo.db.incomes.find({'userId': ObjectId(user_id)})
-                .sort('dateReceived', -1)
-            )
-            
-            for txn in income_transactions:
-                date_received = txn.get('dateReceived', datetime.utcnow())
-                if not isinstance(date_received, datetime):
-                    date_received = datetime.utcnow()
+                }
                 
-                all_transactions.append({
-                    '_id': str(txn['_id']),
-                    'type': 'INCOME',
-                    'subtype': 'INCOME',
-                    'amount': txn.get('amount', 0),
-                    'description': txn.get('description', 'Income received'),
-                    'title': txn.get('source', 'Income'),
-                    'source': txn.get('source', 'Unknown'),
-                    'reference': '',
-                    'status': 'SUCCESS',
-                    'createdAt': date_received.isoformat() + 'Z',
-                    'date': date_received.isoformat() + 'Z',
-                    'category': txn.get('category', 'Income')
-                })
+                all_transactions.append(enhanced_transaction)
             
-            # Get Expense transactions
-            expense_transactions = list(
-                mongo.db.expenses.find({'userId': ObjectId(user_id)})
-                .sort('date', -1)
-            )
-            
-            for txn in expense_transactions:
-                expense_date = txn.get('date', datetime.utcnow())
-                if not isinstance(expense_date, datetime):
-                    expense_date = datetime.utcnow()
+            # If VAS-only requested, skip income/expense transactions
+            if not vas_only:
+                # Get Income transactions
+                income_transactions = list(
+                    mongo.db.incomes.find({'userId': ObjectId(user_id)})
+                    .sort('dateReceived', -1)
+                )
                 
-                all_transactions.append({
-                    '_id': str(txn['_id']),
-                    'type': 'EXPENSE',
-                    'subtype': 'EXPENSE',
-                    'amount': -txn.get('amount', 0),  # Negative for expenses
-                    'description': txn.get('description', 'Expense recorded'),
-                    'title': txn.get('title', 'Expense'),
-                    'reference': '',
-                    'status': 'SUCCESS',
-                    'createdAt': expense_date.isoformat() + 'Z',
-                    'date': expense_date.isoformat() + 'Z',
-                    'category': txn.get('category', 'Expense')
-                })
+                for txn in income_transactions:
+                    date_received = txn.get('dateReceived', datetime.utcnow())
+                    if not isinstance(date_received, datetime):
+                        date_received = datetime.utcnow()
+                    
+                    all_transactions.append({
+                        '_id': str(txn['_id']),
+                        'id': str(txn['_id']),
+                        'type': 'INCOME',
+                        'subtype': 'INCOME',
+                        'amount': txn.get('amount', 0),
+                        'description': txn.get('description', 'Income received'),
+                        'title': txn.get('source', 'Income'),
+                        'source': txn.get('source', 'Unknown'),
+                        'reference': '',
+                        'status': 'SUCCESS',
+                        'createdAt': date_received.isoformat() + 'Z',
+                        'date': date_received.isoformat() + 'Z',
+                        'displayDate': date_received,
+                        'category': txn.get('category', 'Income'),
+                        'isVAS': False,
+                        'isIncome': True,
+                        'isExpense': False,
+                        'isOptimistic': False,
+                    })
+                
+                # Get Expense transactions
+                expense_transactions = list(
+                    mongo.db.expenses.find({'userId': ObjectId(user_id)})
+                    .sort('date', -1)
+                )
+                
+                for txn in expense_transactions:
+                    expense_date = txn.get('date', datetime.utcnow())
+                    if not isinstance(expense_date, datetime):
+                        expense_date = datetime.utcnow()
+                    
+                    all_transactions.append({
+                        '_id': str(txn['_id']),
+                        'id': str(txn['_id']),
+                        'type': 'EXPENSE',
+                        'subtype': 'EXPENSE',
+                        'amount': -txn.get('amount', 0),  # Negative for expenses
+                        'description': txn.get('description', 'Expense recorded'),
+                        'title': txn.get('title', 'Expense'),
+                        'reference': '',
+                        'status': 'SUCCESS',
+                        'createdAt': expense_date.isoformat() + 'Z',
+                        'date': expense_date.isoformat() + 'Z',
+                        'displayDate': expense_date,
+                        'category': txn.get('category', 'Expense'),
+                        'isVAS': False,
+                        'isIncome': False,
+                        'isExpense': True,
+                        'isOptimistic': False,
+                    })
             
             # Sort all transactions by date (newest first)
             all_transactions.sort(key=lambda x: x['createdAt'], reverse=True)
@@ -1725,15 +1771,17 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             # Apply pagination
             paginated_transactions = all_transactions[skip:skip + limit]
             
-            print(f"Loaded {len(paginated_transactions)} transactions (total: {len(all_transactions)})")
+            print(f"✅ Loaded {len(paginated_transactions)} transactions (total: {len(all_transactions)}, VAS: {len(vas_transactions)})")
             
             return jsonify({
                 'success': True,
                 'data': paginated_transactions,
                 'total': len(all_transactions),
+                'vas_count': len(vas_transactions),
                 'limit': limit,
                 'skip': skip,
-                'message': 'All transactions loaded successfully'
+                'vas_only': vas_only,
+                'message': f'{"VAS-only" if vas_only else "All"} transactions loaded successfully'
             }), 200
             
         except Exception as e:
@@ -1743,6 +1791,140 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to load transactions',
+                'error': str(e)
+            }), 500
+
+    @vas_wallet_bp.route('/transactions/sync', methods=['POST'])
+    @token_required
+    def sync_vas_transactions(current_user):
+        """
+        🎯 CRITICAL: VAS Transaction Sync Endpoint
+        Ensures VAS transactions are properly synced between frontend and backend
+        This fixes the "VAS transactions disappear after app reinstall" issue
+        """
+        try:
+            user_id = str(current_user['_id'])
+            data = request.json or {}
+            
+            # Get client's last sync timestamp
+            last_sync = data.get('lastSync')
+            client_transaction_ids = set(data.get('transactionIds', []))
+            
+            print(f"🔄 VAS Sync requested for user {user_id}")
+            print(f"   Client last sync: {last_sync}")
+            print(f"   Client has {len(client_transaction_ids)} transaction IDs")
+            
+            # Get all VAS transactions from backend
+            query = {'userId': ObjectId(user_id)}
+            if last_sync:
+                try:
+                    last_sync_dt = datetime.fromisoformat(last_sync.replace('Z', ''))
+                    query['updatedAt'] = {'$gte': last_sync_dt}
+                    print(f"   Filtering transactions updated after: {last_sync_dt}")
+                except:
+                    print(f"   Invalid lastSync format, fetching all transactions")
+            
+            backend_transactions = list(
+                mongo.db.vas_transactions.find(query)
+                .sort('createdAt', -1)
+            )
+            
+            # Enhance transactions with proper flags
+            enhanced_transactions = []
+            backend_transaction_ids = set()
+            
+            for txn in backend_transactions:
+                backend_transaction_ids.add(str(txn['_id']))
+                
+                created_at = txn.get('createdAt', datetime.utcnow())
+                if not isinstance(created_at, datetime):
+                    created_at = datetime.utcnow()
+                
+                txn_type = txn.get('type', 'UNKNOWN')
+                subtype = txn.get('subtype', txn_type.lower())
+                
+                # 🎯 CRITICAL: Ensure all VAS transactions have proper flags
+                enhanced_txn = {
+                    'id': str(txn['_id']),
+                    'type': txn_type,
+                    'subtype': subtype,
+                    'amount': txn.get('amount', 0),
+                    'amountPaid': txn.get('amountPaid', txn.get('amount', 0)),
+                    'fee': txn.get('depositFee', txn.get('fee', 0)),
+                    'depositFee': txn.get('depositFee', 0),
+                    'serviceFee': txn.get('serviceFee', 0),
+                    'totalAmount': txn.get('totalAmount', txn.get('amount', 0)),
+                    'status': txn.get('status', 'UNKNOWN'),
+                    'provider': txn.get('provider', ''),
+                    'description': txn.get('description', ''),
+                    'reference': txn.get('reference', txn.get('transactionReference', '')),
+                    'transactionReference': txn.get('transactionReference', ''),
+                    'createdAt': created_at,
+                    'completedAt': txn.get('completedAt'),
+                    'expiresAt': txn.get('expiresAt'),
+                    
+                    # 🎯 CRITICAL: Navigation flags for proper routing
+                    'isVAS': True,  # Always True for VAS transactions
+                    'isIncome': txn_type == 'WALLET_FUNDING' or 'REFUND' in txn_type,
+                    'isExpense': txn_type in ['AIRTIME', 'DATA', 'BILLS', 'BILL'],
+                    'isOptimistic': False,  # Backend transactions are never optimistic
+                    
+                    # VAS-specific fields
+                    'network': txn.get('network', ''),
+                    'phoneNumber': txn.get('phoneNumber', ''),
+                    'dataPlan': txn.get('dataPlan', ''),
+                    'dataPlanId': txn.get('dataPlanId', ''),
+                    'dataPlanName': txn.get('dataPlanName', ''),
+                    
+                    # Bills-specific fields
+                    'billCategory': txn.get('billCategory', ''),
+                    'billProvider': txn.get('billProvider', ''),
+                    'accountNumber': txn.get('accountNumber', ''),
+                    'customerName': txn.get('customerName', ''),
+                    'packageId': txn.get('packageId', ''),
+                    'packageName': txn.get('packageName', ''),
+                }
+                
+                enhanced_transactions.append(enhanced_txn)
+            
+            # Identify missing transactions (on backend but not on client)
+            missing_on_client = backend_transaction_ids - client_transaction_ids
+            
+            # Identify extra transactions (on client but not on backend)
+            extra_on_client = client_transaction_ids - backend_transaction_ids
+            
+            sync_summary = {
+                'backend_count': len(backend_transactions),
+                'client_count': len(client_transaction_ids),
+                'missing_on_client': len(missing_on_client),
+                'extra_on_client': len(extra_on_client),
+                'sync_timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+            
+            print(f"✅ VAS Sync completed for user {user_id}:")
+            print(f"   Backend: {sync_summary['backend_count']} transactions")
+            print(f"   Client: {sync_summary['client_count']} transactions")
+            print(f"   Missing on client: {sync_summary['missing_on_client']}")
+            print(f"   Extra on client: {sync_summary['extra_on_client']}")
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactions': enhanced_transactions,
+                    'summary': sync_summary,
+                    'missing_transaction_ids': list(missing_on_client),
+                    'extra_transaction_ids': list(extra_on_client),
+                },
+                'message': 'VAS transactions synced successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"ERROR: VAS sync failed for user {user_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to sync VAS transactions',
                 'error': str(e)
             }), 500
 

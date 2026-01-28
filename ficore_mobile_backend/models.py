@@ -783,6 +783,151 @@ class DatabaseSchema:
             {'keys': [('userEmail', 1)], 'name': 'user_email'},
         ]
 
+    # ==================== VAS_WALLETS COLLECTION ====================
+    
+    @staticmethod
+    def get_vas_wallet_schema() -> Dict[str, Any]:
+        """
+        Schema for vas_wallets collection.
+        Stores VAS wallet information including balance, account details, and KYC status.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'balance': float,  # Current wallet balance, default: 0.0
+            'accountReference': str,  # Monnify account reference (user ID)
+            'contractCode': Optional[str],  # Monnify contract code
+            'accountName': str,  # Account holder name
+            'accountNumber': Optional[str],  # Primary account number
+            'bankName': Optional[str],  # Primary bank name
+            'bankCode': Optional[str],  # Primary bank code
+            'accounts': List[Dict[str, Any]],  # List of all available bank accounts
+            'status': str,  # 'active', 'inactive', 'suspended', default: 'active'
+            'tier': str,  # 'TIER_0', 'TIER_1', 'TIER_2', default: 'TIER_1'
+            'kycVerified': bool,  # KYC verification status, default: False
+            'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
+            'bvn': Optional[str],  # Bank Verification Number (11 digits)
+            'nin': Optional[str],  # National Identification Number (11 digits)
+            'transactionHistory': List[Dict[str, Any]],  # Transaction history for quick access
+            'createdAt': datetime,  # Wallet creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+            'lastTransactionAt': Optional[datetime],  # Last transaction timestamp
+            'metadata': Optional[Dict[str, Any]],  # Additional metadata
+        }
+    
+    @staticmethod
+    def get_vas_wallet_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for vas_wallets collection."""
+        return [
+            {'keys': [('userId', 1)], 'unique': True, 'name': 'user_id_unique'},
+            {'keys': [('accountReference', 1)], 'unique': True, 'name': 'account_reference_unique'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+            {'keys': [('kycStatus', 1)], 'name': 'kyc_status_index'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            {'keys': [('lastTransactionAt', -1)], 'name': 'last_transaction_desc'},
+        ]
+
+    # ==================== VAS_TRANSACTIONS COLLECTION ====================
+    
+    @staticmethod
+    def get_vas_transaction_schema() -> Dict[str, Any]:
+        """
+        Schema for vas_transactions collection.
+        Stores all VAS transaction records (airtime, data, wallet funding, bills, etc.).
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'walletId': Optional[ObjectId],  # Reference to vas_wallets._id
+            'type': str,  # Required: 'AIRTIME', 'DATA', 'WALLET_FUNDING', 'BILLS', 'REFUND'
+            'subtype': Optional[str],  # Specific subtype: 'airtime', 'data', 'electricity', etc.
+            'amount': float,  # Required, transaction amount (must be > 0)
+            'amountPaid': Optional[float],  # Amount actually paid by user
+            'amountCredited': Optional[float],  # Amount credited to wallet
+            'fee': Optional[float],  # Transaction fee
+            'depositFee': Optional[float],  # Deposit fee for wallet funding
+            'serviceFee': Optional[float],  # Service fee for VAS purchases
+            'totalAmount': Optional[float],  # Total amount including fees
+            'status': str,  # 'PENDING', 'SUCCESS', 'FAILED', 'PROCESSING', 'NEEDS_RECONCILIATION'
+            'provider': str,  # 'monnify', 'peyflex', 'vtpass', 'optimistic'
+            'providerReference': Optional[str],  # Provider's transaction reference
+            'transactionReference': str,  # Our internal transaction reference
+            'reference': Optional[str],  # Alternative reference field
+            'description': str,  # Human-readable description
+            'category': Optional[str],  # Transaction category
+            
+            # VAS-specific fields
+            'phoneNumber': Optional[str],  # For airtime/data purchases
+            'network': Optional[str],  # Network provider (MTN, Airtel, Glo, 9mobile)
+            'dataPlan': Optional[str],  # Data plan name
+            'dataPlanId': Optional[str],  # Data plan identifier
+            'dataPlanName': Optional[str],  # Data plan display name
+            
+            # Bills-specific fields
+            'billCategory': Optional[str],  # 'electricity', 'cable_tv', 'water', 'internet'
+            'billProvider': Optional[str],  # DSTV, GOTV, EKEDC, etc.
+            'accountNumber': Optional[str],  # Meter number, decoder number, etc.
+            'customerName': Optional[str],  # Name on the account
+            'packageId': Optional[str],  # For cable TV packages
+            'packageName': Optional[str],  # For cable TV packages
+            
+            # Wallet funding specific fields
+            'fundingMethod': Optional[str],  # 'bank_transfer', 'card', 'ussd'
+            'bankName': Optional[str],  # Bank used for funding
+            'bankCode': Optional[str],  # Bank code
+            
+            # Navigation and classification flags
+            'isVAS': bool,  # Always True for VAS transactions, default: True
+            'isIncome': bool,  # For wallet funding transactions, default: False
+            'isExpense': bool,  # For VAS purchases, default: False
+            'isOptimistic': Optional[bool],  # For immediate display before sync
+            
+            # Timestamps
+            'createdAt': datetime,  # Transaction creation timestamp
+            'completedAt': Optional[datetime],  # Transaction completion timestamp
+            'expiresAt': Optional[datetime],  # Transaction expiry timestamp
+            'updatedAt': datetime,  # Last update timestamp
+            
+            # Reconciliation and audit
+            'reconciled': bool,  # Whether transaction has been reconciled, default: False
+            'reconciledAt': Optional[datetime],  # Reconciliation timestamp
+            'auditLog': List[Dict[str, Any]],  # Audit trail for status changes
+            'metadata': Optional[Dict[str, Any]],  # Additional metadata
+            
+            # Immutability fields (for financial compliance)
+            'version': int,  # Version number for updates, default: 1
+            'originalEntryId': Optional[ObjectId],  # Reference to original entry if this is an update
+            'supersededBy': Optional[ObjectId],  # Reference to newer version if superseded
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'deletedAt': Optional[datetime],  # Soft delete timestamp
+            'deletionReason': Optional[str],  # Reason for deletion
+        }
+    
+    @staticmethod
+    def get_vas_transaction_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for vas_transactions collection."""
+        return [
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('userId', 1), ('type', 1)], 'name': 'user_type'},
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('userId', 1), ('isVAS', 1)], 'name': 'user_is_vas'},
+            {'keys': [('transactionReference', 1)], 'unique': True, 'name': 'transaction_reference_unique'},
+            {'keys': [('providerReference', 1)], 'sparse': True, 'name': 'provider_reference'},
+            {'keys': [('status', 1), ('createdAt', -1)], 'name': 'status_created_desc'},
+            {'keys': [('type', 1), ('createdAt', -1)], 'name': 'type_created_desc'},
+            {'keys': [('provider', 1), ('createdAt', -1)], 'name': 'provider_created_desc'},
+            {'keys': [('phoneNumber', 1)], 'sparse': True, 'name': 'phone_number'},
+            {'keys': [('network', 1)], 'sparse': True, 'name': 'network'},
+            {'keys': [('reconciled', 1)], 'name': 'reconciled_index'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            # Compound indexes for complex queries
+            {'keys': [('userId', 1), ('type', 1), ('status', 1)], 'name': 'user_type_status'},
+            {'keys': [('userId', 1), ('isVAS', 1), ('createdAt', -1)], 'name': 'user_vas_created_desc'},
+            # Immutability indexes
+            {'keys': [('userId', 1), ('isDeleted', 1), ('status', 1)], 'name': 'user_deleted_status'},
+            {'keys': [('originalEntryId', 1)], 'sparse': True, 'name': 'original_entry_id'},
+        ]
+
     # ==================== VOICE_REPORTS COLLECTION ====================
 
     @staticmethod
@@ -921,6 +1066,9 @@ class DatabaseInitializer:
             'analytics_events': self.schema.get_analytics_event_indexes(),
             'admin_actions': self.schema.get_admin_action_indexes(),
             'cancellation_requests': self.schema.get_cancellation_request_indexes(),
+            # VAS collections
+            'vas_wallets': self.schema.get_vas_wallet_indexes(),
+            'vas_transactions': self.schema.get_vas_transaction_indexes(),
             # Voice reporting collections
             'voice_reports': self.schema.get_voice_report_indexes(),
             'idempotency_keys': self.schema.get_idempotency_key_indexes(),
@@ -1039,13 +1187,6 @@ class DatabaseInitializer:
         Returns:
             dict: Statistics for all collections
         """
-        collections = ['users', 'incomes', 'expenses', 
-                      'credit_transactions', 'credit_requests',
-                      'tax_calculations', 'tax_education_progress',
-                      'debtors', 'debtor_transactions',
-                      'creditors', 'creditor_transactions',
-                      'inventory_items', 'inventory_movements']
-        
         stats = {}
         for collection_name in collections:
             stats[collection_name] = self.get_collection_stats(collection_name)
