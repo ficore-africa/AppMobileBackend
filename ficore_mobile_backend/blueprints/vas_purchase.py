@@ -2303,8 +2303,6 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'errors': {'general': ['Critical system error']},
                         'reference': request_id
                     }), 500
-                }
-            )
             
             # CRITICAL: Verify transaction was actually updated
             if update_result.modified_count == 0:
