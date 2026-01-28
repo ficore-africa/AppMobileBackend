@@ -1652,7 +1652,7 @@
             }
             
             try {
-                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/reconciliations/pending`, {
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/user/${currentUser.email}`, {
                     headers: {
                         'Authorization': `Bearer ${getAdminToken()}`
                     }
