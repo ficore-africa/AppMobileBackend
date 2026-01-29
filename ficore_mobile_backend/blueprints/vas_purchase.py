@@ -2226,18 +2226,11 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'message': task_result['message'],
                     'errors': {'general': [task_result['error']]}
                 }), 400
-                    'message': 'Purchase failed - our team will verify and resolve this shortly',
-                    'errors': {'general': ['Transaction failed but will be reviewed for potential delivery']}
-                }), 500
             
             # Get current wallet balance for response
             current_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             current_balance = current_wallet.get('balance', 0.0) if current_wallet else 0.0
             available_balance = get_user_available_balance(mongo.db, user_id)
-                        'message': 'Critical system error. Please contact support immediately with reference: ' + request_id,
-                        'errors': {'general': ['Critical system error']},
-                        'reference': request_id
-                    }), 500
             
             # Record corporate revenue (margin earned)
             if margin > 0:
