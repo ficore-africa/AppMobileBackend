@@ -2054,30 +2054,24 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             
             user_id = str(current_user['_id'])
             
-            # Determine user tier for pricing
+            # Determine user tier for record keeping
             user_tier = 'basic'
             if current_user.get('subscriptionStatus') == 'active':
                 subscription_plan = current_user.get('subscriptionPlan', 'premium')
                 user_tier = subscription_plan.lower()
             
-            # Calculate dynamic pricing
-            pricing_result = calculate_vas_price(
-                mongo.db, 'airtime', network, amount, user_tier, None, user_id
-            )
+            # CRITICAL: Airtime should be sold at EXACT FACE VALUE - NO MARGINS, NO DISCOUNTS
+            # User pays exactly what they see: ₦200 airtime = ₦200 charged
+            selling_price = amount  # Sell at exactly the face value
+            cost_price = amount     # Cost is the same as selling price (no markup/markdown)
+            margin = 0.0           # No margin for airtime
+            savings_message = ''   # No savings message needed
             
-            selling_price = pricing_result['selling_price']
-            cost_price = pricing_result['cost_price']
-            margin = pricing_result['margin']
-            savings_message = pricing_result['savings_message']
-            
-            # EMERGENCY PRICING DETECTION
-            emergency_multiplier = 2.0
-            normal_expected_cost = amount * 0.99  # Expected normal cost for airtime
-            is_emergency_pricing = cost_price >= (normal_expected_cost * emergency_multiplier * 0.8)  # 80% threshold
-            
-            if is_emergency_pricing:
-                print(f"WARNING: EMERGENCY PRICING DETECTED: Cost ₦ {cost_price} vs Expected ₦ {normal_expected_cost}")
-                # Will tag after successful transaction
+            print(f'💰 AIRTIME PRICING (FACE VALUE POLICY):')
+            print(f'   Airtime Amount: ₦{amount}')
+            print(f'   User Pays: ₦{selling_price} (EXACT MATCH)')
+            print(f'   No Margin Added: ₦{margin}')
+            print(f'   Policy: Sell airtime at exact face value')
             
             # CRITICAL: Enhanced idempotency protection - Check for BOTH pending AND completed transactions
             pending_txn = check_pending_transaction(user_id, 'AIRTIME', selling_price, phone_number)
@@ -2144,7 +2138,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'costPrice': cost_price,
                 'margin': margin,
                 'userTier': user_tier,
-                'pricingStrategy': pricing_result['strategy_used'],
+                'pricingStrategy': 'no_margin_policy',  # Airtime sold at face value (no margin)
                 'savingsMessage': savings_message,
                 'totalAmount': total_amount,
                 'status': 'FAILED',  # 🔒 Start as FAILED, update to SUCCESS only when complete

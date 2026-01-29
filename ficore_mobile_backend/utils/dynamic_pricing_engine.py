@@ -74,7 +74,8 @@ class DynamicPricingEngine:
             cache_key = f"peyflex_rates_{service_type}_{network or 'all'}"
             
             # Check cache first (only for non-expired cache)
-            cached_rates = self.mongo.db.pricing_cache.find_one({
+            # FIXED: self.mongo is already the database, no need for .db
+            cached_rates = self.mongo.pricing_cache.find_one({
                 'cache_key': cache_key,
                 'expires_at': {'$gt': datetime.utcnow()}
             })
@@ -92,7 +93,8 @@ class DynamicPricingEngine:
                 raise ValueError(f"Unsupported service type: {service_type}")
             
             # Cache the rates
-            self.mongo.db.pricing_cache.replace_one(
+            # FIXED: self.mongo is already the database, no need for .db
+            self.mongo.pricing_cache.replace_one(
                 {'cache_key': cache_key},
                 {
                     'cache_key': cache_key,
@@ -301,7 +303,8 @@ class DynamicPricingEngine:
         try:
             # Try to get last known good price from cache (even if expired)
             cache_key = f"peyflex_rates_{service_type}_{network or 'all'}"
-            last_known_rates = self.mongo.db.pricing_cache.find_one(
+            # FIXED: self.mongo is already the database, no need for .db
+            last_known_rates = self.mongo.pricing_cache.find_one(
                 {'cache_key': cache_key},
                 sort=[('created_at', -1)]  # Get most recent
             )
