@@ -71,29 +71,11 @@ def update_liquid_wallet_balance(mongo, user_id, new_balance, reason="", transac
                 logger.warning(f"Failed to update users.liquidWalletBalance for user {user_id} (may not exist)")
                 # Don't fail if users update fails - vas_wallets is primary source
         
-        # Push SSE update if requested
+        # REMOVED: SSE push update - replaced with simple polling
+        # Clients now poll /api/vas/wallet/balance/current every 3 seconds
+        # This eliminates memory-intensive persistent connections
         if push_sse_update:
-            try:
-                from blueprints.vas_wallet import push_balance_update
-                
-                sse_update_data = {
-                    'type': 'balance_update',
-                    'new_balance': new_balance,
-                    'timestamp': timestamp.isoformat(),
-                    'transaction_type': transaction_type,
-                    'transaction_reference': transaction_reference
-                }
-                
-                # Add additional SSE data if provided
-                if sse_data:
-                    sse_update_data.update(sse_data)
-                
-                push_balance_update(str(user_id), sse_update_data)
-                logger.info(f"SSE update pushed for user {user_id}: ₦{new_balance:,.2f}")
-                
-            except Exception as sse_error:
-                logger.warning(f"SSE update failed for user {user_id}: {str(sse_error)}")
-                # Don't fail the transaction for SSE errors
+            logger.info(f"Balance updated for user {user_id}: ₦{new_balance:,.2f} - clients will detect via polling")
         
         # Log the update
         logger.info(f"Balance sync: User {user_id}, New balance: ₦{new_balance:,.2f}, Reason: {reason}")

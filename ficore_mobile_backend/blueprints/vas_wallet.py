@@ -7,16 +7,12 @@ Providers: Monnify (primary wallet provider)
 Features: Reserved accounts, KYC verification, multi-bank support, webhook processing
 """
 
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
 import os
 import requests
 import hmac
-import time
-import threading
-import queue
-import json
 import hashlib
 import sys
 
@@ -57,68 +53,16 @@ import requests
 from bson import ObjectId
 
 # 🚀 INSTANT BALANCE UPDATE INFRASTRUCTURE - GLOBAL
-# Global queue for real-time balance updates
-balance_update_queues = {}  # user_id -> queue
-balance_update_lock = threading.Lock()
-active_connections = {}  # user_id -> connection_info
-
-def get_user_balance_queue(user_id):
-    """Get or create balance update queue for user"""
-    with balance_update_lock:
-        if user_id not in balance_update_queues:
-            balance_update_queues[user_id] = queue.Queue(maxsize=50)  # REDUCED: Smaller queue to prevent memory buildup
-        return balance_update_queues[user_id]
-
-def cleanup_user_balance_queue(user_id):
-    """Clean up user's balance queue when connection closes"""
-    with balance_update_lock:
-        if user_id in balance_update_queues:
-            try:
-                # Clear any remaining items
-                while not balance_update_queues[user_id].empty():
-                    try:
-                        balance_update_queues[user_id].get_nowait()
-                    except queue.Empty:
-                        break
-            except Exception as e:
-                print(f'WARNING: Error clearing queue for user {user_id}: {str(e)}')
-            # Remove the queue
-            del balance_update_queues[user_id]
-            print(f'INFO: Cleaned up balance queue for user {user_id}')
-        
-        # Remove from active connections
-        if user_id in active_connections:
-            del active_connections[user_id]
-
-def cleanup_stale_connections():
-    """Clean up stale connections that have been active too long"""
-    current_time = time.time()
-    stale_users = []
-    
-    with balance_update_lock:
-        for user_id, conn_info in active_connections.items():
-            # Remove connections older than 10 minutes
-            if current_time - conn_info.get('start_time', 0) > 600:
-                stale_users.append(user_id)
-    
-    # Clean up stale connections
-    for user_id in stale_users:
-        cleanup_user_balance_queue(user_id)
-        print(f'INFO: Cleaned up stale connection for user {user_id}')
-
-def is_connection_active(user_id):
-    """Check if user has an active SSE connection"""
-    with balance_update_lock:
-        return user_id in active_connections and active_connections[user_id].get('active', False)
-
-def push_balance_update(user_id, update_data):
-    """Push balance update to user's SSE stream - GLOBAL FUNCTION"""
-    try:
-        user_queue = get_user_balance_queue(user_id)
-        user_queue.put(update_data)
-        print(f'🚀 SSE: Balance update pushed for user {user_id}: ₦{update_data.get("new_balance", 0):,.2f}')
-    except Exception as e:
-        print(f'WARNING: Failed to push balance update: {str(e)}')
+# REMOVED: Memory-intensive SSE infrastructure replaced with simple polling
+# The following SSE components were causing server memory exhaustion:
+# - balance_update_queues: Per-user queues consuming memory
+# - active_connections: Connection tracking with threading overhead  
+# - balance_update_lock: Threading synchronization overhead
+# - Persistent connections lasting 15+ minutes each
+# - Heartbeat mechanisms consuming CPU cycles
+#
+# SOLUTION: Simple polling endpoint /balance/current that clients call every few seconds
+# Benefits: No persistent connections, no memory buildup, much simpler architecture
 
 def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     vas_wallet_bp = Blueprint('vas_wallet', __name__, url_prefix='/api/vas/wallet')
@@ -394,145 +338,52 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
     
-    # 🚀 REAL-TIME BALANCE UPDATES VIA SERVER-SENT EVENTS
-    @vas_wallet_bp.route('/balance/stream', methods=['GET'])
+    # 🚀 SIMPLE BALANCE POLLING - REPLACES MEMORY-INTENSIVE SSE
+    @vas_wallet_bp.route('/balance/current', methods=['GET'])
     @token_required
-    def stream_balance_updates(current_user):
-        """Server-Sent Events stream for real-time balance updates"""
+    def get_current_balance(current_user):
+        """Get current wallet balance - lightweight polling endpoint"""
         try:
             user_id = str(current_user['_id'])
-            vas_log(f'Balance stream called for user {user_id}')
             
-            # Clean up any stale connections first
-            cleanup_stale_connections()
-            
-            # Check if user already has an active connection
-            if is_connection_active(user_id):
+            # Get wallet from database
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
                 return jsonify({
                     'success': False,
-                    'message': 'User already has an active SSE connection',
-                    'errors': {'connection': ['Only one SSE connection allowed per user']}
-                }), 409
+                    'message': 'Wallet not found',
+                    'errors': {'wallet': ['No wallet found for user']}
+                }), 404
             
-            # SAFETY: Limit total concurrent connections to prevent memory exhaustion
-            with balance_update_lock:
-                if len(active_connections) >= 50:  # Max 50 concurrent SSE connections
-                    return jsonify({
-                        'success': False,
-                        'message': 'Server at maximum SSE connection capacity',
-                        'errors': {'connection': ['Too many active connections. Please try again later.']}
-                    }), 503
+            from utils.transaction_task_queue import get_user_available_balance
             
-            user_queue = get_user_balance_queue(user_id)
+            total_balance = wallet.get('balance', 0.0)
+            reserved_amount = wallet.get('reservedAmount', 0.0)
+            available_balance = get_user_available_balance(mongo.db, user_id)
             
-            # Mark connection as active
-            with balance_update_lock:
-                active_connections[user_id] = {
-                    'active': True,
-                    'start_time': time.time()
+            # Also get liquid wallet balance for complete picture
+            user_doc = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            liquid_wallet_balance = user_doc.get('liquidWalletBalance', 0.0) if user_doc else 0.0
+            
+            balance_data = {
+                'success': True,
+                'data': {
+                    'totalBalance': total_balance,
+                    'reservedAmount': reserved_amount,
+                    'availableBalance': available_balance,
+                    'liquidWalletBalance': liquid_wallet_balance,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'source': 'polling_endpoint'
                 }
+            }
             
-            def event_stream():
-                """Generate SSE events for balance updates"""
-                connection_active = True
-                heartbeat_count = 0
-                max_heartbeats = 60  # INCREASED: 15 minutes max connection (15s * 60 = 900s) for better UX
-                
-                try:
-                    # Send initial connection confirmation
-                    yield f"data: {json.dumps({'type': 'connected', 'user_id': user_id, 'timestamp': datetime.utcnow().isoformat()})}\n\n"
-                    
-                    # 🚀 CRITICAL FIX: Send current balance immediately upon connection
-                    try:
-                        wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
-                        if wallet:
-                            from utils.transaction_task_queue import get_user_available_balance
-                            
-                            total_balance = wallet.get('balance', 0.0)
-                            reserved_amount = wallet.get('reservedAmount', 0.0)
-                            available_balance = get_user_available_balance(mongo.db, user_id)
-                            
-                            initial_balance_update = {
-                                'type': 'balance_update',
-                                'totalBalance': total_balance,
-                                'reservedAmount': reserved_amount,
-                                'availableBalance': available_balance,
-                                'timestamp': datetime.utcnow().isoformat(),
-                                'source': 'initial_connection'
-                            }
-                            yield f"data: {json.dumps(initial_balance_update)}\n\n"
-                            print(f'🚀 SSE: Initial balance sent for user {user_id}: Available ₦{available_balance:,.2f}')
-                        else:
-                            print(f'WARNING: No wallet found for user {user_id}')
-                    except Exception as e:
-                        print(f'WARNING: Failed to send initial balance: {str(e)}')
-                    
-                    while connection_active and heartbeat_count < max_heartbeats:
-                        try:
-                            # Check if connection should still be active
-                            if not is_connection_active(user_id):
-                                connection_active = False
-                                break
-                                
-                            # REDUCED: Wait for balance update events (5 second timeout for faster response)
-                            update = user_queue.get(timeout=5)
-                            yield f"data: {json.dumps(update)}\n\n"
-                            
-                        except queue.Empty:
-                            # Send heartbeat every 5 seconds to keep connection alive
-                            heartbeat_count += 1
-                            heartbeat = {
-                                'type': 'heartbeat',
-                                'timestamp': datetime.utcnow().isoformat(),
-                                'count': heartbeat_count,
-                                'max_heartbeats': max_heartbeats
-                            }
-                            yield f"data: {json.dumps(heartbeat)}\n\n"
-                            
-                        except queue.Full:
-                            # Queue is full, send warning and continue
-                            warning = {
-                                'type': 'warning',
-                                'message': 'Update queue full, some updates may be missed',
-                                'timestamp': datetime.utcnow().isoformat()
-                            }
-                            yield f"data: {json.dumps(warning)}\n\n"
-                            
-                except GeneratorExit:
-                    print(f'INFO: SSE connection closed for user {user_id}')
-                    connection_active = False
-                except Exception as e:
-                    print(f'ERROR: SSE stream error for user {user_id}: {str(e)}')
-                    error_event = {
-                        'type': 'error',
-                        'message': 'Stream error occurred',
-                        'timestamp': datetime.utcnow().isoformat()
-                    }
-                    yield f"data: {json.dumps(error_event)}\n\n"
-                    connection_active = False
-                finally:
-                    # Always cleanup when connection ends
-                    cleanup_user_balance_queue(user_id)
-                    print(f'INFO: SSE stream ended for user {user_id} after {heartbeat_count} heartbeats')
-            
-            print(f'INFO: SSE stream started for user {user_id}')
-            return Response(
-                event_stream(),
-                mimetype='text/event-stream',  # Correct MIME type for SSE
-                headers={
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Cache-Control',
-                    'X-Accel-Buffering': 'no'  # Disable nginx buffering
-                }
-            )
+            return jsonify(balance_data)
             
         except Exception as e:
-            print(f'ERROR: Failed to start SSE stream: {str(e)}')
+            print(f'ERROR: Failed to get current balance: {str(e)}')
             return jsonify({
                 'success': False,
-                'message': 'Failed to start balance stream',
+                'message': 'Failed to get balance',
                 'errors': {'general': [str(e)]}
             }), 500
     

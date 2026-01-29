@@ -39,7 +39,8 @@ def vas_log(message):
             current_app.logger.info(f"VAS_DEBUG: {message}")
     except:
         pass
-from blueprints.vas_wallet import push_balance_update
+# REMOVED: SSE push_balance_update import - replaced with simple polling
+# from blueprints.vas_wallet import push_balance_update
 from utils.monnify_utils import call_monnify_auth, call_monnify_bills_api
 
 def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):

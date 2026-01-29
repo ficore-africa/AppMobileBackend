@@ -4570,16 +4570,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             
             print(f'SUCCESS: Updated BOTH balances after admin refund - VAS wallet: ₦{new_balance:,.2f}, Liquid wallet: ₦{new_balance:,.2f}')
             
-            # 🚀 INSTANT BALANCE UPDATE: Push real-time update to frontend
-            from blueprints.vas_wallet import push_balance_update
-            push_balance_update(user_id, {
-                'type': 'balance_update',
-                'new_balance': new_balance,
-                'amount_credited': amount,
-                'transaction_type': 'ADMIN_REFUND',
-                'reason': reason,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            })
+            # REMOVED: SSE instant balance update - replaced with polling
+            # Clients will detect balance change within 3 seconds via polling
+            print(f'INFO: Balance updated for user {user_id}: ₦{new_balance:,.2f} - clients will detect via polling')
 
             # Create refund transaction record
             refund_transaction = {
@@ -4761,16 +4754,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             
             print(f'SUCCESS: Updated balance after admin deduction - Liquid wallet: ₦{current_balance:,.2f} → ₦{new_balance:,.2f}')
             
-            # 🚀 INSTANT BALANCE UPDATE: Push real-time update to frontend
-            from blueprints.vas_wallet import push_balance_update
-            push_balance_update(user_id, {
-                'type': 'balance_update',
-                'new_balance': new_balance,
-                'amount_deducted': amount,
-                'transaction_type': 'ADMIN_DEDUCTION',
-                'reason': reason,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            })
+            # REMOVED: SSE instant balance update - replaced with polling
+            # Clients will detect balance change within 3 seconds via polling
+            print(f'INFO: Balance updated for user {user_id}: ₦{new_balance:,.2f} - clients will detect via polling')
 
             # Create deduction transaction record
             deduction_transaction = {
