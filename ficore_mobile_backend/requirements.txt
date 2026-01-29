@@ -12,4 +12,4 @@ reportlab>=4.0.7,<5.0.0
 google-cloud-storage>=2.14.0,<3.0.0
 firebase-admin>=6.4.0,<7.0.0
 APScheduler>=3.10.4,<4.0.0
-cryptography>=42.0.0,<47.0.0
+cryptography>=42.0.0

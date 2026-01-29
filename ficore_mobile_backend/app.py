@@ -20,7 +20,8 @@ from blueprints.attachments import init_attachments_blueprint
 from blueprints.otp import init_otp_blueprint  # ₦0 Communication Strategy
 from blueprints.engagement import init_engagement_blueprint  # Weekly engagement reminders
 from blueprints.notifications import init_notifications_blueprint  # Persistent notifications
-from blueprints.internal_kyc import internal_kyc_bp  # Internal KYC Management System
+# Internal KYC Management System - Zero Cost Solution
+from blueprints.internal_kyc import init_internal_kyc_blueprint
 
 from blueprints.credits import init_credits_blueprint
 from blueprints.summaries import init_summaries_blueprint
@@ -361,6 +362,9 @@ engagement_blueprint = init_engagement_blueprint(mongo, app.config)
 # Persistent Notifications System
 notifications_blueprint = init_notifications_blueprint(mongo, token_required, serialize_doc)
 
+# Internal KYC Management System - Zero Cost Solution
+internal_kyc_blueprint = init_internal_kyc_blueprint(mongo, token_required, serialize_doc)
+
 credits_blueprint = init_credits_blueprint(mongo, token_required, serialize_doc)
 summaries_blueprint = init_summaries_blueprint(mongo, token_required, serialize_doc)
 admin_blueprint = init_admin_blueprint(mongo, token_required, admin_required, serialize_doc)
@@ -413,8 +417,7 @@ print("✓ Engagement blueprint registered at /engagement")
 app.register_blueprint(notifications_blueprint)
 print("✓ Notifications blueprint registered at /api/notifications")
 
-# Internal KYC Management System - Zero Cost Solution
-app.register_blueprint(internal_kyc_bp)
+app.register_blueprint(internal_kyc_blueprint)
 print("✓ Internal KYC blueprint registered at /api/kyc")
 
 app.register_blueprint(credits_blueprint)

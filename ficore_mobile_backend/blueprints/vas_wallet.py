@@ -741,7 +741,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             user_email = current_user.get('email', '').strip()
             
             # Submit KYC internally using the internal KYC blueprint
-            from .internal_kyc import encrypt_sensitive_data
+            from utils.kyc_encryption import encrypt_sensitive_data
             
             submission_data = {
                 'userId': ObjectId(user_id),
