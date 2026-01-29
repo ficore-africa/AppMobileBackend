@@ -34,27 +34,27 @@ class DynamicPricingEngine:
         self.CACHE_DURATION_HOURS = 6  # Cache rates for 6 hours
         self.EMERGENCY_FALLBACK_MULTIPLIER = 2.0  # 2x markup when no cache available (prevents losses)
         
-        # Margin Strategy by Network (based on your analysis)
+        # POLICY COMPLIANCE: No markup on VAS purchases
         self.NETWORK_MARGINS = {
             'MTN': {
-                'airtime': 0.01,  # 1% margin (loss leader)
-                'data': 0.05,     # 5% margin (standard)
-                'min_margin': 20  # Minimum ₦20 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             },
             'GLO': {
-                'airtime': 0.02,  # 2% margin
-                'data': 0.12,     # 12% margin (high profit)
-                'min_margin': 25  # Minimum ₦25 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             },
             'AIRTEL': {
-                'airtime': 0.014, # 1.4% margin
-                'data': 0.08,     # 8% margin (adjusted for high cost)
-                'min_margin': 30  # Minimum ₦30 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             },
             '9MOBILE': {
-                'airtime': 0.02,  # 2% margin
-                'data': 0.10,     # 10% margin
-                'min_margin': 25  # Minimum ₦25 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             }
         }
         
@@ -427,12 +427,13 @@ class DynamicPricingEngine:
             margin_percentage = margin_config[service_type]
             min_margin = margin_config['min_margin']
             
-            # Calculate base selling price
-            margin_amount = max(cost_price * margin_percentage, min_margin)
-            base_selling_price = cost_price + margin_amount
+            # 🚨 POLICY COMPLIANCE: NO MARKUP ON VAS PURCHASES
+            # Selling price = Cost price (no fees, no margins, no markups)
+            margin_amount = 0.0  # NO MARGIN (policy compliance)
+            base_selling_price = cost_price  # NO MARKUP (policy compliance)
             
-            # Apply psychological pricing rules
-            selling_price = self._apply_psychological_pricing(base_selling_price, network, service_type)
+            # Apply psychological pricing rules (but maintain no-markup policy)
+            selling_price = cost_price  # NO MARKUP - ignore psychological pricing for policy compliance
             
             # Apply subscription discounts
             discount_applied = 0.0
@@ -467,33 +468,24 @@ class DynamicPricingEngine:
                     voucher_discount = 0.0
                     # Continue with normal pricing
             
-            # Apply subscription discounts (if no voucher used)
-            if voucher_discount == 0.0 and user_tier in self.SUBSCRIPTION_DISCOUNTS:
-                if user_tier == 'gold':
-                    # Gold users get "Cost + ₦5" pricing
-                    selling_price = cost_price + 5.0
-                    discount_applied = base_selling_price - selling_price
-                else:
-                    discount_rate = self.SUBSCRIPTION_DISCOUNTS[user_tier]
-                    discount_applied = selling_price * discount_rate
-                    selling_price = selling_price - discount_applied
+            # POLICY COMPLIANCE: No subscription discounts needed since there's no markup
+            # selling_price already equals cost_price (no markup to discount from)
+            if voucher_discount == 0.0:
+                # No additional discounts needed - already at cost price
+                pass
             
-            # Ensure we don't sell at a loss
-            if selling_price < cost_price:
-                selling_price = cost_price + 5.0  # Minimum ₦5 profit
-                discount_applied = base_selling_price - selling_price
+            # POLICY COMPLIANCE: Already at cost price, no loss possible
+            # selling_price = cost_price (no markup applied)
             
             # Calculate final metrics
             actual_margin = selling_price - cost_price
             actual_margin_percentage = (actual_margin / cost_price) * 100 if cost_price > 0 else 0
             
-            # Generate savings message
-            savings_message = self._generate_savings_message(
-                user_tier, discount_applied, actual_margin, network, service_type, voucher_discount > 0
-            )
+            # Generate policy-compliant savings message
+            savings_message = "No fees on VAS purchases - you pay exactly what we pay!"
             
-            # Determine strategy used
-            strategy_used = self._determine_strategy(network, service_type, user_tier, selling_price, cost_price, voucher_discount > 0)
+            # Policy-compliant strategy
+            strategy_used = "no_markup_policy"
             
             return {
                 'selling_price': round(selling_price, 2),
@@ -504,23 +496,25 @@ class DynamicPricingEngine:
                 'voucher_discount': round(voucher_discount, 2),
                 'strategy_used': strategy_used,
                 'savings_message': savings_message,
-                'psychological_ceiling_applied': selling_price != base_selling_price + margin_amount,
-                'free_fee_applied': voucher_discount > 0
+                'psychological_ceiling_applied': False,
+                'free_fee_applied': voucher_discount > 0,
+                'policy_compliant': True  # Confirms no-markup policy compliance
             }
             
         except Exception as e:
             logger.error(f"Error calculating selling price: {str(e)}")
             
-            # Return safe fallback pricing
+            # Return safe fallback pricing (NO MARKUP even in fallback)
             return {
-                'selling_price': base_amount * 1.1,  # 10% markup
+                'selling_price': base_amount,  # NO MARKUP - policy compliance
                 'cost_price': base_amount,
-                'margin': base_amount * 0.1,
-                'margin_percentage': 10.0,
+                'margin': 0.0,
+                'margin_percentage': 0.0,
                 'discount_applied': 0.0,
-                'strategy_used': 'fallback',
-                'savings_message': '',
-                'psychological_ceiling_applied': False
+                'strategy_used': 'fallback_no_markup',
+                'savings_message': 'No fees policy maintained even in fallback',
+                'psychological_ceiling_applied': False,
+                'policy_compliant': True
             }
 
     def _apply_psychological_pricing(self, base_price: float, network: str, service_type: str) -> float:

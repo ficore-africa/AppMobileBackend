@@ -277,21 +277,9 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 }), 200
             
             # CRITICAL COMPLIANCE FIX: Check if user has completed KYC verification
-            user_doc = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-            user_bvn = user_doc.get('bvn') if user_doc else None
-            user_nin = user_doc.get('nin') if user_doc else None
-            
-            if not user_bvn or not user_nin:
-                print(f'COMPLIANCE: Blocked wallet creation for user {user_id} - missing BVN/NIN verification')
-                return jsonify({
-                    'success': False,
-                    'message': 'KYC verification required before creating wallet',
-                    'errors': {
-                        'kyc': ['Please complete BVN and NIN verification first'],
-                        'compliance': ['Wallets require full identity verification for regulatory compliance']
-                    },
-                    'requiresKyc': True
-                }), 400
+            # REMOVED: BVN/NIN check for wallet creation
+            # Since we now use internal KYC system, users can create wallets
+            # and submit KYC separately. The closed-loop system has minimal risk.
             
             auth_response = requests.post(
                 f'{MONNIFY_BASE_URL}/api/v1/auth/login',
@@ -312,8 +300,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'contractCode': MONNIFY_CONTRACT_CODE,
                 'customerEmail': current_user.get('email', ''),
                 'customerName': f"{current_user.get('firstName', '')} {current_user.get('lastName', '')}".strip()[:50],  # Monnify 50-char limit
-                'bvn': user_bvn,  # REQUIRED for compliance
-                'nin': user_nin,  # REQUIRED for compliance
+                # BVN/NIN removed - using internal KYC system
                 'getAllAvailableBanks': True
             }
             
@@ -340,12 +327,11 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accountName': van_data['accountName'],
                 'accounts': van_data['accounts'],
                 'status': 'active',
-                'tier': 'TIER_2',  # KYC-verified account
-                'kycTier': 2,  # CRITICAL FIX: Set kycTier for proper frontend display
-                'kycVerified': True,
-                'kycStatus': 'verified',
-                'bvn': user_bvn,
-                'nin': user_nin,
+                'tier': 'TIER_1',  # Basic account - will upgrade when KYC verified
+                'kycTier': 1,  # Will be updated to 2 when internal KYC is verified
+                'kycVerified': False,  # Will be updated when internal KYC is verified
+                'kycStatus': 'pending',  # Will be updated by internal KYC system
+                # BVN/NIN removed - using internal KYC system
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
@@ -369,7 +355,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @vas_wallet_bp.route('/balance', methods=['GET'])
     @token_required
     def get_wallet_balance(current_user):
-        """Get user's wallet balance"""
+        """Get user's wallet balance with available balance calculation"""
         try:
             user_id = str(current_user['_id'])
             wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
@@ -380,10 +366,19 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Wallet not found. Please create a wallet first.'
                 }), 404
             
+            # Import the available balance function
+            from utils.transaction_task_queue import get_user_available_balance
+            
+            total_balance = wallet.get('balance', 0.0)
+            reserved_amount = wallet.get('reservedAmount', 0.0)
+            available_balance = get_user_available_balance(mongo.db, user_id)
+            
             return jsonify({
                 'success': True,
                 'data': {
-                    'balance': wallet.get('balance', 0.0),
+                    'totalBalance': total_balance,
+                    'reservedAmount': reserved_amount,
+                    'availableBalance': available_balance,
                     'accounts': wallet.get('accounts', []),
                     'accountName': wallet.get('accountName', ''),
                     'status': wallet.get('status', 'active')
@@ -451,15 +446,22 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     try:
                         wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
                         if wallet:
-                            current_balance = wallet.get('balance', 0.0)
+                            from utils.transaction_task_queue import get_user_available_balance
+                            
+                            total_balance = wallet.get('balance', 0.0)
+                            reserved_amount = wallet.get('reservedAmount', 0.0)
+                            available_balance = get_user_available_balance(mongo.db, user_id)
+                            
                             initial_balance_update = {
                                 'type': 'balance_update',
-                                'new_balance': current_balance,
+                                'totalBalance': total_balance,
+                                'reservedAmount': reserved_amount,
+                                'availableBalance': available_balance,
                                 'timestamp': datetime.utcnow().isoformat(),
                                 'source': 'initial_connection'
                             }
                             yield f"data: {json.dumps(initial_balance_update)}\n\n"
-                            print(f'🚀 SSE: Initial balance sent for user {user_id}: ₦{current_balance:,.2f}')
+                            print(f'🚀 SSE: Initial balance sent for user {user_id}: Available ₦{available_balance:,.2f}')
                         else:
                             print(f'WARNING: No wallet found for user {user_id}')
                     except Exception as e:
@@ -531,6 +533,51 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to start balance stream',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @vas_wallet_bp.route('/pending-tasks', methods=['GET'])
+    @token_required
+    def get_pending_tasks(current_user):
+        """Get user's pending transaction tasks for frontend display"""
+        try:
+            user_id = str(current_user['_id'])
+            
+            # Find pending tasks for this user
+            pending_tasks = list(mongo.db.transaction_tasks.find({
+                'data.user_id': user_id,
+                'status': 'PENDING'
+            }).sort('created_at', -1).limit(10))
+            
+            # Transform tasks for frontend
+            tasks_data = []
+            for task in pending_tasks:
+                task_data = task.get('data', {})
+                tasks_data.append({
+                    'taskId': task.get('id', str(task['_id'])),
+                    'transactionId': task_data.get('transaction_id'),
+                    'amount': task_data.get('amount_to_debit', 0),
+                    'description': task_data.get('description', 'Processing...'),
+                    'provider': task_data.get('provider', 'Unknown'),
+                    'createdAt': task.get('created_at', datetime.utcnow()).isoformat(),
+                    'attempts': task.get('attempts', 0),
+                    'status': 'PROCESSING'
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'pendingTasks': tasks_data,
+                    'totalPending': len(tasks_data)
+                },
+                'message': 'Pending tasks retrieved successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Error getting pending tasks: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve pending tasks',
                 'errors': {'general': [str(e)]}
             }), 500
     
@@ -641,16 +688,16 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def verify_bvn(current_user):
         """
-        Create Monnify account using BVN and NIN - FREE for users (business absorbs ₦ 70 cost)
-        Uses original working approach: send BVN directly to Monnify for account creation
+        Submit KYC information internally - NO external charges
+        Uses new internal KYC system instead of external verification
         """
         try:
             data = request.json
             bvn = data.get('bvn', '').strip()
             nin = data.get('nin', '').strip()
-            phone_number = data.get('phoneNumber', '').strip()  # Only phone needed
+            phone_number = data.get('phoneNumber', '').strip()
             
-            print(f"INFO: BVN Account Creation Request - BVN: {bvn}, NIN: {nin}, Phone: {phone_number}")
+            print(f"INFO: Internal KYC Submission Request - BVN: {bvn[:3]}***, NIN: {nin[:3]}***, Phone: {phone_number}")
             
             # Validate
             if len(bvn) != 11 or not bvn.isdigit():
@@ -678,29 +725,80 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Invalid phone number format.'
                 }), 400
             
-            # Check eligibility first
             user_id = str(current_user['_id'])
-            eligible, _ = check_eligibility(user_id)
-            if not eligible:
-                return jsonify({
-                    'success': False,
-                    'message': 'Not eligible yet. Complete more transactions to unlock.'
-                }), 403
             
-            # Check if user already has verified wallet
-            existing_wallet = mongo.db.vas_wallets.find_one({
-                'userId': ObjectId(user_id),
-                'kycStatus': 'verified'
-            })
-            if existing_wallet:
+            # Check if user already has a KYC submission
+            existing_submission = mongo.db.kyc_submissions.find_one({'userId': ObjectId(user_id)})
+            if existing_submission and existing_submission.get('status') in ['VERIFIED']:
                 return jsonify({
                     'success': False,
-                    'message': 'You already have a verified account.'
+                    'message': 'Your KYC is already verified.',
+                    'status': 'ALREADY_VERIFIED'
                 }), 400
             
-            # Use user profile data for account creation
+            # Use user profile data
             user_name = f"{current_user.get('firstName', '')} {current_user.get('lastName', '')}".strip()
             user_email = current_user.get('email', '').strip()
+            
+            # Submit KYC internally using the internal KYC blueprint
+            from .internal_kyc import encrypt_sensitive_data
+            
+            submission_data = {
+                'userId': ObjectId(user_id),
+                'submissionType': 'BVN',
+                'bvnNumber': encrypt_sensitive_data(bvn),
+                'ninNumber': encrypt_sensitive_data(nin),
+                'firstName': current_user.get('firstName', '').strip(),
+                'lastName': current_user.get('lastName', '').strip(),
+                'phoneNumber': phone_number,
+                'submittedAt': datetime.utcnow(),
+                'status': 'SUBMITTED',
+                'metadata': {
+                    'ipAddress': request.remote_addr,
+                    'userAgent': request.headers.get('User-Agent', ''),
+                    'submissionSource': 'vas_verification',
+                    'encryptionUsed': True
+                }
+            }
+            
+            # Insert or update submission
+            if existing_submission:
+                mongo.db.kyc_submissions.update_one(
+                    {'userId': ObjectId(user_id)},
+                    {
+                        '$set': submission_data,
+                        '$unset': {'verifiedAt': '', 'verifiedBy': '', 'rejectionReason': ''}
+                    }
+                )
+                submission_id = existing_submission['_id']
+            else:
+                result = mongo.db.kyc_submissions.insert_one(submission_data)
+                submission_id = result.inserted_id
+            
+            # Update user status to show KYC submitted
+            mongo.db.users.update_one(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$set': {
+                        'kycStatus': 'SUBMITTED',
+                        'kycSubmittedAt': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f"SUCCESS: KYC submitted internally for user {user_id} - NO external charges")
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'submissionId': str(submission_id),
+                    'status': 'SUBMITTED',
+                    'submittedAt': submission_data['submittedAt'].isoformat() + 'Z',
+                    'message': 'Your KYC information is under review. You will be notified once verified.'
+                },
+                'message': 'KYC information submitted successfully! Your verification is under review.'
+            }), 200
             
             # If no name in profile, use a default
             if not user_name:
@@ -1051,27 +1149,14 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Reserved account already exists'
                 }), 200
             
-            # CRITICAL COMPLIANCE FIX: Check if user has completed KYC verification
-            user_doc = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-            user_bvn = user_doc.get('bvn') if user_doc else None
-            user_nin = user_doc.get('nin') if user_doc else None
-            
-            if not user_bvn or not user_nin:
-                print(f'COMPLIANCE: Blocked reserved account creation for user {user_id} - missing BVN/NIN verification')
-                return jsonify({
-                    'success': False,
-                    'message': 'KYC verification required before creating reserved account',
-                    'errors': {
-                        'kyc': ['Please complete BVN and NIN verification first'],
-                        'compliance': ['Reserved accounts require full identity verification for regulatory compliance']
-                    },
-                    'requiresKyc': True
-                }), 400
+            # REMOVED: BVN/NIN check for reserved account creation
+            # Since we now use internal KYC system, users can create accounts
+            # and submit KYC separately. The closed-loop system has minimal risk.
             
             # Get Monnify access token
             access_token = call_monnify_auth()
             
-            # Create KYC-verified reserved account (Tier 2 - with BVN/NIN)
+            # Create basic reserved account (will upgrade when KYC verified)
             account_data = {
                 'accountReference': user_id,  # STANDARDIZED: Use ObjectId string only
                 'accountName': current_user.get('fullName', f"FiCore User {user_id[:8]}")[:50],  # Monnify 50-char limit
@@ -1079,8 +1164,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'contractCode': MONNIFY_CONTRACT_CODE,
                 'customerEmail': current_user.get('email', ''),
                 'customerName': current_user.get('fullName', f"FiCore User {user_id[:8]}")[:50],  # Monnify 50-char limit
-                'bvn': user_bvn,  # REQUIRED for compliance
-                'nin': user_nin,  # REQUIRED for compliance
+                # BVN/NIN removed - using internal KYC system
                 'getAllAvailableBanks': True  # Moniepoint default, user choice
             }
             
@@ -1108,19 +1192,18 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'contractCode': van_data['contractCode'],
                 'accounts': van_data['accounts'],
                 'status': 'ACTIVE',
-                'tier': 'TIER_2',  # KYC-verified account with BVN/NIN
-                'kycTier': 2,  # CRITICAL FIX: Set kycTier for proper frontend display
-                'kycVerified': True,
-                'kycStatus': 'verified',
-                'bvn': user_bvn,
-                'nin': user_nin,
+                'tier': 'TIER_1',  # Basic account - will upgrade when KYC verified
+                'kycTier': 1,  # Will be updated to 2 when internal KYC is verified
+                'kycVerified': False,  # Will be updated when internal KYC is verified
+                'kycStatus': 'pending',  # Will be updated by internal KYC system
+                # BVN/NIN removed - using internal KYC system
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
             
             mongo.db.vas_wallets.insert_one(wallet_data)
             
-            print(f'SUCCESS: KYC-verified reserved account created for user {user_id}')
+            print(f'SUCCESS: Basic reserved account created for user {user_id} - KYC can be submitted separately')
             
             # Return all accounts for frontend to choose from
             return jsonify({
@@ -1129,8 +1212,8 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'accounts': van_data['accounts'],  # All available bank accounts
                     'accountReference': van_data['accountReference'],
                     'contractCode': van_data['contractCode'],
-                    'tier': 'TIER_2',
-                    'kycVerified': True,
+                    'tier': 'TIER_1',  # Will upgrade when KYC verified
+                    'kycVerified': False,  # Will be updated when KYC verified
                     'createdAt': wallet_data['createdAt'].isoformat() + 'Z',
                     # Keep backward compatibility - return first account as default
                     'defaultAccount': {
@@ -1140,7 +1223,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'bankCode': van_data['accounts'][0].get('bankCode', '035') if van_data['accounts'] else '035',
                     }
                 },
-                'message': f'KYC-verified reserved account created successfully with {len(van_data["accounts"])} available banks'
+                'message': f'Reserved account created successfully with {len(van_data["accounts"])} available banks. Submit KYC for full verification.'
             }), 201
             
         except Exception as e:
@@ -1447,20 +1530,11 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 print(f'DEBUG: No account reference found')
                 return jsonify({'success': False, 'message': 'No existing account reference found.'}), 400
             
-            # Gate: only allow for fully verified users (BVN + NIN present)
-            print(f'DEBUG: Checking BVN verification...')
-            user_bvn = user_doc.get('bvn')
-            print(f'DEBUG: User BVN exists: {user_bvn is not None}')
-            
-            if not user_bvn:
-                print(f'DEBUG: BVN verification required')
-                return jsonify({
-                    'success': False,
-                    'message': 'BVN verification required before adding additional accounts'
-                }), 400
+            # REMOVED: BVN verification check for adding linked accounts
+            # Since we now use internal KYC system, users can add accounts
+            # and submit KYC separately. The closed-loop system has minimal risk.
             
             print(f'INFO: User has existing account reference: {account_reference}')
-            print(f'INFO: User is verified with BVN: {user_doc.get("bvn", "")[:3]}***')
             
             # Check which banks are already present (avoid duplicate requests)
             existing_accounts = wallet.get('accounts', [])

@@ -20,6 +20,7 @@ from utils.dynamic_pricing_engine import get_pricing_engine, calculate_vas_price
 from utils.emergency_pricing_recovery import tag_emergency_transaction
 from blueprints.notifications import create_user_notification
 from utils.atomic_transactions import check_recent_duplicate_transaction
+from utils.transaction_task_queue import process_vas_transaction_with_reservation, get_user_available_balance
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):
@@ -2023,6 +2024,14 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def buy_airtime(current_user):
         """Purchase airtime with dynamic pricing and idempotency protection"""
+        # 🔒 DEFENSIVE CODING: Pre-define all variables to prevent NameError crashes
+        wallet_update_result = None
+        transaction_update_result = None
+        api_response = None
+        success = False
+        provider = 'monnify'
+        error_message = ''
+        
         try:
             data = request.json
             phone_number = data.get('phoneNumber', '').strip()
@@ -2109,10 +2118,13 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # Use selling price as total amount (no additional fees)
             total_amount = selling_price
             
-            if wallet.get('balance', 0.0) < total_amount:
+            # Check available balance (total balance - reserved amounts)
+            available_balance = get_user_available_balance(mongo.db, user_id)
+            
+            if available_balance < total_amount:
                 return jsonify({
                     'success': False,
-                    'message': f'Insufficient wallet balance. Required: ₦ {total_amount:.2f}, Available: ₦ {wallet.get("balance", 0.0):.2f}'
+                    'message': f'Insufficient wallet balance. Required: ₦ {total_amount:.2f}, Available: ₦ {available_balance:.2f}'
                 }), 400
             
             # Generate unique request ID
@@ -2170,171 +2182,62 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
-                # CRITICAL CHANGE: Mark as NEEDS_RECONCILIATION instead of FAILED
-                # User is the only one who knows if they actually received the airtime
-                # Admin will contact user to verify and resolve manually
+                # Provider failed - no need to process anything
                 mongo.db.vas_transactions.update_one(
                     {'_id': transaction_id},
                     {'$set': {
-                        'status': 'NEEDS_RECONCILIATION',
+                        'status': 'FAILED',
                         'failureReason': error_message,
-                        'reconciliationRequired': True,
-                        'reconciliationTimestamp': datetime.utcnow(),
-                        'reconciliationReason': 'Provider APIs failed - user verification needed to confirm if airtime was delivered',
                         'updatedAt': datetime.utcnow()
                     }}
                 )
                 return jsonify({
                     'success': False,
+                    'message': 'Purchase failed - please try again',
+                    'errors': {'general': ['Transaction failed']}
+                }), 500
+            
+            # 🚀 PROVIDER SUCCEEDED - Use task queue for bulletproof processing
+            print(f'✅ Provider {provider} succeeded - processing with task queue')
+            
+            # Process transaction with wallet reservation and task queue
+            task_result = process_vas_transaction_with_reservation(
+                mongo_db=mongo.db,
+                transaction_id=str(transaction_id),
+                user_id=user_id,
+                amount_to_debit=total_amount,
+                provider=provider,
+                provider_response=api_response,
+                description=f'{network} Airtime - {phone_number}'
+            )
+            
+            if not task_result['success']:
+                # Insufficient funds (shouldn't happen due to earlier check, but safety net)
+                mongo.db.vas_transactions.update_one(
+                    {'_id': transaction_id},
+                    {'$set': {
+                        'status': 'FAILED',
+                        'failureReason': task_result['message'],
+                        'updatedAt': datetime.utcnow()
+                    }}
+                )
+                return jsonify({
+                    'success': False,
+                    'message': task_result['message'],
+                    'errors': {'general': [task_result['error']]}
+                }), 400
                     'message': 'Purchase failed - our team will verify and resolve this shortly',
                     'errors': {'general': ['Transaction failed but will be reviewed for potential delivery']}
                 }), 500
             
-            # 🔒 ATOMIC TRANSACTION PATTERN: SUCCESS ONLY AFTER COMPLETE VERIFICATION
-            # This prevents the critical bug where wallet is deducted but status shows FAILED
-            
-            try:
-                # Step 1: Calculate new balance
-                new_balance = wallet.get('balance', 0.0) - total_amount
-                
-                # Step 2: Prepare all updates in a single atomic operation
-                from utils.balance_sync import update_liquid_wallet_balance
-                
-                # Step 3: ATOMIC UPDATE - Both wallet balance AND transaction status
-                # Use MongoDB transaction to ensure atomicity
-                with mongo.cx.start_session() as session:
-                    with session.start_transaction():
-                        # Update wallet balance
-                        wallet_update_result = mongo.db.vas_wallets.update_one(
-                            {'userId': ObjectId(user_id)},
-                            {
-                                '$set': {'balance': new_balance, 'updatedAt': datetime.utcnow()},
-                                '$push': {
-                                    'transactionHistory': {
-                                        'transactionId': str(transaction_id),
-                                        'type': 'DEBIT',
-                                        'amount': total_amount,
-                                        'description': f'{network} Airtime - {phone_number}',
-                                        'timestamp': datetime.utcnow()
-                                    }
-                                }
-                            },
-                            session=session
-                        )
-                        
-                        # Update transaction status to SUCCESS
-                        transaction_update_result = mongo.db.vas_transactions.update_one(
-                            {'_id': transaction_id},
-                            {
-                                '$set': {
-                                    'status': 'SUCCESS',
-                                    'provider': provider,
-                                    'providerResponse': api_response,
-                                    'walletBalanceAfter': new_balance,
-                                    'updatedAt': datetime.utcnow()
-                                },
-                                '$unset': {
-                                    'failureReason': ""  # 🔒 Clear failure reason on success
-                                }
-                            },
-                            session=session
-                        )
-                        
-                        # Verify both updates succeeded
-                        if wallet_update_result.modified_count == 0:
-                            raise Exception(f'Failed to update wallet balance for user {user_id}')
-                        
-                        if transaction_update_result.modified_count == 0:
-                            raise Exception(f'Failed to update transaction {transaction_id} to SUCCESS')
-                        
-                        print(f'SUCCESS: ATOMIC UPDATE completed - Wallet: ₦{new_balance:,.2f}, Transaction: SUCCESS')
-                
-                # Step 4: Send SSE update after successful atomic operation
-                try:
-                    update_liquid_wallet_balance(
-                        mongo=mongo,
-                        user_id=user_id,
-                        new_balance=new_balance,
-                        transaction_reference=request_id,
-                        transaction_type='AIRTIME_PURCHASE',
-                        push_sse_update=True,
-                        sse_data={
-                            'amount_debited': total_amount,
-                            'network': network,
-                            'phone_number': phone_number[-4:] + '****'
-                        },
-                        skip_wallet_update=True  # Already updated atomically above
-                    )
-                except Exception as sse_error:
-                    print(f'WARNING: SSE update failed but transaction completed: {sse_error}')
-                    # Don't fail the transaction for SSE errors
-                
-            except Exception as atomic_error:
-                print(f'CRITICAL ERROR: Atomic transaction failed: {atomic_error}')
-                
-                # CRITICAL: Provider succeeded but our update failed
-                # This is the exact scenario causing the bug
-                # We need to mark transaction as NEEDS_RECONCILIATION for manual review
-                
-                try:
-                    mongo.db.vas_transactions.update_one(
-                        {'_id': transaction_id},
-                        {
-                            '$set': {
-                                'status': 'NEEDS_RECONCILIATION',
-                                'failureReason': f'Provider succeeded but atomic update failed: {atomic_error}',
-                                'providerResponse': api_response,
-                                'provider': provider,
-                                'reconciliationRequired': True,
-                                'updatedAt': datetime.utcnow()
-                            }
-                        }
-                    )
-                    
-                    # Alert admin immediately
-                    print(f'ALERT: Transaction {transaction_id} needs manual reconciliation - Provider succeeded but wallet update failed')
-                    
-                    # Return error to user to prevent confusion
-                    return jsonify({
-                        'success': False,
-                        'message': 'Transaction processing error. Please contact support with reference: ' + request_id,
-                        'errors': {'general': ['System error during transaction completion']},
-                        'reference': request_id
-                    }), 500
-                    
-                except Exception as reconciliation_error:
-                    print(f'CRITICAL: Failed to mark transaction for reconciliation: {reconciliation_error}')
-                    
-                    # Last resort - return error
-                    return jsonify({
-                        'success': False,
+            # Get current wallet balance for response
+            current_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            current_balance = current_wallet.get('balance', 0.0) if current_wallet else 0.0
+            available_balance = get_user_available_balance(mongo.db, user_id)
                         'message': 'Critical system error. Please contact support immediately with reference: ' + request_id,
                         'errors': {'general': ['Critical system error']},
                         'reference': request_id
                     }), 500
-            
-            # CRITICAL: Verify transaction was actually updated
-            if update_result.modified_count == 0:
-                print(f'ERROR: Failed to update transaction {transaction_id} to SUCCESS')
-                print(f'       Transaction ID type: {type(transaction_id)}')
-                print(f'       Transaction ID value: {transaction_id}')
-                
-                # Try to find the transaction to debug
-                debug_txn = mongo.db.vas_transactions.find_one({'_id': transaction_id})
-                if debug_txn:
-                    print(f'       Found transaction with status: {debug_txn.get("status")}')
-                else:
-                    print(f'       Transaction not found in database!')
-            else:
-                print(f'SUCCESS: Transaction {transaction_id} updated to SUCCESS status')
-                
-                # Double-check the update worked
-                verify_txn = mongo.db.vas_transactions.find_one({'_id': transaction_id})
-                if verify_txn and verify_txn.get('status') == 'SUCCESS':
-                    print(f'VERIFIED: Transaction {transaction_id} status is SUCCESS')
-                else:
-                    print(f'WARNING: Transaction {transaction_id} status verification failed')
-                    print(f'         Current status: {verify_txn.get("status") if verify_txn else "NOT_FOUND"}')
             
             # Record corporate revenue (margin earned)
             if margin > 0:
@@ -2457,20 +2360,23 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'data': {
                     'transactionId': str(transaction_id),
                     'requestId': request_id,
-                    'phoneNumber': phone_number,  # FIX: Include phone number in response
-                    'network': network,  # FIX: Include network in response
+                    'phoneNumber': phone_number,
+                    'network': network,
                     'faceValue': amount,
                     'amountCharged': selling_price,
                     'margin': margin,
-                    'newBalance': new_balance,
+                    'availableBalance': available_balance,  # Show available balance after reservation
+                    'reservedAmount': task_result['amount_reserved'],  # Show reserved amount
                     'provider': provider,
                     'userTier': user_tier,
                     'savingsMessage': savings_message,
                     'pricingStrategy': pricing_result['strategy_used'],
                     'expenseRecorded': True,
-                    'retentionData': retention_data  # NEW: Frontend trust data
+                    'taskId': task_result['task_id'],  # Task queue ID for tracking
+                    'processingStatus': 'QUEUED',  # Indicate transaction is being processed
+                    'retentionData': retention_data
                 },
-                'message': f'Airtime purchased successfully! {savings_message}' if savings_message else 'Airtime purchased successfully!'
+                'message': f'Airtime purchase initiated! {savings_message}' if savings_message else 'Airtime purchase initiated! Processing...'
             }), 200
             
         except Exception as e:
@@ -2485,6 +2391,14 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def buy_data(current_user):
         """Purchase data with dynamic pricing and idempotency protection"""
+        # 🔒 DEFENSIVE CODING: Pre-define all variables to prevent NameError crashes
+        wallet_update_result = None
+        transaction_update_result = None
+        api_response = None
+        success = False
+        provider = 'monnify'
+        error_message = ''
+        
         try:
             data = request.json
             phone_number = data.get('phoneNumber', '').strip()
@@ -2584,10 +2498,13 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # Use selling price as total amount
             total_amount = selling_price
             
-            if wallet.get('balance', 0.0) < total_amount:
+            # Check available balance (total balance - reserved amounts)
+            available_balance = get_user_available_balance(mongo.db, user_id)
+            
+            if available_balance < total_amount:
                 return jsonify({
                     'success': False,
-                    'message': f'Insufficient wallet balance. Required: ₦ {total_amount:.2f}, Available: ₦ {wallet.get("balance", 0.0):.2f}'
+                    'message': f'Insufficient wallet balance. Required: ₦ {total_amount:.2f}, Available: ₦ {available_balance:.2f}'
                 }), 400
             
             # Generate unique request ID
@@ -2704,90 +2621,55 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
-                # CRITICAL CHANGE: Mark as NEEDS_RECONCILIATION instead of FAILED
-                # User is the only one who knows if they actually received the data
-                # Admin will contact user to verify and resolve manually
+                # Provider failed - no need to process anything
                 mongo.db.vas_transactions.update_one(
                     {'_id': transaction_id},
                     {'$set': {
-                        'status': 'NEEDS_RECONCILIATION',
+                        'status': 'FAILED',
                         'failureReason': error_message,
-                        'reconciliationRequired': True,
-                        'reconciliationTimestamp': datetime.utcnow(),
-                        'reconciliationReason': 'Provider APIs failed - user verification needed to confirm if data was delivered',
                         'updatedAt': datetime.utcnow()
                     }}
                 )
                 return jsonify({
                     'success': False,
-                    'message': 'Purchase failed - our team will verify and resolve this shortly',
-                    'errors': {'general': ['Transaction failed but will be reviewed for potential delivery']}
+                    'message': 'Purchase failed - please try again',
+                    'errors': {'general': ['Transaction failed']}
                 }), 500
             
-            # CRITICAL FIX: Update BOTH balances using centralized utility
-            new_balance = wallet.get('balance', 0.0) - total_amount
+            # 🚀 PROVIDER SUCCEEDED - Use task queue for bulletproof processing
+            print(f'✅ Provider {provider} succeeded - processing with task queue')
             
-            from utils.balance_sync import update_liquid_wallet_balance
-            
-            # Use centralized balance update utility
-            success = update_liquid_wallet_balance(
-                mongo=mongo,
+            # Process transaction with wallet reservation and task queue
+            task_result = process_vas_transaction_with_reservation(
+                mongo_db=mongo.db,
+                transaction_id=str(transaction_id),
                 user_id=user_id,
-                new_balance=new_balance,
-                transaction_reference=request_id,
-                transaction_type='DATA_PURCHASE',
-                push_sse_update=True,
-                sse_data={
-                    'amount_debited': total_amount,
-                    'network': network,
-                    'phone_number': phone_number[-4:] + '****',
-                    'plan_name': data_plan_name
-                }
+                amount_to_debit=total_amount,
+                provider=provider,
+                provider_response=api_response,
+                description=f'{network} Data - {data_plan_name} for {phone_number}'
             )
             
-            if not success:
-                print(f'WARNING: Balance update may have failed for user {user_id}')
-            else:
-                print(f'SUCCESS: Updated BOTH balances using utility after data purchase - New balance: ₦{new_balance:,.2f}')
-            
-            # Update transaction to SUCCESS
-            update_result = mongo.db.vas_transactions.update_one(
-                {'_id': transaction_id},
-                {
-                    '$set': {
-                        'status': 'SUCCESS',
-                        'provider': provider,
-                        'providerResponse': api_response,
+            if not task_result['success']:
+                # Insufficient funds (shouldn't happen due to earlier check, but safety net)
+                mongo.db.vas_transactions.update_one(
+                    {'_id': transaction_id},
+                    {'$set': {
+                        'status': 'FAILED',
+                        'failureReason': task_result['message'],
                         'updatedAt': datetime.utcnow()
-                    },
-                    '$unset': {
-                        'failureReason': ""  # 🔒 Clear failure reason on success
-                    }
-                }
-            )
+                    }}
+                )
+                return jsonify({
+                    'success': False,
+                    'message': task_result['message'],
+                    'errors': {'general': [task_result['error']]}
+                }), 400
             
-            # CRITICAL: Verify transaction was actually updated
-            if update_result.modified_count == 0:
-                print(f'ERROR: Failed to update data transaction {transaction_id} to SUCCESS')
-                print(f'       Transaction ID type: {type(transaction_id)}')
-                print(f'       Transaction ID value: {transaction_id}')
-                
-                # Try to find the transaction to debug
-                debug_txn = mongo.db.vas_transactions.find_one({'_id': transaction_id})
-                if debug_txn:
-                    print(f'       Found transaction with status: {debug_txn.get("status")}')
-                else:
-                    print(f'       Transaction not found in database!')
-            else:
-                print(f'SUCCESS: Data transaction {transaction_id} updated to SUCCESS status')
-                
-                # Double-check the update worked
-                verify_txn = mongo.db.vas_transactions.find_one({'_id': transaction_id})
-                if verify_txn and verify_txn.get('status') == 'SUCCESS':
-                    print(f'VERIFIED: Data transaction {transaction_id} status is SUCCESS')
-                else:
-                    print(f'WARNING: Data transaction {transaction_id} status verification failed')
-                    print(f'         Current status: {verify_txn.get("status") if verify_txn else "NOT_FOUND"}')
+            # Get current wallet balance for response
+            current_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            current_balance = current_wallet.get('balance', 0.0) if current_wallet else 0.0
+            available_balance = get_user_available_balance(mongo.db, user_id)
             
             # NO CORPORATE REVENUE RECORDING - Data plans sold at cost with no margin
             
@@ -2897,14 +2779,17 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'amount': amount,  # User pays exactly what they see
                     'amountCharged': amount,  # Same as amount - no margin
                     'margin': 0.0,  # No margin for data plans
-                    'newBalance': new_balance,
+                    'availableBalance': available_balance,  # Show available balance after reservation
+                    'reservedAmount': task_result['amount_reserved'],  # Show reserved amount
                     'provider': provider,
                     'userTier': user_tier,
                     'pricingPolicy': 'No margin - pay exactly what you see',
                     'expenseRecorded': True,
-                    'transparentPricing': True
+                    'transparentPricing': True,
+                    'taskId': task_result['task_id'],  # Task queue ID for tracking
+                    'processingStatus': 'QUEUED'  # Indicate transaction is being processed
                 },
-                'message': f'Data purchased successfully! You paid exactly ₦{amount} as displayed.'
+                'message': f'Data purchase initiated! Processing {data_plan_name}...'
             }), 200
             
         except Exception as e:

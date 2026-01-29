@@ -86,6 +86,7 @@
         .admin-card.notifications { --card-color: #1abc9c; }
         .admin-card.credits { --card-color: #f1c40f; }
         .admin-card.premium { --card-color: #34495e; }
+        .admin-card.kyc { --card-color: #e67e22; }
 
         .card-icon {
             font-size: 3rem;
@@ -209,6 +210,10 @@
                 <div class="stat-label">Pending Reconciliations</div>
             </div>
             <div class="stat-item">
+                <div class="stat-number" id="pendingKyc">-</div>
+                <div class="stat-label">Pending KYC</div>
+            </div>
+            <div class="stat-item">
                 <div class="stat-number" id="totalUsers">-</div>
                 <div class="stat-label">Total Users</div>
             </div>
@@ -303,6 +308,15 @@
                 </div>
                 <span class="card-badge">Premium</span>
             </a>
+
+            <a href="../admin_kyc_dashboard.html" class="admin-card kyc">
+                <div class="card-icon"><i class="fas fa-id-card"></i></div>
+                <div class="card-title">KYC Management</div>
+                <div class="card-description">
+                    Review and verify user KYC submissions. Internal verification system with zero external charges.
+                </div>
+                <span class="card-badge new">Zero Cost</span>
+            </a>
         </div>
     </div>
 
@@ -337,6 +351,23 @@
                         document.getElementById('pendingReconciliations').textContent = 
                             reconciliationData.data.pendingCount.toLocaleString();
                     }
+                }
+
+                // Load KYC stats
+                const kycResponse = await fetch('/api/admin/kyc/pending', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (kycResponse.ok) {
+                    const kycData = await kycResponse.json();
+                    if (kycData.success) {
+                        document.getElementById('pendingKyc').textContent = 
+                            kycData.data.count.toLocaleString();
+                    }
+                } else {
+                    document.getElementById('pendingKyc').textContent = '0';
                 }
 
                 // Load real dashboard statistics from backend API

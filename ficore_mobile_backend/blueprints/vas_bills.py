@@ -580,6 +580,14 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def buy_bill(current_user):
         """Purchase bill payment using Monnify Bills API"""
+        # 🔒 DEFENSIVE CODING: Pre-define all variables to prevent NameError crashes
+        wallet_update_result = None
+        transaction_update_result = None
+        api_response = None
+        success = False
+        error_message = ''
+        final_status = 'FAILED'
+        
         try:
             data = request.get_json()
             
@@ -755,13 +763,13 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                 update_operation['$set']['failureReason'] = failure_reason
             
             # Update the transaction record
-            update_result = mongo.db.vas_transactions.update_one(
+            transaction_update_result = mongo.db.vas_transactions.update_one(
                 {'_id': transaction_id},
                 update_operation
             )
             
             # CRITICAL: Verify transaction was actually updated
-            if update_result.modified_count == 0:
+            if transaction_update_result.modified_count == 0:
                 print(f'ERROR: Failed to update bills transaction {transaction_id} to {final_status}')
                 print(f'       Transaction ID type: {type(transaction_id)}')
                 print(f'       Transaction ID value: {transaction_id}')
