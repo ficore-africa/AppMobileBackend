@@ -20,6 +20,7 @@ from blueprints.attachments import init_attachments_blueprint
 from blueprints.otp import init_otp_blueprint  # ₦0 Communication Strategy
 from blueprints.engagement import init_engagement_blueprint  # Weekly engagement reminders
 from blueprints.notifications import init_notifications_blueprint  # Persistent notifications
+from blueprints.internal_kyc import internal_kyc_bp  # Internal KYC Management System
 
 from blueprints.credits import init_credits_blueprint
 from blueprints.summaries import init_summaries_blueprint
@@ -411,6 +412,10 @@ print("✓ Engagement blueprint registered at /engagement")
 
 app.register_blueprint(notifications_blueprint)
 print("✓ Notifications blueprint registered at /api/notifications")
+
+# Internal KYC Management System - Zero Cost Solution
+app.register_blueprint(internal_kyc_bp)
+print("✓ Internal KYC blueprint registered at /api/kyc")
 
 app.register_blueprint(credits_blueprint)
 app.register_blueprint(summaries_blueprint)
@@ -945,6 +950,19 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"⚠️  Scheduler initialization error (non-fatal): {str(e)}\n")
         # Don't fail app startup if scheduler fails
+    
+    # Initialize VAS Transaction Task Queue
+    try:
+        print("🚀 Initializing VAS Transaction Task Queue...")
+        from utils.transaction_task_queue import get_task_queue
+        task_queue = get_task_queue(mongo.db)
+        print("✅ VAS Transaction Task Queue started\n")
+        print("   - Bulletproof transaction processing enabled")
+        print("   - Wallet reservation system active")
+        print("   - Background worker running for recovery\n")
+    except Exception as e:
+        print(f"⚠️  Task queue initialization error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if task queue fails
     
     # Only run Flask development server if not running under Gunicorn
     # Check if we're running under Gunicorn by looking for gunicorn in the process
