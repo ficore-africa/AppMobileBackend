@@ -2066,6 +2066,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             cost_price = amount     # Cost is the same as selling price (no markup/markdown)
             margin = 0.0           # No margin for airtime
             savings_message = ''   # No savings message needed
+            is_emergency_pricing = False  # Airtime uses face value policy, no emergency pricing
             
             print(f'💰 AIRTIME PRICING (FACE VALUE POLICY):')
             print(f'   Airtime Amount: ₦{amount}')
@@ -2245,7 +2246,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'sellingPrice': selling_price,
                         'costPrice': cost_price,
                         'userTier': user_tier,
-                        'strategy': pricing_result['strategy_used'],
+                        'strategy': 'no_margin_policy',
                         'emergencyPricing': is_emergency_pricing
                     }
                 }
@@ -2287,7 +2288,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             retention_description = generate_retention_description(
                 base_description,
                 savings_message,
-                pricing_result.get('discount_applied', 0)
+                0  # No discount for airtime (face value policy)
             )
             
             expense_entry = {
@@ -2304,10 +2305,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'actualCost': amount,  # Actual cost is now the purchase amount (fees eliminated)
                     'userTier': user_tier,
                     'savingsMessage': savings_message,
-                    'originalPrice': pricing_result.get('cost_price', 0) + pricing_result.get('margin', 0),
-                    'discountApplied': pricing_result.get('discount_applied', 0),
-                    'pricingStrategy': pricing_result.get('strategy_used', 'standard'),
-                    'freeFeesApplied': pricing_result.get('free_fee_applied', False),
+                    'originalPrice': amount,  # No markup for airtime
+                    'discountApplied': 0,  # No discount for airtime
+                    'pricingStrategy': 'no_margin_policy',
+                    'freeFeesApplied': False,
                     'baseDescription': base_description,  # Store original for reference
                     'retentionEnhanced': True,  # Flag to indicate retention messaging applied
                     'feesEliminated': True,  # Flag to indicate VAS purchase fees have been eliminated
@@ -2358,7 +2359,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'provider': provider,
                     'userTier': user_tier,
                     'savingsMessage': savings_message,
-                    'pricingStrategy': pricing_result['strategy_used'],
+                    'pricingStrategy': 'no_margin_policy',
                     'expenseRecorded': True,
                     'taskId': task_result['task_id'],  # Task queue ID for tracking
                     'processingStatus': 'QUEUED',  # Indicate transaction is being processed
