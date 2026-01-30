@@ -379,6 +379,8 @@ def delete_expense(expense_id):
         1. Mark it as 'voided' and 'isDeleted=True'
         2. Create a reversal entry with negative amount
         3. Link them together for audit trail
+        
+        IDEMPOTENT: Returns success if already deleted (prevents UI rollback)
         """
         try:
             if not ObjectId.is_valid(expense_id):
@@ -395,6 +397,18 @@ def delete_expense(expense_id):
             )
             
             if not result['success']:
+                # CRITICAL FIX: If already deleted, return success (idempotent operation)
+                if 'already deleted' in result['message'].lower():
+                    return jsonify({
+                        'success': True,
+                        'message': 'Expense already deleted',
+                        'data': {
+                            'originalId': expense_id,
+                            'alreadyDeleted': True
+                        }
+                    }), 200  # ✓ Return 200 instead of 404
+                
+                # Only return 404 for "not found" errors
                 return jsonify({
                     'success': False,
                     'message': result['message']

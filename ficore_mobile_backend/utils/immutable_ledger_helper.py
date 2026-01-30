@@ -62,13 +62,15 @@ def soft_delete_transaction(db, collection_name, transaction_id, user_id):
     )
     
     # Step 3: Create reversal entry (negative amount to cancel out balance)
+    # CRITICAL: Mark reversal as HIDDEN so it doesn't show in UI
     reversal = {
         '_id': ObjectId(),
         'userId': user_id,
         'amount': -original['amount'],  # NEGATIVE to cancel out
         'type': 'REVERSAL',
-        'status': 'active',
-        'isDeleted': False,
+        'status': 'voided',  # CHANGED: Mark as voided so it's filtered out
+        'isDeleted': True,  # CHANGED: Mark as deleted so it's filtered out
+        'isHidden': True,  # ADDED: Extra flag for reversal entries
         'originalEntryId': str(transaction_id),
         'version': 1,
         'createdAt': datetime.utcnow(),

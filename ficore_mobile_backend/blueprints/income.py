@@ -769,6 +769,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
         1. Mark it as 'voided' and 'isDeleted=True'
         2. Create a reversal entry with negative amount
         3. Link them together for audit trail
+        
+        IDEMPOTENT: Returns success if already deleted (prevents UI rollback)
         """
         try:
             if not ObjectId.is_valid(income_id):
@@ -785,6 +787,18 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             )
             
             if not result['success']:
+                # CRITICAL FIX: If already deleted, return success (idempotent operation)
+                if 'already deleted' in result['message'].lower():
+                    return jsonify({
+                        'success': True,
+                        'message': 'Income record already deleted',
+                        'data': {
+                            'originalId': income_id,
+                            'alreadyDeleted': True
+                        }
+                    }), 200  # ✓ Return 200 instead of 404
+                
+                # Only return 404 for "not found" errors
                 return jsonify({
                     'success': False,
                     'message': result['message']
