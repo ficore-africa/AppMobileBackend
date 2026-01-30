@@ -1344,110 +1344,110 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         raise Exception(f'Network {network} not supported by Monnify')
                     
                     vas_log(f'SUCCESS: Mapped {network} → {monnify_network} for Monnify')
-                
-                # Get billers for DATA_BUNDLE category
-                billers_response = call_monnify_bills_api(
-                    f'billers?category_code=DATA_BUNDLE&size=100',
-                    'GET',
-                    access_token=access_token
-                )
-                
-                # Find the target biller
-                target_biller = None
-                for biller in billers_response['responseBody']['content']:
-                    if biller['name'].upper() == monnify_network:
-                        target_biller = biller
-                        break
-                
-                if not target_biller:
-                    raise Exception(f'Monnify biller not found for network: {network}')
-                
-                # Get data products for this biller
-                products_response = call_monnify_bills_api(
-                    f'biller-products?biller_code={target_biller["code"]}&size=200',
-                    'GET',
-                    access_token=access_token
-                )
-                
-                # Transform Monnify products to our format
-                plans = []
-                all_products = products_response['responseBody']['content']
-                
-                # vas_log(f'Processing {len(all_products)} Monnify products for {network}')
-                
-                for product in all_products:
-                    product_name = product.get('name', '').lower()
-                    product_code = product.get('code', '')
-                    product_price = product.get('price', 0)
                     
-                    # ENHANCED FILTERING: Be more inclusive for data products
-                    is_data_product = (
-                        'data' in product_name or 
-                        'gb' in product_name or 
-                        'mb' in product_name or
-                        'bundle' in product_name or
-                        'plan' in product_name
+                    # Get billers for DATA_BUNDLE category
+                    billers_response = call_monnify_bills_api(
+                        f'billers?category_code=DATA_BUNDLE&size=100',
+                        'GET',
+                        access_token=access_token
                     )
                     
-                    # Exclude obvious non-data products
-                    is_excluded = (
-                        'top up' in product_name or
-                        'topup' in product_name or
-                        'airtime' in product_name or
-                        'recharge' in product_name or
-                        'mobile top up' in product_name  # Specific exclusion for code 13
+                    # Find the target biller
+                    target_biller = None
+                    for biller in billers_response['responseBody']['content']:
+                        if biller['name'].upper() == monnify_network:
+                            target_biller = biller
+                            break
+                    
+                    if not target_biller:
+                        raise Exception(f'Monnify biller not found for network: {network}')
+                    
+                    # Get data products for this biller
+                    products_response = call_monnify_bills_api(
+                        f'biller-products?biller_code={target_biller["code"]}&size=200',
+                        'GET',
+                        access_token=access_token
                     )
                     
-                    # CRITICAL: Log every decision for debugging
-                    if is_data_product and not is_excluded:
-                        plan = {
-                            'id': product_code,
-                            'name': product['name'],
-                            'price': product_price,
-                            'plan_code': product_code,
-                            'source': 'monnify',
-                            'priceType': product.get('priceType', 'FIXED'),
-                            'minAmount': product.get('minAmount'),
-                            'maxAmount': product.get('maxAmount')
-                        }
+                    # Transform Monnify products to our format
+                    plans = []
+                    all_products = products_response['responseBody']['content']
+                    
+                    # vas_log(f'Processing {len(all_products)} Monnify products for {network}')
+                    
+                    for product in all_products:
+                        product_name = product.get('name', '').lower()
+                        product_code = product.get('code', '')
+                        product_price = product.get('price', 0)
                         
-                        # Extract data volume and duration from metadata if available
-                        metadata = product.get('metadata', {})
-                        if metadata:
-                            plan['volume'] = metadata.get('volume', 0)
-                            plan['duration'] = metadata.get('duration', 30)
-                            plan['durationUnit'] = metadata.get('durationUnit', 'MONTHLY')
+                        # ENHANCED FILTERING: Be more inclusive for data products
+                        is_data_product = (
+                            'data' in product_name or 
+                            'gb' in product_name or 
+                            'mb' in product_name or
+                            'bundle' in product_name or
+                            'plan' in product_name
+                        )
                         
-                        plans.append(plan)
-                        # vas_log(f'✅ INCLUDED: {product_code} - {product["name"]} - ₦{product_price} (data={is_data_product}, excluded={is_excluded})')
+                        # Exclude obvious non-data products
+                        is_excluded = (
+                            'top up' in product_name or
+                            'topup' in product_name or
+                            'airtime' in product_name or
+                            'recharge' in product_name or
+                            'mobile top up' in product_name  # Specific exclusion for code 13
+                        )
+                        
+                        # CRITICAL: Log every decision for debugging
+                        if is_data_product and not is_excluded:
+                            plan = {
+                                'id': product_code,
+                                'name': product['name'],
+                                'price': product_price,
+                                'plan_code': product_code,
+                                'source': 'monnify',
+                                'priceType': product.get('priceType', 'FIXED'),
+                                'minAmount': product.get('minAmount'),
+                                'maxAmount': product.get('maxAmount')
+                            }
+                            
+                            # Extract data volume and duration from metadata if available
+                            metadata = product.get('metadata', {})
+                            if metadata:
+                                plan['volume'] = metadata.get('volume', 0)
+                                plan['duration'] = metadata.get('duration', 30)
+                                plan['durationUnit'] = metadata.get('durationUnit', 'MONTHLY')
+                            
+                            plans.append(plan)
+                            # vas_log(f'✅ INCLUDED: {product_code} - {product["name"]} - ₦{product_price} (data={is_data_product}, excluded={is_excluded})')
+                        else:
+                            pass
+                            # vas_log(f'❌ EXCLUDED: {product_code} - {product["name"]} - ₦{product_price} (data={is_data_product}, excluded={is_excluded})')
+                    
+                    # vas_log(f'FINAL RESULT: {len(plans)} Monnify data plans for {network} (from {len(all_products)} total products)')
+                    
+                    if plans:
+                        # CRITICAL SUCCESS: Monnify plans found - prioritize them!
+                        # vas_log(f'🎯 SUCCESS: {len(plans)} Monnify data plans found for {network} - PRIORITIZING OVER PEYFLEX!')
+                        
+                        # Add priority indicators to help frontend
+                        for plan in plans:
+                            plan['provider_priority'] = 'primary'  # Monnify is primary
+                            plan['savings_vs_peyflex'] = 'Available'  # Will be calculated if needed
+                        
+                        # print(f'SUCCESS: Successfully retrieved {len(plans)} data plans from Monnify for {network}')
+                        return jsonify({
+                            'success': True,
+                            'data': plans,
+                            'message': f'Data plans for {network.upper()} from Monnify Bills API (PRIMARY - Better Pricing)',
+                            'source': 'monnify_bills',
+                            'network': network,
+                            'provider': 'monnify',
+                            'priority': 'primary'
+                        }), 200
                     else:
-                        pass
-                        # vas_log(f'❌ EXCLUDED: {product_code} - {product["name"]} - ₦{product_price} (data={is_data_product}, excluded={is_excluded})')
-                
-                # vas_log(f'FINAL RESULT: {len(plans)} Monnify data plans for {network} (from {len(all_products)} total products)')
-                
-                if plans:
-                    # CRITICAL SUCCESS: Monnify plans found - prioritize them!
-                    # vas_log(f'🎯 SUCCESS: {len(plans)} Monnify data plans found for {network} - PRIORITIZING OVER PEYFLEX!')
-                    
-                    # Add priority indicators to help frontend
-                    for plan in plans:
-                        plan['provider_priority'] = 'primary'  # Monnify is primary
-                        plan['savings_vs_peyflex'] = 'Available'  # Will be calculated if needed
-                    
-                    # print(f'SUCCESS: Successfully retrieved {len(plans)} data plans from Monnify for {network}')
-                    return jsonify({
-                        'success': True,
-                        'data': plans,
-                        'message': f'Data plans for {network.upper()} from Monnify Bills API (PRIMARY - Better Pricing)',
-                        'source': 'monnify_bills',
-                        'network': network,
-                        'provider': 'monnify',
-                        'priority': 'primary'
-                    }), 200
-                else:
-                    vas_log(f'⚠️ WARNING: No data plans found in Monnify for {network} - will try Peyflex fallback')
-                    raise Exception(f'No data plans found for {network} on Monnify')
+                        vas_log(f'⚠️ WARNING: No data plans found in Monnify for {network} - will try Peyflex fallback')
+                        raise Exception(f'No data plans found for {network} on Monnify')
                 
             except Exception as monnify_error:
                 vas_log(f'WARNING: Monnify data plans failed for {network}: {str(monnify_error)}')
