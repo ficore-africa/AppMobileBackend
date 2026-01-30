@@ -1486,15 +1486,15 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     print(f'INFO: Using network ID as-is: {full_network_id}')
             
             headers = {
-                    'Authorization': f'Token {PEYFLEX_API_TOKEN}',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'FiCore-Backend/1.0'
-                }
-                
-                url = f'{PEYFLEX_BASE_URL}/api/data/plans/?network={full_network_id}'
-                # print(f'INFO: Calling Peyflex plans API: {url}')
-                
-                try:
+                'Authorization': f'Token {PEYFLEX_API_TOKEN}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'FiCore-Backend/1.0'
+            }
+            
+            url = f'{PEYFLEX_BASE_URL}/api/data/plans/?network={full_network_id}'
+            # print(f'INFO: Calling Peyflex plans API: {url}')
+            
+            try:
                     response = requests.get(url, headers=headers, timeout=10)
                     # print(f'INFO: Peyflex plans response status: {response.status_code}')
                     # print(f'INFO: Response preview: {response.text[:500]}')
@@ -1590,15 +1590,15 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         print(f'WARNING: Peyflex plans API error: {response.status_code} - {response.text}')
                         # Fall through to emergency fallback
                         
-                except requests.exceptions.ConnectionError as e:
-                    print(f'ERROR: Connection error to Peyflex: {str(e)}')
-                    # Fall through to emergency fallback
-                except requests.exceptions.Timeout as e:
-                    print(f'ERROR: Timeout error to Peyflex: {str(e)}')
-                    # Fall through to emergency fallback
-                except Exception as e:
-                    print(f'ERROR: Unexpected error calling Peyflex: {str(e)}')
-                    # Fall through to emergency fallback
+            except requests.exceptions.ConnectionError as e:
+                print(f'ERROR: Connection error to Peyflex: {str(e)}')
+                # Fall through to emergency fallback
+            except requests.exceptions.Timeout as e:
+                print(f'ERROR: Timeout error to Peyflex: {str(e)}')
+                # Fall through to emergency fallback
+            except Exception as e:
+                print(f'ERROR: Unexpected error calling Peyflex: {str(e)}')
+                # Fall through to emergency fallback
             
         except Exception as e:
             print(f'ERROR: Error in get_data_plans: {str(e)}')
