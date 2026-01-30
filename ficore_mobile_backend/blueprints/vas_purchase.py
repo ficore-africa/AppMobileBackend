@@ -1286,65 +1286,64 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             vas_log(f'Route /api/vas/purchase/data-plans/{network} was called by user {current_user.get("_id", "unknown")}')
             
             # NEW: Handle plan type IDs by extracting the actual network
-            # Plan type IDs: all_plans, mtn_share, mtn_gifting
+            # Plan type IDs: mtn (for Monnify ALL PLANS), mtn_data_share, mtn_gifting_data
             # We need to determine: (1) actual network, (2) which provider to use
             actual_network = network
             use_peyflex_directly = False
             peyflex_network_code = None
             
-            if network.lower() == 'all_plans':
-                # ALL PLANS always uses Monnify with base MTN
-                actual_network = 'mtn'
-                vas_log(f'Plan type "all_plans" detected → using Monnify MTN')
-            elif network.lower() == 'mtn_share':
+            if network.lower() == 'mtn_data_share':
                 # MTN SHARE uses Peyflex with mtn_data_share
                 actual_network = 'mtn'
                 use_peyflex_directly = True
                 peyflex_network_code = 'mtn_data_share'
-                vas_log(f'Plan type "mtn_share" detected → using Peyflex mtn_data_share')
-            elif network.lower() == 'mtn_gifting':
+                vas_log(f'Plan type "mtn_data_share" detected → using Peyflex mtn_data_share')
+            elif network.lower() == 'mtn_gifting_data':
                 # MTN GIFTING uses Peyflex with mtn_gifting_data
                 actual_network = 'mtn'
                 use_peyflex_directly = True
                 peyflex_network_code = 'mtn_gifting_data'
-                vas_log(f'Plan type "mtn_gifting" detected → using Peyflex mtn_gifting_data')
+                vas_log(f'Plan type "mtn_gifting_data" detected → using Peyflex mtn_gifting_data')
+            elif network.lower() in ['mtn', 'mtn_data']:
+                # Base MTN uses Monnify
+                actual_network = 'mtn'
+                vas_log(f'Base MTN detected → using Monnify MTN')
             
-            # If plan type requires Peyflex directly, skip Monnify
-            if use_peyflex_directly:
-                vas_log(f'Skipping Monnify, going directly to Peyflex for {peyflex_network_code}')
-                raise Exception('Using Peyflex for this plan type')
-            
-            # Try Monnify first
-            try:
-                access_token = call_monnify_auth()
-                
-                # CRITICAL FIX: Map network to Monnify biller code with proper frontend network handling
-                network_mapping = {
-                    # FIXED: Handle all frontend network variations properly
-                    'mtn': 'MTN',
-                    'mtn_gifting': 'MTN',        # Frontend sends this - FIXED!
-                    'mtn_gifting_data': 'MTN',   # Frontend sends this - FIXED!
-                    'mtn_sme': 'MTN',            # Frontend sends this - FIXED!
-                    'mtn_sme_data': 'MTN',       # Frontend sends this - FIXED!
-                    'airtel': 'AIRTEL',
-                    'airtel_data': 'AIRTEL',     # Frontend sends this - FIXED!
-                    'glo': 'GLO',
-                    'glo_data': 'GLO',           # Frontend sends this - FIXED!
-                    '9mobile': '9MOBILE',
-                    '9mobile_data': '9MOBILE'    # Frontend sends this - FIXED!
-                }
-                
-                # CRITICAL: Use the network mapping instead of normalize_monnify_network
-                monnify_network = network_mapping.get(actual_network.lower())
-                if not monnify_network:
-                    # Try with normalized network as fallback
-                    monnify_network = network_mapping.get(normalize_monnify_network(actual_network))
-                
-                if not monnify_network:
-                    vas_log(f'CRITICAL: Network {network} not supported by Monnify. Available: {list(network_mapping.keys())}')
-                    raise Exception(f'Network {network} not supported by Monnify')
-                
-                vas_log(f'SUCCESS: Mapped {network} → {monnify_network} for Monnify')
+            # If plan type requires Peyflex directly, skip to Peyflex section
+            if not use_peyflex_directly:
+                # Try Monnify first
+                try:
+                    access_token = call_monnify_auth()
+                    
+                    # CRITICAL FIX: Map network to Monnify biller code with proper frontend network handling
+                    network_mapping = {
+                        # FIXED: Handle all frontend network variations properly
+                        'mtn': 'MTN',
+                        'mtn_share': 'MTN',          # NEW: MTN SHARE (though should go to Peyflex)
+                        'mtn_data_share': 'MTN',     # NEW: Peyflex network code
+                        'mtn_gifting': 'MTN',        # Frontend sends this - FIXED!
+                        'mtn_gifting_data': 'MTN',   # Frontend sends this - FIXED!
+                        'mtn_sme': 'MTN',            # Frontend sends this - FIXED!
+                        'mtn_sme_data': 'MTN',       # Frontend sends this - FIXED!
+                        'airtel': 'AIRTEL',
+                        'airtel_data': 'AIRTEL',     # Frontend sends this - FIXED!
+                        'glo': 'GLO',
+                        'glo_data': 'GLO',           # Frontend sends this - FIXED!
+                        '9mobile': '9MOBILE',
+                        '9mobile_data': '9MOBILE'    # Frontend sends this - FIXED!
+                    }
+                    
+                    # CRITICAL: Use the network mapping instead of normalize_monnify_network
+                    monnify_network = network_mapping.get(actual_network.lower())
+                    if not monnify_network:
+                        # Try with normalized network as fallback
+                        monnify_network = network_mapping.get(normalize_monnify_network(actual_network))
+                    
+                    if not monnify_network:
+                        vas_log(f'CRITICAL: Network {network} not supported by Monnify. Available: {list(network_mapping.keys())}')
+                        raise Exception(f'Network {network} not supported by Monnify')
+                    
+                    vas_log(f'SUCCESS: Mapped {network} → {monnify_network} for Monnify')
                 
                 # Get billers for DATA_BUNDLE category
                 billers_response = call_monnify_bills_api(
@@ -1450,40 +1449,43 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     vas_log(f'⚠️ WARNING: No data plans found in Monnify for {network} - will try Peyflex fallback')
                     raise Exception(f'No data plans found for {network} on Monnify')
                 
-            except Exception as monnify_error:
-                vas_log(f'WARNING: Monnify data plans failed for {network}: {str(monnify_error)}')
-                
-                # Fallback to Peyflex
+                except Exception as monnify_error:
+                    vas_log(f'WARNING: Monnify data plans failed for {network}: {str(monnify_error)}')
+            
+            # Fallback to Peyflex (either from Monnify failure or direct routing)
+            if use_peyflex_directly:
+                vas_log(f'Using Peyflex directly for {network} data plans')
+            else:
                 vas_log(f'Falling back to Peyflex for {network} data plans')
+            
+            # Determine which network code to use for Peyflex
+            # If we already determined a Peyflex network code (from plan type), use it
+            if use_peyflex_directly and peyflex_network_code:
+                full_network_id = peyflex_network_code
+                vas_log(f'Using pre-determined Peyflex network code: {full_network_id}')
+            else:
+                # Validate network ID format - Peyflex uses specific network identifiers
+                network_lower = actual_network.lower().strip()
                 
-                # Determine which network code to use for Peyflex
-                # If we already determined a Peyflex network code (from plan type), use it
-                if use_peyflex_directly and peyflex_network_code:
-                    full_network_id = peyflex_network_code
-                    vas_log(f'Using pre-determined Peyflex network code: {full_network_id}')
+                # Known working networks based on Peyflex API (updated Jan 2026)
+                known_networks = {
+                    'mtn': 'mtn_data_share',           # Default MTN to data share
+                    'mtn_data_share': 'mtn_data_share', # Pass through
+                    'mtn_gifting_data': 'mtn_gifting_data', # Pass through
+                    'airtel': 'airtel_data',
+                    'glo': 'glo_data',
+                    '9mobile': '9mobile_data'
+                }
+                
+                # Use full network ID if available
+                if network_lower in known_networks:
+                    full_network_id = known_networks[network_lower]
+                    print(f'INFO: Mapped {actual_network} to {full_network_id}')
                 else:
-                    # Validate network ID format - Peyflex uses specific network identifiers
-                    network_lower = actual_network.lower().strip()
-                    
-                    # Known working networks based on Peyflex API (updated Jan 2026)
-                    known_networks = {
-                        'mtn': 'mtn_data_share',        # FIXED: Use mtn_data_share (working)
-                        'mtn_gifting': 'mtn_gifting_data',
-                        'mtn_share': 'mtn_data_share',  # NEW: Explicit mapping
-                        'airtel': 'airtel_data',
-                        'glo': 'glo_data',
-                        '9mobile': '9mobile_data'
-                    }
-                    
-                    # Use full network ID if available
-                    if network_lower in known_networks:
-                        full_network_id = known_networks[network_lower]
-                        print(f'INFO: Mapped {actual_network} to {full_network_id}')
-                    else:
-                        full_network_id = network_lower
-                        print(f'INFO: Using network ID as-is: {full_network_id}')
-                
-                headers = {
+                    full_network_id = network_lower
+                    print(f'INFO: Using network ID as-is: {full_network_id}')
+            
+            headers = {
                     'Authorization': f'Token {PEYFLEX_API_TOKEN}',
                     'Content-Type': 'application/json',
                     'User-Agent': 'FiCore-Backend/1.0'
@@ -1636,7 +1638,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             if network_lower in ['mtn', 'mtn_data']:
                 # Option 1: ALL PLANS (Monnify) - Most comprehensive
                 plan_types.append({
-                    'id': 'all_plans',
+                    'id': 'mtn',  # Use base MTN for Monnify
                     'provider': 'monnify',
                     'network_code': 'MTN',
                     'label': 'ALL PLANS',
@@ -1650,7 +1652,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 
                 # Option 2: MTN SHARE (Peyflex) - Cheapest!
                 plan_types.append({
-                    'id': 'mtn_share',
+                    'id': 'mtn_data_share',  # Use full Peyflex network code
                     'provider': 'peyflex',
                     'network_code': 'mtn_data_share',
                     'label': 'MTN SHARE',
@@ -1664,7 +1666,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 
                 # Option 3: MTN GIFTING (Peyflex) - Premium
                 plan_types.append({
-                    'id': 'mtn_gifting',
+                    'id': 'mtn_gifting_data',  # Use full Peyflex network code
                     'provider': 'peyflex',
                     'network_code': 'mtn_gifting_data',
                     'label': 'MTN GIFTING',
