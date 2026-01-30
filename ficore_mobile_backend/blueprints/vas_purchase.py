@@ -1449,8 +1449,8 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     vas_log(f'⚠️ WARNING: No data plans found in Monnify for {network} - will try Peyflex fallback')
                     raise Exception(f'No data plans found for {network} on Monnify')
                 
-                except Exception as monnify_error:
-                    vas_log(f'WARNING: Monnify data plans failed for {network}: {str(monnify_error)}')
+            except Exception as monnify_error:
+                vas_log(f'WARNING: Monnify data plans failed for {network}: {str(monnify_error)}')
             
             # Fallback to Peyflex (either from Monnify failure or direct routing)
             if use_peyflex_directly:
