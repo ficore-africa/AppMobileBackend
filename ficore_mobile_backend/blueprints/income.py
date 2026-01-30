@@ -265,6 +265,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 
                 mongo.db.credit_transactions.insert_one(transaction)
             
+            # NEW: Check if this is user's first entry and mark onboarding complete
+            # This ensures backend state stays in sync with frontend wizard
+            try:
+                income_count = mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                expense_count = mongo.db.expenses.count_documents({'userId': current_user['_id']})
+                
+                if income_count + expense_count == 1:  # This is the first entry
+                    mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {
+                            '$set': {
+                                'hasCompletedOnboarding': True,
+                                'onboardingCompletedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f'✅ First entry created - onboarding marked complete for user {current_user["_id"]}')
+            except Exception as e:
+                print(f'⚠️ Failed to mark onboarding complete (non-critical): {e}')
+            
             # FIXED: Return full income data like other endpoints
             created_income = serialize_doc(income_data.copy())
             created_income['id'] = income_id

@@ -240,6 +240,26 @@ def create_expense():
                 
                 expenses_bp.mongo.db.credit_transactions.insert_one(transaction)
            
+            # NEW: Check if this is user's first entry and mark onboarding complete
+            # This ensures backend state stays in sync with frontend wizard
+            try:
+                income_count = expenses_bp.mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                expense_count = expenses_bp.mongo.db.expenses.count_documents({'userId': current_user['_id']})
+                
+                if income_count + expense_count == 1:  # This is the first entry
+                    expenses_bp.mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {
+                            '$set': {
+                                'hasCompletedOnboarding': True,
+                                'onboardingCompletedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f'✅ First entry created - onboarding marked complete for user {current_user["_id"]}')
+            except Exception as e:
+                print(f'⚠️ Failed to mark onboarding complete (non-critical): {e}')
+           
             created_expense = expenses_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
             # Keep auto-generated title, don't override with description

@@ -363,6 +363,162 @@ def delete_account():
     
     return _delete_account()
 
+
+# ==================== ACCOUNT DELETION REQUESTS ====================
+# Added: Jan 30, 2026 - Unified deletion request system for admin review
+
+@users_bp.route('/deletion-request', methods=['POST'])
+def request_account_deletion():
+    @users_bp.token_required
+    def _request_deletion(current_user):
+        """
+        Submit account deletion request.
+        Creates a pending request for admin review.
+        
+        Body:
+            - reason: Optional[str] - User's reason for deletion
+            - appVersion: Optional[str] - App version for tracking
+        
+        Returns:
+            - 201: Request created successfully
+            - 400: User already has pending request
+            - 500: Server error
+        """
+        try:
+            data = request.get_json() or {}
+            reason = data.get('reason', '').strip()
+            
+            # Check if user already has pending request
+            existing = users_bp.mongo.db.deletion_requests.find_one({
+                'userId': current_user['_id'],
+                'status': 'pending'
+            })
+            
+            if existing:
+                return jsonify({
+                    'success': False,
+                    'message': 'You already have a pending deletion request',
+                    'data': {
+                        'requestId': str(existing['_id']),
+                        'requestedAt': existing['requestedAt'].isoformat() + 'Z',
+                        'status': 'pending'
+                    }
+                }), 400
+            
+            # Get user statistics for snapshot
+            income_count = users_bp.mongo.db.incomes.count_documents({'userId': current_user['_id']})
+            expense_count = users_bp.mongo.db.expenses.count_documents({'userId': current_user['_id']})
+            
+            # Create deletion request
+            deletion_request = {
+                'userId': current_user['_id'],
+                'email': current_user['email'],
+                'userName': current_user.get('displayName') or f"{current_user.get('firstName', '')} {current_user.get('lastName', '')}".strip() or 'Unknown User',
+                'reason': reason if reason else None,
+                'status': 'pending',
+                'requestedAt': datetime.utcnow(),
+                'processedAt': None,
+                'processedBy': None,
+                'processingNotes': None,
+                'completedAt': None,
+                'userSnapshot': {
+                    'ficoreCreditBalance': current_user.get('ficoreCreditBalance', 0.0),
+                    'subscriptionStatus': current_user.get('subscriptionStatus'),
+                    'subscriptionPlan': current_user.get('subscriptionPlan'),
+                    'createdAt': current_user.get('createdAt'),
+                    'lastLogin': current_user.get('lastLogin'),
+                    'totalIncomes': income_count,
+                    'totalExpenses': expense_count,
+                    'totalTransactions': income_count + expense_count,
+                    'kycStatus': current_user.get('kycStatus'),
+                },
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent'),
+                'appVersion': data.get('appVersion'),
+            }
+            
+            result = users_bp.mongo.db.deletion_requests.insert_one(deletion_request)
+            
+            print(f'✅ Deletion request created: {result.inserted_id} for user {current_user["email"]}')
+            
+            # TODO: Send confirmation email to user
+            # email_service.send_deletion_request_confirmation(current_user['email'])
+            
+            return jsonify({
+                'success': True,
+                'message': 'Account deletion request submitted successfully',
+                'data': {
+                    'requestId': str(result.inserted_id),
+                    'status': 'pending',
+                    'requestedAt': deletion_request['requestedAt'].isoformat() + 'Z',
+                    'estimatedProcessingTime': '24-48 hours',
+                    'message': 'Our team will review your request and send you a confirmation email.'
+                }
+            }), 201
+            
+        except Exception as e:
+            print(f'❌ Error creating deletion request: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to submit deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _request_deletion()
+
+
+@users_bp.route('/deletion-request/status', methods=['GET'])
+def get_deletion_request_status():
+    @users_bp.token_required
+    def _get_status(current_user):
+        """
+        Check status of user's deletion request.
+        Returns most recent request if exists.
+        
+        Returns:
+            - 200: Status retrieved (may be null if no request)
+            - 500: Server error
+        """
+        try:
+            # Get most recent deletion request
+            request_doc = users_bp.mongo.db.deletion_requests.find_one(
+                {'userId': current_user['_id']},
+                sort=[('requestedAt', -1)]  # Get most recent
+            )
+            
+            if not request_doc:
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'hasRequest': False,
+                        'status': None
+                    }
+                }), 200
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'hasRequest': True,
+                    'requestId': str(request_doc['_id']),
+                    'status': request_doc['status'],
+                    'requestedAt': request_doc['requestedAt'].isoformat() + 'Z',
+                    'processedAt': request_doc['processedAt'].isoformat() + 'Z' if request_doc.get('processedAt') else None,
+                    'processingNotes': request_doc.get('processingNotes'),
+                    'completedAt': request_doc['completedAt'].isoformat() + 'Z' if request_doc.get('completedAt') else None,
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error checking deletion request status: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to check deletion request status',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_status()
+
+
 @users_bp.route('/settings', methods=['GET'])
 def get_settings():
     @users_bp.token_required

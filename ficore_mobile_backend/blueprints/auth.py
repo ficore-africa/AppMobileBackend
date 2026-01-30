@@ -493,3 +493,271 @@ def reset_password():
             'errors': {'general': [str(e)]}
 
         }), 500
+
+
+# ==================== ONBOARDING STATE ENDPOINTS ====================
+# Added: Jan 30, 2026 - For Google Play review two-account strategy
+
+@auth_bp.route('/onboarding-status', methods=['GET'])
+def get_onboarding_status():
+    """
+    Check if user has completed onboarding.
+    Used by frontend to decide whether to show wizard.
+    
+    Returns:
+        - hasCompletedOnboarding: bool
+        - onboardingCompletedAt: datetime or null
+        - onboardingSkipped: bool
+        - entryCount: int (only if onboarding not completed)
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'success': False,
+                'message': 'Authorization token required',
+                'errors': {'auth': ['Missing or invalid authorization header']}
+            }), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Decode JWT token
+        try:
+            payload = jwt.decode(token, auth_bp.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload.get('user_id')
+        except jwt.ExpiredSignatureError:
+            return jsonify({
+                'success': False,
+                'message': 'Token expired',
+                'errors': {'auth': ['Token has expired']}
+            }), 401
+        except jwt.InvalidTokenError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid token',
+                'errors': {'auth': ['Invalid token']}
+            }), 401
+        
+        # Find user
+        user = auth_bp.mongo.db.users.find_one({'_id': ObjectId(user_id)})
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'message': 'User not found',
+                'errors': {'user': ['User not found']}
+            }), 404
+        
+        # Check backend onboarding state
+        has_completed = user.get('hasCompletedOnboarding', False)
+        
+        # Fallback: Check if user has any entries (backward compatibility)
+        # This ensures existing users who completed onboarding before this feature
+        # don't get stuck in the wizard
+        if not has_completed:
+            income_count = auth_bp.mongo.db.incomes.count_documents({'userId': ObjectId(user_id)})
+            expense_count = auth_bp.mongo.db.expenses.count_documents({'userId': ObjectId(user_id)})
+            total_entries = income_count + expense_count
+            
+            # If user has entries, mark onboarding as complete automatically
+            if total_entries > 0:
+                has_completed = True
+                # Update backend state for future checks
+                auth_bp.mongo.db.users.update_one(
+                    {'_id': ObjectId(user_id)},
+                    {
+                        '$set': {
+                            'hasCompletedOnboarding': True,
+                            'onboardingCompletedAt': datetime.utcnow()
+                        }
+                    }
+                )
+        else:
+            total_entries = None  # Don't count if already completed
+        
+        return jsonify({
+            'success': True,
+            'hasCompletedOnboarding': has_completed,
+            'onboardingCompletedAt': user.get('onboardingCompletedAt').isoformat() if user.get('onboardingCompletedAt') else None,
+            'onboardingSkipped': user.get('onboardingSkipped', False),
+            'onboardingSkippedAt': user.get('onboardingSkippedAt').isoformat() if user.get('onboardingSkippedAt') else None,
+            'entryCount': total_entries  # Only returned if onboarding not completed
+        }), 200
+        
+    except Exception as e:
+        print(f'❌ Error checking onboarding status: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': 'Failed to check onboarding status',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+
+@auth_bp.route('/onboarding-complete', methods=['POST'])
+def mark_onboarding_complete():
+    """
+    Mark onboarding as complete.
+    Called by frontend when user creates first entry or completes wizard.
+    
+    Body:
+        - skipped: bool (optional) - true if user chose "Explore First"
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'success': False,
+                'message': 'Authorization token required',
+                'errors': {'auth': ['Missing or invalid authorization header']}
+            }), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Decode JWT token
+        try:
+            payload = jwt.decode(token, auth_bp.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload.get('user_id')
+        except jwt.ExpiredSignatureError:
+            return jsonify({
+                'success': False,
+                'message': 'Token expired',
+                'errors': {'auth': ['Token has expired']}
+            }), 401
+        except jwt.InvalidTokenError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid token',
+                'errors': {'auth': ['Invalid token']}
+            }), 401
+        
+        data = request.get_json() or {}
+        skipped = data.get('skipped', False)
+        
+        # Update user onboarding state
+        update_data = {
+            'hasCompletedOnboarding': True,
+            'onboardingCompletedAt': datetime.utcnow()
+        }
+        
+        if skipped:
+            update_data['onboardingSkipped'] = True
+            update_data['onboardingSkippedAt'] = datetime.utcnow()
+        
+        result = auth_bp.mongo.db.users.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count == 0:
+            # User might already have onboarding marked complete
+            user = auth_bp.mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found',
+                    'errors': {'user': ['User not found']}
+                }), 404
+        
+        action = 'skipped' if skipped else 'completed'
+        print(f'✅ Onboarding {action} for user {user_id}')
+        
+        return jsonify({
+            'success': True,
+            'message': f'Onboarding {action} successfully',
+            'hasCompletedOnboarding': True,
+            'onboardingSkipped': skipped
+        }), 200
+        
+    except Exception as e:
+        print(f'❌ Error marking onboarding complete: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': 'Failed to mark onboarding complete',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+
+# Added: Jan 30, 2026 - Redo Setup Wizard feature for Google Play
+@auth_bp.route('/reset-onboarding', methods=['POST'])
+def reset_onboarding():
+    """
+    Reset onboarding state to allow user to redo wizard.
+    Useful for users who skipped wizard and want to try again.
+    
+    This endpoint:
+    - Sets hasCompletedOnboarding = False
+    - Clears onboardingSkipped flag
+    - Clears onboarding timestamps
+    - User will see wizard on next app restart or manual navigation
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'success': False,
+                'message': 'Authorization token required',
+                'errors': {'auth': ['Missing or invalid authorization header']}
+            }), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Decode JWT token
+        try:
+            payload = jwt.decode(token, auth_bp.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload.get('user_id')
+        except jwt.ExpiredSignatureError:
+            return jsonify({
+                'success': False,
+                'message': 'Token expired',
+                'errors': {'auth': ['Token has expired']}
+            }), 401
+        except jwt.InvalidTokenError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid token',
+                'errors': {'auth': ['Invalid token']}
+            }), 401
+        
+        # Reset onboarding state
+        result = auth_bp.mongo.db.users.update_one(
+            {'_id': ObjectId(user_id)},
+            {
+                '$set': {
+                    'hasCompletedOnboarding': False,
+                    'onboardingSkipped': False
+                },
+                '$unset': {
+                    'onboardingCompletedAt': '',
+                    'onboardingSkippedAt': ''
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            return jsonify({
+                'success': False,
+                'message': 'User not found',
+                'errors': {'user': ['User not found']}
+            }), 404
+        
+        print(f'✅ Onboarding reset for user {user_id}')
+        
+        return jsonify({
+            'success': True,
+            'message': 'Onboarding reset successfully. You can now redo the setup wizard.',
+            'data': {
+                'hasCompletedOnboarding': False,
+                'onboardingSkipped': False
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f'❌ Error resetting onboarding: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': 'Failed to reset onboarding',
+            'errors': {'general': [str(e)]}
+        }), 500

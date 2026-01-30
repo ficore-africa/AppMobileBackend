@@ -1421,6 +1421,308 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ===== ACCOUNT DELETION REQUEST MANAGEMENT ENDPOINTS =====
+    # Added: Jan 30, 2026 - Unified deletion request system
+
+    @admin_bp.route('/deletion-requests', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_deletion_requests(current_user):
+        """
+        Get all account deletion requests (admin only).
+        Supports filtering by status and pagination.
+        
+        Query Parameters:
+            - status: 'pending', 'approved', 'rejected', 'completed', 'all' (default: 'pending')
+            - page: Page number (default: 1)
+            - limit: Items per page (default: 20)
+            - search: Search by email or name
+        
+        Returns:
+            - 200: List of deletion requests
+            - 500: Server error
+        """
+        try:
+            # Get query parameters
+            status = request.args.get('status', 'pending')
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 20))
+            search = request.args.get('search', '').strip()
+            
+            # Build query
+            query = {}
+            if status != 'all':
+                query['status'] = status
+            
+            if search:
+                query['$or'] = [
+                    {'email': {'$regex': search, '$options': 'i'}},
+                    {'userName': {'$regex': search, '$options': 'i'}}
+                ]
+            
+            # Get total count
+            total = mongo.db.deletion_requests.count_documents(query)
+            
+            # Get requests with pagination
+            skip = (page - 1) * limit
+            requests = list(mongo.db.deletion_requests.find(query)
+                          .sort('requestedAt', -1)
+                          .skip(skip)
+                          .limit(limit))
+            
+            # Serialize
+            for req in requests:
+                req['_id'] = str(req['_id'])
+                req['userId'] = str(req['userId'])
+                if req.get('processedBy'):
+                    req['processedBy'] = str(req['processedBy'])
+                    # Get admin name
+                    admin = mongo.db.users.find_one({'_id': ObjectId(req['processedBy'])})
+                    req['processedByName'] = admin.get('displayName') if admin else 'Unknown Admin'
+                req['requestedAt'] = req['requestedAt'].isoformat() + 'Z'
+                if req.get('processedAt'):
+                    req['processedAt'] = req['processedAt'].isoformat() + 'Z'
+                if req.get('completedAt'):
+                    req['completedAt'] = req['completedAt'].isoformat() + 'Z'
+                # Serialize userSnapshot dates
+                if req.get('userSnapshot'):
+                    if req['userSnapshot'].get('createdAt'):
+                        req['userSnapshot']['createdAt'] = req['userSnapshot']['createdAt'].isoformat() + 'Z'
+                    if req['userSnapshot'].get('lastLogin'):
+                        req['userSnapshot']['lastLogin'] = req['userSnapshot']['lastLogin'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': requests,
+                'pagination': {
+                    'total': total,
+                    'page': page,
+                    'limit': limit,
+                    'pages': (total + limit - 1) // limit
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error fetching deletion requests: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch deletion requests',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/deletion-requests/<request_id>', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_deletion_request_detail(current_user, request_id):
+        """
+        Get detailed information about a specific deletion request.
+        
+        Returns:
+            - 200: Deletion request details
+            - 404: Request not found
+            - 500: Server error
+        """
+        try:
+            if not ObjectId.is_valid(request_id):
+                return jsonify({'success': False, 'message': 'Invalid request ID'}), 400
+            
+            deletion_req = mongo.db.deletion_requests.find_one({'_id': ObjectId(request_id)})
+            
+            if not deletion_req:
+                return jsonify({'success': False, 'message': 'Deletion request not found'}), 404
+            
+            # Get user details
+            user = mongo.db.users.find_one({'_id': deletion_req['userId']})
+            
+            # Serialize
+            deletion_req['_id'] = str(deletion_req['_id'])
+            deletion_req['userId'] = str(deletion_req['userId'])
+            if deletion_req.get('processedBy'):
+                deletion_req['processedBy'] = str(deletion_req['processedBy'])
+                admin = mongo.db.users.find_one({'_id': ObjectId(deletion_req['processedBy'])})
+                deletion_req['processedByName'] = admin.get('displayName') if admin else 'Unknown Admin'
+            deletion_req['requestedAt'] = deletion_req['requestedAt'].isoformat() + 'Z'
+            if deletion_req.get('processedAt'):
+                deletion_req['processedAt'] = deletion_req['processedAt'].isoformat() + 'Z'
+            if deletion_req.get('completedAt'):
+                deletion_req['completedAt'] = deletion_req['completedAt'].isoformat() + 'Z'
+            
+            # Add current user status
+            deletion_req['userCurrentStatus'] = {
+                'exists': user is not None,
+                'isActive': user.get('isActive') if user else False,
+                'deletedAt': user.get('deletedAt').isoformat() + 'Z' if user and user.get('deletedAt') else None
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': deletion_req
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error fetching deletion request detail: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/deletion-requests/<request_id>/approve', methods=['POST'])
+    @token_required
+    @admin_required
+    def approve_deletion_request(current_user, request_id):
+        """
+        Approve deletion request and soft delete user account.
+        
+        Body:
+            - notes: Optional[str] - Admin notes
+        
+        Returns:
+            - 200: Request approved and account deleted
+            - 400: Invalid request or already processed
+            - 404: Request not found
+            - 500: Server error
+        """
+        try:
+            if not ObjectId.is_valid(request_id):
+                return jsonify({'success': False, 'message': 'Invalid request ID'}), 400
+            
+            data = request.get_json() or {}
+            notes = data.get('notes', '').strip()
+            
+            # Get deletion request
+            deletion_req = mongo.db.deletion_requests.find_one({'_id': ObjectId(request_id)})
+            
+            if not deletion_req:
+                return jsonify({'success': False, 'message': 'Deletion request not found'}), 404
+            
+            if deletion_req['status'] != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': f'Request already {deletion_req["status"]}'
+                }), 400
+            
+            # Soft delete user account
+            mongo.db.users.update_one(
+                {'_id': deletion_req['userId']},
+                {
+                    '$set': {
+                        'isActive': False,
+                        'deletedAt': datetime.utcnow(),
+                        'deletionReason': 'user_requested',
+                        'deletedBy': current_user['_id']
+                    }
+                }
+            )
+            
+            # Update deletion request
+            mongo.db.deletion_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {
+                    '$set': {
+                        'status': 'approved',
+                        'processedAt': datetime.utcnow(),
+                        'processedBy': current_user['_id'],
+                        'processingNotes': notes if notes else 'Approved by admin',
+                        'completedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f'✅ Deletion request approved: {request_id} by admin {current_user["email"]}')
+            
+            # TODO: Send confirmation email to user
+            # email_service.send_deletion_completed(deletion_req['email'])
+            
+            return jsonify({
+                'success': True,
+                'message': 'Account deletion approved and completed',
+                'data': {
+                    'requestId': request_id,
+                    'status': 'approved',
+                    'completedAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error approving deletion request: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to approve deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/deletion-requests/<request_id>/reject', methods=['POST'])
+    @token_required
+    @admin_required
+    def reject_deletion_request(current_user, request_id):
+        """
+        Reject deletion request with reason.
+        
+        Body:
+            - notes: Required[str] - Reason for rejection
+        
+        Returns:
+            - 200: Request rejected
+            - 400: Invalid request or missing notes
+            - 404: Request not found
+            - 500: Server error
+        """
+        try:
+            if not ObjectId.is_valid(request_id):
+                return jsonify({'success': False, 'message': 'Invalid request ID'}), 400
+            
+            data = request.get_json() or {}
+            notes = data.get('notes', '').strip()
+            
+            if not notes:
+                return jsonify({
+                    'success': False,
+                    'message': 'Rejection reason is required',
+                    'errors': {'notes': ['Please provide a reason for rejection']}
+                }), 400
+            
+            # Update deletion request
+            result = mongo.db.deletion_requests.update_one(
+                {'_id': ObjectId(request_id), 'status': 'pending'},
+                {
+                    '$set': {
+                        'status': 'rejected',
+                        'processedAt': datetime.utcnow(),
+                        'processedBy': current_user['_id'],
+                        'processingNotes': notes
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Request not found or already processed'
+                }), 404
+            
+            print(f'✅ Deletion request rejected: {request_id} by admin {current_user["email"]}')
+            
+            # TODO: Send rejection email to user
+            # email_service.send_deletion_rejected(deletion_req['email'], notes)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Deletion request rejected',
+                'data': {
+                    'requestId': request_id,
+                    'status': 'rejected'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error rejecting deletion request: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reject deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     # ===== CREDIT REQUEST MANAGEMENT ENDPOINTS =====
 
     @admin_bp.route('/credit-requests', methods=['GET'])

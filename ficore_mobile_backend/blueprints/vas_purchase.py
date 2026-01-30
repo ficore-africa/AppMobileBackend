@@ -65,7 +65,11 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     PROVIDER_NETWORK_MAP = {
         'mtn': {
             'monnify': 'MTN',
-            'peyflex': 'mtn_sme_data'
+            'peyflex': 'mtn_data_share'  # ← CHANGED: Use Data Share (₦500/GB, same as old SME!)
+        },
+        'mtn_data_share': {  # NEW: Explicit Data Share option
+            'monnify': 'MTN',
+            'peyflex': 'mtn_data_share'
         },
         'mtn_gifting': {  # Frontend sends this
             'monnify': 'MTN',
@@ -75,14 +79,15 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             'monnify': 'MTN',
             'peyflex': 'mtn_gifting_data'
         },
-        'mtn_sme': {  # Frontend sends this
-            'monnify': 'MTN',
-            'peyflex': 'mtn_sme_data'
-        },
-        'mtn_sme_data': {  # Frontend sends this
-            'monnify': 'MTN',
-            'peyflex': 'mtn_sme_data'
-        },
+        # DEPRECATED: MTN SME discontinued by MTN in 2025
+        # 'mtn_sme': {
+        #     'monnify': 'MTN',
+        #     'peyflex': 'mtn_sme_data'  # ← DEAD - Returns 400 "Network not active"
+        # },
+        # 'mtn_sme_data': {
+        #     'monnify': 'MTN',
+        #     'peyflex': 'mtn_sme_data'
+        # },
         'airtel': {
             'monnify': 'AIRTEL',
             'peyflex': 'airtel_data'
@@ -1577,6 +1582,156 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             }
         }), 503
 
+    # ==================== PLAN TYPES ENDPOINT (NEW) ====================
+    
+    @vas_purchase_bp.route('/data-plan-types/<network>', methods=['GET'])
+    @token_required
+    def get_data_plan_types(current_user, network):
+        """
+        Get available plan types for a network (e.g., ALL PLANS, MTN SHARE, MTN GIFTING)
+        This allows users to choose provider based on price and speed
+        """
+        try:
+            vas_log(f'Fetching plan types for network: {network}')
+            network_lower = network.lower()
+            
+            plan_types = []
+            
+            # For MTN, show multiple options
+            if network_lower in ['mtn', 'mtn_data']:
+                # Option 1: ALL PLANS (Monnify) - Most comprehensive
+                try:
+                    # Quick health check for Monnify
+                    access_token = call_monnify_auth()
+                    monnify_available = True
+                except:
+                    monnify_available = False
+                
+                plan_types.append({
+                    'id': 'all_plans',
+                    'provider': 'monnify',
+                    'network_code': 'MTN',
+                    'label': 'ALL PLANS',
+                    'description': 'Most options available',
+                    'icon': '📦',
+                    'typical_price': '₦800/GB',
+                    'delivery_speed': 'Medium (2-5 mins)',
+                    'reliability': 'High',
+                    'available': monnify_available,
+                    'badge': 'Most Options' if monnify_available else 'Unavailable'
+                })
+                
+                # Option 2: MTN SHARE (Peyflex) - Cheapest!
+                try:
+                    # Quick check if Data Share is available
+                    headers = {
+                        'Authorization': f'Token {PEYFLEX_API_TOKEN}',
+                        'Content-Type': 'application/json'
+                    }
+                    response = requests.get(
+                        f'{PEYFLEX_BASE_URL}/api/data/networks/',
+                        headers=headers,
+                        timeout=5
+                    )
+                    networks_data = response.json()
+                    networks_list = networks_data.get('networks', [])
+                    share_available = any(
+                        n.get('identifier') == 'mtn_data_share' 
+                        for n in networks_list
+                    )
+                except:
+                    share_available = False
+                
+                plan_types.append({
+                    'id': 'mtn_share',
+                    'provider': 'peyflex',
+                    'network_code': 'mtn_data_share',
+                    'label': 'MTN SHARE',
+                    'description': 'Budget-friendly, fast delivery',
+                    'icon': '⚡',
+                    'typical_price': '₦500/GB',
+                    'delivery_speed': 'Fast (Instant)',
+                    'reliability': 'High',
+                    'available': share_available,
+                    'badge': 'Best Price' if share_available else 'Unavailable',
+                    'savings_vs_all_plans': '₦300'
+                })
+                
+                # Option 3: MTN GIFTING (Peyflex) - Premium
+                try:
+                    gifting_available = any(
+                        n.get('identifier') == 'mtn_gifting_data' 
+                        for n in networks_list
+                    )
+                except:
+                    gifting_available = False
+                
+                plan_types.append({
+                    'id': 'mtn_gifting',
+                    'provider': 'peyflex',
+                    'network_code': 'mtn_gifting_data',
+                    'label': 'MTN GIFTING',
+                    'description': 'Premium instant delivery',
+                    'icon': '🎁',
+                    'typical_price': '₦826/GB',
+                    'delivery_speed': 'Instant',
+                    'reliability': 'Very High',
+                    'available': gifting_available,
+                    'badge': 'Premium' if gifting_available else 'Unavailable'
+                })
+            
+            # For other networks, just show ALL PLANS
+            else:
+                try:
+                    access_token = call_monnify_auth()
+                    monnify_available = True
+                except:
+                    monnify_available = False
+                
+                network_display = network.upper().replace('_DATA', '')
+                
+                plan_types.append({
+                    'id': 'all_plans',
+                    'provider': 'monnify',
+                    'network_code': network_display,
+                    'label': 'ALL PLANS',
+                    'description': 'All available plans',
+                    'icon': '📦',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Medium',
+                    'reliability': 'High',
+                    'available': monnify_available,
+                    'badge': None
+                })
+            
+            # Filter to only available types
+            available_types = [pt for pt in plan_types if pt['available']]
+            
+            if not available_types:
+                return jsonify({
+                    'success': False,
+                    'message': f'No plan types available for {network.upper()} at the moment',
+                    'data': []
+                }), 503
+            
+            return jsonify({
+                'success': True,
+                'data': available_types,
+                'message': f'Found {len(available_types)} plan type(s) for {network.upper()}',
+                'network': network
+            }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Error getting plan types for {network}: {str(e)}')
+            import traceback
+            traceback.print_exc()
+            
+            return jsonify({
+                'success': False,
+                'message': f'Error fetching plan types for {network}',
+                'error': str(e)
+            }), 500
+
     # ==================== PLAN CODE TRANSLATION ====================
     
     def translate_plan_code(plan_code, from_provider, to_provider, network):
@@ -2396,6 +2551,9 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             data_plan_name = data.get('dataPlanName', '')
             amount = float(data.get('amount', 0))
             
+            # NEW: Get user's plan type choice (if provided)
+            plan_type = data.get('planType', 'auto')  # 'auto', 'all_plans', 'mtn_share', 'mtn_gifting'
+            
             # CRITICAL: Enhanced logging for plan mismatch debugging
             print(f'🔍 DATA PLAN PURCHASE REQUEST:')
             print(f'   User: {current_user.get("email", "unknown")}')
@@ -2404,6 +2562,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             print(f'   Plan ID: {data_plan_id}')
             print(f'   Plan Name: {data_plan_name}')
             print(f'   Amount: ₦{amount}')
+            print(f'   Plan Type: {plan_type}')  # NEW
             print(f'   Full Request: {data}')
             
             if not phone_number or not network or not data_plan_id or amount <= 0:
@@ -2534,61 +2693,67 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             api_response = None
             actual_plan_delivered = None
             
-            try:
-                # Try Monnify first (primary provider)
-                print(f'🔄 ATTEMPTING MONNIFY DATA PURCHASE:')
-                print(f'   Network: {network}')
-                print(f'   Plan ID: {data_plan_id}')
-                print(f'   Phone: {phone_number}')
-                
-                api_response = call_monnify_data(network, data_plan_id, phone_number, request_id)
-                
-                # CRITICAL: Validate that delivered plan matches requested plan
-                plan_match_result = validate_delivered_plan(api_response, data_plan_id, data_plan_name, amount)
-                if not plan_match_result['matches']:
-                    print(f'❌ PLAN MISMATCH DETECTED IN MONNIFY RESPONSE:')
-                    print(f'   Requested: {data_plan_name} (₦{amount})')
-                    print(f'   Delivered: {plan_match_result["delivered_plan"]}')
-                    
-                    # Log mismatch for investigation
-                    log_plan_mismatch(user_id, 'monnify', {
-                        'requested_plan_id': data_plan_id,
-                        'requested_plan_name': data_plan_name,
-                        'requested_amount': amount,
-                        'delivered_plan': plan_match_result['delivered_plan'],
-                        'api_response': api_response,
-                        'transaction_id': str(transaction_id)
-                    })
-                    
-                    raise Exception(f'Plan mismatch: Requested {data_plan_name} but got {plan_match_result["delivered_plan"]}')
-                
-                actual_plan_delivered = plan_match_result['delivered_plan']
-                success = True
-                print(f'✅ MONNIFY DATA PURCHASE SUCCESSFUL: {request_id}')
-                print(f'   Delivered Plan: {actual_plan_delivered}')
-                
-            except Exception as monnify_error:
-                print(f'⚠️ MONNIFY FAILED: {str(monnify_error)}')
-                error_message = str(monnify_error)
-                
+            # NEW: Smart provider selection based on user's plan type choice
+            if plan_type == 'mtn_share':
+                # User explicitly chose MTN SHARE - go directly to Peyflex Data Share
+                print(f'👤 USER CHOICE: MTN SHARE - Skipping Monnify, going directly to Peyflex Data Share')
                 try:
-                    # Fallback to Peyflex
-                    print(f'🔄 ATTEMPTING PEYFLEX DATA PURCHASE (FALLBACK):')
+                    print(f'🔄 ATTEMPTING PEYFLEX DATA SHARE PURCHASE (USER CHOICE):')
+                    print(f'   Network: MTN')
+                    print(f'   Plan ID: {data_plan_id}')
+                    print(f'   Phone: {phone_number}')
+                    
+                    api_response = call_peyflex_data('mtn', data_plan_id, phone_number, request_id)
+                    provider = 'peyflex'
+                    success = True
+                    actual_plan_delivered = data_plan_name  # Set delivered plan
+                    print(f'✅ PEYFLEX DATA SHARE SUCCESSFUL (USER CHOICE): {request_id}')
+                    
+                except Exception as peyflex_error:
+                    print(f'❌ PEYFLEX DATA SHARE FAILED: {str(peyflex_error)}')
+                    error_message = f'MTN Share purchase failed: {str(peyflex_error)}'
+                    success = False
+            
+            elif plan_type == 'mtn_gifting':
+                # User explicitly chose MTN GIFTING - go directly to Peyflex Gifting
+                print(f'👤 USER CHOICE: MTN GIFTING - Skipping Monnify, going directly to Peyflex Gifting')
+                try:
+                    print(f'🔄 ATTEMPTING PEYFLEX GIFTING PURCHASE (USER CHOICE):')
+                    print(f'   Network: MTN')
+                    print(f'   Plan ID: {data_plan_id}')
+                    print(f'   Phone: {phone_number}')
+                    
+                    api_response = call_peyflex_data('mtn_gifting', data_plan_id, phone_number, request_id)
+                    provider = 'peyflex'
+                    success = True
+                    actual_plan_delivered = data_plan_name  # Set delivered plan
+                    print(f'✅ PEYFLEX GIFTING SUCCESSFUL (USER CHOICE): {request_id}')
+                    
+                except Exception as peyflex_error:
+                    print(f'❌ PEYFLEX GIFTING FAILED: {str(peyflex_error)}')
+                    error_message = f'MTN Gifting purchase failed: {str(peyflex_error)}'
+                    success = False
+            
+            else:
+                # plan_type == 'all_plans' or 'auto' - Use Monnify (or smart fallback)
+                try:
+                    # Try Monnify first (primary provider)
+                    print(f'🔄 ATTEMPTING MONNIFY DATA PURCHASE:')
                     print(f'   Network: {network}')
                     print(f'   Plan ID: {data_plan_id}')
                     print(f'   Phone: {phone_number}')
                     
-                    api_response = call_peyflex_data(network, data_plan_id, phone_number, request_id)
+                    api_response = call_monnify_data(network, data_plan_id, phone_number, request_id)
                     
-                    # CRITICAL: Validate Peyflex response as well
+                    # CRITICAL: Validate that delivered plan matches requested plan
                     plan_match_result = validate_delivered_plan(api_response, data_plan_id, data_plan_name, amount)
                     if not plan_match_result['matches']:
-                        print(f'❌ PLAN MISMATCH DETECTED IN PEYFLEX RESPONSE:')
+                        print(f'❌ PLAN MISMATCH DETECTED IN MONNIFY RESPONSE:')
                         print(f'   Requested: {data_plan_name} (₦{amount})')
                         print(f'   Delivered: {plan_match_result["delivered_plan"]}')
                         
                         # Log mismatch for investigation
-                        log_plan_mismatch(user_id, 'peyflex', {
+                        log_plan_mismatch(user_id, 'monnify', {
                             'requested_plan_id': data_plan_id,
                             'requested_plan_name': data_plan_name,
                             'requested_amount': amount,
@@ -2600,14 +2765,51 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         raise Exception(f'Plan mismatch: Requested {data_plan_name} but got {plan_match_result["delivered_plan"]}')
                     
                     actual_plan_delivered = plan_match_result['delivered_plan']
-                    provider = 'peyflex'
                     success = True
-                    print(f'✅ PEYFLEX DATA PURCHASE SUCCESSFUL (FALLBACK): {request_id}')
+                    print(f'✅ MONNIFY DATA PURCHASE SUCCESSFUL: {request_id}')
                     print(f'   Delivered Plan: {actual_plan_delivered}')
+                
+                except Exception as monnify_error:
+                    print(f'⚠️ MONNIFY FAILED: {str(monnify_error)}')
+                    error_message = str(monnify_error)
                     
-                except Exception as peyflex_error:
-                    print(f'❌ PEYFLEX FAILED: {str(peyflex_error)}')
-                    error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
+                    try:
+                        # Fallback to Peyflex
+                        print(f'🔄 ATTEMPTING PEYFLEX DATA PURCHASE (FALLBACK):')
+                        print(f'   Network: {network}')
+                        print(f'   Plan ID: {data_plan_id}')
+                        print(f'   Phone: {phone_number}')
+                        
+                        api_response = call_peyflex_data(network, data_plan_id, phone_number, request_id)
+                        
+                        # CRITICAL: Validate Peyflex response as well
+                        plan_match_result = validate_delivered_plan(api_response, data_plan_id, data_plan_name, amount)
+                        if not plan_match_result['matches']:
+                            print(f'❌ PLAN MISMATCH DETECTED IN PEYFLEX RESPONSE:')
+                            print(f'   Requested: {data_plan_name} (₦{amount})')
+                            print(f'   Delivered: {plan_match_result["delivered_plan"]}')
+                            
+                            # Log mismatch for investigation
+                            log_plan_mismatch(user_id, 'peyflex', {
+                                'requested_plan_id': data_plan_id,
+                                'requested_plan_name': data_plan_name,
+                                'requested_amount': amount,
+                                'delivered_plan': plan_match_result['delivered_plan'],
+                                'api_response': api_response,
+                                'transaction_id': str(transaction_id)
+                            })
+                            
+                            raise Exception(f'Plan mismatch: Requested {data_plan_name} but got {plan_match_result["delivered_plan"]}')
+                        
+                        actual_plan_delivered = plan_match_result['delivered_plan']
+                        provider = 'peyflex'
+                        success = True
+                        print(f'✅ PEYFLEX DATA PURCHASE SUCCESSFUL (FALLBACK): {request_id}')
+                        print(f'   Delivered Plan: {actual_plan_delivered}')
+                        
+                    except Exception as peyflex_error:
+                        print(f'❌ PEYFLEX FAILED: {str(peyflex_error)}')
+                        error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
                 # Provider failed - no need to process anything

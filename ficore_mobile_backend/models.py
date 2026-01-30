@@ -37,6 +37,13 @@ class DatabaseSchema:
             'language': str,  # User's preferred language, default: 'en'
             'currency': str,  # User's preferred currency, default: 'NGN'
             'financialGoals': List[str],  # List of selected financial goal keys
+            
+            # Onboarding state tracking (NEW - Jan 30, 2026 - for Google Play review)
+            'hasCompletedOnboarding': Optional[bool],  # Whether user completed the wizard, default: False
+            'onboardingCompletedAt': Optional[datetime],  # When onboarding was completed
+            'onboardingSkipped': Optional[bool],  # Whether user chose "Explore First", default: False
+            'onboardingSkippedAt': Optional[datetime],  # When onboarding was skipped
+            
             'createdAt': datetime,  # Account creation timestamp
             'updatedAt': Optional[datetime],  # Last update timestamp
             'lastLogin': Optional[datetime],  # Last login timestamp
@@ -990,6 +997,57 @@ class DatabaseSchema:
             {'keys': [('uploadedAt', -1)], 'name': 'uploaded_at_desc'},
         ]
 
+    # ==================== DELETION_REQUESTS COLLECTION ====================
+    
+    @staticmethod
+    def get_deletion_request_schema() -> Dict[str, Any]:
+        """
+        Schema for deletion_requests collection.
+        Stores account deletion requests for admin review and approval.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'email': str,  # Required, user's email (for record keeping)
+            'userName': str,  # Required, user's display name
+            'reason': Optional[str],  # Optional reason for deletion
+            'status': str,  # Required: 'pending', 'approved', 'rejected', 'completed'
+            'requestedAt': datetime,  # Required, when request was submitted
+            'processedAt': Optional[datetime],  # When admin acted on it
+            'processedBy': Optional[ObjectId],  # Admin who processed it (reference to users._id)
+            'processingNotes': Optional[str],  # Admin notes
+            'completedAt': Optional[datetime],  # When deletion was completed
+            
+            # User data snapshot (for audit trail)
+            'userSnapshot': {
+                'ficoreCreditBalance': float,
+                'subscriptionStatus': Optional[str],
+                'subscriptionPlan': Optional[str],
+                'createdAt': datetime,
+                'lastLogin': Optional[datetime],
+                'totalIncomes': int,
+                'totalExpenses': int,
+                'totalTransactions': int,
+                'kycStatus': Optional[str],
+            },
+            
+            # Request metadata
+            'ipAddress': Optional[str],  # Request origin IP
+            'userAgent': Optional[str],  # Device/browser info
+            'appVersion': Optional[str],  # App version
+        }
+    
+    @staticmethod
+    def get_deletion_request_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for deletion_requests collection."""
+        return [
+            {'keys': [('userId', 1), ('requestedAt', -1)], 'name': 'user_requested_desc'},
+            {'keys': [('status', 1), ('requestedAt', -1)], 'name': 'status_requested_desc'},
+            {'keys': [('email', 1)], 'name': 'email_index'},
+            {'keys': [('processedBy', 1), ('processedAt', -1)], 'sparse': True, 'name': 'processed_by_date'},
+            {'keys': [('requestedAt', -1)], 'name': 'requested_at_desc'},
+        ]
+
     # ==================== IDEMPOTENCY_KEYS COLLECTION ====================
 
     @staticmethod
@@ -1066,6 +1124,7 @@ class DatabaseInitializer:
             'analytics_events': self.schema.get_analytics_event_indexes(),
             'admin_actions': self.schema.get_admin_action_indexes(),
             'cancellation_requests': self.schema.get_cancellation_request_indexes(),
+            'deletion_requests': self.schema.get_deletion_request_indexes(),  # NEW: Account deletion requests
             # VAS collections
             'vas_wallets': self.schema.get_vas_wallet_indexes(),
             'vas_transactions': self.schema.get_vas_transaction_indexes(),
