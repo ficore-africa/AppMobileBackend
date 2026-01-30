@@ -1285,6 +1285,35 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             vas_log(f'Fetching data plans for network: {network}')
             vas_log(f'Route /api/vas/purchase/data-plans/{network} was called by user {current_user.get("_id", "unknown")}')
             
+            # NEW: Handle plan type IDs by extracting the actual network
+            # Plan type IDs: all_plans, mtn_share, mtn_gifting
+            # We need to determine: (1) actual network, (2) which provider to use
+            actual_network = network
+            use_peyflex_directly = False
+            peyflex_network_code = None
+            
+            if network.lower() == 'all_plans':
+                # ALL PLANS always uses Monnify with base MTN
+                actual_network = 'mtn'
+                vas_log(f'Plan type "all_plans" detected → using Monnify MTN')
+            elif network.lower() == 'mtn_share':
+                # MTN SHARE uses Peyflex with mtn_data_share
+                actual_network = 'mtn'
+                use_peyflex_directly = True
+                peyflex_network_code = 'mtn_data_share'
+                vas_log(f'Plan type "mtn_share" detected → using Peyflex mtn_data_share')
+            elif network.lower() == 'mtn_gifting':
+                # MTN GIFTING uses Peyflex with mtn_gifting_data
+                actual_network = 'mtn'
+                use_peyflex_directly = True
+                peyflex_network_code = 'mtn_gifting_data'
+                vas_log(f'Plan type "mtn_gifting" detected → using Peyflex mtn_gifting_data')
+            
+            # If plan type requires Peyflex directly, skip Monnify
+            if use_peyflex_directly:
+                vas_log(f'Skipping Monnify, going directly to Peyflex for {peyflex_network_code}')
+                raise Exception('Using Peyflex for this plan type')
+            
             # Try Monnify first
             try:
                 access_token = call_monnify_auth()
@@ -1306,10 +1335,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }
                 
                 # CRITICAL: Use the network mapping instead of normalize_monnify_network
-                monnify_network = network_mapping.get(network.lower())
+                monnify_network = network_mapping.get(actual_network.lower())
                 if not monnify_network:
                     # Try with normalized network as fallback
-                    monnify_network = network_mapping.get(normalize_monnify_network(network))
+                    monnify_network = network_mapping.get(normalize_monnify_network(actual_network))
                 
                 if not monnify_network:
                     vas_log(f'CRITICAL: Network {network} not supported by Monnify. Available: {list(network_mapping.keys())}')
@@ -1427,26 +1456,32 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 # Fallback to Peyflex
                 vas_log(f'Falling back to Peyflex for {network} data plans')
                 
-                # Validate network ID format - Peyflex uses specific network identifiers
-                network_lower = network.lower().strip()
-                
-                # Known working networks based on Peyflex API discovery
-                known_networks = {
-                    'mtn': 'mtn_gifting_data',  # Map simple names to full IDs
-                    'mtn_gifting': 'mtn_gifting_data',
-                    'mtn_sme': 'mtn_sme_data',
-                    'airtel': 'airtel_data',
-                    'glo': 'glo_data',
-                    '9mobile': '9mobile_data'
-                }
-                
-                # Use full network ID if available
-                if network_lower in known_networks:
-                    full_network_id = known_networks[network_lower]
-                    print(f'INFO: Mapped {network} to {full_network_id}')
+                # Determine which network code to use for Peyflex
+                # If we already determined a Peyflex network code (from plan type), use it
+                if use_peyflex_directly and peyflex_network_code:
+                    full_network_id = peyflex_network_code
+                    vas_log(f'Using pre-determined Peyflex network code: {full_network_id}')
                 else:
-                    full_network_id = network_lower
-                    print(f'INFO: Using network ID as-is: {full_network_id}')
+                    # Validate network ID format - Peyflex uses specific network identifiers
+                    network_lower = actual_network.lower().strip()
+                    
+                    # Known working networks based on Peyflex API (updated Jan 2026)
+                    known_networks = {
+                        'mtn': 'mtn_data_share',        # FIXED: Use mtn_data_share (working)
+                        'mtn_gifting': 'mtn_gifting_data',
+                        'mtn_share': 'mtn_data_share',  # NEW: Explicit mapping
+                        'airtel': 'airtel_data',
+                        'glo': 'glo_data',
+                        '9mobile': '9mobile_data'
+                    }
+                    
+                    # Use full network ID if available
+                    if network_lower in known_networks:
+                        full_network_id = known_networks[network_lower]
+                        print(f'INFO: Mapped {actual_network} to {full_network_id}')
+                    else:
+                        full_network_id = network_lower
+                        print(f'INFO: Using network ID as-is: {full_network_id}')
                 
                 headers = {
                     'Authorization': f'Token {PEYFLEX_API_TOKEN}',
@@ -1600,13 +1635,6 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # For MTN, show multiple options
             if network_lower in ['mtn', 'mtn_data']:
                 # Option 1: ALL PLANS (Monnify) - Most comprehensive
-                try:
-                    # Quick health check for Monnify
-                    access_token = call_monnify_auth()
-                    monnify_available = True
-                except:
-                    monnify_available = False
-                
                 plan_types.append({
                     'id': 'all_plans',
                     'provider': 'monnify',
@@ -1617,31 +1645,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'typical_price': '₦800/GB',
                     'delivery_speed': 'Medium (2-5 mins)',
                     'reliability': 'High',
-                    'available': monnify_available,
-                    'badge': 'Most Options' if monnify_available else 'Unavailable'
+                    'available': True,  # Always show, let data plans loading handle availability
                 })
                 
                 # Option 2: MTN SHARE (Peyflex) - Cheapest!
-                try:
-                    # Quick check if Data Share is available
-                    headers = {
-                        'Authorization': f'Token {PEYFLEX_API_TOKEN}',
-                        'Content-Type': 'application/json'
-                    }
-                    response = requests.get(
-                        f'{PEYFLEX_BASE_URL}/api/data/networks/',
-                        headers=headers,
-                        timeout=5
-                    )
-                    networks_data = response.json()
-                    networks_list = networks_data.get('networks', [])
-                    share_available = any(
-                        n.get('identifier') == 'mtn_data_share' 
-                        for n in networks_list
-                    )
-                except:
-                    share_available = False
-                
                 plan_types.append({
                     'id': 'mtn_share',
                     'provider': 'peyflex',
@@ -1652,20 +1659,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'typical_price': '₦500/GB',
                     'delivery_speed': 'Fast (Instant)',
                     'reliability': 'High',
-                    'available': share_available,
-                    'badge': 'Best Price' if share_available else 'Unavailable',
-                    'savings_vs_all_plans': '₦300'
+                    'available': True,  # Always show, let data plans loading handle availability
                 })
                 
                 # Option 3: MTN GIFTING (Peyflex) - Premium
-                try:
-                    gifting_available = any(
-                        n.get('identifier') == 'mtn_gifting_data' 
-                        for n in networks_list
-                    )
-                except:
-                    gifting_available = False
-                
                 plan_types.append({
                     'id': 'mtn_gifting',
                     'provider': 'peyflex',
@@ -1676,18 +1673,11 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'typical_price': '₦826/GB',
                     'delivery_speed': 'Instant',
                     'reliability': 'Very High',
-                    'available': gifting_available,
-                    'badge': 'Premium' if gifting_available else 'Unavailable'
+                    'available': True,  # Always show, let data plans loading handle availability
                 })
             
             # For other networks, just show ALL PLANS
             else:
-                try:
-                    access_token = call_monnify_auth()
-                    monnify_available = True
-                except:
-                    monnify_available = False
-                
                 network_display = network.upper().replace('_DATA', '')
                 
                 plan_types.append({
@@ -1700,24 +1690,15 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'typical_price': 'Varies',
                     'delivery_speed': 'Medium',
                     'reliability': 'High',
-                    'available': monnify_available,
-                    'badge': None
+                    'available': True,  # Always show
                 })
             
-            # Filter to only available types
-            available_types = [pt for pt in plan_types if pt['available']]
-            
-            if not available_types:
-                return jsonify({
-                    'success': False,
-                    'message': f'No plan types available for {network.upper()} at the moment',
-                    'data': []
-                }), 503
-            
+            # Return all plan types (removed filtering by availability)
+            # Let the actual data plans loading handle availability checks
             return jsonify({
                 'success': True,
-                'data': available_types,
-                'message': f'Found {len(available_types)} plan type(s) for {network.upper()}',
+                'data': plan_types,
+                'message': f'Found {len(plan_types)} plan type(s) for {network.upper()}',
                 'network': network
             }), 200
             
