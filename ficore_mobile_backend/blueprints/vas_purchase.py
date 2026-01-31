@@ -2676,51 +2676,59 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             api_response = None
             actual_plan_delivered = None
             
-            # NEW: Smart provider selection based on user's plan type choice
-            if plan_type == 'mtn_share':
-                # User explicitly chose MTN SHARE - go directly to Peyflex Data Share
-                print(f'👤 USER CHOICE: MTN SHARE - Skipping Monnify, going directly to Peyflex Data Share')
+            # 🎯 STRICT PROVIDER ROUTING - NO AUTOMATIC FALLBACKS (Golden Rule #30)
+            # User explicitly chooses provider via plan type - we respect that choice
+            
+            if plan_type in ['mtn_data_share', 'mtn_share']:
+                # User explicitly chose MTN SHARE → Peyflex ONLY (NO Monnify fallback)
+                print(f'👤 USER CHOICE: MTN SHARE → Peyflex ONLY (no fallback)')
+                provider = 'peyflex'
+                
                 try:
-                    print(f'🔄 ATTEMPTING PEYFLEX DATA SHARE PURCHASE (USER CHOICE):')
-                    print(f'   Network: MTN')
+                    print(f'🔄 ATTEMPTING PEYFLEX DATA SHARE PURCHASE:')
+                    print(f'   Network: mtn_data_share')
                     print(f'   Plan ID: {data_plan_id}')
                     print(f'   Phone: {phone_number}')
                     
-                    api_response = call_peyflex_data('mtn', data_plan_id, phone_number, request_id)
-                    provider = 'peyflex'
+                    api_response = call_peyflex_data('mtn_data_share', data_plan_id, phone_number, request_id)
                     success = True
-                    actual_plan_delivered = data_plan_name  # Set delivered plan
-                    print(f'✅ PEYFLEX DATA SHARE SUCCESSFUL (USER CHOICE): {request_id}')
+                    actual_plan_delivered = data_plan_name
+                    print(f'✅ PEYFLEX DATA SHARE SUCCESSFUL: {request_id}')
                     
                 except Exception as peyflex_error:
                     print(f'❌ PEYFLEX DATA SHARE FAILED: {str(peyflex_error)}')
-                    error_message = f'MTN Share purchase failed: {str(peyflex_error)}'
+                    error_message = str(peyflex_error)
                     success = False
+                    # NO FALLBACK - Return explicit error to user
             
-            elif plan_type == 'mtn_gifting':
-                # User explicitly chose MTN GIFTING - go directly to Peyflex Gifting
-                print(f'👤 USER CHOICE: MTN GIFTING - Skipping Monnify, going directly to Peyflex Gifting')
+            elif plan_type in ['mtn_gifting_data', 'mtn_gifting']:
+                # User explicitly chose MTN GIFTING → Peyflex ONLY (NO Monnify fallback)
+                print(f'👤 USER CHOICE: MTN GIFTING → Peyflex ONLY (no fallback)')
+                provider = 'peyflex'
+                
                 try:
-                    print(f'🔄 ATTEMPTING PEYFLEX GIFTING PURCHASE (USER CHOICE):')
-                    print(f'   Network: MTN')
+                    print(f'🔄 ATTEMPTING PEYFLEX GIFTING PURCHASE:')
+                    print(f'   Network: mtn_gifting_data')
                     print(f'   Plan ID: {data_plan_id}')
                     print(f'   Phone: {phone_number}')
                     
-                    api_response = call_peyflex_data('mtn_gifting', data_plan_id, phone_number, request_id)
-                    provider = 'peyflex'
+                    api_response = call_peyflex_data('mtn_gifting_data', data_plan_id, phone_number, request_id)
                     success = True
-                    actual_plan_delivered = data_plan_name  # Set delivered plan
-                    print(f'✅ PEYFLEX GIFTING SUCCESSFUL (USER CHOICE): {request_id}')
+                    actual_plan_delivered = data_plan_name
+                    print(f'✅ PEYFLEX GIFTING SUCCESSFUL: {request_id}')
                     
                 except Exception as peyflex_error:
                     print(f'❌ PEYFLEX GIFTING FAILED: {str(peyflex_error)}')
-                    error_message = f'MTN Gifting purchase failed: {str(peyflex_error)}'
+                    error_message = str(peyflex_error)
                     success = False
+                    # NO FALLBACK - Return explicit error to user
             
-            else:
-                # plan_type == 'all_plans' or 'auto' - Use Monnify (or smart fallback)
+            elif plan_type in ['all_plans', 'mtn', 'auto']:
+                # User chose ALL PLANS → Monnify ONLY (NO Peyflex fallback)
+                print(f'👤 USER CHOICE: ALL PLANS → Monnify ONLY (no fallback)')
+                provider = 'monnify'
+                
                 try:
-                    # Try Monnify first (primary provider)
                     print(f'🔄 ATTEMPTING MONNIFY DATA PURCHASE:')
                     print(f'   Network: {network}')
                     print(f'   Plan ID: {data_plan_id}')
@@ -2728,74 +2736,57 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     
                     api_response = call_monnify_data(network, data_plan_id, phone_number, request_id)
                     
-                    # CRITICAL: Validate that delivered plan matches requested plan
+                    # 🔍 CRITICAL FIX: Validate plan but DON'T throw away success
                     plan_match_result = validate_delivered_plan(api_response, data_plan_id, data_plan_name, amount)
+                    
                     if not plan_match_result['matches']:
-                        print(f'❌ PLAN MISMATCH DETECTED IN MONNIFY RESPONSE:')
+                        # Provider succeeded but delivered different plan/price
+                        # Mark as SUCCESS (provider succeeded) but log for admin review
+                        actual_amount = plan_match_result['details'].get('delivered_amount', amount)
+                        
+                        print(f'⚠️ PLAN MISMATCH BUT PROVIDER SUCCEEDED:')
                         print(f'   Requested: {data_plan_name} (₦{amount})')
                         print(f'   Delivered: {plan_match_result["delivered_plan"]}')
+                        print(f'   Marking as SUCCESS and logging for admin review')
                         
-                        # Log mismatch for investigation
+                        # Log mismatch for admin review (don't fail transaction)
                         log_plan_mismatch(user_id, 'monnify', {
+                            'transaction_id': str(transaction_id),
                             'requested_plan_id': data_plan_id,
                             'requested_plan_name': data_plan_name,
                             'requested_amount': amount,
                             'delivered_plan': plan_match_result['delivered_plan'],
+                            'delivered_amount': actual_amount,
                             'api_response': api_response,
-                            'transaction_id': str(transaction_id)
+                            'severity': 'HIGH',
+                            'action_required': 'Review and potentially refund difference',
+                            'user_notified': False
                         })
                         
-                        raise Exception(f'Plan mismatch: Requested {data_plan_name} but got {plan_match_result["delivered_plan"]}')
+                        # Update transaction with actual amount charged
+                        actual_plan_delivered = plan_match_result['delivered_plan']
+                        # Continue as SUCCESS (don't raise exception)
+                    else:
+                        actual_plan_delivered = plan_match_result['delivered_plan']
                     
-                    actual_plan_delivered = plan_match_result['delivered_plan']
                     success = True
                     print(f'✅ MONNIFY DATA PURCHASE SUCCESSFUL: {request_id}')
                     print(f'   Delivered Plan: {actual_plan_delivered}')
                 
                 except Exception as monnify_error:
-                    print(f'⚠️ MONNIFY FAILED: {str(monnify_error)}')
+                    print(f'❌ MONNIFY FAILED: {str(monnify_error)}')
                     error_message = str(monnify_error)
-                    
-                    try:
-                        # Fallback to Peyflex
-                        print(f'🔄 ATTEMPTING PEYFLEX DATA PURCHASE (FALLBACK):')
-                        print(f'   Network: {network}')
-                        print(f'   Plan ID: {data_plan_id}')
-                        print(f'   Phone: {phone_number}')
-                        
-                        api_response = call_peyflex_data(network, data_plan_id, phone_number, request_id)
-                        
-                        # CRITICAL: Validate Peyflex response as well
-                        plan_match_result = validate_delivered_plan(api_response, data_plan_id, data_plan_name, amount)
-                        if not plan_match_result['matches']:
-                            print(f'❌ PLAN MISMATCH DETECTED IN PEYFLEX RESPONSE:')
-                            print(f'   Requested: {data_plan_name} (₦{amount})')
-                            print(f'   Delivered: {plan_match_result["delivered_plan"]}')
-                            
-                            # Log mismatch for investigation
-                            log_plan_mismatch(user_id, 'peyflex', {
-                                'requested_plan_id': data_plan_id,
-                                'requested_plan_name': data_plan_name,
-                                'requested_amount': amount,
-                                'delivered_plan': plan_match_result['delivered_plan'],
-                                'api_response': api_response,
-                                'transaction_id': str(transaction_id)
-                            })
-                            
-                            raise Exception(f'Plan mismatch: Requested {data_plan_name} but got {plan_match_result["delivered_plan"]}')
-                        
-                        actual_plan_delivered = plan_match_result['delivered_plan']
-                        provider = 'peyflex'
-                        success = True
-                        print(f'✅ PEYFLEX DATA PURCHASE SUCCESSFUL (FALLBACK): {request_id}')
-                        print(f'   Delivered Plan: {actual_plan_delivered}')
-                        
-                    except Exception as peyflex_error:
-                        print(f'❌ PEYFLEX FAILED: {str(peyflex_error)}')
-                        error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
+                    success = False
+                    # NO FALLBACK - Return explicit error to user
+            
+            else:
+                # Unknown plan type
+                print(f'❌ UNKNOWN PLAN TYPE: {plan_type}')
+                error_message = f'Unknown plan type: {plan_type}'
+                success = False
             
             if not success:
-                # Provider failed - no need to process anything
+                # Provider failed - return explicit, actionable error
                 mongo.db.vas_transactions.update_one(
                     {'_id': transaction_id},
                     {'$set': {
@@ -2804,10 +2795,29 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'updatedAt': datetime.utcnow()
                     }}
                 )
+                
+                # 🎨 EXPLICIT ERROR MESSAGES (Golden Rule #3)
+                # Determine which alternative plan types to suggest
+                if plan_type in ['mtn_data_share', 'mtn_share']:
+                    alternative_suggestion = 'Try "ALL PLANS" or "MTN GIFTING" for different options.'
+                elif plan_type in ['mtn_gifting_data', 'mtn_gifting']:
+                    alternative_suggestion = 'Try "ALL PLANS" or "MTN SHARE" for different options.'
+                elif plan_type in ['all_plans', 'mtn', 'auto']:
+                    alternative_suggestion = 'Try "MTN SHARE" or "MTN GIFTING" for different options.'
+                else:
+                    alternative_suggestion = 'Try a different plan type.'
+                
                 return jsonify({
                     'success': False,
-                    'message': 'Purchase failed - please try again',
-                    'errors': {'general': ['Transaction failed']}
+                    'message': f'Unable to complete purchase with selected plan type. {alternative_suggestion}',
+                    'errors': {'general': [error_message]},
+                    'user_message': {
+                        'title': 'Purchase Failed',
+                        'message': f'Unable to complete purchase with selected plan type. {alternative_suggestion}',
+                        'type': 'info',  # Blue, not red
+                        'auto_dismiss': True,
+                        'dismiss_after': 5000  # 5 seconds
+                    }
                 }), 500
             
             # 🚀 PROVIDER SUCCEEDED - Use task queue for bulletproof processing
