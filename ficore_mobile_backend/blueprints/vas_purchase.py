@@ -1625,8 +1625,9 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_data_plan_types(current_user, network):
         """
-        Get available plan types for a network (e.g., ALL PLANS, MTN SHARE, MTN GIFTING)
+        Get available plan types for a network (e.g., REGULAR PLANS, MTN SHARE, MTN GIFTING)
         This allows users to choose provider based on price and speed
+        ALL NETWORKS NOW HAVE 4-STEP PROCESS (Golden Rule #33-35)
         """
         try:
             vas_log(f'Fetching plan types for network: {network}')
@@ -1634,51 +1635,155 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             
             plan_types = []
             
-            # For MTN, show multiple options
+            # MTN - 3 options
             if network_lower in ['mtn', 'mtn_data']:
-                # Option 1: ALL PLANS (Monnify) - Most comprehensive
+                # Option 1: REGULAR PLANS (Monnify)
                 plan_types.append({
                     'id': 'mtn',  # Use base MTN for Monnify
                     'provider': 'monnify',
                     'network_code': 'MTN',
-                    'label': 'ALL PLANS',
-                    'description': 'Most options available',
+                    'label': 'REGULAR PLANS',
+                    'description': 'Standard pricing',
                     'icon': '📦',
                     'typical_price': '₦800/GB',
                     'delivery_speed': 'Medium (2-5 mins)',
                     'reliability': 'High',
-                    'available': True,  # Always show, let data plans loading handle availability
+                    'available': True,
                 })
                 
-                # Option 2: MTN SHARE (Peyflex) - Cheapest!
+                # Option 2: MTN SHARE (Peyflex)
                 plan_types.append({
-                    'id': 'mtn_data_share',  # Use full Peyflex network code
+                    'id': 'mtn_data_share',
                     'provider': 'peyflex',
                     'network_code': 'mtn_data_share',
                     'label': 'MTN SHARE',
-                    'description': 'Budget-friendly, fast delivery',
+                    'description': 'Budget-friendly option',
                     'icon': '⚡',
                     'typical_price': '₦500/GB',
                     'delivery_speed': 'Fast (Instant)',
                     'reliability': 'High',
-                    'available': True,  # Always show, let data plans loading handle availability
+                    'available': True,
                 })
                 
-                # Option 3: MTN GIFTING (Peyflex) - Premium
+                # Option 3: MTN GIFTING (Peyflex)
                 plan_types.append({
-                    'id': 'mtn_gifting_data',  # Use full Peyflex network code
+                    'id': 'mtn_gifting_data',
                     'provider': 'peyflex',
                     'network_code': 'mtn_gifting_data',
                     'label': 'MTN GIFTING',
-                    'description': 'Premium instant delivery',
+                    'description': 'Premium delivery',
                     'icon': '🎁',
                     'typical_price': '₦826/GB',
                     'delivery_speed': 'Instant',
                     'reliability': 'Very High',
-                    'available': True,  # Always show, let data plans loading handle availability
+                    'available': True,
                 })
             
-            # For other networks, just show ALL PLANS
+            # AIRTEL - 2 options
+            elif network_lower in ['airtel', 'airtel_data']:
+                # Option 1: REGULAR PLANS (Monnify)
+                plan_types.append({
+                    'id': 'airtel',
+                    'provider': 'monnify',
+                    'network_code': 'AIRTEL',
+                    'label': 'REGULAR PLANS',
+                    'description': 'Standard pricing',
+                    'icon': '📦',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Medium',
+                    'reliability': 'High',
+                    'available': True,
+                })
+                
+                # Option 2: AIRTEL SHARE (Peyflex)
+                plan_types.append({
+                    'id': 'airtel_data',
+                    'provider': 'peyflex',
+                    'network_code': 'airtel_data',
+                    'label': 'AIRTEL SHARE',
+                    'description': 'Budget-friendly option',
+                    'icon': '⚡',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Fast',
+                    'reliability': 'High',
+                    'available': True,
+                })
+            
+            # GLO - 2 options
+            elif network_lower in ['glo', 'glo_data']:
+                # Option 1: REGULAR PLANS (Monnify)
+                plan_types.append({
+                    'id': 'glo',
+                    'provider': 'monnify',
+                    'network_code': 'GLO',
+                    'label': 'REGULAR PLANS',
+                    'description': 'Standard pricing',
+                    'icon': '📦',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Medium',
+                    'reliability': 'High',
+                    'available': True,
+                })
+                
+                # Option 2: GLO SHARE (Peyflex)
+                plan_types.append({
+                    'id': 'glo_data',
+                    'provider': 'peyflex',
+                    'network_code': 'glo_data',
+                    'label': 'GLO SHARE',
+                    'description': 'Budget-friendly option',
+                    'icon': '⚡',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Fast',
+                    'reliability': 'High',
+                    'available': True,
+                })
+            
+            # 9MOBILE - 3 options
+            elif network_lower in ['9mobile', '9mobile_data']:
+                # Option 1: REGULAR PLANS (Monnify)
+                plan_types.append({
+                    'id': '9mobile',
+                    'provider': 'monnify',
+                    'network_code': '9MOBILE',
+                    'label': 'REGULAR PLANS',
+                    'description': 'Standard pricing',
+                    'icon': '📦',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Medium',
+                    'reliability': 'High',
+                    'available': True,
+                })
+                
+                # Option 2: 9MOBILE SHARE (Peyflex)
+                plan_types.append({
+                    'id': '9mobile_data',
+                    'provider': 'peyflex',
+                    'network_code': '9mobile_data',
+                    'label': '9MOBILE SHARE',
+                    'description': 'Budget-friendly option',
+                    'icon': '⚡',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Fast',
+                    'reliability': 'High',
+                    'available': True,
+                })
+                
+                # Option 3: 9MOBILE GIFTING (Peyflex)
+                plan_types.append({
+                    'id': '9mobile_gifting',
+                    'provider': 'peyflex',
+                    'network_code': '9mobile_gifting',
+                    'label': '9MOBILE GIFTING',
+                    'description': 'Premium delivery',
+                    'icon': '🎁',
+                    'typical_price': 'Varies',
+                    'delivery_speed': 'Instant',
+                    'reliability': 'Very High',
+                    'available': True,
+                })
+            
+            # Fallback for unknown networks
             else:
                 network_display = network.upper().replace('_DATA', '')
                 
@@ -1686,13 +1791,13 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'id': 'all_plans',
                     'provider': 'monnify',
                     'network_code': network_display,
-                    'label': 'ALL PLANS',
-                    'description': 'All available plans',
+                    'label': 'REGULAR PLANS',
+                    'description': 'Standard pricing',
                     'icon': '📦',
                     'typical_price': 'Varies',
                     'delivery_speed': 'Medium',
                     'reliability': 'High',
-                    'available': True,  # Always show
+                    'available': True,
                 })
             
             # Return all plan types (removed filtering by availability)
@@ -2723,9 +2828,97 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     success = False
                     # NO FALLBACK - Return explicit error to user
             
-            elif plan_type in ['all_plans', 'mtn', 'auto']:
-                # User chose ALL PLANS → Monnify ONLY (NO Peyflex fallback)
-                print(f'👤 USER CHOICE: ALL PLANS → Monnify ONLY (no fallback)')
+            elif plan_type in ['airtel_data', 'airtel_share']:
+                # User explicitly chose AIRTEL SHARE → Peyflex ONLY (NO Monnify fallback)
+                print(f'👤 USER CHOICE: AIRTEL SHARE → Peyflex ONLY (no fallback)')
+                provider = 'peyflex'
+                
+                try:
+                    print(f'🔄 ATTEMPTING PEYFLEX AIRTEL SHARE PURCHASE:')
+                    print(f'   Network: airtel')
+                    print(f'   Plan ID: {data_plan_id}')
+                    print(f'   Phone: {phone_number}')
+                    
+                    api_response = call_peyflex_data('airtel', data_plan_id, phone_number, request_id)
+                    success = True
+                    actual_plan_delivered = data_plan_name
+                    print(f'✅ PEYFLEX AIRTEL SHARE SUCCESSFUL: {request_id}')
+                    
+                except Exception as peyflex_error:
+                    print(f'❌ PEYFLEX AIRTEL SHARE FAILED: {str(peyflex_error)}')
+                    error_message = str(peyflex_error)
+                    success = False
+                    # NO FALLBACK - Return explicit error to user
+            
+            elif plan_type in ['glo_data', 'glo_share']:
+                # User explicitly chose GLO SHARE → Peyflex ONLY (NO Monnify fallback)
+                print(f'👤 USER CHOICE: GLO SHARE → Peyflex ONLY (no fallback)')
+                provider = 'peyflex'
+                
+                try:
+                    print(f'🔄 ATTEMPTING PEYFLEX GLO SHARE PURCHASE:')
+                    print(f'   Network: glo')
+                    print(f'   Plan ID: {data_plan_id}')
+                    print(f'   Phone: {phone_number}')
+                    
+                    api_response = call_peyflex_data('glo', data_plan_id, phone_number, request_id)
+                    success = True
+                    actual_plan_delivered = data_plan_name
+                    print(f'✅ PEYFLEX GLO SHARE SUCCESSFUL: {request_id}')
+                    
+                except Exception as peyflex_error:
+                    print(f'❌ PEYFLEX GLO SHARE FAILED: {str(peyflex_error)}')
+                    error_message = str(peyflex_error)
+                    success = False
+                    # NO FALLBACK - Return explicit error to user
+            
+            elif plan_type in ['9mobile_data', '9mobile_share']:
+                # User explicitly chose 9MOBILE SHARE → Peyflex ONLY (NO Monnify fallback)
+                print(f'👤 USER CHOICE: 9MOBILE SHARE → Peyflex ONLY (no fallback)')
+                provider = 'peyflex'
+                
+                try:
+                    print(f'🔄 ATTEMPTING PEYFLEX 9MOBILE SHARE PURCHASE:')
+                    print(f'   Network: 9mobile_data_share')
+                    print(f'   Plan ID: {data_plan_id}')
+                    print(f'   Phone: {phone_number}')
+                    
+                    api_response = call_peyflex_data('9mobile_data_share', data_plan_id, phone_number, request_id)
+                    success = True
+                    actual_plan_delivered = data_plan_name
+                    print(f'✅ PEYFLEX 9MOBILE SHARE SUCCESSFUL: {request_id}')
+                    
+                except Exception as peyflex_error:
+                    print(f'❌ PEYFLEX 9MOBILE SHARE FAILED: {str(peyflex_error)}')
+                    error_message = str(peyflex_error)
+                    success = False
+                    # NO FALLBACK - Return explicit error to user
+            
+            elif plan_type in ['9mobile_gifting_data', '9mobile_gifting']:
+                # User explicitly chose 9MOBILE GIFTING → Peyflex ONLY (NO Monnify fallback)
+                print(f'👤 USER CHOICE: 9MOBILE GIFTING → Peyflex ONLY (no fallback)')
+                provider = 'peyflex'
+                
+                try:
+                    print(f'🔄 ATTEMPTING PEYFLEX 9MOBILE GIFTING PURCHASE:')
+                    print(f'   Network: 9mobile_gifting_data')
+                    print(f'   Plan ID: {data_plan_id}')
+                    print(f'   Phone: {phone_number}')
+                    
+                    api_response = call_peyflex_data('9mobile_gifting_data', data_plan_id, phone_number, request_id)
+                    success = True
+                    actual_plan_delivered = data_plan_name
+                    print(f'✅ PEYFLEX 9MOBILE GIFTING SUCCESSFUL: {request_id}')
+                    
+                except Exception as peyflex_error:
+                    print(f'❌ PEYFLEX 9MOBILE GIFTING FAILED: {str(peyflex_error)}')
+                    error_message = str(peyflex_error)
+                    success = False
+                    # NO FALLBACK - Return explicit error to user
+            
+            elif plan_type in ['all_plans', 'regular_plans', 'mtn', 'airtel', 'glo', '9mobile', 'auto']:
+                # User chose REGULAR PLANS → Monnify ONLY (NO Peyflex fallback)
+                print(f'👤 USER CHOICE: REGULAR PLANS → Monnify ONLY (no fallback)')
                 provider = 'monnify'
                 
                 try:
@@ -2796,16 +2989,48 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     }}
                 )
                 
-                # 🎨 EXPLICIT ERROR MESSAGES (Golden Rule #3)
-                # Determine which alternative plan types to suggest
-                if plan_type in ['mtn_data_share', 'mtn_share']:
-                    alternative_suggestion = 'Try "ALL PLANS" or "MTN GIFTING" for different options.'
-                elif plan_type in ['mtn_gifting_data', 'mtn_gifting']:
-                    alternative_suggestion = 'Try "ALL PLANS" or "MTN SHARE" for different options.'
-                elif plan_type in ['all_plans', 'mtn', 'auto']:
-                    alternative_suggestion = 'Try "MTN SHARE" or "MTN GIFTING" for different options.'
+                # 🎨 EXPLICIT ERROR MESSAGES (Golden Rule #35)
+                # Determine which alternative plan types to suggest based on network and plan type
+                network_lower = network.lower()
+                
+                if network_lower == 'mtn':
+                    if plan_type in ['mtn_data_share', 'mtn_share']:
+                        alternative_suggestion = 'Try "REGULAR PLANS" or "MTN GIFTING" for different options.'
+                    elif plan_type in ['mtn_gifting_data', 'mtn_gifting']:
+                        alternative_suggestion = 'Try "REGULAR PLANS" or "MTN SHARE" for different options.'
+                    elif plan_type in ['all_plans', 'regular_plans', 'mtn', 'auto']:
+                        alternative_suggestion = 'Try "MTN SHARE" or "MTN GIFTING" for different options.'
+                    else:
+                        alternative_suggestion = 'Try a different plan type.'
+                
+                elif network_lower == 'airtel':
+                    if plan_type in ['airtel_data', 'airtel_share']:
+                        alternative_suggestion = 'Try "REGULAR PLANS" for different options.'
+                    elif plan_type in ['all_plans', 'regular_plans', 'airtel', 'auto']:
+                        alternative_suggestion = 'Try "AIRTEL SHARE" for different options.'
+                    else:
+                        alternative_suggestion = 'Try a different plan type.'
+                
+                elif network_lower == 'glo':
+                    if plan_type in ['glo_data', 'glo_share']:
+                        alternative_suggestion = 'Try "REGULAR PLANS" for different options.'
+                    elif plan_type in ['all_plans', 'regular_plans', 'glo', 'auto']:
+                        alternative_suggestion = 'Try "GLO SHARE" for different options.'
+                    else:
+                        alternative_suggestion = 'Try a different plan type.'
+                
+                elif network_lower == '9mobile':
+                    if plan_type in ['9mobile_data', '9mobile_share']:
+                        alternative_suggestion = 'Try "REGULAR PLANS" or "9MOBILE GIFTING" for different options.'
+                    elif plan_type in ['9mobile_gifting_data', '9mobile_gifting']:
+                        alternative_suggestion = 'Try "REGULAR PLANS" or "9MOBILE SHARE" for different options.'
+                    elif plan_type in ['all_plans', 'regular_plans', '9mobile', 'auto']:
+                        alternative_suggestion = 'Try "9MOBILE SHARE" or "9MOBILE GIFTING" for different options.'
+                    else:
+                        alternative_suggestion = 'Try a different plan type.'
+                
                 else:
-                    alternative_suggestion = 'Try a different plan type.'
+                    alternative_suggestion = 'Try a different plan type or network.'
                 
                 return jsonify({
                     'success': False,
