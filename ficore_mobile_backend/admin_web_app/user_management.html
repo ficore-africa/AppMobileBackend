@@ -614,6 +614,9 @@
                         <button class="btn btn-danger" onclick="showDeductCreditsModal()">
                             <i class="fas fa-minus-circle"></i> Deduct Credits
                         </button>
+                        <button class="btn btn-secondary" onclick="exportCreditsTransactions()">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
                     </div>
                 </div>
             </div>
@@ -694,6 +697,9 @@
                         </button>
                         <button class="btn btn-warning" onclick="showWalletHistoryModal()">
                             <i class="fas fa-history"></i> Transaction History
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportWalletTransactions()">
+                            <i class="fas fa-download"></i> Export CSV
                         </button>
                     </div>
                 </div>
@@ -1158,6 +1164,86 @@
                 }
             } catch (error) {
                 showError('Failed to load wallet history: ' + error.message);
+            }
+        }
+
+        // Export Liquid Wallet Transactions as CSV
+        async function exportWalletTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                showSuccess('Preparing export... This may take a moment.');
+                
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/transactions/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                if (response.ok) {
+                    // Get the CSV content
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `liquid_wallet_${currentUser.email}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showSuccess('Liquid Wallet transactions exported successfully!');
+                } else {
+                    const data = await response.json();
+                    showError('Failed to export transactions: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Failed to export transactions: ' + error.message);
+            }
+        }
+
+        // Export FiCore Credits Transactions as CSV
+        async function exportCreditsTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                showSuccess('Preparing export... This may take a moment.');
+                
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/credits/transactions/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                if (response.ok) {
+                    // Get the CSV content
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ficore_credits_${currentUser.email}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showSuccess('FiCore Credits transactions exported successfully!');
+                } else {
+                    const data = await response.json();
+                    showError('Failed to export transactions: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Failed to export transactions: ' + error.message);
             }
         }
         

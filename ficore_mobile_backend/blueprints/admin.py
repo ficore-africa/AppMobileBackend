@@ -4790,6 +4790,209 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @admin_bp.route('/users/<user_id>/wallet/transactions/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_user_wallet_transactions(current_user, user_id):
+        """Export user's complete wallet transaction history as CSV"""
+        try:
+            from flask import make_response
+            import csv
+            from io import StringIO
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get ALL wallet transactions (no limit for export)
+            transactions = list(mongo.db.vas_transactions.find({
+                'userId': ObjectId(user_id)
+            }).sort('createdAt', -1))
+            
+            # Get wallet transaction history from vas_wallets collection
+            vas_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            wallet_history = vas_wallet.get('transactionHistory', []) if vas_wallet else []
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Date',
+                'Transaction ID',
+                'Type',
+                'Category',
+                'Amount (₦)',
+                'Balance Before (₦)',
+                'Balance After (₦)',
+                'Status',
+                'Description',
+                'Phone Number',
+                'Provider',
+                'Reference',
+                'Admin Notes'
+            ])
+            
+            # Write transaction data
+            for tx in transactions:
+                writer.writerow([
+                    tx.get('createdAt', '').isoformat() if isinstance(tx.get('createdAt'), datetime) else str(tx.get('createdAt', '')),
+                    str(tx.get('_id', '')),
+                    tx.get('type', ''),
+                    tx.get('category', ''),
+                    tx.get('amount', 0),
+                    tx.get('balanceBefore', ''),
+                    tx.get('balanceAfter', ''),
+                    tx.get('status', ''),
+                    tx.get('description', ''),
+                    tx.get('phoneNumber', ''),
+                    tx.get('provider', ''),
+                    tx.get('referenceTransactionId', ''),
+                    tx.get('adminNotes', '')
+                ])
+            
+            # Write wallet history entries (if any)
+            for hist in wallet_history:
+                writer.writerow([
+                    hist.get('timestamp', '').isoformat() if isinstance(hist.get('timestamp'), datetime) else str(hist.get('timestamp', '')),
+                    hist.get('transactionId', ''),
+                    hist.get('type', ''),
+                    'WALLET_HISTORY',
+                    hist.get('amount', 0),
+                    hist.get('balanceBefore', ''),
+                    hist.get('balanceAfter', ''),
+                    'SUCCESS',
+                    hist.get('description', ''),
+                    '',
+                    '',
+                    '',
+                    hist.get('adminEmail', '')
+                ])
+            
+            # Create response
+            output.seek(0)
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=liquid_wallet_transactions_{user.get("email", user_id)}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            # Log export action
+            mongo.db.admin_audit_logs.insert_one({
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'export_wallet_transactions',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'transaction_count': len(transactions) + len(wallet_history)
+                }
+            })
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting wallet transactions: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export wallet transactions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/<user_id>/credits/transactions/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_user_credits_transactions(current_user, user_id):
+        """Export user's complete FiCore Credits transaction history as CSV"""
+        try:
+            from flask import make_response
+            import csv
+            from io import StringIO
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get ALL credits transactions (no limit for export)
+            credits_transactions = list(mongo.db.credits.find({
+                'userId': ObjectId(user_id)
+            }).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Date',
+                'Transaction ID',
+                'Type',
+                'Amount (FC)',
+                'Balance Before (FC)',
+                'Balance After (FC)',
+                'Status',
+                'Description',
+                'Source',
+                'Reference',
+                'Metadata'
+            ])
+            
+            # Write transaction data
+            for tx in credits_transactions:
+                metadata = tx.get('metadata', {})
+                writer.writerow([
+                    tx.get('createdAt', '').isoformat() if isinstance(tx.get('createdAt'), datetime) else str(tx.get('createdAt', '')),
+                    str(tx.get('_id', '')),
+                    tx.get('type', ''),
+                    tx.get('amount', 0),
+                    tx.get('balanceBefore', ''),
+                    tx.get('balanceAfter', ''),
+                    tx.get('status', 'SUCCESS'),
+                    tx.get('description', ''),
+                    tx.get('source', ''),
+                    tx.get('referenceId', ''),
+                    str(metadata) if metadata else ''
+                ])
+            
+            # Create response
+            output.seek(0)
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_credits_transactions_{user.get("email", user_id)}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            # Log export action
+            mongo.db.admin_audit_logs.insert_one({
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'export_credits_transactions',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'transaction_count': len(credits_transactions)
+                }
+            })
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting credits transactions: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export credits transactions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     @admin_bp.route('/users/<user_id>/wallet/refund', methods=['POST'])
     @token_required
     @admin_required
@@ -5018,8 +5221,16 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'message': 'User not found'
                 }), 404
             
-            # Get current balance
-            current_balance = user.get('liquidWalletBalance', 0)
+            # 🚀 CRITICAL FIX: Get FRESH balance from VAS wallet (source of truth)
+            # This prevents race conditions from stale user document balance
+            vas_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if vas_wallet:
+                current_balance = vas_wallet.get('balance', 0)
+                print(f'INFO: Using VAS wallet balance (source of truth): ₦{current_balance:,.2f}')
+            else:
+                # Fallback to user document if VAS wallet doesn't exist
+                current_balance = user.get('liquidWalletBalance', 0)
+                print(f'WARNING: VAS wallet not found, using user document balance: ₦{current_balance:,.2f}')
             
             # Check if user has sufficient balance
             if current_balance < amount:
@@ -5031,24 +5242,48 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Calculate new balance
             new_balance = current_balance - amount
             
-            # 🚀 CRITICAL FIX: Update BOTH balance locations to prevent sync issues
+            # 🚀 CRITICAL FIX: Use atomic update with current balance check to prevent race conditions
+            # Update VAS wallet balance (primary source used by backend) with atomic operation
+            vas_wallet_result = mongo.db.vas_wallets.update_one(
+                {
+                    'userId': ObjectId(user_id),
+                    'balance': current_balance  # Only update if balance hasn't changed
+                },
+                {
+                    '$set': {
+                        'balance': new_balance,
+                        'updatedAt': datetime.utcnow()
+                    },
+                    '$push': {
+                        'transactionHistory': {
+                            'transactionId': str(ObjectId()),
+                            'type': 'ADMIN_DEDUCTION',
+                            'amount': amount,
+                            'balanceBefore': current_balance,
+                            'balanceAfter': new_balance,
+                            'description': f'Admin deduction: {reason}',
+                            'timestamp': datetime.utcnow(),
+                            'adminId': str(current_user['_id']),
+                            'adminEmail': current_user['email']
+                        }
+                    }
+                }
+            )
+            
+            # Check if update was successful (balance hasn't changed since we read it)
+            if vas_wallet_result.modified_count == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Balance changed during operation. Please refresh and try again.',
+                    'error': 'RACE_CONDITION_DETECTED'
+                }), 409  # Conflict
+            
             # Update user's liquid wallet balance (for backward compatibility)
             mongo.db.users.update_one(
                 {'_id': ObjectId(user_id)},
                 {
                     '$set': {
                         'liquidWalletBalance': new_balance,
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
-            )
-            
-            # Update VAS wallet balance (primary source used by backend)
-            mongo.db.vas_wallets.update_one(
-                {'userId': ObjectId(user_id)},
-                {
-                    '$set': {
-                        'balance': new_balance,
                         'updatedAt': datetime.utcnow()
                     }
                 }

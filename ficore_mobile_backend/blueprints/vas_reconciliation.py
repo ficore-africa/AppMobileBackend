@@ -399,6 +399,38 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
                 'error': str(e)
             }), 500
 
+    @vas_reconciliation_bp.route('/reconciliation/resolved', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_resolved_reconciliations(current_user):
+        """Get all resolved reconciliation items (audit trail)"""
+        try:
+            limit = int(request.args.get('limit', 100))
+            
+            # Get resolved reconciliations (transactions that were marked for reconciliation and then resolved)
+            resolved = list(mongo.db.vas_transactions.find({
+                'reconciliationResolved': True
+            }).sort('reconciliationResolvedAt', -1).limit(limit))
+            
+            # Convert ObjectIds for JSON serialization
+            for txn in resolved:
+                txn['_id'] = str(txn['_id'])
+                txn['userId'] = str(txn['userId'])
+            
+            return jsonify({
+                'success': True,
+                'data': resolved,
+                'count': len(resolved)
+            })
+            
+        except Exception as e:
+            print(f'Error getting resolved reconciliations: {e}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get resolved reconciliations',
+                'error': str(e)
+            }), 500
+
     @vas_reconciliation_bp.route('/reconciliation/recover', methods=['POST'])
     @token_required
     @admin_required

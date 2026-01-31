@@ -516,6 +516,9 @@
             <button class="tab-btn" onclick="switchTab('dismissed')">
                 <i class="fas fa-eye-slash"></i> Dismissed (<span id="dismissedTabCount">0</span>)
             </button>
+            <button class="tab-btn" onclick="switchTab('resolved')">
+                <i class="fas fa-check-circle"></i> Resolved (<span id="resolvedTabCount">0</span>)
+            </button>
         </div>
 
         <div class="controls">
@@ -590,6 +593,7 @@
         let currentBackend = 'production';
         let allTransactions = [];
         let dismissedTransactions = [];
+        let resolvedTransactions = [];
         let filteredTransactions = [];
         let currentTab = 'pending';
 
@@ -680,12 +684,35 @@
                         );
                     }
                 }
+
+                // Load resolved reconciliations
+                const resolvedResponse = await fetch(`${API_BASE_URL}/admin/reconciliation/resolved?limit=1000`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (resolvedResponse.ok) {
+                    const resolvedData = await resolvedResponse.json();
+                    if (resolvedData.success) {
+                        // Sort by resolvedAt DESC (newest first)
+                        resolvedTransactions = (resolvedData.data || []).sort((a, b) => 
+                            new Date(b.reconciliationResolvedAt || b.createdAt) - new Date(a.reconciliationResolvedAt || a.createdAt)
+                        );
+                    }
+                }
                 
                 // Load user details for each transaction
                 await loadUserDetails();
                 
                 // Set filtered transactions based on current tab
-                filteredTransactions = currentTab === 'pending' ? [...allTransactions] : [...dismissedTransactions];
+                if (currentTab === 'pending') {
+                    filteredTransactions = [...allTransactions];
+                } else if (currentTab === 'dismissed') {
+                    filteredTransactions = [...dismissedTransactions];
+                } else if (currentTab === 'resolved') {
+                    filteredTransactions = [...resolvedTransactions];
+                }
                 
                 updateStats();
                 displayTransactions();
@@ -700,7 +727,7 @@
         // Load user details for transactions
         async function loadUserDetails() {
             const token = getAdminToken();
-            const allTxns = [...allTransactions, ...dismissedTransactions];
+            const allTxns = [...allTransactions, ...dismissedTransactions, ...resolvedTransactions];
             
             for (let transaction of allTxns) {
                 try {
@@ -731,7 +758,13 @@
             event.target.closest('.tab-btn').classList.add('active');
             
             // Update filtered transactions
-            filteredTransactions = tab === 'pending' ? [...allTransactions] : [...dismissedTransactions];
+            if (tab === 'pending') {
+                filteredTransactions = [...allTransactions];
+            } else if (tab === 'dismissed') {
+                filteredTransactions = [...dismissedTransactions];
+            } else if (tab === 'resolved') {
+                filteredTransactions = [...resolvedTransactions];
+            }
             
             // Clear search
             document.getElementById('searchInput').value = '';
@@ -744,6 +777,7 @@
         function updateStats() {
             const pendingCount = allTransactions.length;
             const dismissedCount = dismissedTransactions.length;
+            const resolvedCount = resolvedTransactions.length;
             const totalAmount = filteredTransactions.reduce((sum, txn) => sum + (txn.amount || 0), 0);
             const uniqueUsers = new Set(filteredTransactions.map(txn => txn.userId)).size;
             
@@ -755,6 +789,7 @@
             // Update tab counts
             document.getElementById('pendingTabCount').textContent = pendingCount;
             document.getElementById('dismissedTabCount').textContent = dismissedCount;
+            document.getElementById('resolvedTabCount').textContent = resolvedCount;
         }
 
         // Display transactions
@@ -778,23 +813,41 @@
             const createdDate = new Date(transaction.createdAt).toLocaleDateString();
             const failureReason = transaction.reconciliationReason || transaction.failureReason || 'No reason provided';
             
-            // Different actions for pending vs dismissed
-            const actions = currentTab === 'pending' ? `
-                <button class="btn-success-sm" onclick="resolveTransaction('${transaction._id}', 'SUCCESS')">
-                    <i class="fas fa-check"></i> Success
-                </button>
-                <button class="btn-danger-sm" onclick="resolveTransaction('${transaction._id}', 'FAILED')">
-                    <i class="fas fa-times"></i> Failed
-                </button>
-                <button class="btn-dismiss btn-sm" onclick="dismissTransaction('${transaction._id}')">
-                    <i class="fas fa-eye-slash"></i> Dismiss
-                </button>
-            ` : `
-                <button class="btn-recover btn-sm" onclick="recoverTransaction('${transaction._id}')">
-                    <i class="fas fa-undo"></i> Recover
-                </button>
-                <small style="color: #666;">Dismissed by: ${transaction.reconciliationDismissedBy || 'Unknown'}</small>
-            `;
+            // Different actions for pending vs dismissed vs resolved
+            let actions = '';
+            if (currentTab === 'pending') {
+                actions = `
+                    <button class="btn-success-sm" onclick="resolveTransaction('${transaction._id}', 'SUCCESS')">
+                        <i class="fas fa-check"></i> Success
+                    </button>
+                    <button class="btn-danger-sm" onclick="resolveTransaction('${transaction._id}', 'FAILED')">
+                        <i class="fas fa-times"></i> Failed
+                    </button>
+                    <button class="btn-dismiss btn-sm" onclick="dismissTransaction('${transaction._id}')">
+                        <i class="fas fa-eye-slash"></i> Dismiss
+                    </button>
+                `;
+            } else if (currentTab === 'dismissed') {
+                actions = `
+                    <button class="btn-recover btn-sm" onclick="recoverTransaction('${transaction._id}')">
+                        <i class="fas fa-undo"></i> Recover
+                    </button>
+                    <small style="color: #666;">Dismissed by: ${transaction.reconciliationDismissedBy || 'Unknown'}</small>
+                `;
+            } else if (currentTab === 'resolved') {
+                const resolvedDate = transaction.reconciliationResolvedAt ? new Date(transaction.reconciliationResolvedAt).toLocaleString() : 'N/A';
+                const resolvedStatus = transaction.status || 'UNKNOWN';
+                const statusBadge = resolvedStatus === 'SUCCESS' ? 
+                    '<span style="color: #16A34A; font-weight: bold;"><i class="fas fa-check-circle"></i> SUCCESS</span>' : 
+                    '<span style="color: #DC2626; font-weight: bold;"><i class="fas fa-times-circle"></i> FAILED</span>';
+                actions = `
+                    <div style="text-align: left;">
+                        <div style="margin-bottom: 8px;">${statusBadge}</div>
+                        <small style="color: #666; display: block;">Resolved: ${resolvedDate}</small>
+                        ${transaction.adminNotes ? `<small style="color: #666; display: block; margin-top: 4px;">Notes: ${transaction.adminNotes}</small>` : ''}
+                    </div>
+                `;
+            }
             
             return `
                 <tr>
