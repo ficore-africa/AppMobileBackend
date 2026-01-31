@@ -88,16 +88,34 @@ class TransactionTaskQueue:
         """
         Release reserved amount (move from reserved to actual debit)
         Called when task completes successfully
+        
+        CRITICAL: Ensure reservedAmount never goes negative
         """
         try:
+            # First check current reserved amount
+            wallet = self.mongo.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                logger.error(f"❌ Wallet not found for user {user_id}")
+                return
+            
+            current_reserved = wallet.get('reservedAmount', 0.0)
+            
+            # Don't decrement if already 0 or would go negative
+            if current_reserved <= 0:
+                logger.warning(f"⚠️ Reserved amount already 0 for user {user_id}, skipping release")
+                return
+            
+            # Only decrement up to the current reserved amount
+            amount_to_release = min(amount, current_reserved)
+            
             result = self.mongo.vas_wallets.update_one(
                 {'userId': ObjectId(user_id)},
                 {
-                    '$inc': {'reservedAmount': -amount},  # Remove from reserved
+                    '$inc': {'reservedAmount': -amount_to_release},  # Remove from reserved (never goes negative)
                     '$push': {
                         'transactionHistory': {
                             'type': 'DEBIT_CONFIRMED',
-                            'amount': amount,
+                            'amount': amount_to_release,
                             'description': reason,
                             'timestamp': datetime.utcnow()
                         }
@@ -107,7 +125,7 @@ class TransactionTaskQueue:
             )
             
             if result.modified_count > 0:
-                logger.info(f"✅ Released reservation ₦{amount:,.2f} for user {user_id}")
+                logger.info(f"✅ Released reservation ₦{amount_to_release:,.2f} for user {user_id}")
             else:
                 logger.warning(f"⚠️ Could not release reservation for user {user_id}")
                 
@@ -118,19 +136,37 @@ class TransactionTaskQueue:
         """
         Rollback reserved amount (return to available balance)
         Called when task fails and needs to refund user
+        
+        CRITICAL: Ensure reservedAmount never goes negative
         """
         try:
+            # First check current reserved amount
+            wallet = self.mongo.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                logger.error(f"❌ Wallet not found for user {user_id}")
+                return
+            
+            current_reserved = wallet.get('reservedAmount', 0.0)
+            
+            # Don't decrement if already 0 or would go negative
+            if current_reserved <= 0:
+                logger.warning(f"⚠️ Reserved amount already 0 for user {user_id}, skipping rollback")
+                return
+            
+            # Only decrement up to the current reserved amount
+            amount_to_rollback = min(amount, current_reserved)
+            
             result = self.mongo.vas_wallets.update_one(
                 {'userId': ObjectId(user_id)},
                 {
                     '$inc': {
-                        'balance': amount,  # Return to available balance
-                        'reservedAmount': -amount  # Remove from reserved
+                        'balance': amount_to_rollback,  # Return to available balance
+                        'reservedAmount': -amount_to_rollback  # Remove from reserved (never goes negative)
                     },
                     '$push': {
                         'transactionHistory': {
                             'type': 'REFUND',
-                            'amount': amount,
+                            'amount': amount_to_rollback,
                             'description': f"ROLLBACK: {reason}",
                             'timestamp': datetime.utcnow()
                         }
@@ -372,6 +408,10 @@ def get_user_available_balance(mongo_db, user_id: str) -> float:
     """
     Get user's available balance (total balance - reserved amounts)
     This prevents double-spending while tasks are processing
+    
+    CRITICAL: The calculation is CORRECT (total - reserved)
+    The REAL issue is STALE reserved amounts from failed/timed-out transactions
+    that never got cleaned up, blocking users with real money from purchases
     """
     try:
         wallet = mongo_db.vas_wallets.find_one({'userId': ObjectId(user_id)})
@@ -381,7 +421,9 @@ def get_user_available_balance(mongo_db, user_id: str) -> float:
         total_balance = wallet.get('balance', 0.0)
         reserved_amount = wallet.get('reservedAmount', 0.0)
         
-        available_balance = total_balance + reserved_amount  # Reserved is already deducted from balance
+        # Calculation is correct: subtract reserved amount
+        # Reserved amount is money locked for pending transactions
+        available_balance = total_balance - reserved_amount
         return max(0.0, available_balance)  # Never return negative
         
     except Exception as e:
