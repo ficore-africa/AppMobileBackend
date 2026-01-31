@@ -1552,22 +1552,40 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                             print(f'SUCCESS: Successfully transformed {len(transformed_plans)} valid plans from Peyflex')
                             
                             if len(transformed_plans) > 0:
-                                # Add fallback indicators
-                                for plan in transformed_plans:
-                                    plan['provider_priority'] = 'fallback'  # Peyflex is fallback only
-                                    plan['fallback_reason'] = f'Monnify unavailable for {network}'
-                                
-                                vas_log(f'⚠️ FALLBACK: Using {len(transformed_plans)} Peyflex plans for {network} (Monnify failed)')
-                                return jsonify({
-                                    'success': True,
-                                    'data': transformed_plans,
-                                    'message': f'Data plans for {network.upper()} from Peyflex (FALLBACK - Monnify unavailable)',
-                                    'source': 'peyflex_fallback',
-                                    'network_id': full_network_id,
-                                    'provider': 'peyflex',
-                                    'priority': 'fallback',
-                                    'fallback_reason': f'Monnify service unavailable for {network}'
-                                }), 200
+                                # Determine if this is intentional Peyflex usage or fallback
+                                if use_peyflex_directly:
+                                    # User explicitly chose a plan type that uses Peyflex (SHARE, GIFTING)
+                                    for plan in transformed_plans:
+                                        plan['provider_priority'] = 'primary'  # Peyflex is primary for this plan type
+                                        plan['source_reason'] = f'Plan type {network} uses Peyflex'
+                                    
+                                    vas_log(f'✅ SUCCESS: Using {len(transformed_plans)} Peyflex plans for {network} (as intended)')
+                                    return jsonify({
+                                        'success': True,
+                                        'data': transformed_plans,
+                                        'message': f'Data plans for {network.upper()} from Peyflex',
+                                        'source': 'peyflex',
+                                        'network_id': full_network_id,
+                                        'provider': 'peyflex',
+                                        'priority': 'primary'
+                                    }), 200
+                                else:
+                                    # Monnify failed, using Peyflex as fallback
+                                    for plan in transformed_plans:
+                                        plan['provider_priority'] = 'fallback'  # Peyflex is fallback
+                                        plan['fallback_reason'] = f'Monnify unavailable for {network}'
+                                    
+                                    vas_log(f'⚠️ FALLBACK: Using {len(transformed_plans)} Peyflex plans for {network} (Monnify failed)')
+                                    return jsonify({
+                                        'success': True,
+                                        'data': transformed_plans,
+                                        'message': f'Data plans for {network.upper()} from Peyflex (FALLBACK - Monnify unavailable)',
+                                        'source': 'peyflex_fallback',
+                                        'network_id': full_network_id,
+                                        'provider': 'peyflex',
+                                        'priority': 'fallback',
+                                        'fallback_reason': f'Monnify service unavailable for {network}'
+                                    }), 200
                             else:
                                 print(f'WARNING: No valid plans found for {full_network_id}')
                                 # Fall through to emergency fallback
