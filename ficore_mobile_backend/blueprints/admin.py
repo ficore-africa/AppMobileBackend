@@ -4423,15 +4423,21 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 transaction_types[txn_type]['count'] += 1
                 transaction_types[txn_type]['amount'] += amount
             
-            # 3. Get user details for recent transactions
-            recent_transactions = vas_transactions[:50]  # Last 50 transactions
-            for txn in recent_transactions:
+            # 3. Get user details for recent transactions and serialize
+            recent_transactions = []
+            for txn in vas_transactions[:50]:  # Last 50 transactions
+                # Serialize the transaction document
+                serialized_txn = serialize_doc(txn)
+                
+                # Add user email
                 user_id = txn.get('userId')
                 if user_id:
                     user = mongo.db.users.find_one({'_id': user_id}, {'email': 1})
-                    txn['userEmail'] = user.get('email') if user else 'N/A'
+                    serialized_txn['userEmail'] = user.get('email') if user else 'N/A'
                 else:
-                    txn['userEmail'] = 'N/A'
+                    serialized_txn['userEmail'] = 'N/A'
+                
+                recent_transactions.append(serialized_txn)
             
             # 4. Format provider breakdown for frontend
             providers_list = []
@@ -4486,6 +4492,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             
         except Exception as e:
             print(f"Error getting treasury analytics: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to get treasury analytics',
