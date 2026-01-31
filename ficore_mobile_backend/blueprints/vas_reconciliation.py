@@ -23,10 +23,15 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
     @token_required
     @admin_required
     def get_pending_reconciliation(current_user):
-        """Get transactions that need manual reconciliation"""
+        """Get transactions that need manual reconciliation (not dismissed)"""
         try:
             limit = int(request.args.get('limit', 50))
-            transactions = get_reconciliation_transactions(mongo, limit)
+            
+            # Only show transactions that are NOT dismissed
+            transactions = list(mongo.db.vas_transactions.find({
+                'status': 'NEEDS_RECONCILIATION',
+                'reconciliationDismissed': {'$ne': True}  # Exclude dismissed
+            }).sort('createdAt', -1).limit(limit))
             
             # Convert ObjectIds to strings for JSON serialization
             for txn in transactions:
@@ -151,9 +156,16 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
     def get_reconciliation_stats(current_user):
         """Get reconciliation statistics"""
         try:
-            # Count pending reconciliations
+            # Count pending reconciliations (not dismissed)
             pending_count = mongo.db.vas_transactions.count_documents({
-                'status': 'NEEDS_RECONCILIATION'
+                'status': 'NEEDS_RECONCILIATION',
+                'reconciliationDismissed': {'$ne': True}
+            })
+            
+            # Count dismissed reconciliations
+            dismissed_count = mongo.db.vas_transactions.count_documents({
+                'status': 'NEEDS_RECONCILIATION',
+                'reconciliationDismissed': True
             })
             
             # Count resolved reconciliations in last 30 days
@@ -162,17 +174,27 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
                 'reconciliationResolvedAt': {'$gte': datetime.utcnow() - timedelta(days=30)}
             })
             
-            # Get total amount pending reconciliation
+            # Get total amount pending reconciliation (not dismissed)
             pending_amount_pipeline = [
-                {'$match': {'status': 'NEEDS_RECONCILIATION'}},
+                {
+                    '$match': {
+                        'status': 'NEEDS_RECONCILIATION',
+                        'reconciliationDismissed': {'$ne': True}
+                    }
+                },
                 {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
             ]
             pending_amount_result = list(mongo.db.vas_transactions.aggregate(pending_amount_pipeline))
             pending_amount = pending_amount_result[0]['total'] if pending_amount_result else 0
             
-            # Count affected users
+            # Count affected users (not dismissed)
             affected_users_pipeline = [
-                {'$match': {'status': 'NEEDS_RECONCILIATION'}},
+                {
+                    '$match': {
+                        'status': 'NEEDS_RECONCILIATION',
+                        'reconciliationDismissed': {'$ne': True}
+                    }
+                },
                 {'$group': {'_id': '$userId'}},
                 {'$count': 'uniqueUsers'}
             ]
@@ -183,8 +205,14 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
             recent_activity = list(mongo.db.vas_transactions.find(
                 {
                     '$or': [
-                        {'status': 'NEEDS_RECONCILIATION'},
-                        {'reconciliationResolved': True, 'reconciliationResolvedAt': {'$gte': datetime.utcnow() - timedelta(days=7)}}
+                        {
+                            'status': 'NEEDS_RECONCILIATION',
+                            'reconciliationDismissed': {'$ne': True}
+                        },
+                        {
+                            'reconciliationResolved': True,
+                            'reconciliationResolvedAt': {'$gte': datetime.utcnow() - timedelta(days=7)}
+                        }
                     ]
                 },
                 sort=[('updatedAt', -1)],
@@ -200,6 +228,7 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
                 'success': True,
                 'data': {
                     'pendingCount': pending_count,
+                    'dismissedCount': dismissed_count,
                     'resolvedLast30Days': resolved_count,
                     'pendingAmount': pending_amount,
                     'affectedUsers': affected_users,
@@ -253,6 +282,197 @@ def init_vas_reconciliation_blueprint(mongo, token_required, admin_required):
             return jsonify({
                 'success': False,
                 'message': 'Failed to mark transaction for reconciliation',
+                'error': str(e)
+            }), 500
+
+    @vas_reconciliation_bp.route('/reconciliation/dismiss', methods=['POST'])
+    @token_required
+    @admin_required
+    def dismiss_reconciliation(current_user):
+        """
+        Dismiss a reconciliation item (admin reviewed and determined no action needed)
+        Dismissed items can be recovered later if needed
+        """
+        try:
+            data = request.json
+            transaction_id = data.get('transactionId')
+            dismiss_reason = data.get('reason', 'No action needed')
+            admin_notes = data.get('notes', '')
+            
+            if not transaction_id:
+                return jsonify({
+                    'success': False,
+                    'message': 'Transaction ID is required'
+                }), 400
+            
+            # Get transaction
+            transaction = mongo.db.vas_transactions.find_one({'_id': ObjectId(transaction_id)})
+            if not transaction:
+                return jsonify({
+                    'success': False,
+                    'message': 'Transaction not found'
+                }), 404
+            
+            # Mark as dismissed
+            result = mongo.db.vas_transactions.update_one(
+                {'_id': ObjectId(transaction_id)},
+                {
+                    '$set': {
+                        'reconciliationDismissed': True,
+                        'reconciliationDismissedAt': datetime.utcnow(),
+                        'reconciliationDismissedBy': current_user.get('email', 'unknown'),
+                        'reconciliationDismissReason': dismiss_reason,
+                        'reconciliationDismissNotes': admin_notes,
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                # Log admin action
+                admin_action = {
+                    '_id': ObjectId(),
+                    'adminId': current_user['_id'],
+                    'adminEmail': current_user.get('email', 'admin'),
+                    'action': 'dismiss_reconciliation',
+                    'transactionId': transaction_id,
+                    'reason': dismiss_reason,
+                    'notes': admin_notes,
+                    'timestamp': datetime.utcnow(),
+                    'details': {
+                        'transaction_type': transaction.get('type'),
+                        'amount': transaction.get('amount'),
+                        'original_status': transaction.get('status'),
+                        'reconciliation_reason': transaction.get('reconciliationReason')
+                    }
+                }
+                mongo.db.admin_actions.insert_one(admin_action)
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Reconciliation item dismissed'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to dismiss reconciliation item'
+                }), 500
+                
+        except Exception as e:
+            print(f'Error dismissing reconciliation: {e}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to dismiss reconciliation',
+                'error': str(e)
+            }), 500
+
+    @vas_reconciliation_bp.route('/reconciliation/dismissed', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_dismissed_reconciliations(current_user):
+        """Get all dismissed reconciliation items"""
+        try:
+            limit = int(request.args.get('limit', 100))
+            
+            # Get dismissed reconciliations
+            dismissed = list(mongo.db.vas_transactions.find({
+                'status': 'NEEDS_RECONCILIATION',
+                'reconciliationDismissed': True
+            }).sort('reconciliationDismissedAt', -1).limit(limit))
+            
+            # Convert ObjectIds for JSON serialization
+            for txn in dismissed:
+                txn['_id'] = str(txn['_id'])
+                txn['userId'] = str(txn['userId'])
+            
+            return jsonify({
+                'success': True,
+                'data': dismissed,
+                'count': len(dismissed)
+            })
+            
+        except Exception as e:
+            print(f'Error getting dismissed reconciliations: {e}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get dismissed reconciliations',
+                'error': str(e)
+            }), 500
+
+    @vas_reconciliation_bp.route('/reconciliation/recover', methods=['POST'])
+    @token_required
+    @admin_required
+    def recover_dismissed_reconciliation(current_user):
+        """
+        Recover a dismissed reconciliation item (bring it back to pending queue)
+        """
+        try:
+            data = request.json
+            transaction_id = data.get('transactionId')
+            recovery_reason = data.get('reason', 'Admin decided to review again')
+            
+            if not transaction_id:
+                return jsonify({
+                    'success': False,
+                    'message': 'Transaction ID is required'
+                }), 400
+            
+            # Get transaction
+            transaction = mongo.db.vas_transactions.find_one({'_id': ObjectId(transaction_id)})
+            if not transaction:
+                return jsonify({
+                    'success': False,
+                    'message': 'Transaction not found'
+                }), 404
+            
+            # Recover (un-dismiss)
+            result = mongo.db.vas_transactions.update_one(
+                {'_id': ObjectId(transaction_id)},
+                {
+                    '$set': {
+                        'reconciliationDismissed': False,
+                        'reconciliationRecoveredAt': datetime.utcnow(),
+                        'reconciliationRecoveredBy': current_user.get('email', 'unknown'),
+                        'reconciliationRecoveryReason': recovery_reason,
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                # Log admin action
+                admin_action = {
+                    '_id': ObjectId(),
+                    'adminId': current_user['_id'],
+                    'adminEmail': current_user.get('email', 'admin'),
+                    'action': 'recover_reconciliation',
+                    'transactionId': transaction_id,
+                    'reason': recovery_reason,
+                    'timestamp': datetime.utcnow(),
+                    'details': {
+                        'transaction_type': transaction.get('type'),
+                        'amount': transaction.get('amount'),
+                        'previously_dismissed_by': transaction.get('reconciliationDismissedBy'),
+                        'previously_dismissed_at': transaction.get('reconciliationDismissedAt')
+                    }
+                }
+                mongo.db.admin_actions.insert_one(admin_action)
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Reconciliation item recovered and moved back to pending queue'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to recover reconciliation item'
+                }), 500
+                
+        except Exception as e:
+            print(f'Error recovering reconciliation: {e}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to recover reconciliation',
                 'error': str(e)
             }), 500
 

@@ -3492,6 +3492,12 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         from datetime import datetime
         from bson import ObjectId
         
+        # Import standardized reconciliation marker
+        from utils.reconciliation_marker import mark_plan_mismatch_for_reconciliation
+        
+        # mongo is available from the blueprint closure scope
+        # No need to import it - it's passed to init_vas_purchase_blueprint
+        
         # Optional notification import - don't fail if not available
         try:
             from utils.notification_utils import create_user_notification
@@ -3525,6 +3531,27 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         print(f'   User: {user_id}')
         print(f'   Provider: {provider}')
         print(f'   Impact: {mismatch_details}')
+        
+        # CRITICAL FIX: Mark the VAS transaction for reconciliation using standardized marker
+        transaction_id = mismatch_details.get('transaction_id')
+        if transaction_id:
+            try:
+                success = mark_plan_mismatch_for_reconciliation(
+                    mongo_db=mongo.db,
+                    transaction_id=transaction_id,
+                    requested_plan=mismatch_details.get('requested_plan_name'),
+                    requested_amount=mismatch_details.get('requested_amount'),
+                    delivered_plan=mismatch_details.get('delivered_plan'),
+                    delivered_amount=mismatch_details.get('delivered_amount'),
+                    provider=provider
+                )
+                
+                if success:
+                    print(f'✅ Transaction {transaction_id} marked for reconciliation')
+                else:
+                    print(f'❌ Failed to mark transaction for reconciliation')
+            except Exception as txn_error:
+                print(f'❌ Failed to mark transaction for reconciliation: {txn_error}')
         
         # Create user notification about the issue (if notification system is available)
         if notification_available:

@@ -358,6 +358,64 @@
             background: #f39c12;
         }
 
+        .tabs {
+            display: flex;
+            gap: 10px;
+            padding: 20px 30px 0 30px;
+            background: white;
+            border-bottom: 2px solid #eee;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            color: #666;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn:hover {
+            color: #3498db;
+        }
+
+        .tab-btn.active {
+            color: #3498db;
+            border-bottom-color: #3498db;
+        }
+
+        .btn-dismiss {
+            background: #95a5a6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .btn-dismiss:hover {
+            background: #7f8c8d;
+        }
+
+        .btn-recover {
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .btn-recover:hover {
+            background: #2980b9;
+        }
+
         .notification {
             position: fixed;
             top: 20px;
@@ -435,9 +493,9 @@
                 <div class="label">Pending Reconciliations</div>
             </div>
             <div class="stat-card total">
-                <div class="icon"><i class="fas fa-list"></i></div>
-                <div class="number" id="totalTransactions">-</div>
-                <div class="label">Total VAS Transactions</div>
+                <div class="icon"><i class="fas fa-eye-slash"></i></div>
+                <div class="number" id="dismissedCount">-</div>
+                <div class="label">Dismissed Items</div>
             </div>
             <div class="stat-card amount">
                 <div class="icon"><i class="fas fa-naira-sign"></i></div>
@@ -449,6 +507,15 @@
                 <div class="number" id="affectedUsers">-</div>
                 <div class="label">Affected Users</div>
             </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('pending')">
+                <i class="fas fa-clock"></i> Pending (<span id="pendingTabCount">0</span>)
+            </button>
+            <button class="tab-btn" onclick="switchTab('dismissed')">
+                <i class="fas fa-eye-slash"></i> Dismissed (<span id="dismissedTabCount">0</span>)
+            </button>
         </div>
 
         <div class="controls">
@@ -522,7 +589,9 @@
         let API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
         let currentBackend = 'production';
         let allTransactions = [];
+        let dismissedTransactions = [];
         let filteredTransactions = [];
+        let currentTab = 'pending';
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
@@ -576,30 +645,50 @@
                 }
 
                 // Load pending reconciliations
-                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/pending?limit=1000`, {
+                const pendingResponse = await fetch(`${API_BASE_URL}/admin/reconciliation/pending?limit=1000`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                if (!pendingResponse.ok) {
+                    throw new Error(`HTTP ${pendingResponse.status}: ${pendingResponse.statusText}`);
                 }
 
-                const data = await response.json();
+                const pendingData = await pendingResponse.json();
                 
-                if (data.success) {
-                    allTransactions = data.data || [];
-                    filteredTransactions = [...allTransactions];
-                    
-                    // Load user details for each transaction
-                    await loadUserDetails();
-                    
-                    updateStats();
-                    displayTransactions();
-                } else {
-                    throw new Error(data.message || 'Failed to load reconciliation data');
+                if (pendingData.success) {
+                    // Sort by createdAt DESC (newest first)
+                    allTransactions = (pendingData.data || []).sort((a, b) => 
+                        new Date(b.createdAt) - new Date(a.createdAt)
+                    );
                 }
+
+                // Load dismissed reconciliations
+                const dismissedResponse = await fetch(`${API_BASE_URL}/admin/reconciliation/dismissed?limit=1000`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (dismissedResponse.ok) {
+                    const dismissedData = await dismissedResponse.json();
+                    if (dismissedData.success) {
+                        // Sort by dismissedAt DESC (newest first)
+                        dismissedTransactions = (dismissedData.data || []).sort((a, b) => 
+                            new Date(b.reconciliationDismissedAt || b.createdAt) - new Date(a.reconciliationDismissedAt || a.createdAt)
+                        );
+                    }
+                }
+                
+                // Load user details for each transaction
+                await loadUserDetails();
+                
+                // Set filtered transactions based on current tab
+                filteredTransactions = currentTab === 'pending' ? [...allTransactions] : [...dismissedTransactions];
+                
+                updateStats();
+                displayTransactions();
 
             } catch (error) {
                 console.error('Error loading reconciliation data:', error);
@@ -611,8 +700,9 @@
         // Load user details for transactions
         async function loadUserDetails() {
             const token = getAdminToken();
+            const allTxns = [...allTransactions, ...dismissedTransactions];
             
-            for (let transaction of allTransactions) {
+            for (let transaction of allTxns) {
                 try {
                     const userResponse = await fetch(`${API_BASE_URL}/admin/users/${transaction.userId}`, {
                         headers: {
@@ -632,16 +722,39 @@
             }
         }
 
+        // Switch tabs
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.tab-btn').classList.add('active');
+            
+            // Update filtered transactions
+            filteredTransactions = tab === 'pending' ? [...allTransactions] : [...dismissedTransactions];
+            
+            // Clear search
+            document.getElementById('searchInput').value = '';
+            
+            updateStats();
+            displayTransactions();
+        }
+
         // Update statistics
         function updateStats() {
-            const pendingCount = filteredTransactions.length;
+            const pendingCount = allTransactions.length;
+            const dismissedCount = dismissedTransactions.length;
             const totalAmount = filteredTransactions.reduce((sum, txn) => sum + (txn.amount || 0), 0);
             const uniqueUsers = new Set(filteredTransactions.map(txn => txn.userId)).size;
             
             document.getElementById('pendingCount').textContent = pendingCount.toLocaleString();
-            document.getElementById('totalTransactions').textContent = pendingCount.toLocaleString();
+            document.getElementById('dismissedCount').textContent = dismissedCount.toLocaleString();
             document.getElementById('totalAmount').textContent = '₦' + totalAmount.toLocaleString();
             document.getElementById('affectedUsers').textContent = uniqueUsers.toLocaleString();
+            
+            // Update tab counts
+            document.getElementById('pendingTabCount').textContent = pendingCount;
+            document.getElementById('dismissedTabCount').textContent = dismissedCount;
         }
 
         // Display transactions
@@ -663,7 +776,25 @@
             const userName = userDetails.displayName || userDetails.name || 'Unknown User';
             const userEmail = userDetails.email || 'No email';
             const createdDate = new Date(transaction.createdAt).toLocaleDateString();
-            const failureReason = transaction.failureReason || 'No reason provided';
+            const failureReason = transaction.reconciliationReason || transaction.failureReason || 'No reason provided';
+            
+            // Different actions for pending vs dismissed
+            const actions = currentTab === 'pending' ? `
+                <button class="btn-success-sm" onclick="resolveTransaction('${transaction._id}', 'SUCCESS')">
+                    <i class="fas fa-check"></i> Success
+                </button>
+                <button class="btn-danger-sm" onclick="resolveTransaction('${transaction._id}', 'FAILED')">
+                    <i class="fas fa-times"></i> Failed
+                </button>
+                <button class="btn-dismiss btn-sm" onclick="dismissTransaction('${transaction._id}')">
+                    <i class="fas fa-eye-slash"></i> Dismiss
+                </button>
+            ` : `
+                <button class="btn-recover btn-sm" onclick="recoverTransaction('${transaction._id}')">
+                    <i class="fas fa-undo"></i> Recover
+                </button>
+                <small style="color: #666;">Dismissed by: ${transaction.reconciliationDismissedBy || 'Unknown'}</small>
+            `;
             
             return `
                 <tr>
@@ -690,12 +821,7 @@
                     </td>
                     <td>
                         <div class="action-buttons">
-                            <button class="btn-success-sm" onclick="resolveTransaction('${transaction._id}', 'SUCCESS')">
-                                <i class="fas fa-check"></i> Success
-                            </button>
-                            <button class="btn-danger-sm" onclick="resolveTransaction('${transaction._id}', 'FAILED')">
-                                <i class="fas fa-times"></i> Failed
-                            </button>
+                            ${actions}
                         </div>
                     </td>
                 </tr>
@@ -739,6 +865,87 @@
                 }
             } catch (error) {
                 showNotification('Error resolving transaction: ' + error.message, 'error');
+            }
+        }
+
+        // Dismiss transaction
+        async function dismissTransaction(transactionId) {
+            const reason = prompt('Enter reason for dismissing (e.g., "Legitimate failure - user confirmed no service received"):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showNotification('Reason must be at least 10 characters', 'error');
+                return;
+            }
+
+            const notes = prompt('Additional notes (optional):') || '';
+
+            if (!confirm('Are you sure you want to dismiss this reconciliation item? You can recover it later if needed.')) {
+                return;
+            }
+
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/dismiss`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        reason: reason,
+                        notes: notes
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Reconciliation item dismissed successfully!');
+                    loadReconciliationData(); // Refresh data
+                } else {
+                    showNotification('Failed to dismiss: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error dismissing: ' + error.message, 'error');
+            }
+        }
+
+        // Recover dismissed transaction
+        async function recoverTransaction(transactionId) {
+            const reason = prompt('Enter reason for recovering this item:');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showNotification('Reason must be at least 10 characters', 'error');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to recover this item back to the pending queue?')) {
+                return;
+            }
+
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/recover`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        reason: reason
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Reconciliation item recovered successfully!');
+                    loadReconciliationData(); // Refresh data
+                } else {
+                    showNotification('Failed to recover: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error recovering: ' + error.message, 'error');
             }
         }
 
