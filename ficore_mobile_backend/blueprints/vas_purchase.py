@@ -3061,7 +3061,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'auto_dismiss': True,
                         'dismiss_after': 5000  # 5 seconds
                     }
-                }), 500
+                }), 400  # 400 Bad Request, not 500 (provider failed, not our backend)
             
             # 🚀 PROVIDER SUCCEEDED - Use task queue for bulletproof processing
             print(f'✅ Provider {provider} succeeded - processing with task queue')
