@@ -51,12 +51,16 @@ def update_liquid_wallet_balance(mongo, user_id, new_balance, reason="", transac
                 }
             )
             
-            # Sync to users table (for backward compatibility)
+            # Sync to users table - UPDATE ALL THREE WALLET FIELDS
+            # CRITICAL: walletBalance, liquidWalletBalance, and vasWalletBalance MUST always be the same
+            # Golden Rule #38: All three wallet balances must be synchronized
             users_result = mongo.db.users.update_one(
                 {'_id': user_object_id},
                 {
                     '$set': {
+                        'walletBalance': new_balance,
                         'liquidWalletBalance': new_balance,
+                        'vasWalletBalance': new_balance,
                         'updatedAt': timestamp
                     }
                 }
@@ -138,12 +142,15 @@ def sync_balance_from_vas_to_users(mongo, user_id):
             
         balance = wallet.get('balance', 0.0)
         
-        # Sync to users table
+        # Sync to users table - UPDATE ALL THREE WALLET FIELDS
+        # CRITICAL: walletBalance, liquidWalletBalance, and vasWalletBalance MUST always be the same
         result = mongo.db.users.update_one(
             {'_id': user_object_id},
             {
                 '$set': {
+                    'walletBalance': balance,
                     'liquidWalletBalance': balance,
+                    'vasWalletBalance': balance,
                     'updatedAt': datetime.utcnow()
                 }
             }

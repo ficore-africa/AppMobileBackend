@@ -5067,10 +5067,19 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             )
             
-            # 🚀 STREAM FIX: Also update user's liquidWalletBalance for instant frontend updates
+            # 🚀 STREAM FIX: Update ALL THREE wallet balance fields for instant frontend updates
+            # CRITICAL: walletBalance, liquidWalletBalance, and vasWalletBalance MUST always be the same
             mongo.db.users.update_one(
                 {'_id': ObjectId(user_id)},
-                {'$set': {'liquidWalletBalance': new_balance, 'liquidWalletLastUpdated': datetime.utcnow()}}
+                {
+                    '$set': {
+                        'walletBalance': new_balance,
+                        'liquidWalletBalance': new_balance,
+                        'vasWalletBalance': new_balance,
+                        'liquidWalletLastUpdated': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
             )
             
             print(f'SUCCESS: Updated BOTH balances after admin refund - VAS wallet: ₦{new_balance:,.2f}, Liquid wallet: ₦{new_balance:,.2f}')
