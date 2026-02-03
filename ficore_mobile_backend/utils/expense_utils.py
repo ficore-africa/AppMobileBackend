@@ -87,10 +87,21 @@ def generate_expense_description(category, amount, user_description=None):
     return f"N{amount:,.2f} spent on {base_description.lower()}"
 
 def auto_populate_expense_fields(expense_data):
-    """Auto-populate title and description if missing"""
+    """
+    Auto-populate title, description, and date if missing
+    
+    CRITICAL: Always ensure 'date' field exists to prevent KeyError in expense summary
+    """
+    from datetime import datetime
+    
     category = expense_data.get('category', 'Other')
     amount = expense_data.get('amount', 0)
     user_description = expense_data.get('description', '')
+    
+    # CRITICAL: Ensure date field always exists
+    if 'date' not in expense_data or expense_data.get('date') is None:
+        # Use createdAt if available, otherwise current time
+        expense_data['date'] = expense_data.get('createdAt', datetime.utcnow())
     
     # Auto-generate title if missing
     if not expense_data.get('title'):

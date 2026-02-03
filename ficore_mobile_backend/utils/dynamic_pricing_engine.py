@@ -227,7 +227,6 @@ class DynamicPricingEngine:
                                         rates[plan_id] = {
                                             'name': plan.get('name', plan.get('plan_name', '')),
                                             'price': float(plan.get('price', plan.get('amount', 0))),
-                                            'validity': plan.get('validity', 30),
                                             'network': network.upper() if network else 'UNKNOWN'
                                         }
                                     logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
@@ -240,7 +239,6 @@ class DynamicPricingEngine:
                                         rates[plan_id] = {
                                             'name': plan.get('name', plan.get('plan_name', '')),
                                             'price': float(plan.get('price', plan.get('amount', 0))),
-                                            'validity': plan.get('validity', 30),
                                             'network': network.upper() if network else 'UNKNOWN'
                                         }
                                     logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
@@ -351,22 +349,22 @@ class DynamicPricingEngine:
         # Use 2x current market rates to ensure we don't lose money
         emergency_rates = {
             'MTN': {
-                'M500MBS': {'name': '500MB - 30 Days', 'price': 600, 'validity': 30},  # 2x normal
-                'M1GB': {'name': '1GB - 30 Days', 'price': 800, 'validity': 30},       # 2x normal
-                'M2GB': {'name': '2GB - 30 Days', 'price': 1200, 'validity': 30},     # 2x normal
-                'M5GB': {'name': '5GB - 30 Days', 'price': 2700, 'validity': 30},     # 2x normal
+                'M500MBS': {'name': '500MB - 30 Days', 'price': 600},  # 2x normal
+                'M1GB': {'name': '1GB - 30 Days', 'price': 800},       # 2x normal
+                'M2GB': {'name': '2GB - 30 Days', 'price': 1200},     # 2x normal
+                'M5GB': {'name': '5GB - 30 Days', 'price': 2700},     # 2x normal
             },
             'GLO': {
-                'GLO_1GB': {'name': '1GB - 30 Days', 'price': 800, 'validity': 30},   # 2x normal
-                'GLO_2GB': {'name': '2GB - 30 Days', 'price': 1200, 'validity': 30},  # 2x normal
+                'GLO_1GB': {'name': '1GB - 30 Days', 'price': 800},   # 2x normal
+                'GLO_2GB': {'name': '2GB - 30 Days', 'price': 1200},  # 2x normal
             },
             'AIRTEL': {
-                'AIRTEL_1GB': {'name': '1GB - 30 Days', 'price': 1500, 'validity': 30},  # 2x normal
-                'AIRTEL_2GB': {'name': '2GB - 30 Days', 'price': 3000, 'validity': 30},  # 2x normal
+                'AIRTEL_1GB': {'name': '1GB - 30 Days', 'price': 1500},  # 2x normal
+                'AIRTEL_2GB': {'name': '2GB - 30 Days', 'price': 3000},  # 2x normal
             },
             '9MOBILE': {
-                '9MOB_1GB': {'name': '1GB - 30 Days', 'price': 800, 'validity': 30},   # 2x normal
-                '9MOB_2GB': {'name': '2GB - 30 Days', 'price': 1200, 'validity': 30},  # 2x normal
+                '9MOB_1GB': {'name': '1GB - 30 Days', 'price': 800},   # 2x normal
+                '9MOB_2GB': {'name': '2GB - 30 Days', 'price': 1200},  # 2x normal
             }
         }
         

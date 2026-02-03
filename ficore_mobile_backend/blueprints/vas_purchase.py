@@ -895,7 +895,6 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 enhanced_plan = {
                     'id': plan_id,
                     'name': plan_data.get('name', ''),
-                    'validity': plan_data.get('validity', 30),
                     'originalPrice': base_price,
                     'sellingPrice': pricing_result['selling_price'],
                     'savings': pricing_result['discount_applied'],
@@ -1538,7 +1537,6 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                                     'id': plan.get('plan_code', plan.get('id', '')),
                                     'name': plan.get('label', plan.get('name', plan.get('plan_name', 'Unknown Plan'))),
                                     'price': float(plan.get('amount', plan.get('price', 0))),
-                                    'validity': plan.get('validity', plan.get('duration', 30)),  # Default 30 days
                                     'plan_code': plan.get('plan_code', plan.get('id', '')),
                                     'source': 'peyflex'
                                 }

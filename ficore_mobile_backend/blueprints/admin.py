@@ -5389,6 +5389,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'amount': amount,
                 'category': 'Administrative',
                 'subcategory': 'Balance Correction',
+                'date': datetime.utcnow(),  # CRITICAL: Must have date field for expense summary
                 'transactionType': 'ADMIN_DEDUCTION',
                 'adminTransactionId': str(deduction_transaction['_id']),
                 'createdAt': datetime.utcnow(),

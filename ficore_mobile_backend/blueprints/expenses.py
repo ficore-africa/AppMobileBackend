@@ -492,7 +492,11 @@ def get_expense_summary():
                 category = expense.get('category', 'Uncategorized')
                 category_totals[category] = category_totals.get(category, 0) + expense['amount']
            
-            recent_expenses = sorted(all_expenses, key=lambda x: x['date'], reverse=True)[:5]
+            recent_expenses = sorted(
+                [exp for exp in all_expenses if exp.get('date')],  # Filter out expenses without date
+                key=lambda x: x['date'], 
+                reverse=True
+            )[:5]
             recent_expenses_data = []
             for expense in recent_expenses:
                 e = expenses_bp.serialize_doc(expense.copy())
