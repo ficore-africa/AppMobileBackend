@@ -117,7 +117,7 @@ def update_profile():
             data = request.get_json()
             
             # Fields that can be updated
-            updatable_fields = ['firstName', 'lastName', 'phone', 'address', 'dateOfBirth', 'displayName']
+            updatable_fields = ['firstName', 'lastName', 'phone', 'address', 'dateOfBirth', 'displayName', 'bvn', 'nin']
             update_data = {}
             
             for field in updatable_fields:
@@ -305,7 +305,8 @@ def change_password():
             
             return jsonify({
                 'success': True,
-                'message': 'Password changed successfully'
+                'message': 'Password changed successfully',
+                'data': None
             })
             
         except Exception as e:
@@ -361,6 +362,162 @@ def delete_account():
             }), 500
     
     return _delete_account()
+
+
+# ==================== ACCOUNT DELETION REQUESTS ====================
+# Added: Jan 30, 2026 - Unified deletion request system for admin review
+
+@users_bp.route('/deletion-request', methods=['POST'])
+def request_account_deletion():
+    @users_bp.token_required
+    def _request_deletion(current_user):
+        """
+        Submit account deletion request.
+        Creates a pending request for admin review.
+        
+        Body:
+            - reason: Optional[str] - User's reason for deletion
+            - appVersion: Optional[str] - App version for tracking
+        
+        Returns:
+            - 201: Request created successfully
+            - 400: User already has pending request
+            - 500: Server error
+        """
+        try:
+            data = request.get_json() or {}
+            reason = data.get('reason', '').strip()
+            
+            # Check if user already has pending request
+            existing = users_bp.mongo.db.deletion_requests.find_one({
+                'userId': current_user['_id'],
+                'status': 'pending'
+            })
+            
+            if existing:
+                return jsonify({
+                    'success': False,
+                    'message': 'You already have a pending deletion request',
+                    'data': {
+                        'requestId': str(existing['_id']),
+                        'requestedAt': existing['requestedAt'].isoformat() + 'Z',
+                        'status': 'pending'
+                    }
+                }), 400
+            
+            # Get user statistics for snapshot
+            income_count = users_bp.mongo.db.incomes.count_documents({'userId': current_user['_id']})
+            expense_count = users_bp.mongo.db.expenses.count_documents({'userId': current_user['_id']})
+            
+            # Create deletion request
+            deletion_request = {
+                'userId': current_user['_id'],
+                'email': current_user['email'],
+                'userName': current_user.get('displayName') or f"{current_user.get('firstName', '')} {current_user.get('lastName', '')}".strip() or 'Unknown User',
+                'reason': reason if reason else None,
+                'status': 'pending',
+                'requestedAt': datetime.utcnow(),
+                'processedAt': None,
+                'processedBy': None,
+                'processingNotes': None,
+                'completedAt': None,
+                'userSnapshot': {
+                    'ficoreCreditBalance': current_user.get('ficoreCreditBalance', 0.0),
+                    'subscriptionStatus': current_user.get('subscriptionStatus'),
+                    'subscriptionPlan': current_user.get('subscriptionPlan'),
+                    'createdAt': current_user.get('createdAt'),
+                    'lastLogin': current_user.get('lastLogin'),
+                    'totalIncomes': income_count,
+                    'totalExpenses': expense_count,
+                    'totalTransactions': income_count + expense_count,
+                    'kycStatus': current_user.get('kycStatus'),
+                },
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent'),
+                'appVersion': data.get('appVersion'),
+            }
+            
+            result = users_bp.mongo.db.deletion_requests.insert_one(deletion_request)
+            
+            print(f'✅ Deletion request created: {result.inserted_id} for user {current_user["email"]}')
+            
+            # TODO: Send confirmation email to user
+            # email_service.send_deletion_request_confirmation(current_user['email'])
+            
+            return jsonify({
+                'success': True,
+                'message': 'Account deletion request submitted successfully',
+                'data': {
+                    'requestId': str(result.inserted_id),
+                    'status': 'pending',
+                    'requestedAt': deletion_request['requestedAt'].isoformat() + 'Z',
+                    'estimatedProcessingTime': '24-48 hours',
+                    'message': 'Our team will review your request and send you a confirmation email.'
+                }
+            }), 201
+            
+        except Exception as e:
+            print(f'❌ Error creating deletion request: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to submit deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _request_deletion()
+
+
+@users_bp.route('/deletion-request/status', methods=['GET'])
+def get_deletion_request_status():
+    @users_bp.token_required
+    def _get_status(current_user):
+        """
+        Check status of user's deletion request.
+        Returns most recent request if exists.
+        
+        Returns:
+            - 200: Status retrieved (may be null if no request)
+            - 500: Server error
+        """
+        try:
+            # Get most recent deletion request
+            request_doc = users_bp.mongo.db.deletion_requests.find_one(
+                {'userId': current_user['_id']},
+                sort=[('requestedAt', -1)]  # Get most recent
+            )
+            
+            if not request_doc:
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'hasRequest': False,
+                        'status': None
+                    }
+                }), 200
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'hasRequest': True,
+                    'requestId': str(request_doc['_id']),
+                    'status': request_doc['status'],
+                    'requestedAt': request_doc['requestedAt'].isoformat() + 'Z',
+                    'processedAt': request_doc['processedAt'].isoformat() + 'Z' if request_doc.get('processedAt') else None,
+                    'processingNotes': request_doc.get('processingNotes'),
+                    'completedAt': request_doc['completedAt'].isoformat() + 'Z' if request_doc.get('completedAt') else None,
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error checking deletion request status: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to check deletion request status',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_status()
+
 
 @users_bp.route('/settings', methods=['GET'])
 def get_settings():
@@ -1105,3 +1262,551 @@ def get_profile_completion_status():
             }), 500
     
     return _get_profile_completion_status()
+
+
+# ==================== TAX PROFILE ENDPOINTS ====================
+# Added: Feb 5, 2026 - Phase 2: Tax Jurisdiction Wizard
+
+@users_bp.route('/tax-profile', methods=['POST'])
+def save_tax_profile():
+    @users_bp.token_required
+    def _save_tax_profile(current_user):
+        """
+        Save user's tax profile from Tax Jurisdiction Wizard
+        
+        Body:
+            - businessStructure: 'business_name' | 'llc' (required)
+            - annualTurnover: number (optional, for LLCs)
+        
+        Returns:
+            - 200: Tax profile saved successfully
+            - 400: Validation error
+            - 500: Server error
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate business structure
+            business_structure = data.get('businessStructure')
+            if not business_structure or business_structure not in ['personal_income', 'llc']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid business structure',
+                    'errors': {'businessStructure': ['Must be "personal_income" or "llc"']}
+                }), 400
+            
+            # Get income/turnover based on structure
+            annual_income = data.get('annualIncome')
+            annual_turnover = data.get('annualTurnover')
+            
+            # Validate inputs based on structure
+            if business_structure == 'personal_income' and annual_income is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Annual income required for personal income',
+                    'errors': {'annualIncome': ['Required for personal income structure']}
+                }), 400
+            
+            if business_structure == 'llc' and annual_turnover is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Annual turnover required for LLCs',
+                    'errors': {'annualTurnover': ['Required for LLC business structure']}
+                }), 400
+            
+            # Compute tax profile
+            tax_profile = _compute_tax_profile(business_structure, annual_turnover, annual_income)
+            tax_profile['completedAt'] = datetime.utcnow()
+            tax_profile['lastUpdated'] = datetime.utcnow()
+            
+            # Save to database
+            users_bp.mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {'$set': {'taxProfile': tax_profile}}
+            )
+            
+            print(f'✅ Tax profile saved for user {current_user["email"]}: {business_structure}')
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'taxProfile': _serialize_tax_profile(tax_profile)
+                },
+                'message': 'Tax profile saved successfully'
+            })
+            
+        except Exception as e:
+            print(f'❌ Error saving tax profile: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save tax profile',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _save_tax_profile()
+
+
+@users_bp.route('/tax-profile', methods=['GET'])
+def get_tax_profile():
+    @users_bp.token_required
+    def _get_tax_profile(current_user):
+        """
+        Get user's tax profile
+        
+        Returns:
+            - 200: Tax profile retrieved (may be null if not set)
+            - 500: Server error
+        """
+        try:
+            tax_profile = current_user.get('taxProfile')
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'taxProfile': _serialize_tax_profile(tax_profile) if tax_profile else None
+                },
+                'message': 'Tax profile retrieved successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve tax profile',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_tax_profile()
+
+
+@users_bp.route('/tax-profile/year-end', methods=['PUT'])
+def save_company_year_end():
+    @users_bp.token_required
+    def _save_company_year_end(current_user):
+        """
+        Save company year-end for LLC users (Sprint 12)
+        
+        Body:
+            - companyYearEnd: ISO date string (required)
+        
+        Returns:
+            - 200: Year-end saved successfully with calculated CIT deadline
+            - 400: Validation error
+            - 500: Server error
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate year-end date
+            year_end_str = data.get('companyYearEnd')
+            if not year_end_str:
+                return jsonify({
+                    'success': False,
+                    'message': 'Company year-end required',
+                    'errors': {'companyYearEnd': ['Required field']}
+                }), 400
+            
+            # Parse date
+            try:
+                year_end = datetime.fromisoformat(year_end_str.replace('Z', '+00:00'))
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid date format',
+                    'errors': {'companyYearEnd': ['Must be valid ISO date string']}
+                }), 400
+            
+            # Get user's tax profile
+            tax_profile = current_user.get('taxProfile', {})
+            
+            # Verify user is LLC
+            if tax_profile.get('businessStructure') != 'llc':
+                return jsonify({
+                    'success': False,
+                    'message': 'Year-end only applicable for LLCs',
+                    'errors': {'general': ['This feature is only for LLC business structure']}
+                }), 400
+            
+            # Calculate CIT deadline (year-end + 6 months)
+            year_end_month = year_end.month
+            year_end_day = year_end.day
+            year_end_year = year_end.year
+            
+            # Add 6 months
+            cit_month = year_end_month + 6
+            cit_year = year_end_year
+            if cit_month > 12:
+                cit_month -= 12
+                cit_year += 1
+            
+            # Handle day overflow (e.g., Aug 31 + 6 months = Feb 28/29)
+            import calendar
+            max_day = calendar.monthrange(cit_year, cit_month)[1]
+            cit_day = min(year_end_day, max_day)
+            
+            cit_deadline = datetime(cit_year, cit_month, cit_day)
+            
+            # Update tax profile
+            tax_profile['companyYearEnd'] = year_end
+            tax_profile['citDeadline'] = cit_deadline
+            tax_profile['lastUpdated'] = datetime.utcnow()
+            
+            # Save to database
+            users_bp.mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {'$set': {'taxProfile': tax_profile}}
+            )
+            
+            print(f'✅ Company year-end saved for user {current_user["email"]}: {year_end.date()} → CIT deadline: {cit_deadline.date()}')
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'companyYearEnd': year_end.isoformat() + 'Z',
+                    'citDeadline': cit_deadline.isoformat() + 'Z',
+                    'taxProfile': _serialize_tax_profile(tax_profile)
+                },
+                'message': 'Company year-end saved successfully'
+            })
+            
+        except Exception as e:
+            print(f'❌ Error saving company year-end: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save company year-end',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _save_company_year_end()
+
+
+@users_bp.route('/tax-estimate', methods=['POST'])
+def calculate_tax_estimate():
+    @users_bp.token_required
+    def _calculate_tax_estimate(current_user):
+        """
+        Calculate tax estimate based on income and expenses
+        
+        Body:
+            - totalIncome: number (required)
+            - totalExpenses: number (required)
+            - rentPaid: number (optional, for rent relief)
+        
+        Returns:
+            - 200: Tax estimate calculated
+            - 400: Validation error
+            - 500: Server error
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate inputs
+            total_income = data.get('totalIncome', 0)
+            total_expenses = data.get('totalExpenses', 0)
+            rent_paid = data.get('rentPaid', 0)
+            
+            if total_income < 0 or total_expenses < 0 or rent_paid < 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid amounts',
+                    'errors': {'general': ['Amounts must be non-negative']}
+                }), 400
+            
+            # Get user's tax profile
+            tax_profile = current_user.get('taxProfile')
+            if not tax_profile:
+                return jsonify({
+                    'success': False,
+                    'message': 'Tax profile not set',
+                    'errors': {'general': ['Please complete the Tax Jurisdiction Wizard first']}
+                }), 400
+            
+            business_structure = tax_profile.get('businessStructure')
+            
+            # Calculate tax based on business structure
+            if business_structure == 'personal_income':
+                # Personal Income Tax (PIT) - Progressive rates
+                net_income = total_income - total_expenses
+                
+                # Calculate rent relief (20% of rent, max ₦500,000)
+                rent_relief = min(rent_paid * 0.20, 500000)
+                
+                # Taxable income after rent relief
+                taxable_income = max(0, net_income - rent_relief)
+                
+                # Calculate tax using progressive bands
+                estimated_tax, breakdown = _calculate_pit_tax(taxable_income)
+                
+                effective_rate = (estimated_tax / total_income * 100) if total_income > 0 else 0
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'totalIncome': total_income,
+                        'totalExpenses': total_expenses,
+                        'netIncome': net_income,
+                        'rentRelief': rent_relief,
+                        'taxableIncome': taxable_income,
+                        'estimatedTax': estimated_tax,
+                        'effectiveRate': round(effective_rate, 2),
+                        'breakdown': breakdown,
+                        'taxAuthority': 'SIRS',
+                        'filingDeadline': 'March 31st'
+                    },
+                    'message': 'Tax estimate calculated successfully'
+                })
+                
+            elif business_structure == 'llc':
+                # Corporate Income Tax (CIT)
+                net_income = total_income - total_expenses
+                annual_turnover = tax_profile.get('annualTurnover', 0)
+                
+                # Check exemption eligibility
+                exemption_eligible = annual_turnover < 100_000_000
+                
+                if exemption_eligible:
+                    estimated_tax = 0
+                    tax_rate = 0
+                    note = 'Eligible for 0% CIT (Small Company Exemption) if Fixed Assets NBV < ₦250M'
+                else:
+                    estimated_tax = net_income * 0.30 if net_income > 0 else 0
+                    tax_rate = 30
+                    note = 'Standard CIT rate applies'
+                
+                effective_rate = (estimated_tax / total_income * 100) if total_income > 0 else 0
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'totalIncome': total_income,
+                        'totalExpenses': total_expenses,
+                        'netIncome': net_income,
+                        'taxableIncome': net_income,
+                        'estimatedTax': estimated_tax,
+                        'taxRate': tax_rate,
+                        'effectiveRate': round(effective_rate, 2),
+                        'exemptionEligible': exemption_eligible,
+                        'note': note,
+                        'taxAuthority': 'NRS',
+                        'filingDeadline': 'June 30th'
+                    },
+                    'message': 'Tax estimate calculated successfully'
+                })
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid business structure',
+                    'errors': {'general': ['Unknown business structure']}
+                }), 400
+            
+        except Exception as e:
+            print(f'❌ Error calculating tax estimate: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to calculate tax estimate',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _calculate_tax_estimate()
+
+
+# Helper functions
+
+def _compute_tax_profile(business_structure, annual_turnover=None, annual_income=None):
+    """Compute tax profile based on business structure and income level"""
+    
+    if business_structure == 'personal_income':
+        # Determine income bracket for personalized guidance
+        if annual_income and annual_income < 800000:
+            return {
+                'businessStructure': 'personal_income',
+                'incomeLevel': 'below_800k',
+                'annualIncome': annual_income,
+                'taxAuthority': 'sirs',
+                'taxRate': '0% (Tax-Free)',
+                'exemptionEligible': True,
+                'filingDeadline': 'March 31st',
+                'description': '🎉 Great news! Your income is below ₦800,000, so you pay 0% tax. This applies to freelancers, side hustles, and small businesses. Keep records for future growth and stay compliant.'
+            }
+        elif annual_income and annual_income < 3000000:
+            return {
+                'businessStructure': 'personal_income',
+                'incomeLevel': '800k_to_3m',
+                'annualIncome': annual_income,
+                'taxAuthority': 'sirs',
+                'taxRate': '0% on first ₦800k, then 15%',
+                'exemptionEligible': False,
+                'filingDeadline': 'March 31st',
+                'description': 'You pay 15% tax on income above ₦800,000. For employees: Your salary is taxed via PAYE by your employer. This 15% applies ONLY to your side income tracked in FiCore.'
+            }
+        else:
+            return {
+                'businessStructure': 'personal_income',
+                'incomeLevel': 'above_3m',
+                'annualIncome': annual_income,
+                'taxAuthority': 'sirs',
+                'taxRate': '15-25% (Progressive)',
+                'exemptionEligible': False,
+                'filingDeadline': 'March 31st',
+                'description': 'You pay progressive rates (15%-25%) as your income grows. First ₦800,000 is always tax-free. This applies to all personal income including freelance work, side hustles, and business income.'
+            }
+    
+    elif business_structure == 'llc':
+        exemption_eligible = annual_turnover and annual_turnover < 100_000_000
+        
+        return {
+            'businessStructure': 'llc',
+            'annualTurnover': annual_turnover,
+            'taxAuthority': 'nrs',
+            'taxRate': '0% or 30%',
+            'exemptionEligible': exemption_eligible,
+            'filingDeadline': 'June 30th',
+            'description': '0% CIT if qualified (Turnover < ₦100M AND Fixed Assets NBV < ₦250M), otherwise 30% CIT.'
+        }
+    
+    return None
+
+
+def _serialize_tax_profile(tax_profile):
+    """Serialize tax profile for JSON response"""
+    if not tax_profile:
+        return None
+    
+    return {
+        'businessStructure': tax_profile.get('businessStructure'),
+        'annualTurnover': tax_profile.get('annualTurnover'),
+        'annualIncome': tax_profile.get('annualIncome'),
+        'incomeLevel': tax_profile.get('incomeLevel'),
+        'taxAuthority': tax_profile.get('taxAuthority'),
+        'taxRate': tax_profile.get('taxRate'),
+        'exemptionEligible': tax_profile.get('exemptionEligible', False),
+        'filingDeadline': tax_profile.get('filingDeadline'),
+        'description': tax_profile.get('description'),
+        'companyYearEnd': tax_profile.get('companyYearEnd').isoformat() + 'Z' if tax_profile.get('companyYearEnd') else None,
+        'citDeadline': tax_profile.get('citDeadline').isoformat() + 'Z' if tax_profile.get('citDeadline') else None,
+        'completedAt': tax_profile.get('completedAt').isoformat() + 'Z' if tax_profile.get('completedAt') else None,
+        'lastUpdated': tax_profile.get('lastUpdated').isoformat() + 'Z' if tax_profile.get('lastUpdated') else None
+    }
+
+
+def _calculate_pit_tax(taxable_income):
+    """Calculate Personal Income Tax using progressive bands"""
+    
+    # Nigerian PIT bands (2026)
+    tax_bands = [
+        (0, 800000, 0.00),              # First ₦800,000 - Tax-free
+        (800000, 3000000, 0.15),        # Next ₦2,200,000 - 15%
+        (3000000, 12000000, 0.18),      # Next ₦9,000,000 - 18%
+        (12000000, 25000000, 0.21),     # Next ₦13,000,000 - 21%
+        (25000000, 50000000, 0.23),     # Next ₦25,000,000 - 23%
+        (50000000, float('inf'), 0.25)  # Above ₦50,000,000 - 25%
+    ]
+    
+    total_tax = 0
+    breakdown = []
+    
+    for lower, upper, rate in tax_bands:
+        if taxable_income <= lower:
+            break
+        
+        # Calculate taxable amount in this band
+        taxable_in_band = min(taxable_income, upper) - lower
+        if taxable_in_band <= 0:
+            continue
+        
+        band_tax = taxable_in_band * rate
+        total_tax += band_tax
+        
+        upper_display = f"₦{upper:,.0f}" if upper != float('inf') else "Above"
+        breakdown.append({
+            'band': f"₦{lower:,.0f} - {upper_display}",
+            'rate': f"{rate*100:.0f}%",
+            'taxableAmount': taxable_in_band,
+            'tax': band_tax
+        })
+    
+    return total_tax, breakdown
+
+
+# ============================================================================
+# ENTRY TAGGING STATISTICS (Phase 3B)
+# ============================================================================
+
+@users_bp.route('/tagging-stats', methods=['GET'])
+def get_tagging_statistics():
+    @users_bp.token_required
+    def _get_tagging_statistics(current_user):
+        """Get tagging statistics for user"""
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            # Income stats
+            income_query = get_active_transactions_query(current_user['_id'])
+            total_income = users_bp.mongo.db.incomes.count_documents(income_query)
+            
+            business_income_query = income_query.copy()
+            business_income_query['entryType'] = 'business'
+            business_income = users_bp.mongo.db.incomes.count_documents(business_income_query)
+            
+            personal_income_query = income_query.copy()
+            personal_income_query['entryType'] = 'personal'
+            personal_income = users_bp.mongo.db.incomes.count_documents(personal_income_query)
+            
+            untagged_income_query = income_query.copy()
+            untagged_income_query['entryType'] = None
+            untagged_income = users_bp.mongo.db.incomes.count_documents(untagged_income_query)
+            
+            # Expense stats
+            expense_query = get_active_transactions_query(current_user['_id'])
+            total_expenses = users_bp.mongo.db.expenses.count_documents(expense_query)
+            
+            business_expenses_query = expense_query.copy()
+            business_expenses_query['entryType'] = 'business'
+            business_expenses = users_bp.mongo.db.expenses.count_documents(business_expenses_query)
+            
+            personal_expenses_query = expense_query.copy()
+            personal_expenses_query['entryType'] = 'personal'
+            personal_expenses = users_bp.mongo.db.expenses.count_documents(personal_expenses_query)
+            
+            untagged_expenses_query = expense_query.copy()
+            untagged_expenses_query['entryType'] = None
+            untagged_expenses = users_bp.mongo.db.expenses.count_documents(untagged_expenses_query)
+            
+            # Calculate totals
+            total_entries = total_income + total_expenses
+            tagged_entries = business_income + personal_income + business_expenses + personal_expenses
+            untagged_entries = untagged_income + untagged_expenses
+            
+            tagging_percentage = (tagged_entries / total_entries * 100) if total_entries > 0 else 0
+            
+            return jsonify({
+                'success': True,
+                'stats': {
+                    'total': total_entries,
+                    'tagged': tagged_entries,
+                    'untagged': untagged_entries,
+                    'taggingPercentage': round(tagging_percentage, 1),
+                    'income': {
+                        'total': total_income,
+                        'business': business_income,
+                        'personal': personal_income,
+                        'untagged': untagged_income
+                    },
+                    'expenses': {
+                        'total': total_expenses,
+                        'business': business_expenses,
+                        'personal': personal_expenses,
+                        'untagged': untagged_expenses
+                    }
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_tagging_statistics: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get tagging statistics',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_tagging_statistics()

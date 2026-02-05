@@ -9,7 +9,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
     @summaries_bp.route('/recent_activity', methods=['GET'])
     @token_required
     def get_recent_activity(current_user):
-        """Get recent user activities across all modules"""
+        """Get recent user activities across all modules (VAS + Business transactions)"""
         try:
             # Validate database connection
             if mongo is None or mongo.db is None:
@@ -24,10 +24,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             
             activities = []
             
-            # HYBRID QUERY: Get recent expenses with smart filtering
-            # Shows entries where EITHER:
-            # 1. date is past/present (prevents future inflation)
-            # 2. OR createdAt is within last minute (shows just-created entries immediately)
+            # 1. Get recent expenses with smart filtering
             try:
                 now = datetime.utcnow()
                 one_minute_ago = now - timedelta(minutes=1)
@@ -40,28 +37,34 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                     ]
                 }).sort('createdAt', -1).limit(limit))
                 
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Found {len(recent_expenses)} expense transactions for user {current_user['_id']}")
+                
                 for expense in recent_expenses:
                     activity = {
                         'id': str(expense['_id']),
-                        'type': 'expense',
+                        'type': 'EXPENSE',
+                        'subtype': 'EXPENSE',
                         'title': expense.get('title', expense.get('description', 'Expense')),
                         'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Unknown'),
-                        'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
-                        'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
-                        'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
+                        'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                        'timestamp': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                        'transactionDate': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
                         'icon': 'expense',
                         'color': 'red'
                     }
                     activities.append(activity)
+                    # DISABLED FOR LIQUID WALLET FOCUS
+                    # print(f"Added expense activity: {activity['title']} - ₦{expense.get('amount', 0)}")
             except Exception as e:
-                print(f"Error fetching expenses: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching expenses: {e}")
+                import traceback
+                traceback.print_exc()
 
-            # HYBRID QUERY: Get recent incomes with smart filtering
-            # Shows entries where EITHER:
-            # 1. dateReceived is past/present (prevents future inflation)
-            # 2. OR createdAt is within last minute (shows just-created entries immediately)
+            # 2. Get recent incomes with smart filtering
             try:
                 now = datetime.utcnow()
                 one_minute_ago = now - timedelta(minutes=1)
@@ -74,29 +77,42 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                     ]
                 }).sort('createdAt', -1).limit(limit))
                 
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Found {len(recent_incomes)} income transactions for user {current_user['_id']}")
+                
                 for income in recent_incomes:
                     activity = {
                         'id': str(income['_id']),
-                        'type': 'income',
+                        'type': 'INCOME',
+                        'subtype': 'INCOME',
                         'title': income.get('title', income.get('source', 'Income')),
                         'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
                         'amount': income.get('amount', 0),
                         'source': income.get('source', 'Unknown'),
-                        'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
-                        'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
-                        'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
+                        'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                        'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                        'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
                         'icon': 'income',
                         'color': 'green'
                     }
                     activities.append(activity)
+                    # DISABLED FOR LIQUID WALLET FOCUS
+                    # print(f"Added income activity: {activity['title']} - ₦{income.get('amount', 0)}")
             except Exception as e:
-                print(f"Error fetching incomes: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching incomes: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Sort all activities by date (most recent first)
             activities.sort(key=lambda x: x['date'], reverse=True)
             
             # Limit to requested number
             activities = activities[:limit]
+            
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Final activities count: {len(activities)}")
+            # print(f"Activity types: {[a['type'] for a in activities[:5]]}")  # Show first 5 types
 
             return jsonify({
                 'success': True,
@@ -109,7 +125,8 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             })
 
         except Exception as e:
-            print(f"Error in get_recent_activity: {e}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error in get_recent_activity: {e}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve recent activities',
@@ -124,7 +141,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             # Get query parameters
             page = int(request.args.get('page', 1))
             limit = min(int(request.args.get('limit', 20)), 100)
-            activity_type = request.args.get('type', 'all')  # all, expense, income
+            activity_type = request.args.get('type', 'all')  # all, expense, income, vas
             
             activities = []
             
@@ -133,6 +150,64 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             now = datetime.utcnow()
             one_minute_ago = now - timedelta(minutes=1)
             
+            # 1. Get VAS transactions (if type is 'all' or 'vas')
+            if activity_type in ['all', 'vas']:
+                try:
+                    vas_transactions = list(mongo.db.vas_transactions.find({
+                        'userId': current_user['_id']
+                    }).sort('createdAt', -1))
+                    
+                    for txn in vas_transactions:
+                        # Create user-friendly description based on transaction type
+                        txn_type = txn.get('type', 'UNKNOWN')
+                        amount = txn.get('amount', 0)
+                        
+                        if txn_type == 'WALLET_FUNDING':
+                            title = 'Wallet Funded'
+                            description = f'Added ₦{amount:,.2f} to Liquid Wallet'
+                            icon = 'wallet'
+                        elif txn_type == 'AIRTIME_PURCHASE':
+                            title = 'Airtime Purchase'
+                            phone = txn.get('metadata', {}).get('phoneNumber', 'Unknown')
+                            description = f'₦{amount:,.2f} airtime sent to {phone[-4:]}****' if phone != 'Unknown' else f'₦{amount:,.2f} airtime purchase'
+                            icon = 'phone'
+                        elif txn_type == 'DATA_PURCHASE':
+                            title = 'Data Purchase'
+                            phone = txn.get('metadata', {}).get('phoneNumber', 'Unknown')
+                            plan = txn.get('metadata', {}).get('planName', 'Data')
+                            description = f'{plan} for {phone[-4:]}****' if phone != 'Unknown' else f'₦{amount:,.2f} data purchase'
+                            icon = 'data'
+                        elif txn_type == 'KYC_VERIFICATION':
+                            title = 'KYC Verification'
+                            description = f'Account verification fee ₦{amount:,.2f}'
+                            icon = 'verification'
+                        else:
+                            title = f'VAS {txn_type.replace("_", " ").title()}'
+                            description = f'₦{amount:,.2f} VAS transaction'
+                            icon = 'vas'
+                        
+                        activity = {
+                            'id': str(txn['_id']),
+                            'type': 'VAS',
+                            'subtype': txn_type,
+                            'title': title,
+                            'description': description,
+                            'amount': amount,
+                            'reference': txn.get('reference', ''),
+                            'status': txn.get('status', 'UNKNOWN'),
+                            'provider': txn.get('provider', ''),
+                            'date': txn.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                            'timestamp': txn.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                            'icon': icon,
+                            'color': 'blue',
+                            'category': 'VAS Services'
+                        }
+                        activities.append(activity)
+                except Exception as e:
+                    # DISABLED FOR LIQUID WALLET FOCUS
+                    # print(f"Error fetching VAS transactions: {e}")
+                    pass
+
             if activity_type in ['all', 'expense']:
                 try:
                     # HYBRID QUERY: Shows expenses where EITHER:
@@ -162,7 +237,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         }
                         activities.append(activity)
                 except Exception as e:
-                    print(f"Error fetching expenses: {e}")
+                    # DISABLED FOR LIQUID WALLET FOCUS
+                    # print(f"Error fetching expenses: {e}")
+                    pass
 
             if activity_type in ['all', 'income']:
                 try:
@@ -193,7 +270,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         }
                         activities.append(activity)
                 except Exception as e:
-                    print(f"Error fetching incomes: {e}")
+                    # DISABLED FOR LIQUID WALLET FOCUS
+                    # print(f"Error fetching incomes: {e}")
+                    pass
 
             # Sort all activities by date (most recent first)
             activities.sort(key=lambda x: x['date'], reverse=True)
@@ -221,7 +300,8 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             })
 
         except Exception as e:
-            print(f"Error in get_all_activities: {e}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error in get_all_activities: {e}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve activities',
@@ -265,7 +345,9 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 if user:
                     summary_data['creditBalance'] = float(user.get('ficoreCreditBalance', 0.0))
             except Exception as e:
-                print(f"Error fetching user balance: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching user balance: {e}")
+                pass
             
             # Get ALL income data with proper aggregation
             try:
@@ -333,10 +415,13 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 summary_data['yearlyIncome'] = yearly_income
                 summary_data['yearlyStats']['income'] = yearly_income
                 
-                print(f"DEBUG ENHANCED SUMMARY - Total Income: {summary_data['totalIncome']}, Monthly: {monthly_income}, Yearly: {yearly_income}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"DEBUG ENHANCED SUMMARY - Total Income: {summary_data['totalIncome']}, Monthly: {monthly_income}, Yearly: {yearly_income}")
                 
             except Exception as e:
-                print(f"Error fetching incomes: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching incomes: {e}")
+                pass
             
             # CRITICAL FIX: Get ALL expense data with optimized single aggregation pipeline
             try:
@@ -439,10 +524,12 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                     summary_data['yearlyExpenseRecords'] = 0
                     summary_data['yearlyStats']['expenses'] = 0.0
                 
-                print(f"DEBUG OPTIMIZED SUMMARY - Total Expenses: {summary_data['totalExpenses']}, Monthly: {summary_data['monthlyExpenses']}, Yearly: {summary_data['yearlyExpenses']}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"DEBUG OPTIMIZED SUMMARY - Total Expenses: {summary_data['totalExpenses']}, Monthly: {summary_data['monthlyExpenses']}, Yearly: {summary_data['yearlyExpenses']}")
                 
             except Exception as e:
-                print(f"Error fetching expenses: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching expenses: {e}")
                 # Fallback to zero values on error
                 summary_data['totalExpenses'] = 0.0
                 summary_data['totalExpenseRecords'] = 0
@@ -501,10 +588,12 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'overdueAmount': 0.0
                     }
                 
-                print(f"DEBUG ENHANCED SUMMARY - Debtors: {summary_data['debtorsData']}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"DEBUG ENHANCED SUMMARY - Debtors: {summary_data['debtorsData']}")
                 
             except Exception as e:
-                print(f"Error fetching debtors data: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching debtors data: {e}")
                 summary_data['debtorsData'] = {
                     'totalCustomers': 0,
                     'totalOutstanding': 0.0,
@@ -559,10 +648,12 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'overdueAmount': 0.0
                     }
                 
-                print(f"DEBUG ENHANCED SUMMARY - Creditors: {summary_data['creditorsData']}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"DEBUG ENHANCED SUMMARY - Creditors: {summary_data['creditorsData']}")
                 
             except Exception as e:
-                print(f"Error fetching creditors data: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching creditors data: {e}")
                 summary_data['creditorsData'] = {
                     'totalVendors': 0,
                     'totalOwed': 0.0,
@@ -619,10 +710,12 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'activeItems': 0
                     }
                 
-                print(f"DEBUG ENHANCED SUMMARY - Inventory: {summary_data['inventoryData']}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"DEBUG ENHANCED SUMMARY - Inventory: {summary_data['inventoryData']}")
                 
             except Exception as e:
-                print(f"Error fetching inventory data: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error fetching inventory data: {e}")
                 summary_data['inventoryData'] = {
                     'totalItems': 0,
                     'totalValue': 0.0,
@@ -646,9 +739,12 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 )
                 summary_data['recentActivitiesCount'] = recent_activities_count
             except Exception as e:
-                print(f"Error counting recent activities: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Error counting recent activities: {e}")
+                pass
 
-            print(f"DEBUG FINAL SUMMARY DATA: {summary_data}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"DEBUG FINAL SUMMARY DATA: {summary_data}")
 
             return jsonify({
                 'success': True,
@@ -657,7 +753,8 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
             })
 
         except Exception as e:
-            print(f"Error in get_dashboard_summary: {e}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error in get_dashboard_summary: {e}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve dashboard summary',

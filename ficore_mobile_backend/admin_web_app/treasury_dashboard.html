@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Treasury Dashboard - FiCore Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            text-align: center;
+            transition: transform 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--card-color);
+        }
+
+        .stat-card.revenue { --card-color: #27ae60; }
+        .stat-card.commission { --card-color: #f39c12; }
+        .stat-card.margin { --card-color: #3498db; }
+        .stat-card.transactions { --card-color: #9b59b6; }
+
+        .stat-card .icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            color: var(--card-color);
+        }
+
+        .stat-card .number {
+            font-size: 2.2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .sublabel {
+            color: #999;
+            font-size: 0.8rem;
+        }
+
+        .controls {
+            padding: 30px;
+            background: white;
+            border-bottom: 1px solid #eee;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .date-filter {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .date-filter select {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn-export {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-export:hover {
+            background: #e67e22;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .charts-section {
+            padding: 30px;
+            background: white;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+
+        .chart-card h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .provider-breakdown {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .provider-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .provider-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .provider-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .provider-icon.monnify {
+            background: #27ae60;
+        }
+
+        .provider-icon.peyflex {
+            background: #3498db;
+        }
+
+        .provider-stats {
+            text-align: right;
+        }
+
+        .provider-amount {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .provider-commission {
+            font-size: 0.9rem;
+            color: #27ae60;
+            font-weight: 600;
+        }
+
+        .transactions-table {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+
+        .table-header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .amount {
+            font-weight: 600;
+            color: #27ae60;
+        }
+
+        .commission {
+            font-weight: 600;
+            color: #f39c12;
+        }
+
+        .provider-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .provider-badge.monnify {
+            background: #d5f4e6;
+            color: #27ae60;
+        }
+
+        .provider-badge.peyflex {
+            background: #dbeafe;
+            color: #3498db;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+
+        .loading i {
+            font-size: 2rem;
+            margin-bottom: 15px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .backend-switcher {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .backend-toggle {
+            display: flex;
+            gap: 5px;
+        }
+
+        .backend-toggle button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .backend-toggle button.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .backend-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .backend-indicator.production {
+            background: #27ae60;
+        }
+
+        .backend-indicator.dev {
+            background: #f39c12;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #27ae60;
+        }
+
+        .notification.error {
+            background: #e74c3c;
+        }
+
+        @media (max-width: 768px) {
+            .controls-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-university"></i> Treasury Dashboard</h1>
+            <p>VAS Revenue, Commissions & Corporate Finance Analytics</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card revenue">
+                <div class="icon"><i class="fas fa-chart-line"></i></div>
+                <div class="number" id="totalRevenue">₦0</div>
+                <div class="label">Total VAS Sales</div>
+                <div class="sublabel">All-time user spending</div>
+            </div>
+            <div class="stat-card commission">
+                <div class="icon"><i class="fas fa-percentage"></i></div>
+                <div class="number" id="monnifyCommission">₦0</div>
+                <div class="label">Monnify 3% Commission</div>
+                <div class="sublabel">Your earnings from Monnify</div>
+            </div>
+            <div class="stat-card margin">
+                <div class="icon"><i class="fas fa-coins"></i></div>
+                <div class="number" id="totalMargin">₦0</div>
+                <div class="label">Total Profit Margin</div>
+                <div class="sublabel">Revenue minus costs</div>
+            </div>
+            <div class="stat-card transactions">
+                <div class="icon"><i class="fas fa-exchange-alt"></i></div>
+                <div class="number" id="totalTransactions">0</div>
+                <div class="label">Successful Transactions</div>
+                <div class="sublabel">All VAS purchases</div>
+            </div>
+        </div>
+
+        <!-- Referral System Metrics -->
+        <div class="stats-grid" style="background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%); padding: 20px 30px; margin-top: 0;">
+            <div style="grid-column: 1 / -1; text-align: center; color: white; margin-bottom: 10px;">
+                <h2 style="margin: 0; font-size: 1.5rem;"><i class="fas fa-users"></i> Referral System Metrics</h2>
+                <p style="margin: 5px 0 0 0; opacity: 0.9;">Track your referral program performance</p>
+            </div>
+            <div class="stat-card" style="--card-color: #e67e22;">
+                <div class="icon"><i class="fas fa-user-plus"></i></div>
+                <div class="number" id="totalReferrals">0</div>
+                <div class="label">Total Referrals</div>
+                <div class="sublabel">All-time sign-ups</div>
+            </div>
+            <div class="stat-card" style="--card-color: #27ae60;">
+                <div class="icon"><i class="fas fa-check-circle"></i></div>
+                <div class="number" id="activeReferrals">0</div>
+                <div class="label">Active Referrals</div>
+                <div class="sublabel">Made first deposit</div>
+            </div>
+            <div class="stat-card" style="--card-color: #f39c12;">
+                <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="number" id="totalReferralPayouts">₦0</div>
+                <div class="label">Total Payouts</div>
+                <div class="sublabel">All commissions paid</div>
+            </div>
+            <div class="stat-card" style="--card-color: #9b59b6;">
+                <div class="icon"><i class="fas fa-hourglass-half"></i></div>
+                <div class="number" id="pendingReferralPayouts">₦0</div>
+                <div class="label">Pending Payouts</div>
+                <div class="sublabel">In vesting period</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="controls-grid">
+                <div class="date-filter">
+                    <label>Time Period:</label>
+                    <select id="timePeriod" onchange="loadTreasuryData()">
+                        <option value="all">All Time</option>
+                        <option value="30">Last 30 Days</option>
+                        <option value="7">Last 7 Days</option>
+                        <option value="1">Today</option>
+                    </select>
+                </div>
+                <button class="btn btn-export" onclick="exportTreasuryData()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+                <button class="btn btn-success" onclick="exportCorporateRevenue()">
+                    <i class="fas fa-file-excel"></i> Corporate Revenue
+                </button>
+                <button class="btn btn-primary" onclick="refreshData()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="charts-section">
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3><i class="fas fa-building"></i> Provider Breakdown</h3>
+                    <div class="provider-breakdown" id="providerBreakdown">
+                        <!-- Provider data will be populated here -->
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3><i class="fas fa-mobile-alt"></i> Transaction Types</h3>
+                    <div class="provider-breakdown" id="transactionTypes">
+                        <!-- Transaction type data will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="transactions-table">
+                <div class="table-header">
+                    <h3><i class="fas fa-table"></i> Recent VAS Transactions</h3>
+                </div>
+                <div id="loadingState" class="loading">
+                    <i class="fas fa-spinner"></i>
+                    <h3>Loading treasury data...</h3>
+                </div>
+                <div id="tableContainer" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Provider</th>
+                                <th>Amount</th>
+                                <th>Commission</th>
+                                <th>User</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionsTableBody">
+                            <!-- Transactions will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backend Switcher -->
+    <div class="backend-switcher">
+        <label>Backend:</label>
+        <div class="backend-toggle">
+            <button id="prodBtn" onclick="switchBackend('production')" class="active">
+                <span class="backend-indicator production"></span>
+                Production
+            </button>
+            <button id="devBtn" onclick="switchBackend('dev')">
+                <span class="backend-indicator dev"></span>
+                Dev
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="notification" class="notification"></div>
+
+    <script>
+        // Configuration
+        let API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
+        let currentBackend = 'production';
+        let treasuryData = {};
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadTreasuryData();
+        });
+
+        // Backend switching
+        function switchBackend(backend) {
+            currentBackend = backend;
+            
+            if (backend === 'production') {
+                API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
+                document.getElementById('prodBtn').classList.add('active');
+                document.getElementById('devBtn').classList.remove('active');
+            } else {
+                API_BASE_URL = 'http://localhost:5000';
+                document.getElementById('devBtn').classList.add('active');
+                document.getElementById('prodBtn').classList.remove('active');
+            }
+            
+            loadTreasuryData();
+        }
+
+        // Get admin token
+        function getAdminToken() {
+            return localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken');
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+
+        // Load treasury data
+        async function loadTreasuryData() {
+            try {
+                showLoading();
+                
+                const token = getAdminToken();
+                if (!token) {
+                    showNotification('Please login first', 'error');
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const timePeriod = document.getElementById('timePeriod').value;
+                
+                // Load treasury analytics
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/analytics?period=${timePeriod}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    treasuryData = data.data;
+                    updateDashboard();
+                    
+                    // Load referral metrics
+                    await loadReferralMetrics(token, timePeriod);
+                    
+                    showTable();
+                } else {
+                    throw new Error(data.message || 'Failed to load treasury data');
+                }
+
+            } catch (error) {
+                console.error('Error loading treasury data:', error);
+                showNotification('Failed to load treasury data: ' + error.message, 'error');
+                showLoading();
+            }
+        }
+
+        // Load referral metrics
+        async function loadReferralMetrics(token, timePeriod) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/referral-metrics?period=${timePeriod}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to load referral metrics');
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateReferralMetrics(data.data);
+                }
+            } catch (error) {
+                console.error('Error loading referral metrics:', error);
+            }
+        }
+
+        // Update referral metrics display
+        function updateReferralMetrics(data) {
+            const { overview } = data;
+            
+            document.getElementById('totalReferrals').textContent = overview.totalReferrals.toLocaleString();
+            document.getElementById('activeReferrals').textContent = overview.activeReferrals.toLocaleString();
+            document.getElementById('totalReferralPayouts').textContent = `₦${overview.totalPayouts.toLocaleString()}`;
+            document.getElementById('pendingReferralPayouts').textContent = `₦${overview.pendingPayouts.toLocaleString()}`;
+        }
+
+        // Update dashboard with data
+        function updateDashboard() {
+            const { overview, providers, transactionTypes, recentTransactions } = treasuryData;
+            
+            // Update stats cards
+            document.getElementById('totalRevenue').textContent = `₦${overview.totalRevenue.toLocaleString()}`;
+            document.getElementById('monnifyCommission').textContent = `₦${overview.monnifyCommission.toLocaleString()}`;
+            document.getElementById('totalMargin').textContent = `₦${overview.totalMargin.toLocaleString()}`;
+            document.getElementById('totalTransactions').textContent = overview.totalTransactions.toLocaleString();
+            
+            // Update provider breakdown
+            updateProviderBreakdown(providers);
+            
+            // Update transaction types
+            updateTransactionTypes(transactionTypes);
+            
+            // Update transactions table
+            updateTransactionsTable(recentTransactions);
+        }
+
+        // Update provider breakdown
+        function updateProviderBreakdown(providers) {
+            const container = document.getElementById('providerBreakdown');
+            
+            container.innerHTML = providers.map(provider => {
+                const commission = provider.name === 'monnify' ? provider.amount * 0.03 : 0;
+                
+                return `
+                    <div class="provider-item">
+                        <div class="provider-info">
+                            <div class="provider-icon ${provider.name.toLowerCase()}">
+                                ${provider.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: #2c3e50;">${provider.name.charAt(0).toUpperCase() + provider.name.slice(1)}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${provider.count} transactions</div>
+                            </div>
+                        </div>
+                        <div class="provider-stats">
+                            <div class="provider-amount">₦${provider.amount.toLocaleString()}</div>
+                            ${commission > 0 ? `<div class="provider-commission">+₦${commission.toLocaleString()} commission</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update transaction types
+        function updateTransactionTypes(transactionTypes) {
+            const container = document.getElementById('transactionTypes');
+            
+            container.innerHTML = transactionTypes.map(type => `
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div class="provider-icon" style="background: #9b59b6;">
+                            <i class="fas fa-${getTypeIcon(type.type)}"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600; color: #2c3e50;">${type.type}</div>
+                            <div style="font-size: 0.9rem; color: #666;">${type.count} transactions</div>
+                        </div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${type.amount.toLocaleString()}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Get icon for transaction type
+        function getTypeIcon(type) {
+            const icons = {
+                'AIRTIME': 'phone',
+                'DATA': 'wifi',
+                'WALLET_FUNDING': 'wallet',
+                'BILLS': 'file-invoice',
+                'REFUND': 'undo'
+            };
+            return icons[type] || 'exchange-alt';
+        }
+
+        // Update transactions table
+        function updateTransactionsTable(transactions) {
+            const tbody = document.getElementById('transactionsTableBody');
+            
+            tbody.innerHTML = transactions.map(txn => {
+                const commission = txn.provider === 'monnify' ? txn.amount * 0.03 : 0;
+                const date = new Date(txn.createdAt).toLocaleDateString();
+                
+                return `
+                    <tr>
+                        <td>${date}</td>
+                        <td>${txn.type}</td>
+                        <td>
+                            <span class="provider-badge ${txn.provider}">${txn.provider}</span>
+                        </td>
+                        <td class="amount">₦${txn.amount.toLocaleString()}</td>
+                        <td class="commission">${commission > 0 ? `₦${commission.toLocaleString()}` : '-'}</td>
+                        <td>${txn.userEmail || 'N/A'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Export treasury data
+        function exportTreasuryData() {
+            if (!treasuryData.recentTransactions || treasuryData.recentTransactions.length === 0) {
+                showNotification('No data to export', 'error');
+                return;
+            }
+
+            const headers = ['Date', 'Type', 'Provider', 'Amount', 'Commission', 'User Email', 'Transaction ID'];
+            
+            const csvData = treasuryData.recentTransactions.map(txn => {
+                const commission = txn.provider === 'monnify' ? txn.amount * 0.03 : 0;
+                const date = new Date(txn.createdAt).toLocaleDateString();
+                
+                return [
+                    `"${date}"`,
+                    `"${txn.type}"`,
+                    `"${txn.provider}"`,
+                    `"₦${txn.amount.toLocaleString()}"`,
+                    `"₦${commission.toLocaleString()}"`,
+                    `"${txn.userEmail || 'N/A'}"`,
+                    `"${txn._id}"`
+                ].join(',');
+            });
+
+            const csv = [headers.join(','), ...csvData].join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `treasury_report_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showNotification('Treasury report exported successfully!');
+        }
+
+        // Export corporate revenue
+        async function exportCorporateRevenue() {
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/corporate-revenue/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `corporate_revenue_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showNotification('Corporate revenue exported successfully!');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                showNotification('Failed to export corporate revenue: ' + error.message, 'error');
+            }
+        }
+
+        // Refresh data
+        function refreshData() {
+            loadTreasuryData();
+        }
+
+        // Show loading state
+        function showLoading() {
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('tableContainer').style.display = 'none';
+        }
+
+        // Show table
+        function showTable() {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

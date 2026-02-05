@@ -87,6 +87,10 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
                 'updatedAt': datetime.utcnow()
             }
             
+            # Import and apply auto-population for proper title/description
+            from ..utils.expense_utils import auto_populate_expense_fields
+            expense_data = auto_populate_expense_fields(expense_data)
+            
             mongo.db.expenses.insert_one(expense_data)
             return True
             

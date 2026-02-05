@@ -54,7 +54,9 @@ def get_expenses():
             expense_list = []
             for expense in expenses:
                 expense_data = expenses_bp.serialize_doc(expense.copy())
-                expense_data['title'] = expense_data.get('description', expense_data.get('title', 'Expense'))
+                # Keep auto-generated title, don't override with description
+                if not expense_data.get('title'):
+                    expense_data['title'] = expense_data.get('description', 'Expense')
                 expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
@@ -171,6 +173,9 @@ def create_expense():
                     'errors': {'paymentMethod': ['Unrecognized payment method']}
                 }), 400
 
+            # Import auto-population utility
+            from ..utils.expense_utils import auto_populate_expense_fields
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -185,6 +190,9 @@ def create_expense():
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
+            
+            # Auto-populate title and description if missing
+            expense_data = auto_populate_expense_fields(expense_data)
            
             result = expenses_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
@@ -232,9 +240,77 @@ def create_expense():
                 
                 expenses_bp.mongo.db.credit_transactions.insert_one(transaction)
            
+            # NEW: Check if this is user's first entry and mark onboarding complete
+            # This ensures backend state stays in sync with frontend wizard
+            try:
+                income_count = expenses_bp.mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                expense_count = expenses_bp.mongo.db.expenses.count_documents({'userId': current_user['_id']})
+                
+                if income_count + expense_count == 1:  # This is the first entry
+                    expenses_bp.mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {
+                            '$set': {
+                                'hasCompletedOnboarding': True,
+                                'onboardingCompletedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f'✅ First entry created - onboarding marked complete for user {current_user["_id"]}')
+            except Exception as e:
+                print(f'⚠️ Failed to mark onboarding complete (non-critical): {e}')
+            
+            # PHASE 4: Create context-aware notification reminder to attach documents
+            # This is the "Audit Shield" - persistent reminder that survives app reinstalls
+            try:
+                from blueprints.notifications import create_user_notification
+                from utils.notification_context import get_notification_context
+                
+                # Determine entry title for notification
+                entry_title = expense_data.get('title') or expense_data.get('description', 'Expense')
+                entry_amount = float(data['amount'])
+                
+                # Get context-aware notification content
+                notification_context = get_notification_context(
+                    user=current_user,
+                    entry_data=expense_data,
+                    entry_type='expense'
+                )
+                
+                # Create persistent notification with context
+                notification_id = create_user_notification(
+                    mongo=expenses_bp.mongo,
+                    user_id=current_user['_id'],
+                    category=notification_context['category'],
+                    title=notification_context['title'],
+                    body=notification_context['body'],
+                    related_id=expense_id,
+                    metadata={
+                        'entryType': 'expense',
+                        'entryTitle': entry_title,
+                        'amount': entry_amount,
+                        'category': data['category'],
+                        'dateCreated': datetime.utcnow().isoformat(),
+                        'businessStructure': current_user.get('taxProfile', {}).get('businessStructure'),
+                        'entryTag': expense_data.get('entryType')
+                    },
+                    priority=notification_context['priority']
+                )
+                
+                if notification_id:
+                    print(f'📱 Context-aware notification created for expense {expense_id}: {notification_id} (priority: {notification_context["priority"]})')
+                else:
+                    print(f'⚠️ Failed to create notification for expense {expense_id}')
+                    
+            except Exception as e:
+                # Don't fail the expense creation if notification fails
+                print(f'⚠️ Failed to create notification (non-critical): {e}')
+           
             created_expense = expenses_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
-            created_expense['title'] = created_expense.get('description', 'Expense')
+            # Keep auto-generated title, don't override with description
+            if not created_expense.get('title'):
+                created_expense['title'] = created_expense.get('description', 'Expense')
             created_expense['date'] = created_expense.get('date', datetime.utcnow()).isoformat() + 'Z'
             created_expense['createdAt'] = created_expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_expense['updatedAt'] = created_expense.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
@@ -309,7 +385,9 @@ def update_expense(expense_id):
                         update_data[field] = data[field]
             
             # Also update title field for consistency
-            if 'description' in update_data:
+            # Don't automatically override title with description on updates
+            # Only set title if it's explicitly provided or missing
+            if 'description' in update_data and not update_data.get('title'):
                 update_data['title'] = update_data['description']
             
             # Use the immutable ledger helper
@@ -367,6 +445,8 @@ def delete_expense(expense_id):
         1. Mark it as 'voided' and 'isDeleted=True'
         2. Create a reversal entry with negative amount
         3. Link them together for audit trail
+        
+        IDEMPOTENT: Returns success if already deleted (prevents UI rollback)
         """
         try:
             if not ObjectId.is_valid(expense_id):
@@ -383,6 +463,18 @@ def delete_expense(expense_id):
             )
             
             if not result['success']:
+                # CRITICAL FIX: If already deleted, return success (idempotent operation)
+                if 'already deleted' in result['message'].lower():
+                    return jsonify({
+                        'success': True,
+                        'message': 'Expense already deleted',
+                        'data': {
+                            'originalId': expense_id,
+                            'alreadyDeleted': True
+                        }
+                    }), 200  # ✓ Return 200 instead of 404
+                
+                # Only return 404 for "not found" errors
                 return jsonify({
                     'success': False,
                     'message': result['message']
@@ -428,27 +520,35 @@ def get_expense_summary():
             all_expenses = list(expenses_bp.mongo.db.expenses.find(base_query))
             
             # CRITICAL DEBUG: Log expense summary calculation
-            print(f"DEBUG EXPENSE SUMMARY - User: {current_user['_id']}")
-            print(f"DEBUG: Total expenses retrieved: {len(all_expenses)}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE SUMMARY - User: {current_user['_id']}")
+            # print(f"DEBUG: Total expenses retrieved: {len(all_expenses)}")
             
             filtered_expenses = [exp for exp in all_expenses if exp.get('date') and filter_start <= exp['date'] <= filter_end]
            
             total_this_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month)
             total_last_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month)
             
-            print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
-            print(f"DEBUG EXPENSE SUMMARY: Last month total: {total_last_month}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
+            # print(f"DEBUG EXPENSE SUMMARY: Last month total: {total_last_month}")
            
             category_totals = {}
             for expense in filtered_expenses:
                 category = expense.get('category', 'Uncategorized')
                 category_totals[category] = category_totals.get(category, 0) + expense['amount']
            
-            recent_expenses = sorted(all_expenses, key=lambda x: x['date'], reverse=True)[:5]
+            recent_expenses = sorted(
+                [exp for exp in all_expenses if exp.get('date')],  # Filter out expenses without date
+                key=lambda x: x['date'], 
+                reverse=True
+            )[:5]
             recent_expenses_data = []
             for expense in recent_expenses:
                 e = expenses_bp.serialize_doc(expense.copy())
-                e['title'] = e.get('description', e.get('title', 'Expense'))
+                # Keep auto-generated title, don't override with description
+                if not e.get('title'):
+                    e['title'] = e.get('description', 'Expense')
                 e['date'] = e.get('date', datetime.utcnow()).isoformat() + 'Z'
                 e['createdAt'] = e.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 e['updatedAt'] = e.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
@@ -611,8 +711,9 @@ def get_expense_insights():
             expenses = list(expenses_bp.mongo.db.expenses.find(base_query))
             
             # CRITICAL DEBUG: Log insights calculation
-            print(f"DEBUG EXPENSE INSIGHTS - User: {current_user['_id']}")
-            print(f"DEBUG: Total expenses retrieved: {len(expenses)}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE INSIGHTS - User: {current_user['_id']}")
+            # print(f"DEBUG: Total expenses retrieved: {len(expenses)}")
             
             if not expenses:
                 return jsonify({
@@ -631,16 +732,18 @@ def get_expense_insights():
             current_total = sum(e.get('amount', 0) for e in current_month_expenses)
             last_total = sum(e.get('amount', 0) for e in last_month_expenses)
             
-            print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")
-            print(f"DEBUG EXPENSE INSIGHTS: This month total: {current_total}")
-            print(f"DEBUG EXPENSE INSIGHTS: Last month expenses count: {len(last_month_expenses)}")
-            print(f"DEBUG EXPENSE INSIGHTS: Last month total: {last_total}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")
+            # print(f"DEBUG EXPENSE INSIGHTS: This month total: {current_total}")
+            # print(f"DEBUG EXPENSE INSIGHTS: Last month expenses count: {len(last_month_expenses)}")
+            # print(f"DEBUG EXPENSE INSIGHTS: Last month total: {last_total}")
            
             insights = []
             # CRITICAL FIX: Consistent calculation with proper severity field
             if last_total > 0:
                 change = ((current_total - last_total) / last_total) * 100
-                print(f"DEBUG EXPENSE INSIGHTS: Calculated change = {change}%")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG EXPENSE INSIGHTS: Calculated change = {change}%")
                 
                 if change > 15:
                     insights.append({
@@ -721,3 +824,130 @@ def get_expense_insights():
             }), 500
    
     return _get_expense_insights()
+
+
+# ============================================================================
+# ENTRY TAGGING ENDPOINTS (Phase 3B)
+# ============================================================================
+
+@expenses_bp.route('/tag/<entry_id>', methods=['PATCH'])
+@expenses_bp.token_required
+def tag_expense_entry(current_user, entry_id):
+    """Tag an expense entry as business or personal"""
+    try:
+        data = request.get_json() or {}
+        entry_type = data.get('entryType')
+        
+        # Validate entry type
+        if entry_type not in ['business', 'personal', None]:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid entry type. Must be "business", "personal", or null'
+            }), 400
+        
+        # Update entry
+        update_data = {
+            'entryType': entry_type,
+            'taggedAt': datetime.utcnow() if entry_type else None,
+            'taggedBy': 'user' if entry_type else None
+        }
+        
+        result = expenses_bp.mongo.db.expenses.update_one(
+            {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count > 0:
+            return jsonify({
+                'success': True,
+                'message': 'Entry tagged successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Entry not found or already tagged'
+            }), 404
+            
+    except Exception as e:
+        print(f"Error in tag_expense_entry: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to tag entry',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+@expenses_bp.route('/bulk-tag', methods=['PATCH'])
+@expenses_bp.token_required
+def bulk_tag_expense_entries(current_user):
+    """Tag multiple expense entries at once"""
+    try:
+        data = request.get_json() or {}
+        entry_ids = data.get('entryIds', [])
+        entry_type = data.get('entryType')
+        
+        # Validate entry type
+        if entry_type not in ['business', 'personal']:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid entry type. Must be "business" or "personal"'
+            }), 400
+        
+        if not entry_ids:
+            return jsonify({
+                'success': False,
+                'message': 'No entry IDs provided'
+            }), 400
+        
+        # Update entries
+        update_data = {
+            'entryType': entry_type,
+            'taggedAt': datetime.utcnow(),
+            'taggedBy': 'user'
+        }
+        
+        result = expenses_bp.mongo.db.expenses.update_many(
+            {
+                '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                'userId': current_user['_id']
+            },
+            {'$set': update_data}
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'{result.modified_count} entries tagged successfully',
+            'count': result.modified_count
+        })
+            
+    except Exception as e:
+        print(f"Error in bulk_tag_expense_entries: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to bulk tag entries',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+@expenses_bp.route('/untagged-count', methods=['GET'])
+@expenses_bp.token_required
+def get_untagged_expense_count(current_user):
+    """Get count of untagged expense entries"""
+    try:
+        from utils.immutable_ledger_helper import get_active_transactions_query
+        
+        query = get_active_transactions_query(current_user['_id'])
+        query['entryType'] = None
+        
+        count = expenses_bp.mongo.db.expenses.count_documents(query)
+        
+        return jsonify({
+            'success': True,
+            'count': count
+        })
+            
+    except Exception as e:
+        print(f"Error in get_untagged_expense_count: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to get untagged count',
+            'errors': {'general': [str(e)]}
+        }), 500

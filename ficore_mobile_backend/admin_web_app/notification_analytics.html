@@ -379,7 +379,7 @@
         const API_BASE_URL = window.location.origin;
         
         // Check authentication
-        let ADMIN_TOKEN = localStorage.getItem('admin_token');
+        let ADMIN_TOKEN = localStorage.getItem('adminToken');
         
         if (!ADMIN_TOKEN) {
             window.location.href = 'admin_login.html';
@@ -387,10 +387,10 @@
         
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
-                localStorage.removeItem('admin_token');
-                localStorage.removeItem('admin_email');
-                localStorage.removeItem('admin_name');
-                localStorage.removeItem('admin_user_id');
+                localStorage.removeItem('adminToken');
+                localStorage.removeItem('adminEmail');
+                localStorage.removeItem('adminName');
+                localStorage.removeItem('adminUserId');
                 window.location.href = 'admin_login.html';
             }
         }
@@ -406,7 +406,7 @@
             
             if (response.status === 401 || response.status === 403) {
                 alert('Session expired. Please login again.');
-                localStorage.removeItem('admin_token');
+                localStorage.removeItem('adminToken');
                 window.location.href = 'admin_login.html';
                 return;
             }

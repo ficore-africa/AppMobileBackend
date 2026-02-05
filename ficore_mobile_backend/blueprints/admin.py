@@ -126,6 +126,12 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Sort activities by timestamp
             recent_activities.sort(key=lambda x: x['timestamp'], reverse=True)
             recent_activities = recent_activities[:10]
+            
+            # Transaction statistics (income + expenses + VAS)
+            total_income_transactions = mongo.db.income.count_documents({})
+            total_expense_transactions = mongo.db.expenses.count_documents({})
+            total_vas_transactions = mongo.db.vas_transactions.count_documents({})
+            total_transactions = total_income_transactions + total_expense_transactions + total_vas_transactions
 
             stats = {
                 'totalUsers': total_users,
@@ -140,6 +146,10 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'pendingCreditRequests': pending_credit_requests,
                 'totalCreditsIssued': total_credits_issued,
                 'creditsThisMonth': credits_this_month,
+                'totalTransactions': total_transactions,
+                'totalIncomeTransactions': total_income_transactions,
+                'totalExpenseTransactions': total_expense_transactions,
+                'totalVASTransactions': total_vas_transactions,
                 'recentActivities': recent_activities
             }
 
@@ -646,6 +656,124 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to update user',
                 'errors': {'general': [str(e)]}
             }), 500
+
+    # ==================== REFERRAL SYSTEM: MANUAL CODE ASSIGNMENT (NEW - Feb 4, 2026) ====================
+    
+    @admin_bp.route('/users/<user_id>/referral-code', methods=['PUT'])
+    @token_required
+    @admin_required
+    def update_referral_code(current_user, user_id):
+        """
+        Manually assign a custom referral code to a user.
+        For key partners like Auwal (AUWAL2026).
+        """
+        try:
+            data = request.get_json()
+            new_code = data.get('referralCode', '').strip().upper()
+            
+            if not new_code:
+                return jsonify({
+                    'success': False,
+                    'message': 'Referral code is required',
+                    'errors': {'referralCode': ['Referral code is required']}
+                }), 400
+            
+            # Validate format (alphanumeric, 3-20 chars)
+            if not new_code.isalnum():
+                return jsonify({
+                    'success': False,
+                    'message': 'Code must contain only letters and numbers',
+                    'errors': {'referralCode': ['Code must contain only letters and numbers']}
+                }), 400
+            
+            if len(new_code) < 3 or len(new_code) > 20:
+                return jsonify({
+                    'success': False,
+                    'message': 'Code must be 3-20 characters',
+                    'errors': {'referralCode': ['Code must be 3-20 characters']}
+                }), 400
+            
+            # Check if user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check uniqueness (excluding current user)
+            existing = mongo.db.users.find_one({
+                'referralCode': new_code,
+                '_id': {'$ne': ObjectId(user_id)}
+            })
+            
+            if existing:
+                return jsonify({
+                    'success': False,
+                    'message': f'Code "{new_code}" is already taken by another user',
+                    'errors': {'referralCode': [f'Code "{new_code}" is already taken']}
+                }), 400
+            
+            # Get old code for logging
+            old_code = user.get('referralCode', 'None')
+            
+            # Update user
+            result = mongo.db.users.update_one(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$set': {
+                        'referralCode': new_code,
+                        'referralCodeGeneratedAt': user.get('referralCodeGeneratedAt', datetime.utcnow()),
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count == 0 and user.get('referralCode') != new_code:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to update referral code'
+                }), 500
+            
+            # Log admin action
+            admin_action = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email'),
+                'action': 'UPDATE_REFERRAL_CODE',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email'),
+                'details': {
+                    'oldCode': old_code,
+                    'newCode': new_code,
+                    'userName': user.get('displayName')
+                },
+                'timestamp': datetime.utcnow()
+            }
+            mongo.db.admin_actions.insert_one(admin_action)
+            
+            print(f'✅ ADMIN: Referral code updated for user {user_id} ({user.get("email")}): {old_code} → {new_code}')
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'userId': user_id,
+                    'referralCode': new_code,
+                    'oldCode': old_code,
+                    'userName': user.get('displayName'),
+                    'userEmail': user.get('email')
+                },
+                'message': f'Referral code updated to "{new_code}" successfully'
+            }), 200
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to update referral code',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    # ==================== END REFERRAL SYSTEM ====================
 
     @admin_bp.route('/users/<user_id>/reset-password', methods=['POST'])
     @token_required
@@ -1408,6 +1536,308 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to delete user',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== ACCOUNT DELETION REQUEST MANAGEMENT ENDPOINTS =====
+    # Added: Jan 30, 2026 - Unified deletion request system
+
+    @admin_bp.route('/deletion-requests', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_deletion_requests(current_user):
+        """
+        Get all account deletion requests (admin only).
+        Supports filtering by status and pagination.
+        
+        Query Parameters:
+            - status: 'pending', 'approved', 'rejected', 'completed', 'all' (default: 'pending')
+            - page: Page number (default: 1)
+            - limit: Items per page (default: 20)
+            - search: Search by email or name
+        
+        Returns:
+            - 200: List of deletion requests
+            - 500: Server error
+        """
+        try:
+            # Get query parameters
+            status = request.args.get('status', 'pending')
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 20))
+            search = request.args.get('search', '').strip()
+            
+            # Build query
+            query = {}
+            if status != 'all':
+                query['status'] = status
+            
+            if search:
+                query['$or'] = [
+                    {'email': {'$regex': search, '$options': 'i'}},
+                    {'userName': {'$regex': search, '$options': 'i'}}
+                ]
+            
+            # Get total count
+            total = mongo.db.deletion_requests.count_documents(query)
+            
+            # Get requests with pagination
+            skip = (page - 1) * limit
+            requests = list(mongo.db.deletion_requests.find(query)
+                          .sort('requestedAt', -1)
+                          .skip(skip)
+                          .limit(limit))
+            
+            # Serialize
+            for req in requests:
+                req['_id'] = str(req['_id'])
+                req['userId'] = str(req['userId'])
+                if req.get('processedBy'):
+                    req['processedBy'] = str(req['processedBy'])
+                    # Get admin name
+                    admin = mongo.db.users.find_one({'_id': ObjectId(req['processedBy'])})
+                    req['processedByName'] = admin.get('displayName') if admin else 'Unknown Admin'
+                req['requestedAt'] = req['requestedAt'].isoformat() + 'Z'
+                if req.get('processedAt'):
+                    req['processedAt'] = req['processedAt'].isoformat() + 'Z'
+                if req.get('completedAt'):
+                    req['completedAt'] = req['completedAt'].isoformat() + 'Z'
+                # Serialize userSnapshot dates
+                if req.get('userSnapshot'):
+                    if req['userSnapshot'].get('createdAt'):
+                        req['userSnapshot']['createdAt'] = req['userSnapshot']['createdAt'].isoformat() + 'Z'
+                    if req['userSnapshot'].get('lastLogin'):
+                        req['userSnapshot']['lastLogin'] = req['userSnapshot']['lastLogin'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': requests,
+                'pagination': {
+                    'total': total,
+                    'page': page,
+                    'limit': limit,
+                    'pages': (total + limit - 1) // limit
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error fetching deletion requests: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch deletion requests',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/deletion-requests/<request_id>', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_deletion_request_detail(current_user, request_id):
+        """
+        Get detailed information about a specific deletion request.
+        
+        Returns:
+            - 200: Deletion request details
+            - 404: Request not found
+            - 500: Server error
+        """
+        try:
+            if not ObjectId.is_valid(request_id):
+                return jsonify({'success': False, 'message': 'Invalid request ID'}), 400
+            
+            deletion_req = mongo.db.deletion_requests.find_one({'_id': ObjectId(request_id)})
+            
+            if not deletion_req:
+                return jsonify({'success': False, 'message': 'Deletion request not found'}), 404
+            
+            # Get user details
+            user = mongo.db.users.find_one({'_id': deletion_req['userId']})
+            
+            # Serialize
+            deletion_req['_id'] = str(deletion_req['_id'])
+            deletion_req['userId'] = str(deletion_req['userId'])
+            if deletion_req.get('processedBy'):
+                deletion_req['processedBy'] = str(deletion_req['processedBy'])
+                admin = mongo.db.users.find_one({'_id': ObjectId(deletion_req['processedBy'])})
+                deletion_req['processedByName'] = admin.get('displayName') if admin else 'Unknown Admin'
+            deletion_req['requestedAt'] = deletion_req['requestedAt'].isoformat() + 'Z'
+            if deletion_req.get('processedAt'):
+                deletion_req['processedAt'] = deletion_req['processedAt'].isoformat() + 'Z'
+            if deletion_req.get('completedAt'):
+                deletion_req['completedAt'] = deletion_req['completedAt'].isoformat() + 'Z'
+            
+            # Add current user status
+            deletion_req['userCurrentStatus'] = {
+                'exists': user is not None,
+                'isActive': user.get('isActive') if user else False,
+                'deletedAt': user.get('deletedAt').isoformat() + 'Z' if user and user.get('deletedAt') else None
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': deletion_req
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error fetching deletion request detail: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/deletion-requests/<request_id>/approve', methods=['POST'])
+    @token_required
+    @admin_required
+    def approve_deletion_request(current_user, request_id):
+        """
+        Approve deletion request and soft delete user account.
+        
+        Body:
+            - notes: Optional[str] - Admin notes
+        
+        Returns:
+            - 200: Request approved and account deleted
+            - 400: Invalid request or already processed
+            - 404: Request not found
+            - 500: Server error
+        """
+        try:
+            if not ObjectId.is_valid(request_id):
+                return jsonify({'success': False, 'message': 'Invalid request ID'}), 400
+            
+            data = request.get_json() or {}
+            notes = data.get('notes', '').strip()
+            
+            # Get deletion request
+            deletion_req = mongo.db.deletion_requests.find_one({'_id': ObjectId(request_id)})
+            
+            if not deletion_req:
+                return jsonify({'success': False, 'message': 'Deletion request not found'}), 404
+            
+            if deletion_req['status'] != 'pending':
+                return jsonify({
+                    'success': False,
+                    'message': f'Request already {deletion_req["status"]}'
+                }), 400
+            
+            # Soft delete user account
+            mongo.db.users.update_one(
+                {'_id': deletion_req['userId']},
+                {
+                    '$set': {
+                        'isActive': False,
+                        'deletedAt': datetime.utcnow(),
+                        'deletionReason': 'user_requested',
+                        'deletedBy': current_user['_id']
+                    }
+                }
+            )
+            
+            # Update deletion request
+            mongo.db.deletion_requests.update_one(
+                {'_id': ObjectId(request_id)},
+                {
+                    '$set': {
+                        'status': 'approved',
+                        'processedAt': datetime.utcnow(),
+                        'processedBy': current_user['_id'],
+                        'processingNotes': notes if notes else 'Approved by admin',
+                        'completedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f'✅ Deletion request approved: {request_id} by admin {current_user["email"]}')
+            
+            # TODO: Send confirmation email to user
+            # email_service.send_deletion_completed(deletion_req['email'])
+            
+            return jsonify({
+                'success': True,
+                'message': 'Account deletion approved and completed',
+                'data': {
+                    'requestId': request_id,
+                    'status': 'approved',
+                    'completedAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error approving deletion request: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to approve deletion request',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/deletion-requests/<request_id>/reject', methods=['POST'])
+    @token_required
+    @admin_required
+    def reject_deletion_request(current_user, request_id):
+        """
+        Reject deletion request with reason.
+        
+        Body:
+            - notes: Required[str] - Reason for rejection
+        
+        Returns:
+            - 200: Request rejected
+            - 400: Invalid request or missing notes
+            - 404: Request not found
+            - 500: Server error
+        """
+        try:
+            if not ObjectId.is_valid(request_id):
+                return jsonify({'success': False, 'message': 'Invalid request ID'}), 400
+            
+            data = request.get_json() or {}
+            notes = data.get('notes', '').strip()
+            
+            if not notes:
+                return jsonify({
+                    'success': False,
+                    'message': 'Rejection reason is required',
+                    'errors': {'notes': ['Please provide a reason for rejection']}
+                }), 400
+            
+            # Update deletion request
+            result = mongo.db.deletion_requests.update_one(
+                {'_id': ObjectId(request_id), 'status': 'pending'},
+                {
+                    '$set': {
+                        'status': 'rejected',
+                        'processedAt': datetime.utcnow(),
+                        'processedBy': current_user['_id'],
+                        'processingNotes': notes
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Request not found or already processed'
+                }), 404
+            
+            print(f'✅ Deletion request rejected: {request_id} by admin {current_user["email"]}')
+            
+            # TODO: Send rejection email to user
+            # email_service.send_deletion_rejected(deletion_req['email'], notes)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Deletion request rejected',
+                'data': {
+                    'requestId': request_id,
+                    'status': 'rejected'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error rejecting deletion request: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reject deletion request',
                 'errors': {'general': [str(e)]}
             }), 500
 
@@ -2205,6 +2635,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 {'_id': ObjectId(user_id)},
                 {'$set': {
                     'isSubscribed': True,
+                    'subscriptionStatus': 'active',  # CRITICAL FIX: Add this field for VAS webhook compatibility
+                    'subscriptionPlan': plan_id,  # CRITICAL FIX: Add this field for consistency
                     'subscriptionType': plan_id,
                     'subscriptionStartDate': start_date,
                     'subscriptionEndDate': end_date,
@@ -2357,6 +2789,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 if updated_subscription:
                     user_update_data = {
                         'isSubscribed': updated_subscription.get('isActive', False),
+                        'subscriptionStatus': 'active' if updated_subscription.get('isActive', False) else 'inactive',  # CRITICAL FIX: Add this field
+                        'subscriptionPlan': updated_subscription.get('planId'),  # CRITICAL FIX: Add this field
                         'subscriptionType': updated_subscription.get('planId'),
                         'subscriptionStartDate': updated_subscription.get('startDate'),
                         'subscriptionEndDate': updated_subscription.get('endDate'),
@@ -2450,6 +2884,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 {'_id': ObjectId(user_id)},
                 {'$set': {
                     'isSubscribed': False,
+                    'subscriptionStatus': 'cancelled',  # CRITICAL FIX: Add this field
+                    'subscriptionPlan': None,  # CRITICAL FIX: Clear this field
                     'subscriptionType': None,
                     'subscriptionStartDate': None,
                     'subscriptionEndDate': None,
@@ -2684,7 +3120,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'name': 'Monthly Premium',
                     'duration': 30,
                     'durationUnit': 'days',
-                    'amount': 2500.0,
+                    'amount': 1000.0,
                     'currency': 'NGN',
                     'features': [
                         'Unlimited transactions',
@@ -4043,229 +4479,2305 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     
     # ===== TREASURY COMMAND CENTER ENDPOINT =====
     
-    @admin_bp.route('/treasury/metrics', methods=['GET'])
+    @admin_bp.route('/treasury/analytics', methods=['GET'])
     @token_required
     @admin_required
-    def get_treasury_metrics(current_user):
+    def get_treasury_analytics(current_user):
         """
-        Treasury Command Center - Real-time liquidity monitoring
-        
-        Returns:
-        - Total Liabilities (sum of all user VAS wallet balances)
-        - Peyflex Balance (current inventory/liquidity)
-        - Liquidity Coverage Ratio (Peyflex / Liabilities * 100)
-        - Today's User Deposits (amountPaid)
-        - Today's Realized Revenue (corporate_revenue)
-        - Alert Status (RED if ratio < 20%, YELLOW if < 50%, GREEN otherwise)
+        💰 PHASE 3: Enhanced Treasury Analytics with Actual Commission Data
+        Real-time unit economics tracking with accurate costs and revenues
         """
         try:
             from datetime import datetime, timedelta
-            import requests
-            import os
             
-            # 1. Calculate Total Liabilities (User Wallet Balances)
-            liabilities_pipeline = [
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalLiabilities': {'$sum': '$balance'}
+            # Get time period filter
+            period = request.args.get('period', 'all')
+            
+            # Calculate date filter
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+            
+            # ===== 1. VAS COMMISSIONS (from corporate_revenue) =====
+            commission_query = {'type': 'VAS_COMMISSION'}
+            commission_query.update(date_filter)
+            
+            commissions = list(mongo.db.corporate_revenue.find(commission_query))
+            
+            # Calculate by provider
+            monnify_commission = sum(c['amount'] for c in commissions if 'MONNIFY' in c.get('category', ''))
+            peyflex_commission = sum(c['amount'] for c in commissions if 'PEYFLEX' in c.get('category', ''))
+            total_vas_commissions = monnify_commission + peyflex_commission
+            
+            # Calculate by transaction type
+            airtime_commission = sum(c['amount'] for c in commissions if 'AIRTIME' in c.get('category', ''))
+            data_commission = sum(c['amount'] for c in commissions if 'DATA' in c.get('category', ''))
+            
+            # ===== 2. GATEWAY FEES (from vas_transactions and corporate_revenue) =====
+            # Get deposit gateway fees
+            deposit_query = {'type': 'WALLET_FUNDING', 'status': 'SUCCESS', 'gatewayFee': {'$exists': True}}
+            deposit_query.update(date_filter)
+            deposits = list(mongo.db.vas_transactions.find(deposit_query))
+            total_deposit_gateway_fees = sum(d.get('gatewayFee', 0) for d in deposits)
+            
+            # Get subscription/credits gateway fees from corporate_revenue
+            revenue_query = {'gatewayFee': {'$exists': True}}
+            revenue_query.update(date_filter)
+            revenue_with_fees = list(mongo.db.corporate_revenue.find(revenue_query))
+            total_revenue_gateway_fees = sum(r.get('gatewayFee', 0) for r in revenue_with_fees)
+            
+            total_gateway_fees = total_deposit_gateway_fees + total_revenue_gateway_fees
+            
+            # ===== 3. SUBSCRIPTION REVENUE =====
+            subscription_query = {'type': 'SUBSCRIPTION'}
+            subscription_query.update(date_filter)
+            subscriptions = list(mongo.db.corporate_revenue.find(subscription_query))
+            
+            total_subscription_revenue = sum(s['amount'] for s in subscriptions)
+            subscription_gateway_fees = sum(s.get('gatewayFee', 0) for s in subscriptions)
+            net_subscription_revenue = sum(s.get('netRevenue', s['amount']) for s in subscriptions)
+            
+            # ===== 4. FC CREDITS REVENUE =====
+            credits_query = {'type': 'CREDITS_PURCHASE'}
+            credits_query.update(date_filter)
+            credits = list(mongo.db.corporate_revenue.find(credits_query))
+            
+            total_credits_revenue = sum(c['amount'] for c in credits)
+            credits_gateway_fees = sum(c.get('gatewayFee', 0) for c in credits)
+            net_credits_revenue = sum(c.get('netRevenue', c['amount']) for c in credits)
+            
+            # ===== 5. DEPOSIT FEES =====
+            deposit_fee_query = {'type': 'SERVICE_FEE', 'category': 'DEPOSIT_FEE'}
+            deposit_fee_query.update(date_filter)
+            deposit_fees = list(mongo.db.corporate_revenue.find(deposit_fee_query))
+            
+            total_deposit_fees = sum(d['amount'] for d in deposit_fees)
+            deposit_fee_gateway_costs = sum(d.get('gatewayFee', 0) for d in deposit_fees)
+            net_deposit_fees = sum(d.get('netRevenue', d['amount']) for d in deposit_fees)
+            
+            # ===== 6. CALCULATE TOTALS =====
+            total_revenue = (
+                total_vas_commissions +
+                total_subscription_revenue +
+                total_credits_revenue +
+                total_deposit_fees
+            )
+            
+            total_costs = total_gateway_fees
+            
+            net_profit = total_revenue - total_costs
+            profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
+            
+            # ===== 7. VAS TRANSACTION BREAKDOWN =====
+            vas_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA']}}
+            vas_query.update(date_filter)
+            vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
+            
+            # Provider breakdown with commissions
+            provider_stats = {}
+            for txn in vas_transactions:
+                provider = txn.get('provider', 'unknown')
+                if provider not in provider_stats:
+                    provider_stats[provider] = {
+                        'count': 0,
+                        'volume': 0,
+                        'commission': 0,
+                        'commissionRate': '3%' if provider == 'monnify' else '1-5%'
                     }
-                }
-            ]
+                
+                provider_stats[provider]['count'] += 1
+                provider_stats[provider]['volume'] += txn.get('amount', 0)
+                provider_stats[provider]['commission'] += txn.get('providerCommission', 0)
             
-            liabilities_result = list(mongo.db.vas_wallets.aggregate(liabilities_pipeline))
-            total_liabilities = liabilities_result[0]['totalLiabilities'] if liabilities_result else 0.0
-            
-            # 2. Get Peyflex Balance (Current Liquidity)
-            # Note: Peyflex doesn't have a direct balance endpoint
-            # We'll calculate it as: Total Deposits - Total Spent - Total Revenue
-            
-            # Get total deposits (what users paid)
-            deposits_pipeline = [
-                {
-                    '$match': {
-                        'type': 'WALLET_FUNDING',
-                        'status': 'SUCCESS'
+            # Transaction type breakdown
+            type_stats = {}
+            for txn in vas_transactions:
+                txn_type = txn.get('type', 'UNKNOWN')
+                if txn_type not in type_stats:
+                    type_stats[txn_type] = {
+                        'count': 0,
+                        'volume': 0,
+                        'commission': 0
                     }
-                },
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalDeposits': {'$sum': '$amountPaid'}
-                    }
-                }
-            ]
+                
+                type_stats[txn_type]['count'] += 1
+                type_stats[txn_type]['volume'] += txn.get('amount', 0)
+                type_stats[txn_type]['commission'] += txn.get('providerCommission', 0)
             
-            deposits_result = list(mongo.db.vas_transactions.aggregate(deposits_pipeline))
-            total_deposits = deposits_result[0]['totalDeposits'] if deposits_result else 0.0
+            # ===== 8. RECENT HIGH-VALUE TRANSACTIONS =====
+            recent_transactions = []
+            for txn in vas_transactions[:50]:  # Last 50 transactions
+                serialized_txn = serialize_doc(txn)
+                
+                # Add user email
+                user_id = txn.get('userId')
+                if user_id:
+                    user = mongo.db.users.find_one({'_id': user_id}, {'email': 1})
+                    serialized_txn['userEmail'] = user.get('email') if user else 'N/A'
+                else:
+                    serialized_txn['userEmail'] = 'N/A'
+                
+                recent_transactions.append(serialized_txn)
             
-            # Get total spent on VAS (airtime/data purchases)
-            vas_spent_pipeline = [
-                {
-                    '$match': {
-                        'type': {'$in': ['AIRTIME', 'DATA']},
-                        'status': 'SUCCESS'
-                    }
-                },
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalSpent': {'$sum': '$amount'}
-                    }
-                }
-            ]
-            
-            vas_spent_result = list(mongo.db.vas_transactions.aggregate(vas_spent_pipeline))
-            total_vas_spent = vas_spent_result[0]['totalSpent'] if vas_spent_result else 0.0
-            
-            # Get total corporate revenue
-            revenue_pipeline = [
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalRevenue': {'$sum': '$amount'}
-                    }
-                }
-            ]
-            
-            revenue_result = list(mongo.db.corporate_revenue.aggregate(revenue_pipeline))
-            total_revenue = revenue_result[0]['totalRevenue'] if revenue_result else 0.0
-            
-            # Estimated Peyflex Balance = Deposits - User Wallets - Revenue - VAS Spent
-            # This represents money that should be in Peyflex for purchasing
-            estimated_peyflex_balance = total_deposits - total_liabilities - total_revenue - total_vas_spent
-            
-            # 3. Calculate Liquidity Coverage Ratio
-            liquidity_ratio = (estimated_peyflex_balance / total_liabilities * 100) if total_liabilities > 0 else 100.0
-            
-            # 4. Determine Alert Status
-            if liquidity_ratio < 20:
-                alert_status = 'RED'
-                alert_message = '🚨 CRITICAL: Refill Peyflex immediately!'
-            elif liquidity_ratio < 50:
-                alert_status = 'YELLOW'
-                alert_message = '⚠️ WARNING: Low liquidity, plan refill soon'
-            else:
-                alert_status = 'GREEN'
-                alert_message = '✅ Healthy liquidity levels'
-            
-            # 5. Get Today's Metrics
-            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            
-            # Today's deposits
-            today_deposits_pipeline = [
-                {
-                    '$match': {
-                        'type': 'WALLET_FUNDING',
-                        'status': 'SUCCESS',
-                        'createdAt': {
-                            '$gte': today_start,
-                            '$lt': today_end
-                        }
-                    }
-                },
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalDeposits': {'$sum': '$amountPaid'},
-                        'count': {'$sum': 1}
-                    }
-                }
-            ]
-            
-            today_deposits_result = list(mongo.db.vas_transactions.aggregate(today_deposits_pipeline))
-            today_deposits = today_deposits_result[0]['totalDeposits'] if today_deposits_result else 0.0
-            today_deposits_count = today_deposits_result[0]['count'] if today_deposits_result else 0
-            
-            # Today's revenue
-            today_revenue_pipeline = [
-                {
-                    '$match': {
-                        'createdAt': {
-                            '$gte': today_start,
-                            '$lt': today_end
-                        }
-                    }
-                },
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalRevenue': {'$sum': '$amount'},
-                        'count': {'$sum': 1}
-                    }
-                }
-            ]
-            
-            today_revenue_result = list(mongo.db.corporate_revenue.aggregate(today_revenue_pipeline))
-            today_revenue = today_revenue_result[0]['totalRevenue'] if today_revenue_result else 0.0
-            today_revenue_count = today_revenue_result[0]['count'] if today_revenue_result else 0
-            
-            # 6. Get This Month's Metrics
-            month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            
-            # This month's revenue
-            month_revenue_pipeline = [
-                {
-                    '$match': {
-                        'createdAt': {
-                            '$gte': month_start
-                        }
-                    }
-                },
-                {
-                    '$group': {
-                        '_id': None,
-                        'totalRevenue': {'$sum': '$amount'}
-                    }
-                }
-            ]
-            
-            month_revenue_result = list(mongo.db.corporate_revenue.aggregate(month_revenue_pipeline))
-            month_revenue = month_revenue_result[0]['totalRevenue'] if month_revenue_result else 0.0
-            
+            # ===== 9. FORMAT RESPONSE =====
             return jsonify({
                 'success': True,
                 'data': {
-                    'liabilities': {
-                        'total': round(total_liabilities, 2),
-                        'description': 'Total user wallet balances (what we owe users)'
+                    'overview': {
+                        'totalRevenue': round(total_revenue, 2),
+                        'totalCosts': round(total_costs, 2),
+                        'netProfit': round(net_profit, 2),
+                        'profitMargin': round(profit_margin, 2),
+                        'totalTransactions': len(vas_transactions)
                     },
-                    'liquidity': {
-                        'estimatedPeyflexBalance': round(estimated_peyflex_balance, 2),
-                        'description': 'Estimated funds available for VAS purchases'
+                    'revenueBreakdown': {
+                        'vasCommissions': {
+                            'total': round(total_vas_commissions, 2),
+                            'monnify': round(monnify_commission, 2),
+                            'peyflex': round(peyflex_commission, 2),
+                            'airtime': round(airtime_commission, 2),
+                            'data': round(data_commission, 2)
+                        },
+                        'subscriptions': {
+                            'gross': round(total_subscription_revenue, 2),
+                            'gatewayFees': round(subscription_gateway_fees, 2),
+                            'net': round(net_subscription_revenue, 2)
+                        },
+                        'credits': {
+                            'gross': round(total_credits_revenue, 2),
+                            'gatewayFees': round(credits_gateway_fees, 2),
+                            'net': round(net_credits_revenue, 2)
+                        },
+                        'depositFees': {
+                            'gross': round(total_deposit_fees, 2),
+                            'gatewayFees': round(deposit_fee_gateway_costs, 2),
+                            'net': round(net_deposit_fees, 2)
+                        }
                     },
-                    'ratio': {
-                        'liquidityCoverageRatio': round(liquidity_ratio, 2),
-                        'alertStatus': alert_status,
-                        'alertMessage': alert_message
+                    'costBreakdown': {
+                        'gatewayFees': {
+                            'total': round(total_gateway_fees, 2),
+                            'deposits': round(total_deposit_gateway_fees, 2),
+                            'subscriptions': round(subscription_gateway_fees, 2),
+                            'credits': round(credits_gateway_fees, 2)
+                        }
                     },
-                    'today': {
-                        'deposits': round(today_deposits, 2),
-                        'depositsCount': today_deposits_count,
-                        'revenue': round(today_revenue, 2),
-                        'revenueCount': today_revenue_count
-                    },
-                    'thisMonth': {
-                        'revenue': round(month_revenue, 2)
-                    },
-                    'totals': {
-                        'allTimeDeposits': round(total_deposits, 2),
-                        'allTimeRevenue': round(total_revenue, 2),
-                        'allTimeVasSpent': round(total_vas_spent, 2)
+                    'providerStats': [
+                        {
+                            'name': provider,
+                            'count': stats['count'],
+                            'volume': round(stats['volume'], 2),
+                            'commission': round(stats['commission'], 2),
+                            'commissionRate': stats['commissionRate']
+                        }
+                        for provider, stats in sorted(provider_stats.items(), key=lambda x: x[1]['commission'], reverse=True)
+                    ],
+                    'transactionTypeStats': [
+                        {
+                            'type': txn_type,
+                            'count': stats['count'],
+                            'volume': round(stats['volume'], 2),
+                            'commission': round(stats['commission'], 2)
+                        }
+                        for txn_type, stats in sorted(type_stats.items(), key=lambda x: x[1]['commission'], reverse=True)
+                    ],
+                    'recentTransactions': recent_transactions,
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
                     }
                 },
-                'message': 'Treasury metrics retrieved successfully'
+                'message': f'Treasury analytics retrieved successfully ({period} period)'
             })
             
         except Exception as e:
-            print(f"Error getting treasury metrics: {str(e)}")
+            print(f"Error getting treasury analytics: {str(e)}")
             import traceback
             traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to get treasury metrics',
+                'message': 'Failed to get treasury analytics',
+                'error': str(e)
+            }), 500
+
+    @admin_bp.route('/treasury/user-profitability/<user_id>', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_profitability(current_user, user_id):
+        """
+        💰 PHASE 3: Per-User Profitability Analysis
+        Track if individual users (especially premium) are profitable
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get time period filter (optional)
+            period = request.args.get('period', 'all')
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+            
+            # ===== 1. SUBSCRIPTION REVENUE =====
+            subscription_query = {
+                'userId': ObjectId(user_id),
+                'type': 'SUBSCRIPTION'
+            }
+            subscription_query.update(date_filter)
+            subscriptions = list(mongo.db.corporate_revenue.find(subscription_query))
+            
+            total_subscription_revenue = sum(s['amount'] for s in subscriptions)
+            subscription_gateway_fees = sum(s.get('gatewayFee', 0) for s in subscriptions)
+            net_subscription_revenue = total_subscription_revenue - subscription_gateway_fees
+            
+            # ===== 2. FC CREDITS REVENUE =====
+            credits_query = {
+                'userId': ObjectId(user_id),
+                'type': 'CREDITS_PURCHASE'
+            }
+            credits_query.update(date_filter)
+            credits = list(mongo.db.corporate_revenue.find(credits_query))
+            
+            total_credits_revenue = sum(c['amount'] for c in credits)
+            credits_gateway_fees = sum(c.get('gatewayFee', 0) for c in credits)
+            net_credits_revenue = total_credits_revenue - credits_gateway_fees
+            
+            # ===== 3. DEPOSIT FEES REVENUE =====
+            deposit_fee_query = {
+                'userId': ObjectId(user_id),
+                'type': 'SERVICE_FEE',
+                'category': 'DEPOSIT_FEE'
+            }
+            deposit_fee_query.update(date_filter)
+            deposit_fees = list(mongo.db.corporate_revenue.find(deposit_fee_query))
+            
+            total_deposit_fees = sum(d['amount'] for d in deposit_fees)
+            deposit_fee_gateway_costs = sum(d.get('gatewayFee', 0) for d in deposit_fees)
+            net_deposit_fees = total_deposit_fees - deposit_fee_gateway_costs
+            
+            # ===== 4. VAS COMMISSIONS =====
+            vas_commission_query = {
+                'userId': ObjectId(user_id),
+                'type': 'VAS_COMMISSION'
+            }
+            vas_commission_query.update(date_filter)
+            vas_commissions = list(mongo.db.corporate_revenue.find(vas_commission_query))
+            
+            total_vas_commissions = sum(c['amount'] for c in vas_commissions)
+            
+            # ===== 5. GATEWAY COSTS (Deposits) =====
+            deposit_query = {
+                'userId': ObjectId(user_id),
+                'type': 'WALLET_FUNDING',
+                'status': 'SUCCESS',
+                'gatewayFee': {'$exists': True}
+            }
+            deposit_query.update(date_filter)
+            deposits = list(mongo.db.vas_transactions.find(deposit_query))
+            
+            total_deposits = len(deposits)
+            total_deposit_gateway_fees = sum(d.get('gatewayFee', 0) for d in deposits)
+            total_deposited = sum(d.get('amountPaid', 0) for d in deposits)
+            
+            # ===== 6. VAS USAGE =====
+            vas_query = {
+                'userId': ObjectId(user_id),
+                'status': 'SUCCESS',
+                'type': {'$in': ['AIRTIME', 'DATA']}
+            }
+            vas_query.update(date_filter)
+            vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
+            
+            total_vas_transactions = len(vas_transactions)
+            total_vas_volume = sum(t.get('amount', 0) for t in vas_transactions)
+            
+            # ===== 7. CALCULATE TOTALS =====
+            total_revenue = (
+                net_subscription_revenue +
+                net_credits_revenue +
+                net_deposit_fees +
+                total_vas_commissions
+            )
+            
+            total_costs = (
+                subscription_gateway_fees +
+                credits_gateway_fees +
+                deposit_fee_gateway_costs +
+                total_deposit_gateway_fees
+            )
+            
+            net_profit = total_revenue - total_costs
+            is_profitable = net_profit > 0
+            
+            # Calculate profit margin
+            profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
+            
+            # ===== 8. USER STATUS =====
+            is_premium = user.get('isSubscribed', False)
+            subscription_type = user.get('subscriptionType')
+            subscription_end = user.get('subscriptionEndDate')
+            
+            # ===== 9. PROFITABILITY ASSESSMENT =====
+            # For premium users, check if they're within safe deposit limits
+            assessment = 'profitable'
+            warning = None
+            
+            if is_premium:
+                # Monthly subscription: Safe up to 60 deposits/month
+                # Annual subscription: Safe up to 600 deposits/year
+                if subscription_type == 'monthly':
+                    safe_deposit_limit = 60
+                    if period == '30':
+                        if total_deposits > safe_deposit_limit:
+                            assessment = 'at_risk'
+                            warning = f'User exceeds safe deposit limit ({total_deposits} > {safe_deposit_limit}/month)'
+                elif subscription_type == 'annually':
+                    safe_deposit_limit = 600
+                    if period == '365':
+                        if total_deposits > safe_deposit_limit:
+                            assessment = 'at_risk'
+                            warning = f'User exceeds safe deposit limit ({total_deposits} > {safe_deposit_limit}/year)'
+                
+                # Check if VAS commissions offset deposit costs
+                if total_vas_commissions < total_deposit_gateway_fees:
+                    if assessment != 'at_risk':
+                        assessment = 'low_vas_usage'
+                        warning = 'VAS commissions not offsetting deposit costs'
+            
+            if not is_profitable:
+                assessment = 'unprofitable'
+                warning = f'User is generating net loss of ₦{abs(net_profit):.2f}'
+            
+            # ===== 10. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'userId': user_id,
+                    'userEmail': user.get('email'),
+                    'userName': user.get('displayName', user.get('firstName', 'Unknown')),
+                    'isPremium': is_premium,
+                    'subscriptionType': subscription_type,
+                    'subscriptionEnd': subscription_end.isoformat() if subscription_end else None,
+                    'revenue': {
+                        'subscription': {
+                            'gross': round(total_subscription_revenue, 2),
+                            'gatewayFees': round(subscription_gateway_fees, 2),
+                            'net': round(net_subscription_revenue, 2)
+                        },
+                        'credits': {
+                            'gross': round(total_credits_revenue, 2),
+                            'gatewayFees': round(credits_gateway_fees, 2),
+                            'net': round(net_credits_revenue, 2)
+                        },
+                        'depositFees': {
+                            'gross': round(total_deposit_fees, 2),
+                            'gatewayFees': round(deposit_fee_gateway_costs, 2),
+                            'net': round(net_deposit_fees, 2)
+                        },
+                        'vasCommissions': round(total_vas_commissions, 2),
+                        'total': round(total_revenue, 2)
+                    },
+                    'costs': {
+                        'depositGatewayFees': round(total_deposit_gateway_fees, 2),
+                        'subscriptionGatewayFees': round(subscription_gateway_fees, 2),
+                        'creditsGatewayFees': round(credits_gateway_fees, 2),
+                        'depositFeeGatewayCosts': round(deposit_fee_gateway_costs, 2),
+                        'total': round(total_costs, 2)
+                    },
+                    'usage': {
+                        'totalDeposits': total_deposits,
+                        'totalDeposited': round(total_deposited, 2),
+                        'totalVasTransactions': total_vas_transactions,
+                        'totalVasVolume': round(total_vas_volume, 2)
+                    },
+                    'profitability': {
+                        'netProfit': round(net_profit, 2),
+                        'isProfitable': is_profitable,
+                        'profitMargin': round(profit_margin, 2),
+                        'assessment': assessment,
+                        'warning': warning
+                    },
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': 'User profitability analysis retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting user profitability: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get user profitability',
+                'error': str(e)
+            }), 500
+
+    @admin_bp.route('/treasury/corporate-revenue/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_corporate_revenue(current_user):
+        """Export corporate revenue to CSV"""
+        try:
+            from flask import make_response
+            import csv
+            import io
+            
+            # Get corporate revenue records
+            corporate_revenue = list(mongo.db.corporate_revenue.find({}).sort('createdAt', -1))
+            
+            # Create CSV content
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write headers
+            writer.writerow([
+                'Date', 'Type', 'Category', 'Amount', 'Description', 
+                'User ID', 'Related Transaction', 'Created At'
+            ])
+            
+            # Write data
+            for rev in corporate_revenue:
+                writer.writerow([
+                    rev.get('createdAt', '').strftime('%Y-%m-%d') if rev.get('createdAt') else '',
+                    rev.get('type', ''),
+                    rev.get('category', ''),
+                    rev.get('amount', 0),
+                    rev.get('description', ''),
+                    str(rev.get('userId', '')),
+                    str(rev.get('relatedTransaction', '')),
+                    rev.get('createdAt', '').isoformat() if rev.get('createdAt') else ''
+                ])
+            
+            # Create response
+            csv_content = output.getvalue()
+            output.close()
+            
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=corporate_revenue_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting corporate revenue: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export corporate revenue',
+                'error': str(e)
+            }), 500
+    
+    # ===== REFERRAL SYSTEM METRICS ENDPOINT =====
+    
+    @admin_bp.route('/treasury/referral-metrics', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_referral_metrics(current_user):
+        """
+        📊 Referral System Metrics for Treasury Dashboard
+        Track referral program performance and payouts
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Get time period filter
+            period = request.args.get('period', 'all')
+            
+            # Calculate date filter
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+            
+            # ===== 1. REFERRAL COUNTS =====
+            # Total referrals (all-time or filtered)
+            referral_query = {}
+            referral_query.update(date_filter)
+            total_referrals = mongo.db.referrals.count_documents(referral_query)
+            
+            # Active referrals (made first deposit)
+            active_referrals = mongo.db.referrals.count_documents({
+                **referral_query,
+                'status': {'$in': ['active', 'qualified']}
+            })
+            
+            # Pending referrals (not yet deposited)
+            pending_referrals = mongo.db.referrals.count_documents({
+                **referral_query,
+                'status': 'pending_deposit'
+            })
+            
+            # ===== 2. PAYOUT STATISTICS =====
+            payout_query = {}
+            payout_query.update(date_filter)
+            
+            # Total payouts (all statuses)
+            all_payouts = list(mongo.db.referral_payouts.find(payout_query))
+            total_payouts_amount = sum(p['amount'] for p in all_payouts)
+            
+            # Withdrawable payouts
+            withdrawable_payouts = [p for p in all_payouts if p['status'] == 'WITHDRAWABLE']
+            withdrawable_amount = sum(p['amount'] for p in withdrawable_payouts)
+            
+            # Pending payouts (in vesting)
+            pending_payouts = [p for p in all_payouts if p['status'] == 'PENDING']
+            pending_amount = sum(p['amount'] for p in pending_payouts)
+            
+            # Withdrawn payouts
+            withdrawn_payouts = [p for p in all_payouts if p['status'] == 'WITHDRAWN']
+            withdrawn_amount = sum(p['amount'] for p in withdrawn_payouts)
+            
+            # ===== 3. PAYOUT BREAKDOWN BY TYPE =====
+            subscription_payouts = [p for p in all_payouts if p['type'] == 'SUBSCRIPTION_COMMISSION']
+            subscription_payout_amount = sum(p['amount'] for p in subscription_payouts)
+            
+            vas_payouts = [p for p in all_payouts if p['type'] == 'VAS_SHARE']
+            vas_payout_amount = sum(p['amount'] for p in vas_payouts)
+            
+            # ===== 4. TOP REFERRERS =====
+            # Aggregate top referrers by total earnings
+            top_referrers_pipeline = [
+                {'$match': payout_query},
+                {'$group': {
+                    '_id': '$referrerId',
+                    'totalEarnings': {'$sum': '$amount'},
+                    'payoutCount': {'$sum': 1}
+                }},
+                {'$sort': {'totalEarnings': -1}},
+                {'$limit': 10}
+            ]
+            
+            top_referrers_data = list(mongo.db.referral_payouts.aggregate(top_referrers_pipeline))
+            
+            # Enrich with user details
+            top_referrers = []
+            for referrer in top_referrers_data:
+                user = mongo.db.users.find_one({'_id': referrer['_id']}, {'displayName': 1, 'email': 1, 'referralCode': 1})
+                if user:
+                    top_referrers.append({
+                        'userId': str(referrer['_id']),
+                        'name': user.get('displayName', 'Unknown'),
+                        'email': user.get('email', 'N/A'),
+                        'referralCode': user.get('referralCode', 'N/A'),
+                        'totalEarnings': round(referrer['totalEarnings'], 2),
+                        'payoutCount': referrer['payoutCount']
+                    })
+            
+            # ===== 5. RECENT PAYOUTS =====
+            recent_payouts = list(mongo.db.referral_payouts.find(payout_query).sort('createdAt', -1).limit(20))
+            
+            # Enrich with user details
+            recent_payouts_formatted = []
+            for payout in recent_payouts:
+                referrer = mongo.db.users.find_one({'_id': payout['referrerId']}, {'displayName': 1, 'email': 1})
+                referee = mongo.db.users.find_one({'_id': payout['refereeId']}, {'displayName': 1, 'email': 1})
+                
+                recent_payouts_formatted.append({
+                    'id': str(payout['_id']),
+                    'referrerName': referrer.get('displayName', 'Unknown') if referrer else 'Unknown',
+                    'referrerEmail': referrer.get('email', 'N/A') if referrer else 'N/A',
+                    'refereeName': referee.get('displayName', 'Unknown') if referee else 'Unknown',
+                    'refereeEmail': referee.get('email', 'N/A') if referee else 'N/A',
+                    'type': payout['type'],
+                    'amount': round(payout['amount'], 2),
+                    'status': payout['status'],
+                    'createdAt': payout['createdAt'].isoformat() if payout.get('createdAt') else None,
+                    'vestingEndDate': payout['vestingEndDate'].isoformat() if payout.get('vestingEndDate') else None
+                })
+            
+            # ===== 6. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'overview': {
+                        'totalReferrals': total_referrals,
+                        'activeReferrals': active_referrals,
+                        'pendingReferrals': pending_referrals,
+                        'totalPayouts': round(total_payouts_amount, 2),
+                        'withdrawablePayouts': round(withdrawable_amount, 2),
+                        'pendingPayouts': round(pending_amount, 2),
+                        'withdrawnPayouts': round(withdrawn_amount, 2)
+                    },
+                    'payoutBreakdown': {
+                        'subscriptionCommissions': {
+                            'amount': round(subscription_payout_amount, 2),
+                            'count': len(subscription_payouts)
+                        },
+                        'vasShares': {
+                            'amount': round(vas_payout_amount, 2),
+                            'count': len(vas_payouts)
+                        }
+                    },
+                    'topReferrers': top_referrers,
+                    'recentPayouts': recent_payouts_formatted,
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': f'Referral metrics retrieved successfully ({period} period)'
+            })
+            
+        except Exception as e:
+            print(f"Error getting referral metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get referral metrics',
+                'error': str(e)
+            }), 500
+    
+    # ===== WITHDRAWAL MANAGEMENT ENDPOINTS =====
+    
+    @admin_bp.route('/withdrawals/pending', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_pending_withdrawals(current_user):
+        """
+        Get all pending withdrawal requests for admin review.
+        """
+        try:
+            # Get all pending withdrawals
+            withdrawals = list(mongo.db.withdrawal_requests.find({
+                'status': 'PENDING'
+            }).sort('requestedAt', 1))  # FIFO - oldest first
+            
+            # Enrich with user details and referral stats
+            formatted = []
+            for w in withdrawals:
+                user = mongo.db.users.find_one({'_id': w['userId']})
+                if not user:
+                    continue
+                
+                # Get referral stats
+                total_referrals = mongo.db.referrals.count_documents({'referrerId': w['userId']})
+                active_referrals = mongo.db.referrals.count_documents({
+                    'referrerId': w['userId'],
+                    'status': {'$in': ['active', 'qualified']}
+                })
+                total_earnings = user.get('referralEarnings', 0.0)
+                
+                formatted.append({
+                    'id': str(w['_id']),
+                    'user': {
+                        'id': str(user['_id']),
+                        'name': user.get('displayName', 'Unknown'),
+                        'email': user.get('email', 'N/A'),
+                        'referralCode': user.get('referralCode', 'N/A')
+                    },
+                    'amount': w['amount'],
+                    'withdrawableBalance': w.get('withdrawableBalanceAtRequest', 0.0),
+                    'pendingBalance': w.get('pendingBalanceAtRequest', 0.0),
+                    'walletBalance': w.get('walletBalanceAtRequest', 0.0),
+                    'requestedAt': w['requestedAt'].isoformat(),
+                    'referralStats': {
+                        'totalReferrals': total_referrals,
+                        'activeReferrals': active_referrals,
+                        'totalEarnings': round(total_earnings, 2)
+                    }
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'pendingWithdrawals': formatted,
+                    'count': len(formatted)
+                },
+                'message': f'{len(formatted)} pending withdrawal(s) found'
+            }), 200
+            
+        except Exception as e:
+            print(f"Error getting pending withdrawals: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get pending withdrawals',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/withdrawals/<withdrawal_id>/approve', methods=['POST'])
+    @token_required
+    @admin_required
+    def approve_withdrawal(current_user, withdrawal_id):
+        """
+        Approve withdrawal and transfer to wallet balance.
+        ATOMIC TRANSACTION with rollback on error.
+        """
+        try:
+            data = request.get_json() or {}
+            notes = data.get('notes', '')
+            
+            # 1. Get withdrawal request
+            withdrawal = mongo.db.withdrawal_requests.find_one({'_id': ObjectId(withdrawal_id)})
+            if not withdrawal:
+                return jsonify({
+                    'success': False,
+                    'message': 'Withdrawal request not found'
+                }), 404
+            
+            if withdrawal['status'] != 'PENDING':
+                return jsonify({
+                    'success': False,
+                    'message': f'Withdrawal already processed (status: {withdrawal["status"]})'
+                }), 400
+            
+            # 2. Get user
+            user = mongo.db.users.find_one({'_id': withdrawal['userId']})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # 3. Verify balance still available
+            current_withdrawable = user.get('withdrawableCommissionBalance', 0.0)
+            if current_withdrawable < withdrawal['amount']:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient balance. Current: ₦{current_withdrawable:,.2f}, Requested: ₦{withdrawal["amount"]:,.2f}'
+                }), 400
+            
+            # 4. Start atomic transaction
+            try:
+                # 4a. Update user balances
+                # CRITICAL: Update ALL THREE wallet balance fields (Golden Rule 38)
+                mongo.db.users.update_one(
+                    {'_id': user['_id']},
+                    {
+                        '$inc': {
+                            'withdrawableCommissionBalance': -withdrawal['amount'],
+                            'walletBalance': withdrawal['amount'],
+                            'liquidWalletBalance': withdrawal['amount'],
+                            'vasWalletBalance': withdrawal['amount']
+                        },
+                        '$set': {
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                # 4b. Create VAS transaction for wallet funding
+                vas_txn = {
+                    'userId': user['_id'],
+                    'type': 'WALLET_FUNDING',
+                    'subType': 'REFERRAL_WITHDRAWAL',
+                    'amount': withdrawal['amount'],
+                    'status': 'SUCCESS',
+                    'description': f"Referral earnings withdrawal (₦{withdrawal['amount']:,.2f})",
+                    'relatedWithdrawal': withdrawal['_id'],
+                    'provider': 'internal',
+                    'createdAt': datetime.utcnow()
+                }
+                vas_result = mongo.db.vas_transactions.insert_one(vas_txn)
+                
+                # 4c. Create corporate revenue entry (expense)
+                revenue_entry = {
+                    'type': 'REFERRAL_WITHDRAWAL',
+                    'category': 'REFERRAL_PAYOUT',
+                    'amount': -withdrawal['amount'],  # Negative (expense)
+                    'description': f"Referral withdrawal to wallet - {user.get('displayName', 'User')}",
+                    'userId': user['_id'],
+                    'relatedWithdrawal': withdrawal['_id'],
+                    'createdAt': datetime.utcnow()
+                }
+                revenue_result = mongo.db.corporate_revenue.insert_one(revenue_entry)
+                
+                # 4d. Update withdrawal request
+                mongo.db.withdrawal_requests.update_one(
+                    {'_id': withdrawal['_id']},
+                    {'$set': {
+                        'status': 'COMPLETED',
+                        'processedAt': datetime.utcnow(),
+                        'completedAt': datetime.utcnow(),
+                        'processedBy': current_user['_id'],
+                        'notes': notes,
+                        'relatedVasTransaction': vas_result.inserted_id,
+                        'relatedRevenueEntry': revenue_result.inserted_id,
+                        'updatedAt': datetime.utcnow()
+                    }}
+                )
+                
+                # 5. Log admin action
+                mongo.db.admin_actions.insert_one({
+                    'adminId': current_user['_id'],
+                    'action': 'WITHDRAWAL_APPROVED',
+                    'details': f"User: {user.get('displayName')}, Amount: ₦{withdrawal['amount']:,.2f}",
+                    'timestamp': datetime.utcnow()
+                })
+                
+                print(f"✅ Withdrawal approved: {user.get('displayName')} - ₦{withdrawal['amount']:,.2f}")
+                
+                # 6. Get new wallet balance
+                updated_user = mongo.db.users.find_one({'_id': user['_id']})
+                new_wallet_balance = updated_user.get('walletBalance', 0.0)
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'newWalletBalance': round(new_wallet_balance, 2),
+                        'withdrawalId': str(withdrawal['_id'])
+                    },
+                    'message': 'Withdrawal approved and processed successfully'
+                }), 200
+                
+            except Exception as txn_error:
+                # Rollback: Mark withdrawal as FAILED
+                mongo.db.withdrawal_requests.update_one(
+                    {'_id': withdrawal['_id']},
+                    {'$set': {
+                        'status': 'FAILED',
+                        'notes': f'Processing error: {str(txn_error)}',
+                        'updatedAt': datetime.utcnow()
+                    }}
+                )
+                raise txn_error
+            
+        except Exception as e:
+            print(f"Error approving withdrawal: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to approve withdrawal',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/withdrawals/<withdrawal_id>/reject', methods=['POST'])
+    @token_required
+    @admin_required
+    def reject_withdrawal(current_user, withdrawal_id):
+        """
+        Reject withdrawal request with reason.
+        """
+        try:
+            data = request.get_json() or {}
+            reason = data.get('reason', '').strip()
+            
+            if not reason:
+                return jsonify({
+                    'success': False,
+                    'message': 'Rejection reason is required'
+                }), 400
+            
+            # 1. Get withdrawal request
+            withdrawal = mongo.db.withdrawal_requests.find_one({'_id': ObjectId(withdrawal_id)})
+            if not withdrawal:
+                return jsonify({
+                    'success': False,
+                    'message': 'Withdrawal request not found'
+                }), 404
+            
+            if withdrawal['status'] != 'PENDING':
+                return jsonify({
+                    'success': False,
+                    'message': f'Withdrawal already processed (status: {withdrawal["status"]})'
+                }), 400
+            
+            # 2. Get user
+            user = mongo.db.users.find_one({'_id': withdrawal['userId']})
+            
+            # 3. Update withdrawal request
+            mongo.db.withdrawal_requests.update_one(
+                {'_id': withdrawal['_id']},
+                {'$set': {
+                    'status': 'REJECTED',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': current_user['_id'],
+                    'rejectionReason': reason,
+                    'updatedAt': datetime.utcnow()
+                }}
+            )
+            
+            # 4. Log admin action
+            mongo.db.admin_actions.insert_one({
+                'adminId': current_user['_id'],
+                'action': 'WITHDRAWAL_REJECTED',
+                'details': f"User: {user.get('displayName') if user else 'Unknown'}, Reason: {reason}",
+                'timestamp': datetime.utcnow()
+            })
+            
+            print(f"❌ Withdrawal rejected: {user.get('displayName') if user else 'Unknown'} - Reason: {reason}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Withdrawal rejected successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"Error rejecting withdrawal: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reject withdrawal',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/withdrawals/history', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_withdrawal_history(current_user):
+        """
+        Get all withdrawal requests (all statuses) for admin.
+        """
+        try:
+            status_filter = request.args.get('status')  # Optional filter
+            limit = int(request.args.get('limit', 50))
+            
+            # Build query
+            query = {}
+            if status_filter:
+                query['status'] = status_filter.upper()
+            
+            # Get withdrawals
+            withdrawals = list(mongo.db.withdrawal_requests.find(query).sort('requestedAt', -1).limit(limit))
+            
+            # Format for response
+            formatted = []
+            for w in withdrawals:
+                user = mongo.db.users.find_one({'_id': w['userId']})
+                formatted.append({
+                    'id': str(w['_id']),
+                    'userName': user.get('displayName', 'Unknown') if user else 'Unknown',
+                    'userEmail': user.get('email', 'N/A') if user else 'N/A',
+                    'amount': w['amount'],
+                    'status': w['status'],
+                    'requestedAt': w['requestedAt'].isoformat(),
+                    'processedAt': w.get('processedAt').isoformat() if w.get('processedAt') else None,
+                    'rejectionReason': w.get('rejectionReason')
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'withdrawals': formatted,
+                    'count': len(formatted)
+                },
+                'message': f'{len(formatted)} withdrawal(s) found'
+            }), 200
+            
+        except Exception as e:
+            print(f"Error getting withdrawal history: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get withdrawal history',
+                'error': str(e)
+            }), 500
+    
+    # ===== RATE LIMIT MONITORING ENDPOINTS =====
+    
+    @admin_bp.route('/rate-limits/overview', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_rate_limits_overview(current_user):
+        """Get rate limit overview statistics"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            time_start = datetime.utcnow() - timedelta(hours=hours)
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            overview = {
+                'totalCalls': 0,
+                'callsPerMinute': 0,
+                'rateLimitHits': 0,
+                'rateLimitRate': 0,
+                'errorRate': 0,
+                'errorCalls': 0,
+                'avgResponseTime': 0
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'overview': overview
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting rate limits overview: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get rate limits overview',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/heavy-users', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_heavy_users(current_user):
+        """Get users with high API usage"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            min_calls = int(request.args.get('min_calls', 100))
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            heavy_users = []
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'heavyUsers': heavy_users
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting heavy users: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get heavy users',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/endpoint-stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_endpoint_stats(current_user):
+        """Get endpoint usage statistics"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            endpoints = []
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'endpoints': endpoints
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting endpoint stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get endpoint stats',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/violations', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_rate_limit_violations(current_user):
+        """Get rate limit violations"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            violations = []
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'violations': violations
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error getting rate limit violations: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get rate limit violations',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/rate-limits/user/<user_id>', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_rate_limit_details(current_user, user_id):
+        """Get detailed rate limit information for a specific user"""
+        try:
+            hours = int(request.args.get('hours', 24))
+            
+            # Get user info
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Mock data for now - replace with actual rate limit collection when implemented
+            user_data = {
+                'user': {
+                    'displayName': user.get('displayName', 'Unknown'),
+                    'email': user.get('email', 'Unknown'),
+                    'isSubscribed': user.get('isSubscribed', False)
+                },
+                'totalCalls': 0,
+                'callsPerMinute': 0,
+                'timeframe': f'Last {hours} hours',
+                'endpoints': []
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': user_data
+            })
+            
+        except Exception as e:
+            print(f"Error getting user rate limit details: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get user rate limit details',
+                'error': str(e)
+            }), 500
+    
+    # ===== LIQUID WALLET MANAGEMENT ENDPOINTS =====
+    
+    @admin_bp.route('/users/<user_id>/wallet', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_wallet(current_user, user_id):
+        """Get user's liquid wallet information"""
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get wallet data
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet not found for this user'
+                }), 404
+            
+            # Serialize wallet data
+            wallet_data = serialize_doc(wallet)
+            
+            return jsonify({
+                'success': True,
+                'data': wallet_data,
+                'message': 'Wallet information retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting user wallet: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get wallet information',
                 'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/transactions', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_wallet_transactions(current_user, user_id):
+        """Get user's wallet transaction history"""
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get transaction history from VAS transactions
+            limit = int(request.args.get('limit', 50))
+            
+            transactions = list(mongo.db.vas_transactions.find({
+                'userId': ObjectId(user_id)
+            }).sort('createdAt', -1).limit(limit))
+            
+            # Serialize transactions
+            transaction_data = []
+            for tx in transactions:
+                tx_data = serialize_doc(tx)
+                transaction_data.append(tx_data)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactions': transaction_data,
+                    'count': len(transaction_data)
+                },
+                'message': 'Wallet transactions retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting wallet transactions: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get wallet transactions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/<user_id>/wallet/transactions/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_user_wallet_transactions(current_user, user_id):
+        """Export user's complete wallet transaction history as CSV"""
+        try:
+            from flask import make_response
+            import csv
+            from io import StringIO
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get ALL wallet transactions (no limit for export)
+            transactions = list(mongo.db.vas_transactions.find({
+                'userId': ObjectId(user_id)
+            }).sort('createdAt', -1))
+            
+            # Get wallet transaction history from vas_wallets collection
+            vas_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            wallet_history = vas_wallet.get('transactionHistory', []) if vas_wallet else []
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Date',
+                'Transaction ID',
+                'Type',
+                'Category',
+                'Amount (₦)',
+                'Balance Before (₦)',
+                'Balance After (₦)',
+                'Status',
+                'Description',
+                'Phone Number',
+                'Provider',
+                'Reference',
+                'Admin Notes'
+            ])
+            
+            # Write transaction data
+            for tx in transactions:
+                writer.writerow([
+                    tx.get('createdAt', '').isoformat() if isinstance(tx.get('createdAt'), datetime) else str(tx.get('createdAt', '')),
+                    str(tx.get('_id', '')),
+                    tx.get('type', ''),
+                    tx.get('category', ''),
+                    tx.get('amount', 0),
+                    tx.get('balanceBefore', ''),
+                    tx.get('balanceAfter', ''),
+                    tx.get('status', ''),
+                    tx.get('description', ''),
+                    tx.get('phoneNumber', ''),
+                    tx.get('provider', ''),
+                    tx.get('referenceTransactionId', ''),
+                    tx.get('adminNotes', '')
+                ])
+            
+            # Write wallet history entries (if any)
+            for hist in wallet_history:
+                writer.writerow([
+                    hist.get('timestamp', '').isoformat() if isinstance(hist.get('timestamp'), datetime) else str(hist.get('timestamp', '')),
+                    hist.get('transactionId', ''),
+                    hist.get('type', ''),
+                    'WALLET_HISTORY',
+                    hist.get('amount', 0),
+                    hist.get('balanceBefore', ''),
+                    hist.get('balanceAfter', ''),
+                    'SUCCESS',
+                    hist.get('description', ''),
+                    '',
+                    '',
+                    '',
+                    hist.get('adminEmail', '')
+                ])
+            
+            # Create response
+            output.seek(0)
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=liquid_wallet_transactions_{user.get("email", user_id)}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            # Log export action
+            mongo.db.admin_audit_logs.insert_one({
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'export_wallet_transactions',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'transaction_count': len(transactions) + len(wallet_history)
+                }
+            })
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting wallet transactions: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export wallet transactions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/<user_id>/credits/transactions/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_user_credits_transactions(current_user, user_id):
+        """Export user's complete FiCore Credits transaction history as CSV"""
+        try:
+            from flask import make_response
+            import csv
+            from io import StringIO
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get ALL credits transactions (no limit for export)
+            credits_transactions = list(mongo.db.credits.find({
+                'userId': ObjectId(user_id)
+            }).sort('createdAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Date',
+                'Transaction ID',
+                'Type',
+                'Amount (FC)',
+                'Balance Before (FC)',
+                'Balance After (FC)',
+                'Status',
+                'Description',
+                'Source',
+                'Reference',
+                'Metadata'
+            ])
+            
+            # Write transaction data
+            for tx in credits_transactions:
+                metadata = tx.get('metadata', {})
+                writer.writerow([
+                    tx.get('createdAt', '').isoformat() if isinstance(tx.get('createdAt'), datetime) else str(tx.get('createdAt', '')),
+                    str(tx.get('_id', '')),
+                    tx.get('type', ''),
+                    tx.get('amount', 0),
+                    tx.get('balanceBefore', ''),
+                    tx.get('balanceAfter', ''),
+                    tx.get('status', 'SUCCESS'),
+                    tx.get('description', ''),
+                    tx.get('source', ''),
+                    tx.get('referenceId', ''),
+                    str(metadata) if metadata else ''
+                ])
+            
+            # Create response
+            output.seek(0)
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=ficore_credits_transactions_{user.get("email", user_id)}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            # Log export action
+            mongo.db.admin_audit_logs.insert_one({
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'export_credits_transactions',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'transaction_count': len(credits_transactions)
+                }
+            })
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting credits transactions: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export credits transactions',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/<user_id>/wallet/refund', methods=['POST'])
+    @token_required
+    @admin_required
+    def process_admin_refund(current_user, user_id):
+        """Process admin refund for VAS transaction issues"""
+        try:
+            data = request.get_json()
+            
+            # Validate required fields
+            required_fields = ['amount', 'reason']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Missing required field: {field}'
+                    }), 400
+
+            amount = float(data['amount'])
+            reason = data['reason'].strip()
+            reference_transaction_id = data.get('referenceTransactionId', '')
+            
+            # Validate inputs
+            if amount <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Refund amount must be greater than 0'
+                }), 400
+                
+            if len(reason) < 10:
+                return jsonify({
+                    'success': False,
+                    'message': 'Reason must be at least 10 characters'
+                }), 400
+
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+
+            # Get or create user's wallet
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                # Create wallet if it doesn't exist
+                wallet_data = {
+                    '_id': ObjectId(),
+                    'userId': ObjectId(user_id),
+                    'balance': 0.0,
+                    'accountName': user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip(),
+                    'status': 'ACTIVE',
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                mongo.db.vas_wallets.insert_one(wallet_data)
+                wallet = wallet_data
+
+            # Calculate new balance
+            current_balance = wallet.get('balance', 0.0)
+            new_balance = current_balance + amount
+
+            # CRITICAL FIX: Update BOTH balances simultaneously for instant sync
+            # Update VAS wallet balance
+            mongo.db.vas_wallets.update_one(
+                {'userId': ObjectId(user_id)},
+                {
+                    '$set': {
+                        'balance': new_balance,
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            # 🚀 STREAM FIX: Update ALL THREE wallet balance fields for instant frontend updates
+            # CRITICAL: walletBalance, liquidWalletBalance, and vasWalletBalance MUST always be the same
+            mongo.db.users.update_one(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$set': {
+                        'walletBalance': new_balance,
+                        'liquidWalletBalance': new_balance,
+                        'vasWalletBalance': new_balance,
+                        'liquidWalletLastUpdated': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f'SUCCESS: Updated BOTH balances after admin refund - VAS wallet: ₦{new_balance:,.2f}, Liquid wallet: ₦{new_balance:,.2f}')
+            
+            # REMOVED: SSE instant balance update - replaced with polling
+            # Clients will detect balance change within 3 seconds via polling
+            print(f'INFO: Balance updated for user {user_id}: ₦{new_balance:,.2f} - clients will detect via polling')
+
+            # Create refund transaction record
+            refund_transaction = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'type': 'ADMIN_REFUND',
+                'category': 'REFUND_CORRECTION',
+                'amount': amount,
+                'balanceBefore': current_balance,
+                'balanceAfter': new_balance,
+                'status': 'SUCCESS',
+                'description': f'Admin refund: {reason}',
+                'referenceTransactionId': reference_transaction_id,
+                'processedBy': current_user['_id'],
+                'processedByName': current_user.get('displayName', 'Admin'),
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'refundType': 'admin_manual',
+                    'adminId': str(current_user['_id']),
+                    'adminName': current_user.get('displayName', 'Admin'),
+                    'adminEmail': current_user.get('email', ''),
+                    'reason': reason,
+                    'referenceTransactionId': reference_transaction_id,
+                    'processedAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            }
+            
+            mongo.db.vas_transactions.insert_one(refund_transaction)
+
+            # Create audit log entry
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'wallet_refund',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'amount': amount,
+                'reason': reason,
+                'referenceTransactionId': reference_transaction_id,
+                'balanceBefore': current_balance,
+                'balanceAfter': new_balance,
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'refund_amount': amount,
+                    'wallet_balance_before': current_balance,
+                    'wallet_balance_after': new_balance,
+                    'transaction_id': str(refund_transaction['_id']),
+                    'reference_transaction': reference_transaction_id
+                }
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+
+            # Record corporate expense (refunds are expenses for the company)
+            corporate_expense = {
+                '_id': ObjectId(),
+                'type': 'CUSTOMER_REFUND',
+                'category': 'VAS_REFUND',
+                'amount': amount,
+                'userId': ObjectId(user_id),
+                'relatedTransaction': str(refund_transaction['_id']),
+                'description': f'Customer refund - {reason}',
+                'status': 'RECORDED',
+                'processedBy': current_user['_id'],
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'refundAmount': amount,
+                    'adminId': str(current_user['_id']),
+                    'adminName': current_user.get('displayName', 'Admin'),
+                    'reason': reason,
+                    'referenceTransactionId': reference_transaction_id
+                }
+            }
+            mongo.db.corporate_expenses.insert_one(corporate_expense)
+            print(f'💸 Corporate expense recorded: ₦{amount} refund to user {user_id} - Reason: {reason}')
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactionId': str(refund_transaction['_id']),
+                    'amount': amount,
+                    'previousBalance': current_balance,
+                    'newBalance': new_balance,
+                    'reason': reason,
+                    'referenceTransactionId': reference_transaction_id,
+                    'processedBy': current_user.get('displayName', 'Admin'),
+                    'processedAt': datetime.utcnow().isoformat() + 'Z'
+                },
+                'message': f'Refund of ₦{amount:,.2f} processed successfully'
+            })
+
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid amount format'
+            }), 400
+        except Exception as e:
+            print(f"Error processing admin refund: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to process refund',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/<user_id>/wallet/deduct', methods=['POST'])
+    @token_required
+    @admin_required
+    def process_admin_deduction(current_user, user_id):
+        """Process admin deduction for dispute resolution or excess balance correction"""
+        try:
+            data = request.get_json()
+            amount = data.get('amount')
+            reason = data.get('reason', '').strip()
+            reference_transaction_id = data.get('referenceTransactionId', '').strip()
+            
+            # Validate inputs
+            if not amount or not isinstance(amount, (int, float)):
+                return jsonify({
+                    'success': False,
+                    'message': 'Valid deduction amount is required'
+                }), 400
+            
+            if amount <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Deduction amount must be greater than 0'
+                }), 400
+                
+            if not reason:
+                return jsonify({
+                    'success': False,
+                    'message': 'Deduction reason is required'
+                }), 400
+            
+            # Get user
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # 🚀 CRITICAL FIX: Get FRESH balance from VAS wallet (source of truth)
+            # This prevents race conditions from stale user document balance
+            vas_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if vas_wallet:
+                current_balance = vas_wallet.get('balance', 0)
+                print(f'INFO: Using VAS wallet balance (source of truth): ₦{current_balance:,.2f}')
+            else:
+                # Fallback to user document if VAS wallet doesn't exist
+                current_balance = user.get('liquidWalletBalance', 0)
+                print(f'WARNING: VAS wallet not found, using user document balance: ₦{current_balance:,.2f}')
+            
+            # Check if user has sufficient balance
+            if current_balance < amount:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient balance. User has ₦{current_balance:,.2f}, cannot deduct ₦{amount:,.2f}'
+                }), 400
+            
+            # Calculate new balance
+            new_balance = current_balance - amount
+            
+            # 🚀 CRITICAL FIX: Use atomic update with current balance check to prevent race conditions
+            # Update VAS wallet balance (primary source used by backend) with atomic operation
+            vas_wallet_result = mongo.db.vas_wallets.update_one(
+                {
+                    'userId': ObjectId(user_id),
+                    'balance': current_balance  # Only update if balance hasn't changed
+                },
+                {
+                    '$set': {
+                        'balance': new_balance,
+                        'updatedAt': datetime.utcnow()
+                    },
+                    '$push': {
+                        'transactionHistory': {
+                            'transactionId': str(ObjectId()),
+                            'type': 'ADMIN_DEDUCTION',
+                            'amount': amount,
+                            'balanceBefore': current_balance,
+                            'balanceAfter': new_balance,
+                            'description': f'Admin deduction: {reason}',
+                            'timestamp': datetime.utcnow(),
+                            'adminId': str(current_user['_id']),
+                            'adminEmail': current_user['email']
+                        }
+                    }
+                }
+            )
+            
+            # Check if update was successful (balance hasn't changed since we read it)
+            if vas_wallet_result.modified_count == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Balance changed during operation. Please refresh and try again.',
+                    'error': 'RACE_CONDITION_DETECTED'
+                }), 409  # Conflict
+            
+            # Update user's liquid wallet balance (for backward compatibility)
+            mongo.db.users.update_one(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$set': {
+                        'liquidWalletBalance': new_balance,
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f'SUCCESS: Updated balance after admin deduction - Liquid wallet: ₦{current_balance:,.2f} → ₦{new_balance:,.2f}')
+            
+            # REMOVED: SSE instant balance update - replaced with polling
+            # Clients will detect balance change within 3 seconds via polling
+            print(f'INFO: Balance updated for user {user_id}: ₦{new_balance:,.2f} - clients will detect via polling')
+
+            # Create deduction transaction record
+            deduction_transaction = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'type': 'ADMIN_DEDUCTION',
+                'category': 'BALANCE_CORRECTION',
+                'amount': amount,
+                'balanceBefore': current_balance,
+                'balanceAfter': new_balance,
+                'status': 'SUCCESS',
+                'description': f'Admin deduction: {reason}',
+                'referenceTransactionId': reference_transaction_id,
+                'processedBy': current_user['_id'],
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'deductionType': 'admin_manual',
+                    'adminId': str(current_user['_id']),
+                    'adminName': current_user.get('displayName', 'Admin'),
+                    'reason': reason,
+                    'referenceTransaction': reference_transaction_id
+                }
+            }
+            
+            mongo.db.vas_transactions.insert_one(deduction_transaction)
+
+            # Create audit log entry
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user['email'],
+                'action': 'wallet_deduction',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user['email'],
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'deduction_amount': amount,
+                    'wallet_balance_before': current_balance,
+                    'wallet_balance_after': new_balance,
+                    'transaction_id': str(deduction_transaction['_id']),
+                    'reason': reason,
+                    'reference_transaction': reference_transaction_id
+                }
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+
+            # Record corporate income (deductions are income for the company)
+            corporate_income = {
+                '_id': ObjectId(),
+                'type': 'CUSTOMER_DEDUCTION',
+                'category': 'BALANCE_CORRECTION',
+                'amount': amount,
+                'userId': ObjectId(user_id),
+                'relatedTransaction': str(deduction_transaction['_id']),
+                'description': f'Customer balance deduction - {reason}',
+                'status': 'RECORDED',
+                'processedBy': current_user['_id'],
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'deductionAmount': amount,
+                    'adminId': str(current_user['_id']),
+                    'adminName': current_user.get('displayName', 'Admin'),
+                    'reason': reason
+                }
+            }
+            mongo.db.corporate_income.insert_one(corporate_income)
+            print(f'💰 Corporate income recorded: ₦{amount} deduction from user {user_id} - Reason: {reason}')
+
+            # Create expense entry for user's records (deduction appears as expense)
+            expense_entry = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'title': f'Admin Deduction - {reason}',
+                'description': f'Balance correction by admin: {reason}',
+                'amount': amount,
+                'category': 'Administrative',
+                'subcategory': 'Balance Correction',
+                'date': datetime.utcnow(),  # CRITICAL: Must have date field for expense summary
+                'transactionType': 'ADMIN_DEDUCTION',
+                'adminTransactionId': str(deduction_transaction['_id']),
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'status': 'active',
+                'isDeleted': False,
+                'source': 'admin_deduction'
+            }
+            
+            mongo.db.expenses.insert_one(expense_entry)
+            print(f'📝 Expense entry created for user records: ₦{amount} deduction')
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactionId': str(deduction_transaction['_id']),
+                    'amount': amount,
+                    'previousBalance': current_balance,
+                    'newBalance': new_balance,
+                    'reason': reason,
+                    'processedAt': datetime.utcnow().isoformat() + 'Z'
+                },
+                'message': f'Deduction of ₦{amount:,.2f} processed successfully'
+            })
+
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid amount format'
+            }), 400
+        except Exception as e:
+            print(f"Error processing admin deduction: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to process deduction',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/users/<user_id>/wallet/pin-reset', methods=['POST'])
+    @token_required
+    @admin_required
+    def reset_user_vas_pin(current_user, user_id):
+        """Reset user's VAS transaction PIN - for admin panel integration"""
+        try:
+            data = request.get_json()
+            reason = data.get('reason', '').strip()
+            
+            # Validate reason is provided
+            if not reason:
+                return jsonify({
+                    'success': False,
+                    'message': 'Reason is required for audit trail',
+                    'errors': {'reason': ['Reason is required']}
+                }), 400
+            
+            if len(reason) < 10:
+                return jsonify({
+                    'success': False,
+                    'message': 'Reason must be at least 10 characters',
+                    'errors': {'reason': ['Reason must be at least 10 characters']}
+                }), 400
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get user's wallet
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'User wallet not found'
+                }), 404
+            
+            # Check if PIN was actually set
+            pin_was_set = bool(wallet.get('vasPinHash'))
+            was_locked = bool(wallet.get('pinLockedUntil') and wallet.get('pinLockedUntil') > datetime.utcnow())
+            attempts = wallet.get('pinAttempts', 0)
+            
+            # Reset PIN data
+            mongo.db.vas_wallets.update_one(
+                {'userId': ObjectId(user_id)},
+                {
+                    '$unset': {
+                        'vasPinHash': '',
+                        'vasPinSalt': '',
+                        'pinSetupAt': '',
+                        'pinLastUsed': ''
+                    },
+                    '$set': {
+                        'pinAttempts': 0,
+                        'pinLockedUntil': None,
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            # Create audit log entry
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', ''),
+                'action': 'vas_pin_reset',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', ''),
+                'reason': reason,
+                'timestamp': datetime.utcnow(),
+                'details': {
+                    'pinWasSet': pin_was_set,
+                    'wasLocked': was_locked,
+                    'failedAttempts': attempts,
+                    'resetBy': current_user.get('displayName', 'Admin'),
+                    'resetAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+            
+            print(f'SUCCESS: Admin {current_user.get("email")} reset VAS PIN for user {user_id} ({user.get("email")}) - Reason: {reason}')
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'resetAt': datetime.utcnow().isoformat() + 'Z',
+                    'targetUserId': user_id,
+                    'targetUserEmail': user.get('email', ''),
+                    'targetUserName': user.get('displayName', ''),
+                    'adminEmail': current_user.get('email', ''),
+                    'adminName': current_user.get('displayName', 'Admin'),
+                    'reason': reason,
+                    'previousState': {
+                        'pinWasSet': pin_was_set,
+                        'wasLocked': was_locked,
+                        'failedAttempts': attempts
+                    }
+                },
+                'message': f'VAS PIN reset successfully for {user.get("displayName", "user")}'
+            }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Admin PIN reset failed: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'PIN reset failed',
+                'error': str(e)
+            }), 500
+    
+    # ===== WITHDRAWAL MANAGEMENT ENDPOINTS (Phase 4A) =====
+    
+    @admin_bp.route('/withdrawals/pending', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_pending_withdrawals(current_user):
+        """
+        Get all pending withdrawal requests for admin review.
+        """
+        try:
+            # Get all pending requests
+            pending_requests = list(mongo.db.withdrawal_requests.find({
+                'status': 'PENDING'
+            }).sort('requestedAt', 1))  # Oldest first
+            
+            # Enrich with user details and referral stats
+            formatted_requests = []
+            for req in pending_requests:
+                user = mongo.db.users.find_one({'_id': req['userId']})
+                if not user:
+                    continue
+                
+                # Get referral stats
+                referrals = list(mongo.db.referrals.find({'referrerId': req['userId']}))
+                active_referrals = len([r for r in referrals if r['status'] in ['active', 'qualified']])
+                
+                # Get total earnings
+                total_earnings = user.get('referralEarnings', 0.0)
+                
+                formatted_requests.append({
+                    'id': str(req['_id']),
+                    'user': {
+                        'id': str(user['_id']),
+                        'name': user.get('displayName', 'Unknown'),
+                        'email': user.get('email', 'N/A'),
+                        'referralCode': user.get('referralCode', 'N/A'),
+                        'createdAt': user.get('createdAt').isoformat() if user.get('createdAt') else None
+                    },
+                    'amount': req['amount'],
+                    'withdrawableBalance': req['withdrawableBalanceAtRequest'],
+                    'pendingBalance': req['pendingBalanceAtRequest'],
+                    'creditBalance': req['creditBalanceAtRequest'],
+                    'requestedAt': req['requestedAt'].isoformat(),
+                    'referralStats': {
+                        'totalReferrals': len(referrals),
+                        'activeReferrals': active_referrals,
+                        'totalEarnings': total_earnings
+                    },
+                    'ipAddress': req.get('ipAddress', 'N/A'),
+                    'deviceInfo': req.get('deviceInfo', 'N/A')
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'pendingWithdrawals': formatted_requests,
+                    'count': len(formatted_requests)
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Get pending withdrawals error: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get pending withdrawals'
+            }), 500
+    
+    @admin_bp.route('/withdrawals/<withdrawal_id>/approve', methods=['POST'])
+    @token_required
+    @admin_required
+    def approve_withdrawal(current_user, withdrawal_id):
+        """
+        Approve a withdrawal request and transfer to FiCore Credits.
+        """
+        try:
+            data = request.get_json() or {}
+            notes = data.get('notes', '')
+            admin_id = current_user['_id']
+            
+            # 1. Get withdrawal request
+            withdrawal = mongo.db.withdrawal_requests.find_one({'_id': ObjectId(withdrawal_id)})
+            if not withdrawal:
+                return jsonify({'success': False, 'message': 'Withdrawal not found'}), 404
+            
+            if withdrawal['status'] != 'PENDING':
+                return jsonify({'success': False, 'message': 'Withdrawal already processed'}), 400
+            
+            # 2. Get user
+            user = mongo.db.users.find_one({'_id': withdrawal['userId']})
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+            # 3. Verify balance still available
+            if user.get('withdrawableCommissionBalance', 0) < withdrawal['amount']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Insufficient balance (balance changed since request)'
+                }), 400
+            
+            # 4. Process withdrawal (atomic operations)
+            try:
+                # 4a. Update user balances
+                mongo.db.users.update_one(
+                    {'_id': user['_id']},
+                    {'$inc': {
+                        'withdrawableCommissionBalance': -withdrawal['amount'],
+                        'ficoreCreditBalance': int(withdrawal['amount'])  # Convert to credits (1:1)
+                    }}
+                )
+                
+                # 4b. Create credit transaction
+                credit_txn = {
+                    'userId': user['_id'],
+                    'type': 'REFERRAL_WITHDRAWAL',
+                    'amount': int(withdrawal['amount']),
+                    'status': 'completed',
+                    'description': f"Referral earnings withdrawal (₦{withdrawal['amount']:,.0f})",
+                    'relatedWithdrawal': withdrawal['_id'],
+                    'createdAt': datetime.utcnow()
+                }
+                credit_result = mongo.db.credit_transactions.insert_one(credit_txn)
+                
+                # 4c. Create corporate revenue entry (expense)
+                revenue_entry = {
+                    'type': 'REFERRAL_WITHDRAWAL',
+                    'category': 'REFERRAL_PAYOUT',
+                    'amount': -withdrawal['amount'],  # Negative (expense)
+                    'description': f"Referral withdrawal to FiCore Credits - {user.get('displayName', 'User')}",
+                    'userId': user['_id'],
+                    'relatedWithdrawal': withdrawal['_id'],
+                    'createdAt': datetime.utcnow()
+                }
+                revenue_result = mongo.db.corporate_revenue.insert_one(revenue_entry)
+                
+                # 4d. Update withdrawal request
+                mongo.db.withdrawal_requests.update_one(
+                    {'_id': withdrawal['_id']},
+                    {'$set': {
+                        'status': 'COMPLETED',
+                        'processedAt': datetime.utcnow(),
+                        'completedAt': datetime.utcnow(),
+                        'processedBy': admin_id,
+                        'notes': notes,
+                        'relatedCreditTransaction': credit_result.inserted_id,
+                        'relatedRevenueEntry': revenue_result.inserted_id,
+                        'updatedAt': datetime.utcnow()
+                    }}
+                )
+                
+                # 5. Log admin action
+                mongo.db.admin_actions.insert_one({
+                    'adminId': admin_id,
+                    'action': 'WITHDRAWAL_APPROVED',
+                    'details': f"User: {user.get('displayName')}, Amount: ₦{withdrawal['amount']:,.0f}",
+                    'timestamp': datetime.utcnow()
+                })
+                
+                print(f"✅ Withdrawal approved: {user.get('displayName')} - ₦{withdrawal['amount']:,.0f}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Withdrawal approved and processed successfully',
+                    'data': {
+                        'newCreditBalance': user.get('ficoreCreditBalance', 0) + int(withdrawal['amount'])
+                    }
+                }), 200
+                
+            except Exception as e:
+                # Rollback on error
+                print(f"❌ Error processing withdrawal: {e}")
+                mongo.db.withdrawal_requests.update_one(
+                    {'_id': withdrawal['_id']},
+                    {'$set': {
+                        'status': 'FAILED',
+                        'notes': f'Processing error: {str(e)}',
+                        'updatedAt': datetime.utcnow()
+                    }}
+                )
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to process withdrawal'
+                }), 500
+                
+        except Exception as e:
+            print(f"❌ Approve withdrawal error: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to approve withdrawal'
+            }), 500
+    
+    @admin_bp.route('/withdrawals/<withdrawal_id>/reject', methods=['POST'])
+    @token_required
+    @admin_required
+    def reject_withdrawal(current_user, withdrawal_id):
+        """
+        Reject a withdrawal request with reason.
+        """
+        try:
+            data = request.get_json() or {}
+            reason = data.get('reason', 'No reason provided')
+            admin_id = current_user['_id']
+            
+            # 1. Get withdrawal request
+            withdrawal = mongo.db.withdrawal_requests.find_one({'_id': ObjectId(withdrawal_id)})
+            if not withdrawal:
+                return jsonify({'success': False, 'message': 'Withdrawal not found'}), 404
+            
+            if withdrawal['status'] != 'PENDING':
+                return jsonify({'success': False, 'message': 'Withdrawal already processed'}), 400
+            
+            # 2. Get user
+            user = mongo.db.users.find_one({'_id': withdrawal['userId']})
+            
+            # 3. Update withdrawal request
+            mongo.db.withdrawal_requests.update_one(
+                {'_id': withdrawal['_id']},
+                {'$set': {
+                    'status': 'REJECTED',
+                    'processedAt': datetime.utcnow(),
+                    'processedBy': admin_id,
+                    'rejectionReason': reason,
+                    'updatedAt': datetime.utcnow()
+                }}
+            )
+            
+            # 4. Log admin action
+            mongo.db.admin_actions.insert_one({
+                'adminId': admin_id,
+                'action': 'WITHDRAWAL_REJECTED',
+                'details': f"User: {user.get('displayName') if user else 'Unknown'}, Reason: {reason}",
+                'timestamp': datetime.utcnow()
+            })
+            
+            print(f"❌ Withdrawal rejected: {user.get('displayName') if user else 'Unknown'} - Reason: {reason}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Withdrawal rejected successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Reject withdrawal error: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to reject withdrawal'
+            }), 500
+    
+    @admin_bp.route('/withdrawals/history', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_withdrawal_history(current_user):
+        """
+        Get all withdrawal requests (all statuses) for admin review.
+        """
+        try:
+            status_filter = request.args.get('status', 'all')
+            limit = int(request.args.get('limit', 50))
+            
+            # Build query
+            query = {}
+            if status_filter != 'all':
+                query['status'] = status_filter.upper()
+            
+            # Get requests
+            requests = list(mongo.db.withdrawal_requests.find(query).sort('requestedAt', -1).limit(limit))
+            
+            # Enrich with user details
+            formatted_requests = []
+            for req in requests:
+                user = mongo.db.users.find_one({'_id': req['userId']})
+                if not user:
+                    continue
+                
+                formatted_requests.append({
+                    'id': str(req['_id']),
+                    'user': {
+                        'name': user.get('displayName', 'Unknown'),
+                        'email': user.get('email', 'N/A')
+                    },
+                    'amount': req['amount'],
+                    'status': req['status'],
+                    'requestedAt': req['requestedAt'].isoformat(),
+                    'processedAt': req['processedAt'].isoformat() if req.get('processedAt') else None,
+                    'rejectionReason': req.get('rejectionReason')
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'withdrawals': formatted_requests,
+                    'count': len(formatted_requests)
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Get withdrawal history error: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get withdrawal history'
             }), 500
          
     return admin_bp

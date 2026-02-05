@@ -452,7 +452,7 @@
             return window.location.origin;
         })();
 
-        let authToken = localStorage.getItem('admin_token');
+        let authToken = localStorage.getItem('adminToken');
         let allPremiumUsers = [];
         let filteredUsers = [];
         let sortColumn = 'subscriptionEndDate';
@@ -465,15 +465,15 @@
                 return;
             }
             
-            const adminName = localStorage.getItem('admin_name') || 'Admin';
+            const adminName = localStorage.getItem('adminName') || 'Admin';
             document.getElementById('adminName').textContent = adminName;
             
             loadPremiumUsers();
         });
 
         function logout() {
-            localStorage.removeItem('admin_token');
-            localStorage.removeItem('admin_name');
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminName');
             window.location.href = 'admin_login.html';
         }
 

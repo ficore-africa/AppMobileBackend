@@ -2009,7 +2009,8 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
                     }
                 }
             
-            print(f"DEBUG DEBTORS STATISTICS: {statistics_data}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG DEBTORS STATISTICS: {statistics_data}")
             
             return jsonify({
                 'success': True,

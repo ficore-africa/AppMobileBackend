@@ -38,13 +38,15 @@ const API_BASE_URL = getBackendURL();
 
 // Get admin token from localStorage
 function getAdminToken() {
-    return localStorage.getItem('admin_token');
+    // Try both keys for backward compatibility
+    return localStorage.getItem('adminToken') || localStorage.getItem('admin_token');
 }
 
 // Get admin permissions from localStorage
 function getAdminPermissions() {
     try {
-        const permissions = localStorage.getItem('admin_permissions');
+        // Try both keys for backward compatibility
+        const permissions = localStorage.getItem('adminPermissions') || localStorage.getItem('admin_permissions');
         return permissions ? JSON.parse(permissions) : [];
     } catch (error) {
         console.error('Error parsing admin permissions:', error);
@@ -299,8 +301,17 @@ async function fetchWithAuth(url, options = {}) {
 // Load admin info
 async function loadAdminInfo() {
     try {
+        // Try both key variants for backward compatibility
+        const adminEmail = localStorage.getItem('adminEmail') || localStorage.getItem('admin_email');
+        const adminName = localStorage.getItem('adminName') || localStorage.getItem('admin_name');
         const adminUser = localStorage.getItem('admin_user');
-        if (adminUser) {
+        
+        if (adminEmail || adminName) {
+            const adminNameElement = document.getElementById('adminName');
+            if (adminNameElement) {
+                adminNameElement.textContent = adminName || adminEmail || 'Admin';
+            }
+        } else if (adminUser) {
             const user = JSON.parse(adminUser);
             const adminNameElement = document.getElementById('adminName');
             if (adminNameElement) {
@@ -324,8 +335,14 @@ function checkAuth() {
 
 // Logout
 function logout() {
+    // Clear both token key variants
+    localStorage.removeItem('adminToken');
     localStorage.removeItem('admin_token');
+    localStorage.removeItem('adminPermissions');
     localStorage.removeItem('admin_permissions');
+    localStorage.removeItem('adminEmail');
+    localStorage.removeItem('adminName');
+    localStorage.removeItem('adminUserId');
     localStorage.removeItem('admin_user');
     window.location.href = 'admin_login.html';
 }

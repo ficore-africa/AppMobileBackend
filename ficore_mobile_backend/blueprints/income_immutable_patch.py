@@ -107,7 +107,8 @@ def create_immutable_income_endpoints(income_bp, mongo, token_required, serializ
             if 'amount' in data:
                 raw_amount = float(data['amount'])
                 update_data['amount'] = raw_amount
-                print(f"DEBUG: Updating income record {income_id} with amount: {raw_amount} for user: {current_user['_id']}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: Updating income record {income_id} with amount: {raw_amount} for user: {current_user['_id']}")
             if 'source' in data:
                 update_data['source'] = data['source']
             if 'description' in data:

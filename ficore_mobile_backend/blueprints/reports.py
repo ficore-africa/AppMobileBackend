@@ -115,7 +115,9 @@ def init_reports_blueprint(mongo, token_required):
             }
             mongo.db.export_logs.insert_one(export_log)
         except Exception as e:
-            print(f"Error logging export event: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error logging export event: {str(e)}")
+            pass
     
     def parse_date_range(request_data):
         """
@@ -213,11 +215,13 @@ def init_reports_blueprint(mongo, token_required):
                     'message': 'No income records found for the selected period'
                 }), 404
             
-            # Prepare user data
+            # Prepare user data with business name
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
             user_data = {
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
-                'email': current_user.get('email', '')
+                'email': current_user.get('email', ''),
+                'businessName': user.get('businessName', '') if user else ''
             }
             
             # Prepare export data
@@ -391,11 +395,13 @@ def init_reports_blueprint(mongo, token_required):
                     'message': 'No expense records found for the selected period'
                 }), 404
             
-            # Prepare user data
+            # Prepare user data with business name
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
             user_data = {
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
-                'email': current_user.get('email', '')
+                'email': current_user.get('email', ''),
+                'businessName': user.get('businessName', '') if user else ''
             }
             
             # Prepare export data
@@ -570,11 +576,13 @@ def init_reports_blueprint(mongo, token_required):
             incomes = list(mongo.db.incomes.find(income_query))
             expenses = list(mongo.db.expenses.find(expense_query))
             
-            # Prepare user data
+            # Prepare user data with business name
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
             user_data = {
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
-                'email': current_user.get('email', '')
+                'email': current_user.get('email', ''),
+                'businessName': user.get('businessName', '') if user else ''
             }
             
             # Prepare export data
@@ -674,11 +682,13 @@ def init_reports_blueprint(mongo, token_required):
                     'message': 'No transactions found for the selected period'
                 }), 404
             
-            # Prepare user data
+            # Prepare user data with business name
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
             user_data = {
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
-                'email': current_user.get('email', '')
+                'email': current_user.get('email', ''),
+                'businessName': user.get('businessName', '') if user else ''
             }
             
             # Prepare transaction data
@@ -783,13 +793,12 @@ def init_reports_blueprint(mongo, token_required):
             
             # Prepare user data
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            business_profile = mongo.db.business_profiles.find_one({'userId': current_user['_id']})
             
             user_data = {
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
-                'businessName': business_profile.get('businessName', '') if business_profile else ''
+                'businessName': user.get('businessName', '') if user else ''
             }
             
             # Prepare comprehensive tax data

@@ -184,6 +184,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # NOTE: If within free limit, no FC deduction needed
             # If over limit, FC will be deducted after successful creation
             
+            # Import auto-population utility
+            from ..utils.income_utils import auto_populate_income_fields
+            
             # Simplified: No recurring logic - all incomes are one-time entries
             
             # CRITICAL FIX: Ensure amount is stored exactly as provided, no multipliers
@@ -208,8 +211,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'updatedAt': datetime.utcnow()
             }
             
+            # Auto-populate title and description if missing
+            income_data = auto_populate_income_fields(income_data)
+            
             # DEBUG: Log the exact amount being stored
-            print(f"DEBUG: Creating income record with amount: {raw_amount} for user: {current_user['_id']}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: Creating income record with amount: {raw_amount} for user: {current_user['_id']}")
             
             result = mongo.db.incomes.insert_one(income_data)
             income_id = str(result.inserted_id)
@@ -257,6 +264,72 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 }
                 
                 mongo.db.credit_transactions.insert_one(transaction)
+            
+            # NEW: Check if this is user's first entry and mark onboarding complete
+            # This ensures backend state stays in sync with frontend wizard
+            try:
+                income_count = mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                expense_count = mongo.db.expenses.count_documents({'userId': current_user['_id']})
+                
+                if income_count + expense_count == 1:  # This is the first entry
+                    mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {
+                            '$set': {
+                                'hasCompletedOnboarding': True,
+                                'onboardingCompletedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f'✅ First entry created - onboarding marked complete for user {current_user["_id"]}')
+            except Exception as e:
+                print(f'⚠️ Failed to mark onboarding complete (non-critical): {e}')
+            
+            # PHASE 4: Create context-aware notification reminder to attach documents
+            # This is the "Audit Shield" - persistent reminder that survives app reinstalls
+            try:
+                from blueprints.notifications import create_user_notification
+                from utils.notification_context import get_notification_context
+                
+                # Determine entry title for notification
+                entry_title = income_data.get('source', 'Income')
+                entry_amount = raw_amount
+                
+                # Get context-aware notification content
+                notification_context = get_notification_context(
+                    user=current_user,
+                    entry_data=income_data,
+                    entry_type='income'
+                )
+                
+                # Create persistent notification with context
+                notification_id = create_user_notification(
+                    mongo=mongo,
+                    user_id=current_user['_id'],
+                    category=notification_context['category'],
+                    title=notification_context['title'],
+                    body=notification_context['body'],
+                    related_id=income_id,
+                    metadata={
+                        'entryType': 'income',
+                        'entryTitle': entry_title,
+                        'amount': entry_amount,
+                        'category': data['category'],
+                        'dateCreated': datetime.utcnow().isoformat(),
+                        'businessStructure': current_user.get('taxProfile', {}).get('businessStructure'),
+                        'entryTag': income_data.get('entryType')
+                    },
+                    priority=notification_context['priority']
+                )
+                
+                if notification_id:
+                    print(f'📱 Context-aware notification created for income {income_id}: {notification_id} (priority: {notification_context["priority"]})')
+                else:
+                    print(f'⚠️ Failed to create notification for income {income_id}')
+                    
+            except Exception as e:
+                # Don't fail the income creation if notification fails
+                print(f'⚠️ Failed to create notification (non-critical): {e}')
             
             # FIXED: Return full income data like other endpoints
             created_income = serialize_doc(income_data.copy())
@@ -310,8 +383,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             try:
-                print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
-                print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
+            # print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
                 # Base query for active transactions only
                 base_query = get_active_transactions_query(current_user['_id'])
@@ -325,7 +399,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ]))
                 total_this_month = total_this_month_result[0]['total'] if total_this_month_result else 0.0
                 this_month_count = total_this_month_result[0]['count'] if total_this_month_result else 0
-                print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
                 
                 total_last_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
@@ -335,7 +410,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
                 ]))
                 total_last_month = total_last_month_result[0]['total'] if total_last_month_result else 0.0
-                print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
                 
                 year_to_date_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
@@ -346,13 +422,16 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ]))
                 year_to_date = year_to_date_result[0]['total'] if year_to_date_result else 0.0
                 ytd_record_count = year_to_date_result[0]['count'] if year_to_date_result else 0
-                print(f"DEBUG: CALCULATED year_to_date = {year_to_date}, ytd_record_count = {ytd_record_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED year_to_date = {year_to_date}, ytd_record_count = {ytd_record_count}")
                 
                 all_time_record_count = mongo.db.incomes.count_documents(base_query)
-                print(f"DEBUG: CALCULATED all_time_record_count = {all_time_record_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED all_time_record_count = {all_time_record_count}")
                 
                 final_record_count = ytd_record_count if ytd_record_count > 0 else all_time_record_count
-                print(f"DEBUG: FINAL record_count (with fallback) = {final_record_count}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: FINAL record_count (with fallback) = {final_record_count}")
                 
                 twelve_months_ago = now - timedelta(days=365)
                 monthly_totals = list(mongo.db.incomes.aggregate([
@@ -390,7 +469,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 elif total_this_month > 0 and total_last_month == 0:
                     growth_percentage = 100.0
                 
-                print(f"DEBUG: CALCULATED growth_percentage = {growth_percentage}% (this_month={total_this_month}, last_month={total_last_month})")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: CALCULATED growth_percentage = {growth_percentage}% (this_month={total_this_month}, last_month={total_last_month})")
                 
                 summary_data = {
                     'total_this_month': total_this_month,
@@ -403,12 +483,13 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'growth_percentage': growth_percentage
                 }
                 
-                print(f"DEBUG: FINAL INCOME SUMMARY RESPONSE:")
-                print(f"  total_this_month: {total_this_month}")
-                print(f"  total_last_month: {total_last_month}")
-                print(f"  year_to_date: {year_to_date}")
-                print(f"  total_records: {final_record_count} (YTD: {ytd_record_count}, All-time: {all_time_record_count})")
-                print(f"  growth_percentage: {growth_percentage}%")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: FINAL INCOME SUMMARY RESPONSE:")
+                # print(f"  total_this_month: {total_this_month}")
+                # print(f"  total_last_month: {total_last_month}")
+                # print(f"  year_to_date: {year_to_date}")
+                # print(f"  total_records: {final_record_count} (YTD: {ytd_record_count}, All-time: {all_time_record_count})")
+                # print(f"  growth_percentage: {growth_percentage}%")
                 
                 return jsonify({
                     'success': True,
@@ -451,22 +532,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             base_query = get_active_transactions_query(current_user['_id'])
             
-            print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG INCOME COUNTS - User: {current_user['_id']}")
             
             ytd_count = mongo.db.incomes.count_documents({
                 **base_query,
                 'dateReceived': {'$gte': start_of_year, '$lte': now}
             })
-            print(f"DEBUG: YTD count = {ytd_count}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: YTD count = {ytd_count}")
             
             all_time_count = mongo.db.incomes.count_documents(base_query)
-            print(f"DEBUG: All-time count = {all_time_count}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: All-time count = {all_time_count}")
             
             this_month_count = mongo.db.incomes.count_documents({
                 **base_query,
                 'dateReceived': {'$gte': start_of_month, '$lte': now}
             })
-            print(f"DEBUG: This month count = {this_month_count}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG: This month count = {this_month_count}")
             
             return jsonify({
                 'success': True,
@@ -499,8 +584,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             incomes = list(mongo.db.incomes.find(base_query))
             
-            print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
-            print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
+            # DISABLED FOR VAS FOCUS
+            # print(f"DEBUG INCOME INSIGHTS - User: {current_user['_id']}")
+            # print(f"DEBUG: Total incomes retrieved: {len(incomes)}")
             
             if not incomes:
                 return jsonify({
@@ -668,7 +754,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if 'amount' in data:
                 raw_amount = float(data['amount'])
                 update_data['amount'] = raw_amount
-                print(f"DEBUG: Updating income record {income_id} with amount: {raw_amount} for user: {current_user['_id']}")
+                # DISABLED FOR VAS FOCUS
+                # print(f"DEBUG: Updating income record {income_id} with amount: {raw_amount} for user: {current_user['_id']}")
             if 'source' in data:
                 update_data['source'] = data['source']
             if 'description' in data:
@@ -748,6 +835,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
         1. Mark it as 'voided' and 'isDeleted=True'
         2. Create a reversal entry with negative amount
         3. Link them together for audit trail
+        
+        IDEMPOTENT: Returns success if already deleted (prevents UI rollback)
         """
         try:
             if not ObjectId.is_valid(income_id):
@@ -764,6 +853,18 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             )
             
             if not result['success']:
+                # CRITICAL FIX: If already deleted, return success (idempotent operation)
+                if 'already deleted' in result['message'].lower():
+                    return jsonify({
+                        'success': True,
+                        'message': 'Income record already deleted',
+                        'data': {
+                            'originalId': income_id,
+                            'alreadyDeleted': True
+                        }
+                    }), 200  # ✓ Return 200 instead of 404
+                
+                # Only return 404 for "not found" errors
                 return jsonify({
                     'success': False,
                     'message': result['message']
@@ -941,4 +1042,131 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ============================================================================
+    # ENTRY TAGGING ENDPOINTS (Phase 3B)
+    # ============================================================================
+    
+    @income_bp.route('/tag/<entry_id>', methods=['PATCH'])
+    @token_required
+    def tag_income_entry(current_user, entry_id):
+        """Tag an income entry as business or personal"""
+        try:
+            data = request.get_json() or {}
+            entry_type = data.get('entryType')
+            
+            # Validate entry type
+            if entry_type not in ['business', 'personal', None]:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business", "personal", or null'
+                }), 400
+            
+            # Update entry
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow() if entry_type else None,
+                'taggedBy': 'user' if entry_type else None
+            }
+            
+            result = mongo.db.incomes.update_one(
+                {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+                {'$set': update_data}
+            )
+            
+            if result.modified_count > 0:
+                return jsonify({
+                    'success': True,
+                    'message': 'Entry tagged successfully'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found or already tagged'
+                }), 404
+                
+        except Exception as e:
+            print(f"Error in tag_income_entry: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to tag entry',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/bulk-tag', methods=['PATCH'])
+    @token_required
+    def bulk_tag_income_entries(current_user):
+        """Tag multiple income entries at once"""
+        try:
+            data = request.get_json() or {}
+            entry_ids = data.get('entryIds', [])
+            entry_type = data.get('entryType')
+            
+            # Validate entry type
+            if entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business" or "personal"'
+                }), 400
+            
+            if not entry_ids:
+                return jsonify({
+                    'success': False,
+                    'message': 'No entry IDs provided'
+                }), 400
+            
+            # Update entries
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow(),
+                'taggedBy': 'user'
+            }
+            
+            result = mongo.db.incomes.update_many(
+                {
+                    '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                    'userId': current_user['_id']
+                },
+                {'$set': update_data}
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': f'{result.modified_count} entries tagged successfully',
+                'count': result.modified_count
+            })
+                
+        except Exception as e:
+            print(f"Error in bulk_tag_income_entries: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to bulk tag entries',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/untagged-count', methods=['GET'])
+    @token_required
+    def get_untagged_income_count(current_user):
+        """Get count of untagged income entries"""
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            query = get_active_transactions_query(current_user['_id'])
+            query['entryType'] = None
+            
+            count = mongo.db.incomes.count_documents(query)
+            
+            return jsonify({
+                'success': True,
+                'count': count
+            })
+                
+        except Exception as e:
+            print(f"Error in get_untagged_income_count: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get untagged count',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     return income_bp
+

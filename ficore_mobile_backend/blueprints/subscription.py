@@ -348,6 +348,100 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.subscriptions.insert_one(subscription_record)
             
+            # ==================== REFERRAL SYSTEM: SUBSCRIPTION COMMISSION (NEW - Feb 4, 2026) ====================
+            # Check if user was referred and grant commission to referrer
+            referral = mongo.db.referrals.find_one({'refereeId': user_id})
+            
+            if referral and not referral.get('referrerSubCommissionGranted', False):
+                print(f'💰 SUBSCRIPTION COMMISSION: User {user_id} subscribed, referred by {referral["referrerId"]}')
+                
+                # Calculate commission (20% of subscription amount)
+                commission_amount = plan['price'] * 0.20  # ₦2,000 for ₦10,000 subscription
+                
+                # Create payout entry (PENDING status with 7-day vesting)
+                payout_doc = {
+                    '_id': ObjectId(),
+                    'referrerId': referral['referrerId'],
+                    'refereeId': user_id,
+                    'referralId': referral['_id'],
+                    'type': 'SUBSCRIPTION_COMMISSION',
+                    'amount': commission_amount,
+                    'status': 'PENDING',
+                    'vestingStartDate': datetime.utcnow(),
+                    'vestingEndDate': datetime.utcnow() + timedelta(days=7),
+                    'vestedAt': None,
+                    'paidAt': None,
+                    'paymentMethod': None,
+                    'paymentReference': None,
+                    'processedBy': None,
+                    'sourceTransaction': reference,
+                    'sourceType': 'SUBSCRIPTION',
+                    'metadata': {
+                        'subscriptionPlan': plan_type,
+                        'subscriptionAmount': plan['price'],
+                        'commissionRate': 0.20,
+                        'vestingDays': 7
+                    },
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                mongo.db.referral_payouts.insert_one(payout_doc)
+                print(f'✅ Created payout entry: ₦{commission_amount} (PENDING, 7-day vesting)')
+                
+                # Update referrer's pending balance
+                mongo.db.users.update_one(
+                    {'_id': referral['referrerId']},
+                    {
+                        '$inc': {
+                            'pendingCommissionBalance': commission_amount,
+                            'referralEarnings': commission_amount
+                        }
+                    }
+                )
+                print(f'✅ Updated referrer pending balance: +₦{commission_amount}')
+                
+                # Log to corporate_revenue (as expense)
+                corporate_revenue_doc = {
+                    '_id': ObjectId(),
+                    'type': 'REFERRAL_PAYOUT',
+                    'category': 'PARTNER_COMMISSION',
+                    'amount': -commission_amount,  # Negative (expense for FiCore)
+                    'userId': referral['referrerId'],
+                    'relatedTransaction': reference,
+                    'description': f'Subscription commission for referrer {referral["referrerId"]}',
+                    'status': 'PENDING',
+                    'metadata': {
+                        'referrerId': str(referral['referrerId']),
+                        'refereeId': str(user_id),
+                        'payoutType': 'SUBSCRIPTION_COMMISSION',
+                        'commissionRate': 0.20,
+                        'sourceAmount': plan['price'],
+                        'vestingEndDate': (datetime.utcnow() + timedelta(days=7)).isoformat()
+                    },
+                    'createdAt': datetime.utcnow()
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue_doc)
+                print(f'💰 Corporate revenue logged: -₦{commission_amount} (PENDING)')
+                
+                # Update referral record
+                mongo.db.referrals.update_one(
+                    {'_id': referral['_id']},
+                    {
+                        '$set': {
+                            'firstSubscriptionDate': datetime.utcnow(),
+                            'qualifiedDate': datetime.utcnow(),
+                            'referrerSubCommissionGranted': True,
+                            'status': 'qualified',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                print(f'✅ Updated referral status to QUALIFIED')
+                
+                print(f'🎉 SUBSCRIPTION COMMISSION COMPLETE: Referrer will receive ₦{commission_amount} in 7 days')
+            
+            # ==================== END REFERRAL SYSTEM ====================
+            
             # Record corporate revenue
             corporate_revenue = {
                 '_id': ObjectId(),
@@ -359,15 +453,20 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'description': f'{plan["name"]} subscription payment',
                 'status': 'RECORDED',
                 'createdAt': datetime.utcnow(),
+                # 💰 UNIT ECONOMICS TRACKING (Phase 2)
+                'gatewayFee': round(plan['price'] * 0.016, 2),  # 1.6% Paystack fee
+                'gatewayProvider': 'paystack',
+                'netRevenue': round(plan['price'] * 0.984, 2),  # Net after gateway fee
                 'metadata': {
                     'planType': plan_type,
                     'planName': plan['name'],
                     'durationDays': plan['duration_days'],
-                    'paystackTransactionId': transaction_data['id']
+                    'paystackTransactionId': transaction_data['id'],
+                    'gatewayFeePercentage': 1.6
                 }
             }
             mongo.db.corporate_revenue.insert_one(corporate_revenue)
-            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} from subscription ({plan_type}) - User {user_id}')
+            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} subscription (net: ₦{plan["price"] * 0.984:.2f} after gateway) - User {user_id}')
             
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(
@@ -495,15 +594,20 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 'description': f'{plan["name"]} subscription payment',
                 'status': 'RECORDED',
                 'createdAt': datetime.utcnow(),
+                # 💰 UNIT ECONOMICS TRACKING (Phase 2)
+                'gatewayFee': round(plan['price'] * 0.016, 2),  # 1.6% Paystack fee
+                'gatewayProvider': 'paystack',
+                'netRevenue': round(plan['price'] * 0.984, 2),  # Net after gateway fee
                 'metadata': {
                     'planType': plan_type,
                     'planName': plan['name'],
                     'durationDays': plan['duration_days'],
-                    'paystackTransactionId': transaction_data['id']
+                    'paystackTransactionId': transaction_data['id'],
+                    'gatewayFeePercentage': 1.6
                 }
             }
             mongo.db.corporate_revenue.insert_one(corporate_revenue)
-            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} from subscription ({plan_type}) - User {current_user["_id"]}')
+            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} subscription (net: ₦{plan["price"] * 0.984:.2f} after gateway) - User {current_user["_id"]}')
             
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(
@@ -564,7 +668,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             end_date = user.get('subscriptionEndDate')
             auto_renew = user.get('subscriptionAutoRenew', False)
             
-            print(f"[SUBSCRIPTION_STATUS] User {current_user['_id']}: auto_renew from DB = {auto_renew}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"[SUBSCRIPTION_STATUS] User {current_user['_id']}: auto_renew from DB = {auto_renew}")
             
             # Build status response with validated data
             status_data = {

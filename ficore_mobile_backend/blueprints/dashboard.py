@@ -72,7 +72,8 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             }
             
         except Exception as e:
-            print(f"Error calculating profit metrics: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error calculating profit metrics: {str(e)}")
             return {
                 'totalRevenue': 0,
                 'totalCogs': 0,
@@ -177,7 +178,8 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             return alerts
             
         except Exception as e:
-            print(f"Error getting alerts: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error getting alerts: {str(e)}")
             return []
 
     def get_recent_activity(user_id, limit=20):
@@ -276,7 +278,8 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             return activities[:limit]
             
         except Exception as e:
-            print(f"Error getting recent activity: {str(e)}")
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error getting recent activity: {str(e)}")
             return []
 
     # ==================== DASHBOARD ENDPOINTS ====================
@@ -284,72 +287,242 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
     @dashboard_bp.route('/overview', methods=['GET'])
     @token_required
     def get_overview(current_user):
-        """Get comprehensive dashboard overview"""
+        """Get comprehensive dashboard overview with optimized parallel queries"""
         try:
             # Track dashboard view
             try:
                 tracker.track_dashboard_view(current_user['_id'])
             except Exception as e:
-                print(f"Analytics tracking failed: {e}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"Analytics tracking failed: {e}")
+                pass
             
             period = request.args.get('period', 'monthly')
             start_date, end_date = get_date_range(period)
             
-            # Get profit metrics
-            profit_metrics = calculate_profit_metrics(current_user['_id'], start_date, end_date)
+            # CRITICAL FIX: Use parallel aggregation queries for better performance
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import threading
             
-            # Get module summaries
-            # Income summary
-            total_income = mongo.db.incomes.aggregate([
-                {'$match': {'userId': current_user['_id']}},
-                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
-            ])
-            total_income = list(total_income)
+            def run_aggregation_with_timeout(query_func, timeout=5):
+                """Run aggregation query with timeout protection"""
+                result = [None]
+                exception = [None]
+                
+                def target():
+                    try:
+                        result[0] = query_func()
+                    except Exception as e:
+                        exception[0] = e
+                
+                thread = threading.Thread(target=target)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout)
+                
+                if thread.is_alive():
+                    # Query timed out
+                    raise TimeoutError(f"Database query timed out after {timeout} seconds")
+                
+                if exception[0]:
+                    raise exception[0]
+                
+                return result[0]
+            
+            # Define optimized aggregation queries
+            def get_income_summary():
+                return list(mongo.db.incomes.aggregate([
+                    {'$match': {
+                        'userId': current_user['_id'],
+                        'status': {'$ne': 'voided'},
+                        'isDeleted': {'$ne': True}
+                    }},
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+            
+            def get_expense_summary():
+                return list(mongo.db.expenses.aggregate([
+                    {'$match': {
+                        'userId': current_user['_id'],
+                        'status': {'$ne': 'voided'},
+                        'isDeleted': {'$ne': True}
+                    }},
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+            
+            def get_debtors_summary():
+                return list(mongo.db.debtors.aggregate([
+                    {'$match': {'userId': current_user['_id']}},
+                    {'$group': {
+                        '_id': None,
+                        'totalCustomers': {'$sum': 1},
+                        'totalDebt': {'$sum': '$totalDebt'},
+                        'totalOutstanding': {'$sum': '$remainingDebt'},
+                        'overdueCustomers': {
+                            '$sum': {'$cond': [{'$eq': ['$status', 'overdue']}, 1, 0]}
+                        }
+                    }}
+                ]))
+            
+            def get_creditors_summary():
+                return list(mongo.db.creditors.aggregate([
+                    {'$match': {'userId': current_user['_id']}},
+                    {'$group': {
+                        '_id': None,
+                        'totalVendors': {'$sum': 1},
+                        'totalOwed': {'$sum': '$totalOwed'},
+                        'totalOutstanding': {'$sum': '$remainingOwed'},
+                        'overdueVendors': {
+                            '$sum': {'$cond': [{'$eq': ['$status', 'overdue']}, 1, 0]}
+                        }
+                    }}
+                ]))
+            
+            def get_inventory_summary():
+                return list(mongo.db.inventory_items.aggregate([
+                    {'$match': {'userId': current_user['_id']}},
+                    {'$group': {
+                        '_id': None,
+                        'totalItems': {'$sum': 1},
+                        'totalValue': {'$sum': {'$multiply': ['$currentStock', '$costPrice']}},
+                        'lowStockItems': {
+                            '$sum': {'$cond': [{'$lte': ['$currentStock', '$minimumStock']}, 1, 0]}
+                        },
+                        'outOfStockItems': {
+                            '$sum': {'$cond': [{'$eq': ['$currentStock', 0]}, 1, 0]}
+                        }
+                    }}
+                ]))
+            
+            # CRITICAL FIX: Execute all queries in parallel with timeout protection
+            query_results = {}
+            query_errors = {}
+            
+            queries = {
+                'income': get_income_summary,
+                'expense': get_expense_summary,
+                'debtors': get_debtors_summary,
+                'creditors': get_creditors_summary,
+                'inventory': get_inventory_summary,
+            }
+            
+            # Execute queries in parallel with individual timeouts
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                future_to_query = {
+                    executor.submit(run_aggregation_with_timeout, query_func, 5): query_name
+                    for query_name, query_func in queries.items()
+                }
+                
+                for future in as_completed(future_to_query, timeout=10):
+                    query_name = future_to_query[future]
+                    try:
+                        query_results[query_name] = future.result()
+                    except Exception as e:
+                        query_errors[query_name] = str(e)
+                        # Provide fallback data for failed queries
+                        query_results[query_name] = []
+            
+            # Process results with fallbacks
+            total_income = query_results.get('income', [])
             total_income_amount = total_income[0]['total'] if total_income else 0
             
-            # Expense summary
-            total_expenses = mongo.db.expenses.aggregate([
-                {'$match': {'userId': current_user['_id']}},
-                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
-            ])
-            total_expenses = list(total_expenses)
+            total_expenses = query_results.get('expense', [])
             total_expenses_amount = total_expenses[0]['total'] if total_expenses else 0
             
-            # Debtors summary
-            debtors_summary = mongo.db.debtors.aggregate([
-                {'$match': {'userId': current_user['_id']}},
-                {'$group': {
-                    '_id': None,
-                    'totalCustomers': {'$sum': 1},
-                    'totalDebt': {'$sum': '$totalDebt'},
-                    'totalOutstanding': {'$sum': '$remainingDebt'},
-                    'overdueCustomers': {
-                        '$sum': {'$cond': [{'$eq': ['$status', 'overdue']}, 1, 0]}
-                    }
-                }}
-            ])
-            debtors_summary = list(debtors_summary)
+            debtors_summary = query_results.get('debtors', [])
             debtors_data = debtors_summary[0] if debtors_summary else {
                 'totalCustomers': 0, 'totalDebt': 0, 'totalOutstanding': 0, 'overdueCustomers': 0
             }
             
-            # Creditors summary
-            creditors_summary = mongo.db.creditors.aggregate([
-                {'$match': {'userId': current_user['_id']}},
-                {'$group': {
-                    '_id': None,
-                    'totalVendors': {'$sum': 1},
-                    'totalOwed': {'$sum': '$totalOwed'},
-                    'totalOutstanding': {'$sum': '$remainingOwed'},
-                    'overdueVendors': {
-                        '$sum': {'$cond': [{'$eq': ['$status', 'overdue']}, 1, 0]}
-                    }
-                }}
-            ])
-            creditors_summary = list(creditors_summary)
+            creditors_summary = query_results.get('creditors', [])
             creditors_data = creditors_summary[0] if creditors_summary else {
                 'totalVendors': 0, 'totalOwed': 0, 'totalOutstanding': 0, 'overdueVendors': 0
             }
+            
+            inventory_summary = query_results.get('inventory', [])
+            inventory_data = inventory_summary[0] if inventory_summary else {
+                'totalItems': 0, 'totalValue': 0, 'lowStockItems': 0, 'outOfStockItems': 0
+            }
+            
+            # Get profit metrics (optimized calculation)
+            profit_metrics = calculate_profit_metrics(current_user['_id'], start_date, end_date)
+            
+            # Get alerts and recent activity with timeout protection
+            try:
+                alerts = run_aggregation_with_timeout(
+                    lambda: get_alerts_and_reminders(current_user['_id']), 3
+                )
+            except Exception as e:
+                query_errors['alerts'] = str(e)
+                alerts = []
+            
+            try:
+                recent_activity = run_aggregation_with_timeout(
+                    lambda: get_recent_activity(current_user['_id'], 10), 3
+                )
+            except Exception as e:
+                query_errors['recent_activity'] = str(e)
+                recent_activity = []
+            
+            # Calculate key performance indicators
+            kpis = {
+                'totalRevenue': profit_metrics['totalRevenue'],
+                'totalProfit': profit_metrics['netProfit'],
+                'profitMargin': profit_metrics['netMargin'],
+                'totalCustomers': debtors_data['totalCustomers'],
+                'totalVendors': creditors_data['totalVendors'],
+                'totalInventoryValue': inventory_data['totalValue'],
+                'outstandingReceivables': debtors_data['totalOutstanding'],
+                'outstandingPayables': creditors_data['totalOutstanding'],
+                'alertsCount': len(alerts),
+                'criticalAlertsCount': len([a for a in alerts if a['severity'] in ['critical', 'high']])
+            }
+            
+            overview_data = {
+                'period': period,
+                'dateRange': {
+                    'startDate': start_date.isoformat() + 'Z',
+                    'endDate': end_date.isoformat() + 'Z'
+                },
+                'kpis': kpis,
+                'profitMetrics': profit_metrics,
+                'moduleSummaries': {
+                    'income': {
+                        'totalAmount': total_income_amount,
+                        'periodAmount': profit_metrics['totalRevenue']
+                    },
+                    'expenses': {
+                        'totalAmount': total_expenses_amount,
+                        'periodAmount': profit_metrics['totalExpenses']
+                    },
+                    'debtors': debtors_data,
+                    'creditors': creditors_data,
+                    'inventory': inventory_data
+                },
+                'alerts': alerts[:5],  # Top 5 alerts
+                'recentActivity': recent_activity
+            }
+            
+            # Add query performance metadata for debugging
+            if query_errors:
+                overview_data['_debug'] = {
+                    'queryErrors': query_errors,
+                    'message': 'Some queries failed but fallback data was provided'
+                }
+            
+            return jsonify({
+                'success': True,
+                'data': overview_data,
+                'message': 'Dashboard overview retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Dashboard overview error: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve dashboard overview',
+                'error': str(e)
+            }), 500
             
             # Inventory summary
             inventory_summary = mongo.db.inventory_items.aggregate([
