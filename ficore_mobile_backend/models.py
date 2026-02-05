@@ -26,13 +26,24 @@ class DatabaseSchema:
             'displayName': str,  # Auto-generated from firstName + lastName
             'phone': Optional[str],  # Optional phone number
             'address': Optional[str],  # Optional address
-            'dateOfBirth': Optional[str],  # Optional, ISO date string
+            'dateOfBirth': Optional[str],  # Optional, ISO date string or DD/MM/YYYY
+            'bvn': Optional[str],  # Bank Verification Number (11 digits)
+            'nin': Optional[str],  # National Identification Number (11 digits)
+            'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
+            'kycVerifiedAt': Optional[datetime],  # KYC verification timestamp
             'role': str,  # 'personal' or 'admin', default: 'personal'
             'ficoreCreditBalance': float,  # FiCore Credits balance, default: 1000.0
             'isActive': bool,  # Account active status, default: True
             'language': str,  # User's preferred language, default: 'en'
             'currency': str,  # User's preferred currency, default: 'NGN'
             'financialGoals': List[str],  # List of selected financial goal keys
+            
+            # Onboarding state tracking (NEW - Jan 30, 2026 - for Google Play review)
+            'hasCompletedOnboarding': Optional[bool],  # Whether user completed the wizard, default: False
+            'onboardingCompletedAt': Optional[datetime],  # When onboarding was completed
+            'onboardingSkipped': Optional[bool],  # Whether user chose "Explore First", default: False
+            'onboardingSkippedAt': Optional[datetime],  # When onboarding was skipped
+            
             'createdAt': datetime,  # Account creation timestamp
             'updatedAt': Optional[datetime],  # Last update timestamp
             'lastLogin': Optional[datetime],  # Last login timestamp
@@ -82,6 +93,20 @@ class DatabaseSchema:
             #     'totalDaysActive': int,
             #     'paymentMethod': str
             # }]
+            
+            # Referral System Fields (NEW - Feb 4, 2026 - Phase 1)
+            'referralCode': Optional[str],  # Unique referral code (e.g., 'AUW123')
+            'referredBy': Optional[ObjectId],  # Reference to referrer's _id
+            'referralCount': Optional[int],  # Total successful referrals, default: 0
+            'referralEarnings': Optional[float],  # Total earnings (all-time), default: 0.0
+            'pendingCommissionBalance': Optional[float],  # Pending (vesting), default: 0.0
+            'withdrawableCommissionBalance': Optional[float],  # Ready to withdraw, default: 0.0
+            'firstDepositCompleted': Optional[bool],  # North Star Metric, default: False
+            'firstDepositDate': Optional[datetime],  # When they made first deposit
+            'referralBonusReceived': Optional[bool],  # Did they get signup bonus?, default: False
+            'referralCodeGeneratedAt': Optional[datetime],  # When code was generated
+            'referredAt': Optional[datetime],  # When they were referred
+            
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled
@@ -115,6 +140,10 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
             {'keys': [('isActive', 1)], 'name': 'active_users'},
             {'keys': [('resetToken', 1)], 'sparse': True, 'name': 'reset_token'},
+            # Referral System Indexes (NEW - Feb 4, 2026)
+            {'keys': [('referralCode', 1)], 'unique': True, 'sparse': True, 'name': 'referral_code_unique'},
+            {'keys': [('referredBy', 1)], 'name': 'referred_by_index'},
+            {'keys': [('firstDepositCompleted', 1)], 'name': 'first_deposit_index'},
         ]
 
     # ==================== INCOMES COLLECTION ====================
@@ -143,14 +172,18 @@ class DatabaseSchema:
         }
     
     @staticmethod
+    @staticmethod
     def get_income_indexes() -> List[Dict[str, Any]]:
         """Define indexes for incomes collection."""
         return [
             {'keys': [('userId', 1), ('dateReceived', -1)], 'name': 'user_date_desc'},
             {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
             {'keys': [('userId', 1), ('frequency', 1)], 'name': 'user_frequency'},
-            # Removed recurring index - simplified income tracking
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            # CRITICAL FIX: Add compound index for dashboard aggregations
+            {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
+            # CRITICAL FIX: Add index for immutable ledger queries
+            {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
         ]
     
     # ==================== EXPENSES COLLECTION ====================
@@ -184,6 +217,10 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('date', -1)], 'name': 'user_date_desc'},
             {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            # CRITICAL FIX: Add compound index for dashboard aggregations
+            {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
+            # CRITICAL FIX: Add index for immutable ledger queries
+            {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
         ]
     
     # ==================== CREDIT_TRANSACTIONS COLLECTION ====================
@@ -771,6 +808,151 @@ class DatabaseSchema:
             {'keys': [('userEmail', 1)], 'name': 'user_email'},
         ]
 
+    # ==================== VAS_WALLETS COLLECTION ====================
+    
+    @staticmethod
+    def get_vas_wallet_schema() -> Dict[str, Any]:
+        """
+        Schema for vas_wallets collection.
+        Stores VAS wallet information including balance, account details, and KYC status.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'balance': float,  # Current wallet balance, default: 0.0
+            'accountReference': str,  # Monnify account reference (user ID)
+            'contractCode': Optional[str],  # Monnify contract code
+            'accountName': str,  # Account holder name
+            'accountNumber': Optional[str],  # Primary account number
+            'bankName': Optional[str],  # Primary bank name
+            'bankCode': Optional[str],  # Primary bank code
+            'accounts': List[Dict[str, Any]],  # List of all available bank accounts
+            'status': str,  # 'active', 'inactive', 'suspended', default: 'active'
+            'tier': str,  # 'TIER_0', 'TIER_1', 'TIER_2', default: 'TIER_1'
+            'kycVerified': bool,  # KYC verification status, default: False
+            'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
+            'bvn': Optional[str],  # Bank Verification Number (11 digits)
+            'nin': Optional[str],  # National Identification Number (11 digits)
+            'transactionHistory': List[Dict[str, Any]],  # Transaction history for quick access
+            'createdAt': datetime,  # Wallet creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+            'lastTransactionAt': Optional[datetime],  # Last transaction timestamp
+            'metadata': Optional[Dict[str, Any]],  # Additional metadata
+        }
+    
+    @staticmethod
+    def get_vas_wallet_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for vas_wallets collection."""
+        return [
+            {'keys': [('userId', 1)], 'unique': True, 'name': 'user_id_unique'},
+            {'keys': [('accountReference', 1)], 'unique': True, 'name': 'account_reference_unique'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+            {'keys': [('kycStatus', 1)], 'name': 'kyc_status_index'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            {'keys': [('lastTransactionAt', -1)], 'name': 'last_transaction_desc'},
+        ]
+
+    # ==================== VAS_TRANSACTIONS COLLECTION ====================
+    
+    @staticmethod
+    def get_vas_transaction_schema() -> Dict[str, Any]:
+        """
+        Schema for vas_transactions collection.
+        Stores all VAS transaction records (airtime, data, wallet funding, bills, etc.).
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'walletId': Optional[ObjectId],  # Reference to vas_wallets._id
+            'type': str,  # Required: 'AIRTIME', 'DATA', 'WALLET_FUNDING', 'BILLS', 'REFUND'
+            'subtype': Optional[str],  # Specific subtype: 'airtime', 'data', 'electricity', etc.
+            'amount': float,  # Required, transaction amount (must be > 0)
+            'amountPaid': Optional[float],  # Amount actually paid by user
+            'amountCredited': Optional[float],  # Amount credited to wallet
+            'fee': Optional[float],  # Transaction fee
+            'depositFee': Optional[float],  # Deposit fee for wallet funding
+            'serviceFee': Optional[float],  # Service fee for VAS purchases
+            'totalAmount': Optional[float],  # Total amount including fees
+            'status': str,  # 'PENDING', 'SUCCESS', 'FAILED', 'PROCESSING', 'NEEDS_RECONCILIATION'
+            'provider': str,  # 'monnify', 'peyflex', 'vtpass', 'optimistic'
+            'providerReference': Optional[str],  # Provider's transaction reference
+            'transactionReference': str,  # Our internal transaction reference
+            'reference': Optional[str],  # Alternative reference field
+            'description': str,  # Human-readable description
+            'category': Optional[str],  # Transaction category
+            
+            # VAS-specific fields
+            'phoneNumber': Optional[str],  # For airtime/data purchases
+            'network': Optional[str],  # Network provider (MTN, Airtel, Glo, 9mobile)
+            'dataPlan': Optional[str],  # Data plan name
+            'dataPlanId': Optional[str],  # Data plan identifier
+            'dataPlanName': Optional[str],  # Data plan display name
+            
+            # Bills-specific fields
+            'billCategory': Optional[str],  # 'electricity', 'cable_tv', 'water', 'internet'
+            'billProvider': Optional[str],  # DSTV, GOTV, EKEDC, etc.
+            'accountNumber': Optional[str],  # Meter number, decoder number, etc.
+            'customerName': Optional[str],  # Name on the account
+            'packageId': Optional[str],  # For cable TV packages
+            'packageName': Optional[str],  # For cable TV packages
+            
+            # Wallet funding specific fields
+            'fundingMethod': Optional[str],  # 'bank_transfer', 'card', 'ussd'
+            'bankName': Optional[str],  # Bank used for funding
+            'bankCode': Optional[str],  # Bank code
+            
+            # Navigation and classification flags
+            'isVAS': bool,  # Always True for VAS transactions, default: True
+            'isIncome': bool,  # For wallet funding transactions, default: False
+            'isExpense': bool,  # For VAS purchases, default: False
+            'isOptimistic': Optional[bool],  # For immediate display before sync
+            
+            # Timestamps
+            'createdAt': datetime,  # Transaction creation timestamp
+            'completedAt': Optional[datetime],  # Transaction completion timestamp
+            'expiresAt': Optional[datetime],  # Transaction expiry timestamp
+            'updatedAt': datetime,  # Last update timestamp
+            
+            # Reconciliation and audit
+            'reconciled': bool,  # Whether transaction has been reconciled, default: False
+            'reconciledAt': Optional[datetime],  # Reconciliation timestamp
+            'auditLog': List[Dict[str, Any]],  # Audit trail for status changes
+            'metadata': Optional[Dict[str, Any]],  # Additional metadata
+            
+            # Immutability fields (for financial compliance)
+            'version': int,  # Version number for updates, default: 1
+            'originalEntryId': Optional[ObjectId],  # Reference to original entry if this is an update
+            'supersededBy': Optional[ObjectId],  # Reference to newer version if superseded
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'deletedAt': Optional[datetime],  # Soft delete timestamp
+            'deletionReason': Optional[str],  # Reason for deletion
+        }
+    
+    @staticmethod
+    def get_vas_transaction_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for vas_transactions collection."""
+        return [
+            {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
+            {'keys': [('userId', 1), ('type', 1)], 'name': 'user_type'},
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('userId', 1), ('isVAS', 1)], 'name': 'user_is_vas'},
+            {'keys': [('transactionReference', 1)], 'unique': True, 'name': 'transaction_reference_unique'},
+            {'keys': [('providerReference', 1)], 'sparse': True, 'name': 'provider_reference'},
+            {'keys': [('status', 1), ('createdAt', -1)], 'name': 'status_created_desc'},
+            {'keys': [('type', 1), ('createdAt', -1)], 'name': 'type_created_desc'},
+            {'keys': [('provider', 1), ('createdAt', -1)], 'name': 'provider_created_desc'},
+            {'keys': [('phoneNumber', 1)], 'sparse': True, 'name': 'phone_number'},
+            {'keys': [('network', 1)], 'sparse': True, 'name': 'network'},
+            {'keys': [('reconciled', 1)], 'name': 'reconciled_index'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            # Compound indexes for complex queries
+            {'keys': [('userId', 1), ('type', 1), ('status', 1)], 'name': 'user_type_status'},
+            {'keys': [('userId', 1), ('isVAS', 1), ('createdAt', -1)], 'name': 'user_vas_created_desc'},
+            # Immutability indexes
+            {'keys': [('userId', 1), ('isDeleted', 1), ('status', 1)], 'name': 'user_deleted_status'},
+            {'keys': [('originalEntryId', 1)], 'sparse': True, 'name': 'original_entry_id'},
+        ]
+
     # ==================== VOICE_REPORTS COLLECTION ====================
 
     @staticmethod
@@ -833,6 +1015,57 @@ class DatabaseSchema:
             {'keys': [('uploadedAt', -1)], 'name': 'uploaded_at_desc'},
         ]
 
+    # ==================== DELETION_REQUESTS COLLECTION ====================
+    
+    @staticmethod
+    def get_deletion_request_schema() -> Dict[str, Any]:
+        """
+        Schema for deletion_requests collection.
+        Stores account deletion requests for admin review and approval.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'email': str,  # Required, user's email (for record keeping)
+            'userName': str,  # Required, user's display name
+            'reason': Optional[str],  # Optional reason for deletion
+            'status': str,  # Required: 'pending', 'approved', 'rejected', 'completed'
+            'requestedAt': datetime,  # Required, when request was submitted
+            'processedAt': Optional[datetime],  # When admin acted on it
+            'processedBy': Optional[ObjectId],  # Admin who processed it (reference to users._id)
+            'processingNotes': Optional[str],  # Admin notes
+            'completedAt': Optional[datetime],  # When deletion was completed
+            
+            # User data snapshot (for audit trail)
+            'userSnapshot': {
+                'ficoreCreditBalance': float,
+                'subscriptionStatus': Optional[str],
+                'subscriptionPlan': Optional[str],
+                'createdAt': datetime,
+                'lastLogin': Optional[datetime],
+                'totalIncomes': int,
+                'totalExpenses': int,
+                'totalTransactions': int,
+                'kycStatus': Optional[str],
+            },
+            
+            # Request metadata
+            'ipAddress': Optional[str],  # Request origin IP
+            'userAgent': Optional[str],  # Device/browser info
+            'appVersion': Optional[str],  # App version
+        }
+    
+    @staticmethod
+    def get_deletion_request_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for deletion_requests collection."""
+        return [
+            {'keys': [('userId', 1), ('requestedAt', -1)], 'name': 'user_requested_desc'},
+            {'keys': [('status', 1), ('requestedAt', -1)], 'name': 'status_requested_desc'},
+            {'keys': [('email', 1)], 'name': 'email_index'},
+            {'keys': [('processedBy', 1), ('processedAt', -1)], 'sparse': True, 'name': 'processed_by_date'},
+            {'keys': [('requestedAt', -1)], 'name': 'requested_at_desc'},
+        ]
+
     # ==================== IDEMPOTENCY_KEYS COLLECTION ====================
 
     @staticmethod
@@ -866,6 +1099,106 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('createdAt', -1)], 'name': 'user_created_desc'},
             {'keys': [('endpoint', 1), ('createdAt', -1)], 'name': 'endpoint_created_desc'},
             {'keys': [('expiresAt', 1)], 'name': 'expires_at', 'expireAfterSeconds': 86400},  # TTL: 24 hours
+        ]
+
+    # ==================== REFERRALS COLLECTION (NEW - Feb 4, 2026) ====================
+    
+    @staticmethod
+    def get_referral_schema() -> Dict[str, Any]:
+        """
+        Schema for referrals collection.
+        Tracks referral relationships and lifecycle.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'referrerId': ObjectId,  # Required, who referred (reference to users._id)
+            'refereeId': ObjectId,  # Required, who was referred (reference to users._id)
+            'referralCode': str,  # Required, code used for referral
+            'status': str,  # Required, lifecycle status: 'pending_deposit', 'active', 'qualified'
+            
+            # Milestones
+            'signupDate': datetime,  # Required, when referee signed up
+            'firstDepositDate': Optional[datetime],  # When referee made first deposit
+            'firstSubscriptionDate': Optional[datetime],  # When referee subscribed
+            'qualifiedDate': Optional[datetime],  # When referral became "qualified"
+            
+            # Bonuses Granted
+            'refereeDepositBonusGranted': bool,  # Did referee get ₦30 waiver + 5 FCs?, default: False
+            'referrerSubCommissionGranted': bool,  # Did referrer get ₦2,000?, default: False
+            'referrerVasShareActive': bool,  # Is 1% VAS share active?, default: False
+            'vasShareExpiryDate': Optional[datetime],  # 90 days from first deposit
+            
+            # Fraud Detection
+            'ipAddress': Optional[str],  # Signup IP address
+            'deviceId': Optional[str],  # Device fingerprint
+            'isSelfReferral': bool,  # Flagged as fraud?, default: False
+            'fraudReason': Optional[str],  # Why flagged?
+            
+            # Metadata
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_referral_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for referrals collection."""
+        return [
+            {'keys': [('referrerId', 1), ('createdAt', -1)], 'name': 'referrer_created_desc'},
+            {'keys': [('refereeId', 1)], 'unique': True, 'name': 'referee_unique'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+            {'keys': [('qualifiedDate', 1)], 'name': 'qualified_date_index'},
+            {'keys': [('referralCode', 1)], 'name': 'referral_code_index'},
+        ]
+
+    # ==================== REFERRAL_PAYOUTS COLLECTION (NEW - Feb 4, 2026) ====================
+    
+    @staticmethod
+    def get_referral_payout_schema() -> Dict[str, Any]:
+        """
+        Schema for referral_payouts collection.
+        Tracks every kobo owed to partners.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'referrerId': ObjectId,  # Required, who gets paid (reference to users._id)
+            'refereeId': ObjectId,  # Required, who triggered the payout (reference to users._id)
+            'referralId': ObjectId,  # Required, link to referrals collection
+            
+            # Payout Details
+            'type': str,  # Required, type of payout: 'SUBSCRIPTION_COMMISSION', 'VAS_SHARE', 'MILESTONE_BONUS'
+            'amount': float,  # Required, amount in Naira
+            'status': str,  # Required, payout status: 'PENDING', 'VESTING', 'WITHDRAWABLE', 'PAID'
+            
+            # Vesting Logic
+            'vestingStartDate': datetime,  # Required, when vesting started
+            'vestingEndDate': datetime,  # Required, when becomes withdrawable (7 days for subscriptions)
+            'vestedAt': Optional[datetime],  # When it became withdrawable
+            
+            # Payment Tracking
+            'paidAt': Optional[datetime],  # When actually paid
+            'paymentMethod': Optional[str],  # How paid: 'bank_transfer', 'wallet_credit'
+            'paymentReference': Optional[str],  # Transaction reference
+            'processedBy': Optional[ObjectId],  # Admin who approved (reference to users._id)
+            
+            # Source Transaction
+            'sourceTransaction': str,  # Required, Paystack reference or VAS transaction ID
+            'sourceType': str,  # Required, what triggered this: 'SUBSCRIPTION', 'VAS_TRANSACTION'
+            
+            # Metadata
+            'metadata': Optional[Dict[str, Any]],  # Additional context (plan type, commission rate, etc.)
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_referral_payout_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for referral_payouts collection."""
+        return [
+            {'keys': [('referrerId', 1), ('status', 1)], 'name': 'referrer_status'},
+            {'keys': [('refereeId', 1)], 'name': 'referee_index'},
+            {'keys': [('status', 1), ('vestingEndDate', 1)], 'name': 'status_vesting'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            {'keys': [('referralId', 1)], 'name': 'referral_id_index'},
         ]
 
 
@@ -909,8 +1242,15 @@ class DatabaseInitializer:
             'analytics_events': self.schema.get_analytics_event_indexes(),
             'admin_actions': self.schema.get_admin_action_indexes(),
             'cancellation_requests': self.schema.get_cancellation_request_indexes(),
+            'deletion_requests': self.schema.get_deletion_request_indexes(),  # NEW: Account deletion requests
+            # VAS collections
+            'vas_wallets': self.schema.get_vas_wallet_indexes(),
+            'vas_transactions': self.schema.get_vas_transaction_indexes(),
             # Voice reporting collections
             'voice_reports': self.schema.get_voice_report_indexes(),
+            # Referral System collections (NEW - Feb 4, 2026)
+            'referrals': self.schema.get_referral_indexes(),
+            'referral_payouts': self.schema.get_referral_payout_indexes(),
             'idempotency_keys': self.schema.get_idempotency_key_indexes(),
         }
         
@@ -1027,13 +1367,6 @@ class DatabaseInitializer:
         Returns:
             dict: Statistics for all collections
         """
-        collections = ['users', 'incomes', 'expenses', 
-                      'credit_transactions', 'credit_requests',
-                      'tax_calculations', 'tax_education_progress',
-                      'debtors', 'debtor_transactions',
-                      'creditors', 'creditor_transactions',
-                      'inventory_items', 'inventory_movements']
-        
         stats = {}
         for collection_name in collections:
             stats[collection_name] = self.get_collection_stats(collection_name)

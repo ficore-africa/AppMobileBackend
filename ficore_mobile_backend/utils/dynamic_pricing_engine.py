@@ -34,27 +34,27 @@ class DynamicPricingEngine:
         self.CACHE_DURATION_HOURS = 6  # Cache rates for 6 hours
         self.EMERGENCY_FALLBACK_MULTIPLIER = 2.0  # 2x markup when no cache available (prevents losses)
         
-        # Margin Strategy by Network (based on your analysis)
+        # POLICY COMPLIANCE: No markup on VAS purchases
         self.NETWORK_MARGINS = {
             'MTN': {
-                'airtime': 0.01,  # 1% margin (loss leader)
-                'data': 0.05,     # 5% margin (standard)
-                'min_margin': 20  # Minimum ₦20 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             },
             'GLO': {
-                'airtime': 0.02,  # 2% margin
-                'data': 0.12,     # 12% margin (high profit)
-                'min_margin': 25  # Minimum ₦25 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             },
             'AIRTEL': {
-                'airtime': 0.014, # 1.4% margin
-                'data': 0.08,     # 8% margin (adjusted for high cost)
-                'min_margin': 30  # Minimum ₦30 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             },
             '9MOBILE': {
-                'airtime': 0.02,  # 2% margin
-                'data': 0.10,     # 10% margin
-                'min_margin': 25  # Minimum ₦25 profit
+                'airtime': 0.0,   # NO MARGIN (policy compliance)
+                'data': 0.0,      # NO MARGIN (policy compliance)
+                'min_margin': 0   # NO MINIMUM PROFIT (policy compliance)
             }
         }
         
@@ -74,6 +74,7 @@ class DynamicPricingEngine:
             cache_key = f"peyflex_rates_{service_type}_{network or 'all'}"
             
             # Check cache first (only for non-expired cache)
+            # FIXED: self.mongo is already the database, no need for .db
             cached_rates = self.mongo.pricing_cache.find_one({
                 'cache_key': cache_key,
                 'expires_at': {'$gt': datetime.utcnow()}
@@ -92,6 +93,7 @@ class DynamicPricingEngine:
                 raise ValueError(f"Unsupported service type: {service_type}")
             
             # Cache the rates
+            # FIXED: self.mongo is already the database, no need for .db
             self.mongo.pricing_cache.replace_one(
                 {'cache_key': cache_key},
                 {
@@ -132,36 +134,160 @@ class DynamicPricingEngine:
         return base_rates
 
     def _fetch_data_rates(self, network: str = None) -> Dict:
-        """Fetch data plan rates from Peyflex"""
+        """
+        Fetch data plan rates from Peyflex with connection retry strategies
+        """
         try:
             if network:
                 url = f'{self.peyflex_base_url}/api/data/plans/?network={network.lower()}'
             else:
                 url = f'{self.peyflex_base_url}/api/data/networks/'
             
-            response = requests.get(
-                url,
-                headers={'Authorization': f'Token {self.peyflex_token}'},
-                timeout=10
-            )
+            logger.info(f"🔍 Attempting to fetch data rates from: {url}")
             
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Transform Peyflex response to our format
-                if isinstance(data, list):
-                    rates = {}
-                    for plan in data:
-                        plan_id = plan.get('plan_code', plan.get('id', ''))
-                        rates[plan_id] = {
-                            'name': plan.get('name', plan.get('plan_name', '')),
-                            'price': float(plan.get('price', plan.get('amount', 0))),
-                            'validity': plan.get('validity', 30),
-                            'network': network.upper() if network else 'UNKNOWN'
-                        }
-                    return rates
-                
-            raise Exception(f"Invalid response from Peyflex: {response.status_code}")
+            # Use the most reliable strategy first (Simple Request)
+            strategies = [
+                {
+                    'name': 'Simple Request (Most Reliable)',
+                    'headers': {
+                        'Authorization': f'Token {self.peyflex_token}',
+                        'User-Agent': 'FiCore-Backend/1.0',
+                        'Accept': 'application/json',
+                        'Connection': 'close'
+                    },
+                    'timeout': 30,
+                    'retry_count': 2,
+                    'session_config': {'pool_connections': 1, 'pool_maxsize': 1}
+                },
+                {
+                    'name': 'Standard Request',
+                    'headers': {
+                        'Authorization': f'Token {self.peyflex_token}',
+                        'User-Agent': 'FiCore-Backend/1.0 (Nigeria; Python-Requests)',
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    'timeout': 25,
+                    'session_config': {'pool_connections': 1, 'pool_maxsize': 1}
+                },
+                {
+                    'name': 'Fallback Request',
+                    'headers': {
+                        'Authorization': f'Token {self.peyflex_token}',
+                        'User-Agent': 'FiCore-Fallback/1.0',
+                        'Accept': 'application/json'
+                    },
+                    'timeout': 20,
+                    'retry_count': 1,
+                    'session_config': {'pool_connections': 1, 'pool_maxsize': 1}
+                }
+            ]
+            
+            last_error = None
+            
+            for strategy in strategies:
+                try:
+                    logger.info(f"Trying {strategy['name']} for Peyflex API")
+                    
+                    # Create a fresh session for each strategy
+                    session = requests.Session()
+                    if 'session_config' in strategy:
+                        adapter = requests.adapters.HTTPAdapter(**strategy['session_config'])
+                        session.mount('https://', adapter)
+                        session.mount('http://', adapter)
+                    
+                    retry_count = strategy.get('retry_count', 1)
+                    
+                    for attempt in range(retry_count):
+                        try:
+                            if attempt > 0:
+                                import time
+                                time.sleep(2 ** attempt)  # Exponential backoff
+                                logger.info(f"Retry attempt {attempt + 1}/{retry_count}")
+                            
+                            response = session.get(
+                                url,
+                                headers=strategy['headers'],
+                                timeout=strategy['timeout'],
+                                verify=True,
+                                allow_redirects=True
+                            )
+                            
+                            logger.info(f"📡 Peyflex API response: {response.status_code}")
+                            
+                            if response.status_code == 200:
+                                data = response.json()
+                                logger.info(f"✅ Successfully fetched data from Peyflex: {len(str(data))} chars")
+                                
+                                # Transform Peyflex response to our format
+                                if isinstance(data, list):
+                                    rates = {}
+                                    for plan in data:
+                                        plan_id = plan.get('plan_code', plan.get('id', ''))
+                                        rates[plan_id] = {
+                                            'name': plan.get('name', plan.get('plan_name', '')),
+                                            'price': float(plan.get('price', plan.get('amount', 0))),
+                                            'network': network.upper() if network else 'UNKNOWN'
+                                        }
+                                    logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
+                                    session.close()
+                                    return rates
+                                elif isinstance(data, dict) and 'plans' in data:
+                                    rates = {}
+                                    for plan in data['plans']:
+                                        plan_id = plan.get('plan_code', plan.get('id', ''))
+                                        rates[plan_id] = {
+                                            'name': plan.get('name', plan.get('plan_name', '')),
+                                            'price': float(plan.get('price', plan.get('amount', 0))),
+                                            'network': network.upper() if network else 'UNKNOWN'
+                                        }
+                                    logger.info(f"✅ {strategy['name']} succeeded - got {len(rates)} plans")
+                                    session.close()
+                                    return rates
+                                else:
+                                    logger.warning(f"❌ {strategy['name']} unexpected response format: {type(data)}")
+                                    last_error = f"Unexpected response format: {type(data)}"
+                            else:
+                                logger.warning(f"❌ {strategy['name']} failed: HTTP {response.status_code}")
+                                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                                
+                        except requests.exceptions.ConnectionError as e:
+                            logger.warning(f"❌ {strategy['name']} connection error (attempt {attempt + 1}): {str(e)}")
+                            last_error = f"Connection error: {str(e)}"
+                            if attempt == retry_count - 1:  # Last attempt
+                                break
+                            continue
+                        except requests.exceptions.Timeout as e:
+                            logger.warning(f"❌ {strategy['name']} timeout (attempt {attempt + 1}): {str(e)}")
+                            last_error = f"Timeout error: {str(e)}"
+                            if attempt == retry_count - 1:  # Last attempt
+                                break
+                            continue
+                        except Exception as e:
+                            logger.warning(f"❌ {strategy['name']} error (attempt {attempt + 1}): {str(e)}")
+                            last_error = str(e)
+                            if attempt == retry_count - 1:  # Last attempt
+                                break
+                            continue
+                    
+                    session.close()
+                        
+                except requests.exceptions.ConnectionError as e:
+                    logger.warning(f"❌ {strategy['name']} connection error: {str(e)}")
+                    last_error = f"Connection error: {str(e)}"
+                    continue
+                except requests.exceptions.SSLError as e:
+                    logger.warning(f"❌ {strategy['name']} SSL error: {str(e)}")
+                    last_error = f"SSL error: {str(e)}"
+                    continue
+                except Exception as e:
+                    logger.warning(f"❌ {strategy['name']} failed: {str(e)}")
+                    last_error = str(e)
+                    continue
+            
+            # All strategies failed
+            logger.error(f"All connection strategies failed. Last error: {last_error}")
+            raise Exception(f"All Peyflex connection strategies failed: {last_error}")
             
         except Exception as e:
             logger.error(f"Error fetching data rates: {str(e)}")
@@ -175,6 +301,7 @@ class DynamicPricingEngine:
         try:
             # Try to get last known good price from cache (even if expired)
             cache_key = f"peyflex_rates_{service_type}_{network or 'all'}"
+            # FIXED: self.mongo is already the database, no need for .db
             last_known_rates = self.mongo.pricing_cache.find_one(
                 {'cache_key': cache_key},
                 sort=[('created_at', -1)]  # Get most recent
@@ -222,22 +349,22 @@ class DynamicPricingEngine:
         # Use 2x current market rates to ensure we don't lose money
         emergency_rates = {
             'MTN': {
-                'M500MBS': {'name': '500MB - 30 Days', 'price': 600, 'validity': 30},  # 2x normal
-                'M1GB': {'name': '1GB - 30 Days', 'price': 800, 'validity': 30},       # 2x normal
-                'M2GB': {'name': '2GB - 30 Days', 'price': 1200, 'validity': 30},     # 2x normal
-                'M5GB': {'name': '5GB - 30 Days', 'price': 2700, 'validity': 30},     # 2x normal
+                'M500MBS': {'name': '500MB - 30 Days', 'price': 600},  # 2x normal
+                'M1GB': {'name': '1GB - 30 Days', 'price': 800},       # 2x normal
+                'M2GB': {'name': '2GB - 30 Days', 'price': 1200},     # 2x normal
+                'M5GB': {'name': '5GB - 30 Days', 'price': 2700},     # 2x normal
             },
             'GLO': {
-                'GLO_1GB': {'name': '1GB - 30 Days', 'price': 800, 'validity': 30},   # 2x normal
-                'GLO_2GB': {'name': '2GB - 30 Days', 'price': 1200, 'validity': 30},  # 2x normal
+                'GLO_1GB': {'name': '1GB - 30 Days', 'price': 800},   # 2x normal
+                'GLO_2GB': {'name': '2GB - 30 Days', 'price': 1200},  # 2x normal
             },
             'AIRTEL': {
-                'AIRTEL_1GB': {'name': '1GB - 30 Days', 'price': 1500, 'validity': 30},  # 2x normal
-                'AIRTEL_2GB': {'name': '2GB - 30 Days', 'price': 3000, 'validity': 30},  # 2x normal
+                'AIRTEL_1GB': {'name': '1GB - 30 Days', 'price': 1500},  # 2x normal
+                'AIRTEL_2GB': {'name': '2GB - 30 Days', 'price': 3000},  # 2x normal
             },
             '9MOBILE': {
-                '9MOB_1GB': {'name': '1GB - 30 Days', 'price': 800, 'validity': 30},   # 2x normal
-                '9MOB_2GB': {'name': '2GB - 30 Days', 'price': 1200, 'validity': 30},  # 2x normal
+                '9MOB_1GB': {'name': '1GB - 30 Days', 'price': 800},   # 2x normal
+                '9MOB_2GB': {'name': '2GB - 30 Days', 'price': 1200},  # 2x normal
             }
         }
         
@@ -301,12 +428,13 @@ class DynamicPricingEngine:
             margin_percentage = margin_config[service_type]
             min_margin = margin_config['min_margin']
             
-            # Calculate base selling price
-            margin_amount = max(cost_price * margin_percentage, min_margin)
-            base_selling_price = cost_price + margin_amount
+            # 🚨 POLICY COMPLIANCE: NO MARKUP ON VAS PURCHASES
+            # Selling price = Cost price (no fees, no margins, no markups)
+            margin_amount = 0.0  # NO MARGIN (policy compliance)
+            base_selling_price = cost_price  # NO MARKUP (policy compliance)
             
-            # Apply psychological pricing rules
-            selling_price = self._apply_psychological_pricing(base_selling_price, network, service_type)
+            # Apply psychological pricing rules (but maintain no-markup policy)
+            selling_price = cost_price  # NO MARKUP - ignore psychological pricing for policy compliance
             
             # Apply subscription discounts
             discount_applied = 0.0
@@ -341,33 +469,24 @@ class DynamicPricingEngine:
                     voucher_discount = 0.0
                     # Continue with normal pricing
             
-            # Apply subscription discounts (if no voucher used)
-            if voucher_discount == 0.0 and user_tier in self.SUBSCRIPTION_DISCOUNTS:
-                if user_tier == 'gold':
-                    # Gold users get "Cost + ₦5" pricing
-                    selling_price = cost_price + 5.0
-                    discount_applied = base_selling_price - selling_price
-                else:
-                    discount_rate = self.SUBSCRIPTION_DISCOUNTS[user_tier]
-                    discount_applied = selling_price * discount_rate
-                    selling_price = selling_price - discount_applied
+            # POLICY COMPLIANCE: No subscription discounts needed since there's no markup
+            # selling_price already equals cost_price (no markup to discount from)
+            if voucher_discount == 0.0:
+                # No additional discounts needed - already at cost price
+                pass
             
-            # Ensure we don't sell at a loss
-            if selling_price < cost_price:
-                selling_price = cost_price + 5.0  # Minimum ₦5 profit
-                discount_applied = base_selling_price - selling_price
+            # POLICY COMPLIANCE: Already at cost price, no loss possible
+            # selling_price = cost_price (no markup applied)
             
             # Calculate final metrics
             actual_margin = selling_price - cost_price
             actual_margin_percentage = (actual_margin / cost_price) * 100 if cost_price > 0 else 0
             
-            # Generate savings message
-            savings_message = self._generate_savings_message(
-                user_tier, discount_applied, actual_margin, network, service_type, voucher_discount > 0
-            )
+            # Generate policy-compliant savings message
+            savings_message = "No fees on VAS purchases - you pay exactly what we pay!"
             
-            # Determine strategy used
-            strategy_used = self._determine_strategy(network, service_type, user_tier, selling_price, cost_price, voucher_discount > 0)
+            # Policy-compliant strategy
+            strategy_used = "no_markup_policy"
             
             return {
                 'selling_price': round(selling_price, 2),
@@ -378,23 +497,25 @@ class DynamicPricingEngine:
                 'voucher_discount': round(voucher_discount, 2),
                 'strategy_used': strategy_used,
                 'savings_message': savings_message,
-                'psychological_ceiling_applied': selling_price != base_selling_price + margin_amount,
-                'free_fee_applied': voucher_discount > 0
+                'psychological_ceiling_applied': False,
+                'free_fee_applied': voucher_discount > 0,
+                'policy_compliant': True  # Confirms no-markup policy compliance
             }
             
         except Exception as e:
             logger.error(f"Error calculating selling price: {str(e)}")
             
-            # Return safe fallback pricing
+            # Return safe fallback pricing (NO MARKUP even in fallback)
             return {
-                'selling_price': base_amount * 1.1,  # 10% markup
+                'selling_price': base_amount,  # NO MARKUP - policy compliance
                 'cost_price': base_amount,
-                'margin': base_amount * 0.1,
-                'margin_percentage': 10.0,
+                'margin': 0.0,
+                'margin_percentage': 0.0,
                 'discount_applied': 0.0,
-                'strategy_used': 'fallback',
-                'savings_message': '',
-                'psychological_ceiling_applied': False
+                'strategy_used': 'fallback_no_markup',
+                'savings_message': 'No fees policy maintained even in fallback',
+                'psychological_ceiling_applied': False,
+                'policy_compliant': True
             }
 
     def _apply_psychological_pricing(self, base_price: float, network: str, service_type: str) -> float:

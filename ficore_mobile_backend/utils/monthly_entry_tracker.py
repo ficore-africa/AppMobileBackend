@@ -137,10 +137,11 @@ class MonthlyEntryTracker:
                 total_income_all_time = self.mongo.db.incomes.count_documents({'userId': str(user_id)})
             
             if total_income_all_time > 0:
-                print(f"FALLBACK: Found {total_income_all_time} income entries but createdAt query returned 0. Using fallback counting.")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"FALLBACK: Found {total_income_all_time} income entries but createdAt query returned 0. Using fallback counting.")
                 # Entries exist but createdAt query failed - use comprehensive fallback
                 income_count = self._count_by_id_timestamp(self.mongo.db.incomes, user_id, month_start, month_end)
-                print(f"FALLBACK RESULT: Income count after fallback: {income_count}")
+                # print(f"FALLBACK RESULT: Income count after fallback: {income_count}")
         
         if expense_count == 0:
             total_expense_all_time = self.mongo.db.expenses.count_documents({'userId': user_id})
@@ -149,16 +150,17 @@ class MonthlyEntryTracker:
                 total_expense_all_time = self.mongo.db.expenses.count_documents({'userId': str(user_id)})
             
             if total_expense_all_time > 0:
-                print(f"FALLBACK: Found {total_expense_all_time} expense entries but createdAt query returned 0. Using fallback counting.")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"FALLBACK: Found {total_expense_all_time} expense entries but createdAt query returned 0. Using fallback counting.")
                 # Entries exist but createdAt query failed - use comprehensive fallback
                 expense_count = self._count_by_id_timestamp(self.mongo.db.expenses, user_id, month_start, month_end)
-                print(f"FALLBACK RESULT: Expense count after fallback: {expense_count}")
+                # print(f"FALLBACK RESULT: Expense count after fallback: {expense_count}")
         
         total_count = income_count + expense_count
         
-        # Final logging
-        print(f"FINAL COUNT: User {user_id} - Income: {income_count}, Expense: {expense_count}, Total: {total_count} for month {month_key}")
-        print(f"DEBUG: is_premium={is_premium}, is_admin={user.get('isAdmin', False) if user else False}")
+        # Final logging - DISABLED FOR LIQUID WALLET FOCUS
+        # print(f"FINAL COUNT: User {user_id} - Income: {income_count}, Expense: {expense_count}, Total: {total_count} for month {month_key}")
+        # print(f"DEBUG: is_premium={is_premium}, is_admin={user.get('isAdmin', False) if user else False}")
         
         # CRITICAL FIX: Premium users get unlimited entries
         if is_premium:
@@ -170,20 +172,22 @@ class MonthlyEntryTracker:
             remaining = max(0, limit - total_count)
             is_over_limit = total_count >= limit
         
-        # CRITICAL DEBUG: Log the final calculation
-        print(f"DEBUG CALCULATION: total_count={total_count}, limit={limit}, remaining={remaining}, is_over_limit={is_over_limit}")
+        # CRITICAL DEBUG: Log the final calculation - DISABLED FOR LIQUID WALLET FOCUS
+        # print(f"DEBUG CALCULATION: total_count={total_count}, limit={limit}, remaining={remaining}, is_over_limit={is_over_limit}")
         
         # CRITICAL FIX: Only validate for Free users, Premium users always have unlimited
         if not is_premium:
             # CRITICAL FIX: Ensure remaining is never negative and matches the calculation
             if remaining < 0:
-                print(f"ERROR: Negative remaining detected! Setting to 0. Original value: {remaining}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"ERROR: Negative remaining detected! Setting to 0. Original value: {remaining}")
                 remaining = 0
             
             # CRITICAL VALIDATION: Double-check the math for Free users only
             expected_remaining = max(0, limit - total_count)
             if remaining != expected_remaining:
-                print(f"ERROR: Remaining mismatch! Expected: {expected_remaining}, Got: {remaining}. Correcting...")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"ERROR: Remaining mismatch! Expected: {expected_remaining}, Got: {remaining}. Correcting...")
                 remaining = expected_remaining
         
         result = {
@@ -196,7 +200,8 @@ class MonthlyEntryTracker:
             'is_over_limit': is_over_limit
         }
         
-        print(f"FINAL RESULT: {result}")
+        # DISABLED FOR LIQUID WALLET FOCUS
+        # print(f"FINAL RESULT: {result}")
         return result
     
     def check_entry_allowed(self, user_id: ObjectId, entry_type: str) -> Dict[str, Any]:
@@ -340,7 +345,8 @@ class MonthlyEntryTracker:
             
             # If still no entries, try without userId filter (last resort - check all entries)
             if not entries:
-                print(f"WARNING: No entries found for user {user_id} in {collection.name}")
+                # DISABLED FOR LIQUID WALLET FOCUS
+                # print(f"WARNING: No entries found for user {user_id} in {collection.name}")
                 return 0
             
             count = 0
@@ -394,15 +400,16 @@ class MonthlyEntryTracker:
                         count += 1
                         
                 except Exception as entry_error:
-                    # Skip entries with errors but log them
-                    print(f"Error processing entry {entry.get('_id')}: {str(entry_error)}")
+                    # Skip entries with errors but log them - DISABLED FOR LIQUID WALLET FOCUS
+                    # print(f"Error processing entry {entry.get('_id')}: {str(entry_error)}")
                     continue
             
             return count
         except Exception as e:
-            print(f"Error in _count_by_id_timestamp: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error in _count_by_id_timestamp: {str(e)}")
+            # import traceback
+            # traceback.print_exc()
             return 0
     
     def _get_month_start(self) -> datetime:

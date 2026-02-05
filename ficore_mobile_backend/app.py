@@ -20,6 +20,8 @@ from blueprints.attachments import init_attachments_blueprint
 from blueprints.otp import init_otp_blueprint  # ₦0 Communication Strategy
 from blueprints.engagement import init_engagement_blueprint  # Weekly engagement reminders
 from blueprints.notifications import init_notifications_blueprint  # Persistent notifications
+# Internal KYC Management System - Zero Cost Solution
+from blueprints.internal_kyc import init_internal_kyc_blueprint
 
 from blueprints.credits import init_credits_blueprint
 from blueprints.summaries import init_summaries_blueprint
@@ -33,6 +35,7 @@ from blueprints.dashboard import init_dashboard_blueprint
 from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
+from blueprints.subscription_wallet import init_subscription_wallet_blueprint  # Phase 5: Wallet payment
 from blueprints.reminders import init_reminders_blueprint
 from blueprints.analytics import init_analytics_blueprint
 from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprint
@@ -40,7 +43,12 @@ from blueprints.admin_subscription_management import init_admin_subscription_man
 from blueprints.atomic_entries import init_atomic_entries_blueprint
 from blueprints.reports import init_reports_blueprint
 from blueprints.voice_reporting import init_voice_reporting_blueprint
-from blueprints.vas import init_vas_blueprint
+# VAS modules - broken down from monolithic blueprint
+from blueprints.vas_wallet import init_vas_wallet_blueprint
+from blueprints.vas_purchase import init_vas_purchase_blueprint
+from blueprints.vas_bills import init_vas_bills_blueprint
+# Referral System (NEW - Feb 4, 2026)
+from blueprints.referrals import referrals_bp, init_referrals_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -54,10 +62,73 @@ from config.credentials import credential_manager
 
 app = Flask(__name__)
 
+# Enhanced logging configuration
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Configure logging
+if not app.debug:
+    # Create logs directory if it doesn't exist
+    import os
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    
+    # Set up file handler with rotation
+    file_handler = RotatingFileHandler('logs/ficore_backend.log', maxBytes=10240000, backupCount=10)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    
+    # Set up console handler for immediate feedback
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s'
+    ))
+    console_handler.setLevel(logging.INFO)
+    app.logger.addHandler(console_handler)
+    
+    app.logger.setLevel(logging.INFO)
+    app.logger.info('FiCore Backend startup')
+
+# Add request logging middleware - DISABLED FOR LIQUID WALLET FOCUS
+@app.before_request
+def log_request_info():
+    # DISABLED FOR LIQUID WALLET FOCUS - Uncomment to re-enable request logging
+    pass
+    # try:
+    #     # Only log request body for non-file uploads to avoid logging large files
+    #     body_preview = ""
+    #     if request.content_type and 'multipart/form-data' not in request.content_type:
+    #         body_data = request.get_data(as_text=True)
+    #         body_preview = body_data[:500] if body_data else ""
+    #     
+    #     app.logger.info(f'Request: {request.method} {request.url} - Headers: {dict(request.headers)} - Body: {body_preview}')
+    # except Exception as e:
+    #     app.logger.info(f'Request: {request.method} {request.url} - (Error reading request: {str(e)})')
+
+@app.after_request
+def log_response_info(response):
+    # DISABLED FOR LIQUID WALLET FOCUS - Uncomment to re-enable response logging
+    # try:
+    #     # Only try to read response data for JSON responses, not file downloads
+    #     if response.content_type and 'application/json' in response.content_type:
+    #         app.logger.info(f'Response: {response.status_code} - {response.get_data(as_text=True)[:500]}')
+    #     else:
+    #         # For file responses, just log the status and content type
+    #         app.logger.info(f'Response: {response.status_code} - Content-Type: {response.content_type}')
+    # except Exception as e:
+    #     # Fallback logging if response data can't be read
+    #     app.logger.info(f'Response: {response.status_code} - (Content not readable: {str(e)})')
+    return response
+
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'ficore-mobile-secret-key-2025')
 app.config['MONGO_URI'] = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/ficore_mobile')
-app.config['JWT_EXPIRATION_DELTA'] = timedelta(hours=24)
+# Extended JWT expiration to reduce frequent login prompts (Golden Rule: User Feedback)
+# 7 days for regular users, 30 days for trusted devices (handled in frontend)
+app.config['JWT_EXPIRATION_DELTA'] = timedelta(days=7)  # Changed from 24 hours to 7 days
 
 # Initialize extensions
 CORS(app, origins=['*'])
@@ -166,6 +237,17 @@ with app.app_context():
         print("✅ Immutability migration already completed (skipped)")
     else:
         print(f"⚠️  Immutability migration failed: {migration_result.get('error', 'Unknown error')}")
+    
+    # CRITICAL FIX: Run dashboard performance indexes migration
+    from migrations.add_dashboard_performance_indexes import run_dashboard_performance_migration
+    dashboard_migration_result = run_dashboard_performance_migration(mongo.db)
+    
+    if dashboard_migration_result['success'] and not dashboard_migration_result['already_run']:
+        print("✅ Dashboard performance migration completed successfully")
+    elif dashboard_migration_result['already_run']:
+        print("✅ Dashboard performance migration already completed (skipped)")
+    else:
+        print(f"⚠️  Dashboard performance migration failed: {dashboard_migration_result.get('error', 'Unknown error')}")
 
 # Helper function to convert ObjectId to string
 def serialize_doc(doc):
@@ -285,6 +367,9 @@ engagement_blueprint = init_engagement_blueprint(mongo, app.config)
 # Persistent Notifications System
 notifications_blueprint = init_notifications_blueprint(mongo, token_required, serialize_doc)
 
+# Internal KYC Management System - Zero Cost Solution
+internal_kyc_blueprint = init_internal_kyc_blueprint(mongo, token_required, serialize_doc)
+
 credits_blueprint = init_credits_blueprint(mongo, token_required, serialize_doc)
 summaries_blueprint = init_summaries_blueprint(mongo, token_required, serialize_doc)
 admin_blueprint = init_admin_blueprint(mongo, token_required, admin_required, serialize_doc)
@@ -297,6 +382,7 @@ dashboard_blueprint = init_dashboard_blueprint(mongo, token_required, serialize_
 rewards_blueprint = init_rewards_blueprint(mongo, token_required, serialize_doc)
 subscription_blueprint = init_subscription_blueprint(mongo, token_required, serialize_doc)
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
+subscription_wallet_blueprint = init_subscription_wallet_blueprint(mongo, token_required)  # Phase 5: Wallet payment
 reminders_blueprint = init_reminders_blueprint(mongo, token_required, serialize_doc)
 analytics_blueprint = init_analytics_blueprint(mongo, token_required, admin_required, serialize_doc)
 admin_subscription_management_blueprint = init_admin_subscription_management_blueprint(mongo, token_required, admin_required, serialize_doc)
@@ -308,8 +394,13 @@ atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, 
 reports_blueprint = init_reports_blueprint(mongo, token_required)
 voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
 
-# Initialize VAS blueprint for wallet and utility services
-vas_blueprint = init_vas_blueprint(mongo, token_required, serialize_doc)
+# Initialize VAS modules - broken down from monolithic blueprint
+vas_wallet_blueprint = init_vas_wallet_blueprint(mongo, token_required, serialize_doc)
+vas_purchase_blueprint = init_vas_purchase_blueprint(mongo, token_required, serialize_doc)
+vas_bills_blueprint = init_vas_bills_blueprint(mongo, token_required, serialize_doc)
+
+# Initialize Referral System (NEW - Feb 4, 2026)
+referrals_blueprint = init_referrals_blueprint(mongo)
 
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
@@ -335,6 +426,9 @@ print("✓ Engagement blueprint registered at /engagement")
 app.register_blueprint(notifications_blueprint)
 print("✓ Notifications blueprint registered at /api/notifications")
 
+app.register_blueprint(internal_kyc_blueprint)
+print("✓ Internal KYC blueprint registered at /api/kyc")
+
 app.register_blueprint(credits_blueprint)
 app.register_blueprint(summaries_blueprint)
 app.register_blueprint(admin_blueprint)
@@ -347,6 +441,8 @@ app.register_blueprint(dashboard_blueprint)
 app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
+app.register_blueprint(subscription_wallet_blueprint)  # Phase 5: Wallet payment
+print("✓ Subscription wallet blueprint registered at /subscription/activate-via-wallet")
 app.register_blueprint(reminders_blueprint)
 app.register_blueprint(analytics_blueprint)
 app.register_blueprint(admin_subscription_management_blueprint)
@@ -362,14 +458,43 @@ print("✓ Reports blueprint registered at /api/reports")
 app.register_blueprint(voice_reporting_blueprint)
 print("✓ Voice reporting blueprint registered at /api/voice")
 
-# Register VAS blueprint for wallet and utility services
-app.register_blueprint(vas_blueprint)
-print("✓ VAS blueprint registered at /api/vas")
+# Register VAS modules - broken down from monolithic blueprint
+app.register_blueprint(vas_wallet_blueprint)
+print("✓ VAS Wallet blueprint registered at /api/vas/wallet")
+app.register_blueprint(vas_purchase_blueprint)
+print("✓ VAS Purchase blueprint registered at /api/vas/purchase")
+app.register_blueprint(vas_bills_blueprint)
+print("✓ VAS Bills blueprint registered at /api/vas/bills")
+
+# Register Referral System (NEW - Feb 4, 2026)
+app.register_blueprint(referrals_blueprint)
+print("✓ Referrals blueprint registered at /api/referrals")
+
+# Register VAS reconciliation blueprint for admin transaction management
+from blueprints.vas_reconciliation import init_vas_reconciliation_blueprint
+vas_reconciliation_blueprint = init_vas_reconciliation_blueprint(mongo, token_required, admin_required)
+app.register_blueprint(vas_reconciliation_blueprint, url_prefix='/admin')
+print("✓ VAS Reconciliation blueprint registered at /admin")
+
+# Register admin user transactions blueprint
+from blueprints.admin_user_transactions import init_admin_user_transactions_blueprint
+admin_user_transactions_blueprint = init_admin_user_transactions_blueprint(mongo, token_required, admin_required)
+app.register_blueprint(admin_user_transactions_blueprint, url_prefix='/api/admin')
+print("✓ Admin User Transactions blueprint registered at /api/admin")
 
 # Root redirect to admin login
-@app.route('/')
+@app.route('/', methods=['GET', 'HEAD'])
 def index():
-    """Redirect root URL to admin login page"""
+    """Redirect root URL to admin login page, but return 200 for health checks"""
+    # Check if this is a health check request (HEAD request or specific user agent)
+    if request.method == 'HEAD' or 'Go-http-client' in request.headers.get('User-Agent', ''):
+        return jsonify({
+            'status': 'healthy',
+            'service': 'FiCore Backend',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+    
+    # Regular browser requests get redirected to admin
     return redirect('/admin/admin_login.html')
 
 # Health check endpoint
@@ -485,181 +610,6 @@ def email_health_check():
         }), 500
 
 
-
-# Profile picture upload endpoint
-@app.route('/upload/profile-picture', methods=['POST'])
-@token_required
-def upload_profile_picture(current_user):
-    """Upload profile picture with GCS primary and GridFS fallback"""
-    try:
-        from werkzeug.utils import secure_filename
-        import uuid
-        import base64
-        
-        # Check if file is in request
-        if 'file' not in request.files:
-            return jsonify({
-                'success': False,
-                'message': 'No file provided'
-            }), 400
-        
-        file = request.files['file']
-        
-        # Check if file has a filename
-        if file.filename == '':
-            return jsonify({
-                'success': False,
-                'message': 'No file selected'
-            }), 400
-        
-        # Validate file type
-        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-        file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-        
-        if file_ext not in allowed_extensions:
-            return jsonify({
-                'success': False,
-                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}'
-            }), 400
-        
-        # Read file data once
-        file.seek(0)
-        file_data = file.read()
-        content_type = file.content_type or f'image/{file_ext}'
-        
-        user_id = str(current_user['_id'])
-        unique_id = str(uuid.uuid4())
-        
-        # Try GCS first
-        gcs_success = False
-        signed_url = None
-        gcs_filename = None
-        
-        try:
-            from google.cloud import storage
-            from datetime import timedelta
-            from io import BytesIO
-            
-            storage_client = storage.Client()
-            bucket_name = os.environ.get('GCS_BUCKET_NAME', 'ficore-attachments')
-            bucket = storage_client.bucket(bucket_name)
-            
-            if bucket.exists():
-                gcs_filename = f"profile_pictures/{user_id}/{unique_id}.{file_ext}"
-                blob = bucket.blob(gcs_filename)
-                blob.upload_from_file(BytesIO(file_data), content_type=content_type)
-                
-                # Generate signed URL
-                signed_url = blob.generate_signed_url(
-                    version="v4",
-                    expiration=timedelta(days=7),
-                    method="GET"
-                )
-                
-                gcs_success = True
-                print(f"✅ Profile picture uploaded to GCS: {gcs_filename}")
-            else:
-                print(f"⚠️ GCS bucket does not exist: {bucket_name}, falling back to GridFS")
-        except Exception as e:
-            print(f"⚠️ GCS upload failed: {e}, falling back to GridFS")
-        
-        # Fallback to GridFS if GCS failed
-        if not gcs_success:
-            try:
-                import gridfs
-                fs = gridfs.GridFS(mongo.db)
-                
-                # Store in GridFS
-                gridfs_id = fs.put(
-                    file_data,
-                    filename=f"profile_{user_id}_{unique_id}.{file_ext}",
-                    content_type=content_type,
-                    user_id=user_id
-                )
-                
-                # Create data URL for immediate display (fallback)
-                base64_data = base64.b64encode(file_data).decode('utf-8')
-                data_url = f"data:{content_type};base64,{base64_data}"
-                
-                # CRITICAL FIX: Generate absolute GridFS URL for persistent access
-                base_url = os.environ.get('API_BASE_URL', 'https://mobilebackend.ficoreafrica.com')
-                gridfs_url = f"{base_url}/api/users/profile-picture/{str(gridfs_id)}"
-                
-                # Update user with GridFS reference
-                mongo.db.users.update_one(
-                    {'_id': current_user['_id']},
-                    {
-                        '$set': {
-                            'gridfsProfilePictureId': str(gridfs_id),
-                            'gcsProfilePicturePath': None,
-                            'profilePictureUrl': None,
-                            'updatedAt': datetime.utcnow()
-                        }
-                    }
-                )
-                
-                print(f"✅ Profile picture stored in GridFS: {gridfs_id}")
-                print(f"✅ GridFS URL: {gridfs_url}")
-                
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'image_url': gridfs_url,  # Use persistent GridFS URL
-                        'url': gridfs_url,
-                        'data_url': data_url,  # Include data URL as fallback
-                        'storage': 'gridfs',
-                        'gridfs_id': str(gridfs_id)
-                    },
-                    'message': 'Profile picture uploaded successfully'
-                }), 200
-                
-            except Exception as gridfs_error:
-                print(f"❌ GridFS fallback failed: {gridfs_error}")
-                import traceback
-                traceback.print_exc()
-                return jsonify({
-                    'success': False,
-                    'message': 'Failed to upload image',
-                    'errors': {'general': [str(gridfs_error)]}
-                }), 500
-        
-        # GCS succeeded - update user document
-        try:
-            mongo.db.users.update_one(
-                {'_id': current_user['_id']},
-                {
-                    '$set': {
-                        'gcsProfilePicturePath': gcs_filename,
-                        'gridfsProfilePictureId': None,
-                        'profilePictureUrl': None,
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
-            )
-            print(f"✅ Saved GCS path to user document: {gcs_filename}")
-        except Exception as e:
-            print(f"⚠️ Error updating user document: {e}")
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'image_url': signed_url,
-                'url': signed_url,
-                'storage': 'gcs',
-                'gcs_path': gcs_filename
-            },
-            'message': 'Profile picture uploaded successfully'
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ Error uploading profile picture: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'message': 'Failed to upload profile picture',
-            'errors': {'general': [str(e)]}
-        }), 500
 
 @app.route('/admin')
 def admin_redirect():
@@ -992,9 +942,9 @@ def bad_request(error):
     }), 400
 
 if __name__ == '__main__':
-    # Run database migrations before starting the app
+    # Run database migrations after initialization
     try:
-        print("\n🔄 Running database migrations...")
+        print("🔄 Running database migrations...")
         from run_migrations import run_all_migrations
         mongo_uri = app.config.get('MONGO_URI')
         run_all_migrations(mongo_uri)
@@ -1019,7 +969,35 @@ if __name__ == '__main__':
         print(f"⚠️  Scheduler initialization error (non-fatal): {str(e)}\n")
         # Don't fail app startup if scheduler fails
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Initialize VAS Transaction Task Queue
+    try:
+        print("🚀 Initializing VAS Transaction Task Queue...")
+        from utils.transaction_task_queue import get_task_queue
+        task_queue = get_task_queue(mongo.db)
+        print("✅ VAS Transaction Task Queue started\n")
+        print("   - Bulletproof transaction processing enabled")
+        print("   - Wallet reservation system active")
+        print("   - Background worker running for recovery\n")
+    except Exception as e:
+        print(f"⚠️  Task queue initialization error (non-fatal): {str(e)}\n")
+        # Don't fail app startup if task queue fails
+    
+    # Only run Flask development server if not running under Gunicorn
+    # Check if we're running under Gunicorn by looking for gunicorn in the process
+    import sys
+    if 'gunicorn' not in sys.modules and 'gunicorn' not in ' '.join(sys.argv):
+        print("🔧 Running Flask development server...")
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    else:
+        print("🚀 Running under Gunicorn - Flask development server disabled")
+
+# Ensure app is available at module level for Gunicorn
+# This is critical for Gunicorn to find the app object
+if __name__ != '__main__':
+    print(f"🔍 Module imported by Gunicorn - app object available at: {__name__}.app")
+    
+    # Production deployment - no additional initialization needed
+    print("🚀 Production deployment ready")
 
 
 

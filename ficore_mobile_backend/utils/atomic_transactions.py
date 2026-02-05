@@ -1,113 +1,198 @@
-#!/usr/bin/env python3
 """
-🛡️ ATOMIC TRANSACTION UTILITIES
-Tier-1 Financial Institution Standards for Data Integrity
+Atomic Transaction Utilities for Financial Operations
+
+This module provides utilities for ensuring financial integrity through atomic operations.
+Critical for preventing the "Failed but Succeeded" bug in VAS transactions.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
-from contextlib import contextmanager
-import uuid
+import logging
 
-@contextmanager
-def atomic_vas_transaction(mongo_client):
-    """
-    🛡️ ATOMIC DUAL-WRITE PROTECTION
-    Ensures VAS transaction + expense entry + wallet update happen atomically
-    Prevents the "silent blind spot" where server crashes between writes
-    """
-    session = mongo_client.start_session()
-    try:
-        with session.start_transaction():
-            yield session
-            print('✅ Atomic VAS transaction committed successfully')
-    except Exception as e:
-        print(f'❌ Atomic transaction failed, rolling back: {str(e)}')
-        session.abort_transaction()
-        raise e
-    finally:
-        session.end_session()
+logger = logging.getLogger(__name__)
 
-def generate_idempotency_key():
+def execute_vas_transaction_atomically(mongo, transaction_data, wallet_update_data):
     """
-    📡 CLIENT-SIDE IDEMPOTENCY PROTECTION
-    Prevents double-billing when network drops after payment but before response
-    """
-    return str(uuid.uuid4())
-
-def validate_tier_freshness(user_id, cached_tier, mongo_db):
-    """
-    ⚖️ TIER-JUMP RACE CONDITION PROTECTION
-    Ensures user tier is fresh at the exact moment of payment
-    Prevents "I was cheated" complaints from stale tier data
-    """
-    try:
-        # Get fresh user data from database
-        fresh_user = mongo_db.users.find_one({'_id': ObjectId(user_id)})
-        if not fresh_user:
-            raise Exception(f'User {user_id} not found')
-        
-        # Get current subscription status
-        subscription = mongo_db.subscriptions.find_one({
-            'userId': ObjectId(user_id),
-            'status': 'active'
-        })
-        
-        current_tier = 'basic'
-        if subscription:
-            current_tier = subscription.get('tier', 'basic')
-        
-        # Check if tier changed since frontend cached it
-        if cached_tier != current_tier:
-            print(f'⚖️ Tier changed: {cached_tier} → {current_tier} for user {user_id}')
-            return current_tier, True  # Tier changed
-        
-        return current_tier, False  # Tier unchanged
-        
-    except Exception as e:
-        print(f'❌ Error validating tier freshness: {str(e)}')
-        # Default to basic tier for safety
-        return 'basic', True
-
-def check_high_value_transaction(amount, threshold=20000):
-    """
-    🛡️ CBN DUTY OF CARE COMPLIANCE
-    Identifies transactions requiring double-confirmation for legal protection
-    """
-    return amount >= threshold
-
-def create_double_confirm_data(amount, original_price, emergency_pricing=False):
-    """
-    🛡️ DOUBLE-CONFIRM MODAL DATA
-    Creates the data structure for CBN compliance double-confirmation
-    """
-    multiplier = amount / original_price if original_price > 0 else 1
+    Execute VAS transaction and wallet update atomically
     
-    return {
-        'requires_double_confirm': True,
+    Args:
+        mongo: MongoDB connection
+        transaction_data: Dict containing transaction update data
+        wallet_update_data: Dict containing wallet update data
+    
+    Returns:
+        dict: {'success': bool, 'error': str or None}
+    """
+    try:
+        with mongo.cx.start_session() as session:
+            with session.start_transaction():
+                # Update transaction status
+                transaction_result = mongo.db.vas_transactions.update_one(
+                    {'_id': transaction_data['transaction_id']},
+                    {'$set': transaction_data['update_fields']},
+                    session=session
+                )
+                
+                # Update wallet balance
+                wallet_result = mongo.db.vas_wallets.update_one(
+                    {'userId': ObjectId(wallet_update_data['user_id'])},
+                    {
+                        '$set': {
+                            'balance': wallet_update_data['new_balance'],
+                            'updatedAt': datetime.utcnow()
+                        },
+                        '$push': {
+                            'transactionHistory': wallet_update_data['history_entry']
+                        }
+                    },
+                    session=session
+                )
+                
+                # Verify both updates succeeded
+                if transaction_result.modified_count == 0:
+                    raise Exception(f"Failed to update transaction {transaction_data['transaction_id']}")
+                
+                if wallet_result.modified_count == 0:
+                    raise Exception(f"Failed to update wallet for user {wallet_update_data['user_id']}")
+                
+                logger.info(f"Atomic VAS transaction completed successfully: {transaction_data['transaction_id']}")
+                return {'success': True, 'error': None}
+                
+    except Exception as e:
+        logger.error(f"Atomic VAS transaction failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+def check_recent_duplicate_transaction(mongo, user_id, transaction_type, amount, phone_number=None, minutes=5):
+    """
+    Check for recent duplicate transactions to prevent double-charging
+    
+    Args:
+        mongo: MongoDB connection
+        user_id: User ID
+        transaction_type: Type of transaction (AIRTIME, DATA, etc.)
+        amount: Transaction amount
+        phone_number: Phone number (optional)
+        minutes: Time window to check (default 5 minutes)
+    
+    Returns:
+        dict or None: Recent transaction if found, None otherwise
+    """
+    query = {
+        'userId': ObjectId(user_id),
+        'type': transaction_type.upper(),
         'amount': amount,
-        'original_price': original_price,
-        'multiplier': multiplier,
-        'emergency_pricing': emergency_pricing,
-        'legal_text': f'I understand this is {multiplier:.1f}x the normal price due to network instability.',
-        'cbn_compliance': True,
-        'duty_of_care': 'acknowledged'
-    }
-
-def log_atomic_operation(operation_type, user_id, transaction_id, details):
-    """
-    📊 ATOMIC OPERATION LOGGING
-    Tracks all atomic operations for audit and debugging
-    """
-    log_entry = {
-        '_id': ObjectId(),
-        'operation_type': operation_type,
-        'user_id': user_id,
-        'transaction_id': transaction_id,
-        'details': details,
-        'timestamp': datetime.utcnow(),
-        'atomic': True
+        'status': {'$in': ['SUCCESS', 'NEEDS_RECONCILIATION']},
+        'createdAt': {'$gte': datetime.utcnow() - timedelta(minutes=minutes)}
     }
     
-    print(f'📊 Atomic operation logged: {operation_type} for user {user_id}')
-    return log_entry
+    if phone_number:
+        query['phoneNumber'] = phone_number
+    
+    return mongo.db.vas_transactions.find_one(query)
+
+def mark_transaction_for_reconciliation(mongo, transaction_id, reason, provider_response=None):
+    """
+    Mark a transaction for manual reconciliation when atomic operations fail
+    
+    Args:
+        mongo: MongoDB connection
+        transaction_id: Transaction ID
+        reason: Reason for reconciliation
+        provider_response: Provider response data (optional)
+    
+    Returns:
+        bool: True if marked successfully, False otherwise
+    """
+    try:
+        update_data = {
+            'status': 'NEEDS_RECONCILIATION',
+            'failureReason': reason,
+            'reconciliationRequired': True,
+            'reconciliationTimestamp': datetime.utcnow(),
+            'updatedAt': datetime.utcnow()
+        }
+        
+        if provider_response:
+            update_data['providerResponse'] = provider_response
+        
+        result = mongo.db.vas_transactions.update_one(
+            {'_id': transaction_id},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count > 0:
+            logger.warning(f"Transaction {transaction_id} marked for reconciliation: {reason}")
+            return True
+        else:
+            logger.error(f"Failed to mark transaction {transaction_id} for reconciliation")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error marking transaction {transaction_id} for reconciliation: {e}")
+        return False
+
+def get_reconciliation_transactions(mongo, limit=50):
+    """
+    Get transactions that need manual reconciliation
+    
+    Args:
+        mongo: MongoDB connection
+        limit: Maximum number of transactions to return
+    
+    Returns:
+        list: Transactions needing reconciliation
+    """
+    return list(mongo.db.vas_transactions.find(
+        {'status': 'NEEDS_RECONCILIATION'},
+        sort=[('reconciliationTimestamp', -1)],
+        limit=limit
+    ))
+
+def resolve_reconciliation_transaction(mongo, transaction_id, resolution_status, admin_notes=None):
+    """
+    Resolve a transaction marked for reconciliation
+    
+    Args:
+        mongo: MongoDB connection
+        transaction_id: Transaction ID
+        resolution_status: Final status (SUCCESS or FAILED)
+        admin_notes: Admin notes about resolution
+    
+    Returns:
+        bool: True if resolved successfully, False otherwise
+    """
+    try:
+        update_data = {
+            'status': resolution_status,
+            'reconciliationResolved': True,
+            'reconciliationResolvedAt': datetime.utcnow(),
+            'updatedAt': datetime.utcnow()
+        }
+        
+        if admin_notes:
+            update_data['adminNotes'] = admin_notes
+        
+        # Remove reconciliation fields
+        unset_data = {
+            'reconciliationRequired': "",
+            'failureReason': ""
+        }
+        
+        result = mongo.db.vas_transactions.update_one(
+            {'_id': transaction_id},
+            {
+                '$set': update_data,
+                '$unset': unset_data
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Transaction {transaction_id} reconciliation resolved as {resolution_status}")
+            return True
+        else:
+            logger.error(f"Failed to resolve reconciliation for transaction {transaction_id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error resolving reconciliation for transaction {transaction_id}: {e}")
+        return False
