@@ -6473,3 +6473,5 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'error': str(e)
             }), 500
     
+
+    return admin_bp
