@@ -472,6 +472,38 @@
             </div>
         </div>
 
+        <!-- Referral System Metrics -->
+        <div class="stats-grid" style="background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%); padding: 20px 30px; margin-top: 0;">
+            <div style="grid-column: 1 / -1; text-align: center; color: white; margin-bottom: 10px;">
+                <h2 style="margin: 0; font-size: 1.5rem;"><i class="fas fa-users"></i> Referral System Metrics</h2>
+                <p style="margin: 5px 0 0 0; opacity: 0.9;">Track your referral program performance</p>
+            </div>
+            <div class="stat-card" style="--card-color: #e67e22;">
+                <div class="icon"><i class="fas fa-user-plus"></i></div>
+                <div class="number" id="totalReferrals">0</div>
+                <div class="label">Total Referrals</div>
+                <div class="sublabel">All-time sign-ups</div>
+            </div>
+            <div class="stat-card" style="--card-color: #27ae60;">
+                <div class="icon"><i class="fas fa-check-circle"></i></div>
+                <div class="number" id="activeReferrals">0</div>
+                <div class="label">Active Referrals</div>
+                <div class="sublabel">Made first deposit</div>
+            </div>
+            <div class="stat-card" style="--card-color: #f39c12;">
+                <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="number" id="totalReferralPayouts">₦0</div>
+                <div class="label">Total Payouts</div>
+                <div class="sublabel">All commissions paid</div>
+            </div>
+            <div class="stat-card" style="--card-color: #9b59b6;">
+                <div class="icon"><i class="fas fa-hourglass-half"></i></div>
+                <div class="number" id="pendingReferralPayouts">₦0</div>
+                <div class="label">Pending Payouts</div>
+                <div class="sublabel">In vesting period</div>
+            </div>
+        </div>
+
         <div class="controls">
             <div class="controls-grid">
                 <div class="date-filter">
@@ -632,6 +664,10 @@
                 if (data.success) {
                     treasuryData = data.data;
                     updateDashboard();
+                    
+                    // Load referral metrics
+                    await loadReferralMetrics(token, timePeriod);
+                    
                     showTable();
                 } else {
                     throw new Error(data.message || 'Failed to load treasury data');
@@ -642,6 +678,40 @@
                 showNotification('Failed to load treasury data: ' + error.message, 'error');
                 showLoading();
             }
+        }
+
+        // Load referral metrics
+        async function loadReferralMetrics(token, timePeriod) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/referral-metrics?period=${timePeriod}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to load referral metrics');
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateReferralMetrics(data.data);
+                }
+            } catch (error) {
+                console.error('Error loading referral metrics:', error);
+            }
+        }
+
+        // Update referral metrics display
+        function updateReferralMetrics(data) {
+            const { overview } = data;
+            
+            document.getElementById('totalReferrals').textContent = overview.totalReferrals.toLocaleString();
+            document.getElementById('activeReferrals').textContent = overview.activeReferrals.toLocaleString();
+            document.getElementById('totalReferralPayouts').textContent = `₦${overview.totalPayouts.toLocaleString()}`;
+            document.getElementById('pendingReferralPayouts').textContent = `₦${overview.pendingPayouts.toLocaleString()}`;
         }
 
         // Update dashboard with data

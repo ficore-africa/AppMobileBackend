@@ -1905,6 +1905,14 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 deposit_fee = 0.0 if is_premium else VAS_TRANSACTION_FEE
                 amount_to_credit = amount_paid - deposit_fee
                 
+                # 💰 CALCULATE GATEWAY FEE (Phase 2 - Unit Economics)
+                # Monnify charges 1.6% on all deposits
+                gateway_fee = amount_paid * 0.016  # 1.6%
+                gateway_provider = 'monnify'
+                
+                # Calculate net deposit revenue (only for non-premium users)
+                net_deposit_revenue = deposit_fee - gateway_fee if not is_premium else -gateway_fee
+                
                 # Ensure we don't credit negative amounts
                 if amount_to_credit <= 0:
                     print(f'WARNING: Amount too small after fee: ₦ {amount_paid} - ₦ {deposit_fee} = ₦ {amount_to_credit}')
@@ -1922,6 +1930,11 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'transactionReference': transaction_reference,  # CRITICAL: Add this field for unique index
                     'status': 'SUCCESS',
                     'provider': 'monnify',
+                    # 💰 UNIT ECONOMICS TRACKING (Phase 2)
+                    'gatewayFee': round(gateway_fee, 2),
+                    'gatewayProvider': gateway_provider,
+                    'netDepositRevenue': round(net_deposit_revenue, 2),
+                    'isPremiumUser': is_premium,
                     'metadata': webhook_data,
                     'createdAt': datetime.utcnow()
                 }
@@ -1960,7 +1973,106 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 else:
                     print(f'SUCCESS: Updated BOTH balances using utility - New balance: ₦{new_balance:,.2f}')
                 
-                # Record corporate revenue (₦ 30 fee)
+                # ==================== REFERRAL SYSTEM: FIRST DEPOSIT BONUS (NEW - Feb 4, 2026) ====================
+                # Check if this is user's first deposit and they were referred
+                user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                is_first_deposit = not user.get('firstDepositCompleted', False)
+                
+                if is_first_deposit:
+                    print(f'🎉 FIRST DEPOSIT detected for user {user_id}')
+                    
+                    # Update user's first deposit status
+                    mongo.db.users.update_one(
+                        {'_id': ObjectId(user_id)},
+                        {
+                            '$set': {
+                                'firstDepositCompleted': True,
+                                'firstDepositDate': datetime.utcnow()
+                            }
+                        }
+                    )
+                    
+                    # Check if they were referred
+                    referral = mongo.db.referrals.find_one({'refereeId': ObjectId(user_id)})
+                    
+                    if referral and not referral.get('refereeDepositBonusGranted', False):
+                        print(f'🎁 REFERRAL BONUS: User {user_id} was referred by {referral["referrerId"]}')
+                        
+                        # BONUS 1: Waive the ₦30 deposit fee (credit it back)
+                        if deposit_fee > 0:
+                            mongo.db.vas_wallets.update_one(
+                                {'userId': ObjectId(user_id)},
+                                {'$inc': {'balance': deposit_fee}}
+                            )
+                            # Also update users collection balances
+                            mongo.db.users.update_one(
+                                {'_id': ObjectId(user_id)},
+                                {
+                                    '$inc': {
+                                        'walletBalance': deposit_fee,
+                                        'liquidWalletBalance': deposit_fee,
+                                        'vasWalletBalance': deposit_fee
+                                    }
+                                }
+                            )
+                            print(f'✅ Credited back ₦{deposit_fee} deposit fee')
+                        
+                        # BONUS 2: Grant 5 FiCore Credits
+                        current_fc_balance = user.get('ficoreCreditBalance', 0.0)
+                        mongo.db.users.update_one(
+                            {'_id': ObjectId(user_id)},
+                            {'$inc': {'ficoreCreditBalance': 5.0}}
+                        )
+                        
+                        # Log the bonus in credit_transactions
+                        credit_transaction = {
+                            '_id': ObjectId(),
+                            'userId': ObjectId(user_id),
+                            'type': 'credit',
+                            'amount': 5.0,
+                            'description': 'Referral signup bonus - Welcome to FiCore!',
+                            'status': 'completed',
+                            'operation': 'referral_bonus',
+                            'balanceBefore': current_fc_balance,
+                            'balanceAfter': current_fc_balance + 5.0,
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'referrerId': str(referral['referrerId']),
+                                'referralCode': referral.get('referralCode'),
+                                'isReferralBonus': True
+                            }
+                        }
+                        mongo.db.credit_transactions.insert_one(credit_transaction)
+                        print(f'✅ Granted 5 FiCore Credits')
+                        
+                        # Update referral record
+                        mongo.db.referrals.update_one(
+                            {'_id': referral['_id']},
+                            {
+                                '$set': {
+                                    'status': 'active',
+                                    'firstDepositDate': datetime.utcnow(),
+                                    'refereeDepositBonusGranted': True,
+                                    'referrerVasShareActive': True,
+                                    'vasShareExpiryDate': datetime.utcnow() + timedelta(days=90),
+                                    'updatedAt': datetime.utcnow()
+                                }
+                            }
+                        )
+                        print(f'✅ Updated referral status to ACTIVE with 90-day VAS share')
+                        
+                        # Update referrer's stats
+                        mongo.db.users.update_one(
+                            {'_id': referral['referrerId']},
+                            {'$inc': {'referralCount': 1}}
+                        )
+                        print(f'✅ Incremented referrer\'s referral count')
+                        
+                        print(f'🎉 REFERRAL BONUS COMPLETE: User {user_id} received ₦{deposit_fee} + 5 FCs')
+                
+                # ==================== END REFERRAL SYSTEM ====================
+                
+                # Record corporate revenue (₦ 30 fee) with gateway cost tracking
                 if deposit_fee > 0:
                     corporate_revenue = {
                         '_id': ObjectId(),
@@ -1972,14 +2084,22 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'description': f'Deposit fee from user {user_id}',
                         'status': 'RECORDED',
                         'createdAt': datetime.utcnow(),
+                        # 💰 UNIT ECONOMICS TRACKING (Phase 2)
+                        'gatewayFee': round(gateway_fee, 2),
+                        'gatewayProvider': gateway_provider,
+                        'netRevenue': round(net_deposit_revenue, 2),
                         'metadata': {
                             'amountPaid': amount_paid,
                             'amountCredited': amount_to_credit,
-                            'isPremium': is_premium
+                            'isPremium': is_premium,
+                            'gatewayFeePercentage': 1.6
                         }
                     }
                     mongo.db.corporate_revenue.insert_one(corporate_revenue)
-                    print(f'INFO: Corporate revenue recorded: ₦ {deposit_fee} from user {user_id}')
+                    print(f'💰 Corporate revenue recorded: ₦{deposit_fee} deposit fee (net: ₦{net_deposit_revenue:.2f} after gateway) - User {user_id}')
+                elif is_premium:
+                    # Track gateway cost for premium users (no deposit fee revenue)
+                    print(f'💸 Gateway cost for premium user: ₦{gateway_fee:.2f} (no deposit fee collected) - User {user_id}')
                 
                 # Send notification
                 try:

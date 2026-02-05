@@ -285,6 +285,52 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             except Exception as e:
                 print(f'⚠️ Failed to mark onboarding complete (non-critical): {e}')
             
+            # PHASE 4: Create context-aware notification reminder to attach documents
+            # This is the "Audit Shield" - persistent reminder that survives app reinstalls
+            try:
+                from blueprints.notifications import create_user_notification
+                from utils.notification_context import get_notification_context
+                
+                # Determine entry title for notification
+                entry_title = income_data.get('source', 'Income')
+                entry_amount = raw_amount
+                
+                # Get context-aware notification content
+                notification_context = get_notification_context(
+                    user=current_user,
+                    entry_data=income_data,
+                    entry_type='income'
+                )
+                
+                # Create persistent notification with context
+                notification_id = create_user_notification(
+                    mongo=mongo,
+                    user_id=current_user['_id'],
+                    category=notification_context['category'],
+                    title=notification_context['title'],
+                    body=notification_context['body'],
+                    related_id=income_id,
+                    metadata={
+                        'entryType': 'income',
+                        'entryTitle': entry_title,
+                        'amount': entry_amount,
+                        'category': data['category'],
+                        'dateCreated': datetime.utcnow().isoformat(),
+                        'businessStructure': current_user.get('taxProfile', {}).get('businessStructure'),
+                        'entryTag': income_data.get('entryType')
+                    },
+                    priority=notification_context['priority']
+                )
+                
+                if notification_id:
+                    print(f'📱 Context-aware notification created for income {income_id}: {notification_id} (priority: {notification_context["priority"]})')
+                else:
+                    print(f'⚠️ Failed to create notification for income {income_id}')
+                    
+            except Exception as e:
+                # Don't fail the income creation if notification fails
+                print(f'⚠️ Failed to create notification (non-critical): {e}')
+            
             # FIXED: Return full income data like other endpoints
             created_income = serialize_doc(income_data.copy())
             created_income['id'] = income_id
@@ -996,4 +1042,131 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ============================================================================
+    # ENTRY TAGGING ENDPOINTS (Phase 3B)
+    # ============================================================================
+    
+    @income_bp.route('/tag/<entry_id>', methods=['PATCH'])
+    @token_required
+    def tag_income_entry(current_user, entry_id):
+        """Tag an income entry as business or personal"""
+        try:
+            data = request.get_json() or {}
+            entry_type = data.get('entryType')
+            
+            # Validate entry type
+            if entry_type not in ['business', 'personal', None]:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business", "personal", or null'
+                }), 400
+            
+            # Update entry
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow() if entry_type else None,
+                'taggedBy': 'user' if entry_type else None
+            }
+            
+            result = mongo.db.incomes.update_one(
+                {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+                {'$set': update_data}
+            )
+            
+            if result.modified_count > 0:
+                return jsonify({
+                    'success': True,
+                    'message': 'Entry tagged successfully'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found or already tagged'
+                }), 404
+                
+        except Exception as e:
+            print(f"Error in tag_income_entry: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to tag entry',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/bulk-tag', methods=['PATCH'])
+    @token_required
+    def bulk_tag_income_entries(current_user):
+        """Tag multiple income entries at once"""
+        try:
+            data = request.get_json() or {}
+            entry_ids = data.get('entryIds', [])
+            entry_type = data.get('entryType')
+            
+            # Validate entry type
+            if entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business" or "personal"'
+                }), 400
+            
+            if not entry_ids:
+                return jsonify({
+                    'success': False,
+                    'message': 'No entry IDs provided'
+                }), 400
+            
+            # Update entries
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow(),
+                'taggedBy': 'user'
+            }
+            
+            result = mongo.db.incomes.update_many(
+                {
+                    '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                    'userId': current_user['_id']
+                },
+                {'$set': update_data}
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': f'{result.modified_count} entries tagged successfully',
+                'count': result.modified_count
+            })
+                
+        except Exception as e:
+            print(f"Error in bulk_tag_income_entries: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to bulk tag entries',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/untagged-count', methods=['GET'])
+    @token_required
+    def get_untagged_income_count(current_user):
+        """Get count of untagged income entries"""
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            query = get_active_transactions_query(current_user['_id'])
+            query['entryType'] = None
+            
+            count = mongo.db.incomes.count_documents(query)
+            
+            return jsonify({
+                'success': True,
+                'count': count
+            })
+                
+        except Exception as e:
+            print(f"Error in get_untagged_income_count: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get untagged count',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     return income_bp
+

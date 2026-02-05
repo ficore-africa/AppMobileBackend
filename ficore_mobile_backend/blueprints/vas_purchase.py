@@ -2406,6 +2406,12 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'provider': None,
                 'requestId': request_id,
                 'transactionReference': request_id,  # CRITICAL: Add this field for unique index
+                # 💰 UNIT ECONOMICS TRACKING (Phase 1)
+                'providerCost': None,  # Will be set after provider success
+                'providerCommission': None,  # Will be calculated based on provider
+                'providerCommissionRate': None,  # 1% Peyflex, 3% Monnify
+                'gatewayFee': 0.0,  # No gateway fee on VAS sales (only on deposits)
+                'netMargin': None,  # providerCommission - gatewayFee
                 'createdAt': datetime.utcnow()
             }
             
@@ -2487,7 +2493,62 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             current_balance = current_wallet.get('balance', 0.0) if current_wallet else 0.0
             available_balance = get_user_available_balance(mongo.db, user_id)
             
-            # Record corporate revenue (margin earned)
+            # 💰 CALCULATE PROVIDER COMMISSION (Phase 1 - Unit Economics)
+            # Monnify: 3% automatic commission on airtime
+            # Peyflex: 1% automatic commission on airtime
+            if provider == 'monnify':
+                commission_rate = 0.03  # 3%
+                provider_commission = amount * commission_rate
+                provider_cost = amount - provider_commission  # What Monnify charged us
+            elif provider == 'peyflex':
+                commission_rate = 0.01  # 1%
+                provider_commission = amount * commission_rate
+                provider_cost = amount - provider_commission  # What Peyflex charged us
+            else:
+                commission_rate = 0.0
+                provider_commission = 0.0
+                provider_cost = amount
+            
+            gateway_fee = 0.0  # No gateway fee on VAS sales (only on deposits)
+            net_margin = provider_commission - gateway_fee
+            
+            # Update transaction with commission data
+            mongo.db.vas_transactions.update_one(
+                {'_id': transaction_id},
+                {'$set': {
+                    'providerCost': round(provider_cost, 2),
+                    'providerCommission': round(provider_commission, 2),
+                    'providerCommissionRate': commission_rate,
+                    'gatewayFee': gateway_fee,
+                    'netMargin': round(net_margin, 2)
+                }}
+            )
+            
+            # Record provider commission as corporate revenue
+            if provider_commission > 0:
+                corporate_revenue = {
+                    '_id': ObjectId(),
+                    'type': 'VAS_COMMISSION',
+                    'category': f'{provider.upper()}_AIRTIME',
+                    'amount': round(provider_commission, 2),
+                    'userId': ObjectId(user_id),
+                    'relatedTransaction': str(transaction_id),
+                    'description': f'{provider.capitalize()} {commission_rate*100}% commission on airtime sale',
+                    'status': 'RECORDED',
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'provider': provider,
+                        'commissionRate': commission_rate,
+                        'transactionAmount': amount,
+                        'providerCost': round(provider_cost, 2),
+                        'network': network,
+                        'transactionType': 'AIRTIME'
+                    }
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                print(f'💰 Corporate revenue recorded: ₦{provider_commission:.2f} commission from {provider} airtime sale - User {user_id}')
+            
+            # Record corporate revenue (margin earned) - LEGACY, keeping for backward compatibility
             if margin > 0:
                 corporate_revenue = {
                     '_id': ObjectId(),
@@ -2539,6 +2600,92 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 except Exception as e:
                     print(f'WARNING: Failed to tag emergency transaction: {str(e)}')
                     # Don't fail the transaction if tagging fails
+            
+            # ==================== REFERRAL SYSTEM: VAS ACTIVITY SHARE (NEW - Feb 4, 2026) ====================
+            # Check if user was referred and VAS share is still active (within 90 days)
+            referral = mongo.db.referrals.find_one({
+                'refereeId': ObjectId(user_id),
+                'referrerVasShareActive': True,
+                'vasShareExpiryDate': {'$gte': datetime.utcnow()}
+            })
+            
+            if referral:
+                # Calculate 1% share of transaction amount
+                vas_share = amount * 0.01
+                days_remaining = (referral['vasShareExpiryDate'] - datetime.utcnow()).days
+                
+                print(f'💸 VAS SHARE: User {user_id} purchased ₦{amount} airtime, referred by {referral["referrerId"]} ({days_remaining} days remaining)')
+                
+                # Create payout entry (WITHDRAWABLE immediately - no vesting for VAS)
+                payout_doc = {
+                    '_id': ObjectId(),
+                    'referrerId': referral['referrerId'],
+                    'refereeId': ObjectId(user_id),
+                    'referralId': referral['_id'],
+                    'type': 'VAS_SHARE',
+                    'amount': vas_share,
+                    'status': 'WITHDRAWABLE',
+                    'vestingStartDate': datetime.utcnow(),
+                    'vestingEndDate': datetime.utcnow(),  # Immediate
+                    'vestedAt': datetime.utcnow(),
+                    'paidAt': None,
+                    'paymentMethod': None,
+                    'paymentReference': None,
+                    'processedBy': None,
+                    'sourceTransaction': str(transaction_id),
+                    'sourceType': 'VAS_TRANSACTION',
+                    'metadata': {
+                        'vasAmount': amount,
+                        'shareRate': 0.01,
+                        'daysRemaining': days_remaining,
+                        'network': network,
+                        'transactionType': 'AIRTIME'
+                    },
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                mongo.db.referral_payouts.insert_one(payout_doc)
+                print(f'✅ Created VAS share payout: ₦{vas_share:.2f} (WITHDRAWABLE immediately)')
+                
+                # Update referrer's withdrawable balance
+                mongo.db.users.update_one(
+                    {'_id': referral['referrerId']},
+                    {
+                        '$inc': {
+                            'withdrawableCommissionBalance': vas_share,
+                            'referralEarnings': vas_share
+                        }
+                    }
+                )
+                print(f'✅ Updated referrer withdrawable balance: +₦{vas_share:.2f}')
+                
+                # Log to corporate_revenue (as expense)
+                corporate_revenue_doc = {
+                    '_id': ObjectId(),
+                    'type': 'REFERRAL_PAYOUT',
+                    'category': 'PARTNER_COMMISSION',
+                    'amount': -vas_share,  # Negative (expense for FiCore)
+                    'userId': referral['referrerId'],
+                    'relatedTransaction': str(transaction_id),
+                    'description': f'VAS share (1%) for referrer {referral["referrerId"]}',
+                    'status': 'WITHDRAWABLE',
+                    'metadata': {
+                        'referrerId': str(referral['referrerId']),
+                        'refereeId': str(user_id),
+                        'payoutType': 'VAS_SHARE',
+                        'shareRate': 0.01,
+                        'sourceAmount': amount,
+                        'daysRemaining': days_remaining,
+                        'transactionType': 'AIRTIME'
+                    },
+                    'createdAt': datetime.utcnow()
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue_doc)
+                print(f'💰 Corporate revenue logged: -₦{vas_share:.2f} (VAS share)')
+                
+                print(f'🎉 VAS SHARE COMPLETE: Referrer earned ₦{vas_share:.2f} (1% of ₦{amount})')
+            
+            # ==================== END REFERRAL SYSTEM ====================
             
             # Auto-create expense entry (auto-bookkeeping)
             base_description = f'Airtime - {network} ₦ {amount} for {phone_number[-4:]}****'
@@ -2785,6 +2932,12 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'provider': None,
                 'requestId': request_id,
                 'transactionReference': request_id,  # CRITICAL: Add this field for unique index
+                # 💰 UNIT ECONOMICS TRACKING (Phase 1)
+                'providerCost': None,  # Will be set after provider success
+                'providerCommission': None,  # Will be calculated based on provider
+                'providerCommissionRate': None,  # 5% Peyflex, 3% Monnify
+                'gatewayFee': 0.0,  # No gateway fee on VAS sales (only on deposits)
+                'netMargin': None,  # providerCommission - gatewayFee
                 'createdAt': datetime.utcnow()
             }
             
@@ -3095,6 +3248,149 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             current_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             current_balance = current_wallet.get('balance', 0.0) if current_wallet else 0.0
             available_balance = get_user_available_balance(mongo.db, user_id)
+            
+            # 💰 CALCULATE PROVIDER COMMISSION (Phase 1 - Unit Economics)
+            # Monnify: 3% automatic commission on data
+            # Peyflex: 5% automatic commission on data (bug fixed!)
+            if provider == 'monnify':
+                commission_rate = 0.03  # 3%
+                provider_commission = amount * commission_rate
+                provider_cost = amount - provider_commission  # What Monnify charged us
+            elif provider == 'peyflex':
+                commission_rate = 0.05  # 5% (bug fixed!)
+                provider_commission = amount * commission_rate
+                provider_cost = amount - provider_commission  # What Peyflex charged us
+            else:
+                commission_rate = 0.0
+                provider_commission = 0.0
+                provider_cost = amount
+            
+            gateway_fee = 0.0  # No gateway fee on VAS sales (only on deposits)
+            net_margin = provider_commission - gateway_fee
+            
+            # Update transaction with commission data
+            mongo.db.vas_transactions.update_one(
+                {'_id': transaction_id},
+                {'$set': {
+                    'providerCost': round(provider_cost, 2),
+                    'providerCommission': round(provider_commission, 2),
+                    'providerCommissionRate': commission_rate,
+                    'gatewayFee': gateway_fee,
+                    'netMargin': round(net_margin, 2)
+                }}
+            )
+            
+            # Record provider commission as corporate revenue
+            if provider_commission > 0:
+                corporate_revenue = {
+                    '_id': ObjectId(),
+                    'type': 'VAS_COMMISSION',
+                    'category': f'{provider.upper()}_DATA',
+                    'amount': round(provider_commission, 2),
+                    'userId': ObjectId(user_id),
+                    'relatedTransaction': str(transaction_id),
+                    'description': f'{provider.capitalize()} {commission_rate*100}% commission on data sale',
+                    'status': 'RECORDED',
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'provider': provider,
+                        'commissionRate': commission_rate,
+                        'transactionAmount': amount,
+                        'providerCost': round(provider_cost, 2),
+                        'network': network,
+                        'dataPlan': data_plan_name,
+                        'transactionType': 'DATA'
+                    }
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                print(f'💰 Corporate revenue recorded: ₦{provider_commission:.2f} commission from {provider} data sale - User {user_id}')
+            
+            # ==================== REFERRAL SYSTEM: VAS ACTIVITY SHARE (NEW - Feb 4, 2026) ====================
+            # Check if user was referred and VAS share is still active (within 90 days)
+            referral = mongo.db.referrals.find_one({
+                'refereeId': ObjectId(user_id),
+                'referrerVasShareActive': True,
+                'vasShareExpiryDate': {'$gte': datetime.utcnow()}
+            })
+            
+            if referral:
+                # Calculate 1% share of transaction amount
+                vas_share = amount * 0.01
+                days_remaining = (referral['vasShareExpiryDate'] - datetime.utcnow()).days
+                
+                print(f'💸 VAS SHARE: User {user_id} purchased ₦{amount} data, referred by {referral["referrerId"]} ({days_remaining} days remaining)')
+                
+                # Create payout entry (WITHDRAWABLE immediately - no vesting for VAS)
+                payout_doc = {
+                    '_id': ObjectId(),
+                    'referrerId': referral['referrerId'],
+                    'refereeId': ObjectId(user_id),
+                    'referralId': referral['_id'],
+                    'type': 'VAS_SHARE',
+                    'amount': vas_share,
+                    'status': 'WITHDRAWABLE',
+                    'vestingStartDate': datetime.utcnow(),
+                    'vestingEndDate': datetime.utcnow(),  # Immediate
+                    'vestedAt': datetime.utcnow(),
+                    'paidAt': None,
+                    'paymentMethod': None,
+                    'paymentReference': None,
+                    'processedBy': None,
+                    'sourceTransaction': str(transaction_id),
+                    'sourceType': 'VAS_TRANSACTION',
+                    'metadata': {
+                        'vasAmount': amount,
+                        'shareRate': 0.01,
+                        'daysRemaining': days_remaining,
+                        'network': network,
+                        'planName': data_plan_name,
+                        'transactionType': 'DATA'
+                    },
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                mongo.db.referral_payouts.insert_one(payout_doc)
+                print(f'✅ Created VAS share payout: ₦{vas_share:.2f} (WITHDRAWABLE immediately)')
+                
+                # Update referrer's withdrawable balance
+                mongo.db.users.update_one(
+                    {'_id': referral['referrerId']},
+                    {
+                        '$inc': {
+                            'withdrawableCommissionBalance': vas_share,
+                            'referralEarnings': vas_share
+                        }
+                    }
+                )
+                print(f'✅ Updated referrer withdrawable balance: +₦{vas_share:.2f}')
+                
+                # Log to corporate_revenue (as expense)
+                corporate_revenue_doc = {
+                    '_id': ObjectId(),
+                    'type': 'REFERRAL_PAYOUT',
+                    'category': 'PARTNER_COMMISSION',
+                    'amount': -vas_share,  # Negative (expense for FiCore)
+                    'userId': referral['referrerId'],
+                    'relatedTransaction': str(transaction_id),
+                    'description': f'VAS share (1%) for referrer {referral["referrerId"]}',
+                    'status': 'WITHDRAWABLE',
+                    'metadata': {
+                        'referrerId': str(referral['referrerId']),
+                        'refereeId': str(user_id),
+                        'payoutType': 'VAS_SHARE',
+                        'shareRate': 0.01,
+                        'sourceAmount': amount,
+                        'daysRemaining': days_remaining,
+                        'transactionType': 'DATA'
+                    },
+                    'createdAt': datetime.utcnow()
+                }
+                mongo.db.corporate_revenue.insert_one(corporate_revenue_doc)
+                print(f'💰 Corporate revenue logged: -₦{vas_share:.2f} (VAS share)')
+                
+                print(f'🎉 VAS SHARE COMPLETE: Referrer earned ₦{vas_share:.2f} (1% of ₦{amount})')
+            
+            # ==================== END REFERRAL SYSTEM ====================
             
             # NO CORPORATE REVENUE RECORDING - Data plans sold at cost with no margin
             

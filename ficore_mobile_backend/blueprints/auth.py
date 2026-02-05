@@ -18,6 +18,48 @@ def init_auth_blueprint(mongo, app_config):
     auth_bp.tracker = create_tracker(mongo.db)
     return auth_bp
 
+# ==================== REFERRAL SYSTEM HELPERS (NEW - Feb 4, 2026) ====================
+
+def generate_referral_code(first_name, phone_suffix, db):
+    """
+    Generate a unique, user-friendly referral code.
+    Format: {FIRST_NAME_3_CHARS}{PHONE_LAST_3_DIGITS}
+    Falls back to random if collision occurs.
+    
+    Args:
+        first_name: User's first name
+        phone_suffix: Last 3 digits of phone number
+        db: MongoDB database instance
+    
+    Returns:
+        str: Unique referral code (e.g., 'AUW123')
+    """
+    import random
+    import string
+    
+    # Clean the name (e.g., 'Auwal' -> 'AUW')
+    prefix = (first_name[:3]).upper() if first_name else "FIC"
+    
+    # Add phone suffix or random digits
+    suffix = phone_suffix[-3:] if phone_suffix and len(phone_suffix) >= 3 else ''.join(random.choices(string.digits, k=3))
+    
+    code = f"{prefix}{suffix}"
+    
+    # Check for collision in DB
+    max_attempts = 10
+    attempts = 0
+    while db.users.find_one({"referralCode": code}) and attempts < max_attempts:
+        code = f"{prefix}{''.join(random.choices(string.digits, k=3))}"
+        attempts += 1
+    
+    if attempts >= max_attempts:
+        # Fallback to UUID-based code
+        code = f"FIC{str(uuid.uuid4())[:6].upper()}"
+    
+    return code
+
+# ==================== END REFERRAL HELPERS ====================
+
 # Validation helpers
 def validate_email(email):
     import re
@@ -175,6 +217,9 @@ def signup():
         financial_goals = data.get('financialGoals', [])
         # Optional displayName or businessName from frontend
         display_name = data.get('displayName')
+        # Optional referral code (NEW - Feb 4, 2026)
+        referred_by_code = data.get('referralCode', '').strip().upper() if data.get('referralCode') else None
+        phone = data.get('phone', '').strip()  # Get phone for code generation
 
         # Validate financial goals if provided
         valid_goals = [
@@ -195,12 +240,26 @@ def signup():
             if invalid_goals:
                 errors['financialGoals'] = [f'Invalid goals: {", ".join(invalid_goals)}']
 
+        # Validate referral code if provided (NEW - Feb 4, 2026)
+        referrer = None
+        if referred_by_code:
+            referrer = auth_bp.mongo.db.users.find_one({"referralCode": referred_by_code})
+            if not referrer:
+                errors['referralCode'] = ['Invalid referral code']
+
         if errors:
             return jsonify({
                 'success': False,
                 'message': 'Validation failed',
                 'errors': errors
             }), 400
+
+        # Generate unique referral code for new user (NEW - Feb 4, 2026)
+        new_user_referral_code = generate_referral_code(
+            first_name=first_name,
+            phone_suffix=phone[-3:] if phone and len(phone) >= 3 else '',
+            db=auth_bp.mongo.db
+        )
 
         # Create user with clean account (no demo data, removed setupComplete)
         user_data = {
@@ -215,11 +274,47 @@ def signup():
             'financialGoals': financial_goals,
             'createdAt': datetime.utcnow(),
             'lastLogin': None,
-            'isActive': True
+            'isActive': True,
+            # Referral System Fields (NEW - Feb 4, 2026)
+            'referralCode': new_user_referral_code,
+            'referredBy': referrer['_id'] if referrer else None,
+            'referralCount': 0,
+            'referralEarnings': 0.0,
+            'pendingCommissionBalance': 0.0,
+            'withdrawableCommissionBalance': 0.0,
+            'firstDepositCompleted': False,
+            'firstDepositDate': None,
+            'referralBonusReceived': False,
+            'referralCodeGeneratedAt': datetime.utcnow(),
+            'referredAt': datetime.utcnow() if referrer else None,
         }
         
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
+        
+        # If referred, create referral tracking entry (NEW - Feb 4, 2026)
+        if referrer:
+            referral_doc = {
+                'referrerId': referrer['_id'],
+                'refereeId': result.inserted_id,
+                'referralCode': referred_by_code,
+                'status': 'pending_deposit',
+                'signupDate': datetime.utcnow(),
+                'firstDepositDate': None,
+                'firstSubscriptionDate': None,
+                'qualifiedDate': None,
+                'refereeDepositBonusGranted': False,
+                'referrerSubCommissionGranted': False,
+                'referrerVasShareActive': False,
+                'vasShareExpiryDate': None,
+                'ipAddress': request.remote_addr,
+                'deviceId': request.headers.get('X-Device-ID'),
+                'isSelfReferral': False,
+                'fraudReason': None,
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()
+            }
+            auth_bp.mongo.db.referrals.insert_one(referral_doc)
         
         # Create signup bonus transaction record for transparency
         signup_transaction = {

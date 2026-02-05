@@ -259,6 +259,52 @@ def create_expense():
                     print(f'✅ First entry created - onboarding marked complete for user {current_user["_id"]}')
             except Exception as e:
                 print(f'⚠️ Failed to mark onboarding complete (non-critical): {e}')
+            
+            # PHASE 4: Create context-aware notification reminder to attach documents
+            # This is the "Audit Shield" - persistent reminder that survives app reinstalls
+            try:
+                from blueprints.notifications import create_user_notification
+                from utils.notification_context import get_notification_context
+                
+                # Determine entry title for notification
+                entry_title = expense_data.get('title') or expense_data.get('description', 'Expense')
+                entry_amount = float(data['amount'])
+                
+                # Get context-aware notification content
+                notification_context = get_notification_context(
+                    user=current_user,
+                    entry_data=expense_data,
+                    entry_type='expense'
+                )
+                
+                # Create persistent notification with context
+                notification_id = create_user_notification(
+                    mongo=expenses_bp.mongo,
+                    user_id=current_user['_id'],
+                    category=notification_context['category'],
+                    title=notification_context['title'],
+                    body=notification_context['body'],
+                    related_id=expense_id,
+                    metadata={
+                        'entryType': 'expense',
+                        'entryTitle': entry_title,
+                        'amount': entry_amount,
+                        'category': data['category'],
+                        'dateCreated': datetime.utcnow().isoformat(),
+                        'businessStructure': current_user.get('taxProfile', {}).get('businessStructure'),
+                        'entryTag': expense_data.get('entryType')
+                    },
+                    priority=notification_context['priority']
+                )
+                
+                if notification_id:
+                    print(f'📱 Context-aware notification created for expense {expense_id}: {notification_id} (priority: {notification_context["priority"]})')
+                else:
+                    print(f'⚠️ Failed to create notification for expense {expense_id}')
+                    
+            except Exception as e:
+                # Don't fail the expense creation if notification fails
+                print(f'⚠️ Failed to create notification (non-critical): {e}')
            
             created_expense = expenses_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
@@ -778,3 +824,130 @@ def get_expense_insights():
             }), 500
    
     return _get_expense_insights()
+
+
+# ============================================================================
+# ENTRY TAGGING ENDPOINTS (Phase 3B)
+# ============================================================================
+
+@expenses_bp.route('/tag/<entry_id>', methods=['PATCH'])
+@expenses_bp.token_required
+def tag_expense_entry(current_user, entry_id):
+    """Tag an expense entry as business or personal"""
+    try:
+        data = request.get_json() or {}
+        entry_type = data.get('entryType')
+        
+        # Validate entry type
+        if entry_type not in ['business', 'personal', None]:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid entry type. Must be "business", "personal", or null'
+            }), 400
+        
+        # Update entry
+        update_data = {
+            'entryType': entry_type,
+            'taggedAt': datetime.utcnow() if entry_type else None,
+            'taggedBy': 'user' if entry_type else None
+        }
+        
+        result = expenses_bp.mongo.db.expenses.update_one(
+            {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+            {'$set': update_data}
+        )
+        
+        if result.modified_count > 0:
+            return jsonify({
+                'success': True,
+                'message': 'Entry tagged successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Entry not found or already tagged'
+            }), 404
+            
+    except Exception as e:
+        print(f"Error in tag_expense_entry: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to tag entry',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+@expenses_bp.route('/bulk-tag', methods=['PATCH'])
+@expenses_bp.token_required
+def bulk_tag_expense_entries(current_user):
+    """Tag multiple expense entries at once"""
+    try:
+        data = request.get_json() or {}
+        entry_ids = data.get('entryIds', [])
+        entry_type = data.get('entryType')
+        
+        # Validate entry type
+        if entry_type not in ['business', 'personal']:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid entry type. Must be "business" or "personal"'
+            }), 400
+        
+        if not entry_ids:
+            return jsonify({
+                'success': False,
+                'message': 'No entry IDs provided'
+            }), 400
+        
+        # Update entries
+        update_data = {
+            'entryType': entry_type,
+            'taggedAt': datetime.utcnow(),
+            'taggedBy': 'user'
+        }
+        
+        result = expenses_bp.mongo.db.expenses.update_many(
+            {
+                '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                'userId': current_user['_id']
+            },
+            {'$set': update_data}
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'{result.modified_count} entries tagged successfully',
+            'count': result.modified_count
+        })
+            
+    except Exception as e:
+        print(f"Error in bulk_tag_expense_entries: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to bulk tag entries',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+@expenses_bp.route('/untagged-count', methods=['GET'])
+@expenses_bp.token_required
+def get_untagged_expense_count(current_user):
+    """Get count of untagged expense entries"""
+    try:
+        from utils.immutable_ledger_helper import get_active_transactions_query
+        
+        query = get_active_transactions_query(current_user['_id'])
+        query['entryType'] = None
+        
+        count = expenses_bp.mongo.db.expenses.count_documents(query)
+        
+        return jsonify({
+            'success': True,
+            'count': count
+        })
+            
+    except Exception as e:
+        print(f"Error in get_untagged_expense_count: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to get untagged count',
+            'errors': {'general': [str(e)]}
+        }), 500

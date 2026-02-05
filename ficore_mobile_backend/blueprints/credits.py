@@ -485,15 +485,20 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 'description': f'FiCore Credits purchase - {pending_transaction["creditAmount"]} FCs',
                 'status': 'RECORDED',
                 'createdAt': datetime.utcnow(),
+                # 💰 UNIT ECONOMICS TRACKING (Phase 2)
+                'gatewayFee': round(pending_transaction['nairaAmount'] * 0.016, 2),  # 1.6% Paystack fee
+                'gatewayProvider': 'paystack',
+                'netRevenue': round(pending_transaction['nairaAmount'] * 0.984, 2),  # Net after gateway fee
                 'metadata': {
                     'creditAmount': pending_transaction['creditAmount'],
                     'nairaAmount': pending_transaction['nairaAmount'],
                     'paystackTransactionId': payment_data.get('id'),
-                    'paymentChannel': payment_data.get('channel')
+                    'paymentChannel': payment_data.get('channel'),
+                    'gatewayFeePercentage': 1.6
                 }
             }
             mongo.db.corporate_revenue.insert_one(corporate_revenue)
-            print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} from credits purchase ({pending_transaction["creditAmount"]} FCs) - User {current_user["_id"]}')
+            print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} credits (net: ₦{pending_transaction["nairaAmount"] * 0.984:.2f} after gateway) - User {current_user["_id"]}')
             
             # Mark pending transaction as completed
             mongo.db.pending_credit_purchases.update_one(
@@ -667,15 +672,20 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                         'description': f'FiCore Credits purchase - {credit_amount} FCs (webhook)',
                         'status': 'RECORDED',
                         'createdAt': datetime.utcnow(),
+                        # 💰 UNIT ECONOMICS TRACKING (Phase 2)
+                        'gatewayFee': round(pending_transaction['nairaAmount'] * 0.016, 2),  # 1.6% Paystack fee
+                        'gatewayProvider': 'paystack',
+                        'netRevenue': round(pending_transaction['nairaAmount'] * 0.984, 2),  # Net after gateway fee
                         'metadata': {
                             'creditAmount': credit_amount,
                             'nairaAmount': pending_transaction['nairaAmount'],
                             'paystackTransactionId': data.get('id'),
-                            'webhookEvent': event_type
+                            'webhookEvent': event_type,
+                            'gatewayFeePercentage': 1.6
                         }
                     }
                     mongo.db.corporate_revenue.insert_one(corporate_revenue)
-                    print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} from credits purchase ({credit_amount} FCs) via webhook - User {user_id}')
+                    print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} credits (net: ₦{pending_transaction["nairaAmount"] * 0.984:.2f} after gateway) via webhook - User {user_id}')
                     
                     # Mark pending transaction as completed
                     mongo.db.pending_credit_purchases.update_one(

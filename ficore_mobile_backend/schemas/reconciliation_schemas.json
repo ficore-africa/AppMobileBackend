@@ -1,0 +1,69 @@
+{
+  "vas_transactions_reconciliation": {
+    "status": "NEEDS_RECONCILIATION | SUCCESS | FAILED | PENDING",
+    "reconciliationReason": "PLAN_MISMATCH | GHOST_SUCCESS | STUCK_PENDING | PROVIDER_NONE | AUTO_SCAN_SUSPICIOUS_FAILURE",
+    "reconciliationDetails": {
+      "original_status": "string",
+      "provider": "string",
+      "severity": "HIGH | MEDIUM | LOW",
+      "marked_at": "datetime",
+      "auto_detected": "boolean",
+      "action_required": "string",
+      "verification_steps": [
+        "array of strings"
+      ]
+    },
+    "needsReconciliation": "boolean",
+    "reconciliationDismissed": "boolean",
+    "reconciliationDismissedAt": "datetime",
+    "reconciliationDismissedBy": "string (admin email)",
+    "reconciliationDismissReason": "string",
+    "reconciliationDismissNotes": "string",
+    "reconciliationRecoveredAt": "datetime",
+    "reconciliationRecoveredBy": "string (admin email)",
+    "reconciliationRecoveryReason": "string",
+    "reconciliationResolved": "boolean",
+    "reconciliationResolvedAt": "datetime"
+  },
+  "admin_actions": {
+    "_id": "ObjectId",
+    "adminId": "ObjectId (admin user ID)",
+    "adminEmail": "string",
+    "action": "string (e.g., dismiss_reconciliation, recover_reconciliation, admin_refund, admin_debit, grant_premium)",
+    "transactionId": "string (optional)",
+    "reason": "string",
+    "notes": "string (optional)",
+    "timestamp": "datetime",
+    "details": {
+      "userId": "string (affected user)",
+      "amount": "number (optional)",
+      "transaction_type": "string (optional)",
+      "original_status": "string (optional)",
+      "...": "action-specific fields"
+    }
+  },
+  "plan_mismatch_logs": {
+    "_id": "ObjectId",
+    "userId": "ObjectId",
+    "provider": "string",
+    "incident_type": "PLAN_MISMATCH",
+    "severity": "HIGH | MEDIUM | LOW",
+    "details": {
+      "transaction_id": "string",
+      "requested_plan_id": "string",
+      "requested_plan_name": "string",
+      "requested_amount": "number",
+      "delivered_plan": "string",
+      "delivered_amount": "number"
+    },
+    "status": "LOGGED | RESOLVED | DISMISSED",
+    "requires_investigation": "boolean",
+    "requires_refund": "boolean",
+    "created_at": "datetime",
+    "metadata": {
+      "user_impact": "string",
+      "financial_impact": "number",
+      "recovery_needed": "boolean"
+    }
+  }
+}
