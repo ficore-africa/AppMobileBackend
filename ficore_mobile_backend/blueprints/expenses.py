@@ -831,123 +831,132 @@ def get_expense_insights():
 # ============================================================================
 
 @expenses_bp.route('/tag/<entry_id>', methods=['PATCH'])
-@expenses_bp.token_required
-def tag_expense_entry(current_user, entry_id):
-    """Tag an expense entry as business or personal"""
-    try:
-        data = request.get_json() or {}
-        entry_type = data.get('entryType')
-        
-        # Validate entry type
-        if entry_type not in ['business', 'personal', None]:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid entry type. Must be "business", "personal", or null'
-            }), 400
-        
-        # Update entry
-        update_data = {
-            'entryType': entry_type,
-            'taggedAt': datetime.utcnow() if entry_type else None,
-            'taggedBy': 'user' if entry_type else None
-        }
-        
-        result = expenses_bp.mongo.db.expenses.update_one(
-            {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
-            {'$set': update_data}
-        )
-        
-        if result.modified_count > 0:
-            return jsonify({
-                'success': True,
-                'message': 'Entry tagged successfully'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'Entry not found or already tagged'
-            }), 404
+def tag_expense_entry(entry_id):
+    @expenses_bp.token_required
+    def _tag_expense_entry(current_user):
+        """Tag an expense entry as business or personal"""
+        try:
+            data = request.get_json() or {}
+            entry_type = data.get('entryType')
             
-    except Exception as e:
-        print(f"Error in tag_expense_entry: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to tag entry',
-            'errors': {'general': [str(e)]}
-        }), 500
+            # Validate entry type
+            if entry_type not in ['business', 'personal', None]:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business", "personal", or null'
+                }), 400
+            
+            # Update entry
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow() if entry_type else None,
+                'taggedBy': 'user' if entry_type else None
+            }
+            
+            result = expenses_bp.mongo.db.expenses.update_one(
+                {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+                {'$set': update_data}
+            )
+            
+            if result.modified_count > 0:
+                return jsonify({
+                    'success': True,
+                    'message': 'Entry tagged successfully'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found or already tagged'
+                }), 404
+                
+        except Exception as e:
+            print(f"Error in tag_expense_entry: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to tag entry',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _tag_expense_entry()
 
 @expenses_bp.route('/bulk-tag', methods=['PATCH'])
-@expenses_bp.token_required
-def bulk_tag_expense_entries(current_user):
-    """Tag multiple expense entries at once"""
-    try:
-        data = request.get_json() or {}
-        entry_ids = data.get('entryIds', [])
-        entry_type = data.get('entryType')
-        
-        # Validate entry type
-        if entry_type not in ['business', 'personal']:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid entry type. Must be "business" or "personal"'
-            }), 400
-        
-        if not entry_ids:
-            return jsonify({
-                'success': False,
-                'message': 'No entry IDs provided'
-            }), 400
-        
-        # Update entries
-        update_data = {
-            'entryType': entry_type,
-            'taggedAt': datetime.utcnow(),
-            'taggedBy': 'user'
-        }
-        
-        result = expenses_bp.mongo.db.expenses.update_many(
-            {
-                '_id': {'$in': [ObjectId(id) for id in entry_ids]},
-                'userId': current_user['_id']
-            },
-            {'$set': update_data}
-        )
-        
-        return jsonify({
-            'success': True,
-            'message': f'{result.modified_count} entries tagged successfully',
-            'count': result.modified_count
-        })
+def bulk_tag_expense_entries():
+    @expenses_bp.token_required
+    def _bulk_tag_expense_entries(current_user):
+        """Tag multiple expense entries at once"""
+        try:
+            data = request.get_json() or {}
+            entry_ids = data.get('entryIds', [])
+            entry_type = data.get('entryType')
             
-    except Exception as e:
-        print(f"Error in bulk_tag_expense_entries: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to bulk tag entries',
-            'errors': {'general': [str(e)]}
-        }), 500
+            # Validate entry type
+            if entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business" or "personal"'
+                }), 400
+            
+            if not entry_ids:
+                return jsonify({
+                    'success': False,
+                    'message': 'No entry IDs provided'
+                }), 400
+            
+            # Update entries
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow(),
+                'taggedBy': 'user'
+            }
+            
+            result = expenses_bp.mongo.db.expenses.update_many(
+                {
+                    '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                    'userId': current_user['_id']
+                },
+                {'$set': update_data}
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': f'{result.modified_count} entries tagged successfully',
+                'count': result.modified_count
+            })
+                
+        except Exception as e:
+            print(f"Error in bulk_tag_expense_entries: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to bulk tag entries',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _bulk_tag_expense_entries()
 
 @expenses_bp.route('/untagged-count', methods=['GET'])
-@expenses_bp.token_required
-def get_untagged_expense_count(current_user):
-    """Get count of untagged expense entries"""
-    try:
-        from utils.immutable_ledger_helper import get_active_transactions_query
-        
-        query = get_active_transactions_query(current_user['_id'])
-        query['entryType'] = None
-        
-        count = expenses_bp.mongo.db.expenses.count_documents(query)
-        
-        return jsonify({
-            'success': True,
-            'count': count
-        })
+def get_untagged_expense_count():
+    @expenses_bp.token_required
+    def _get_untagged_expense_count(current_user):
+        """Get count of untagged expense entries"""
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
             
-    except Exception as e:
-        print(f"Error in get_untagged_expense_count: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to get untagged count',
-            'errors': {'general': [str(e)]}
-        }), 500
+            query = get_active_transactions_query(current_user['_id'])
+            query['entryType'] = None
+            
+            count = expenses_bp.mongo.db.expenses.count_documents(query)
+            
+            return jsonify({
+                'success': True,
+                'count': count
+            })
+                
+        except Exception as e:
+            print(f"Error in get_untagged_expense_count: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get untagged count',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_untagged_expense_count()
