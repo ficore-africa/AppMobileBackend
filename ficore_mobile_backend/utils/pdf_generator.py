@@ -88,9 +88,12 @@ class PDFGenerator:
         
         # User Info
         nigerian_time = get_nigerian_time()
+        business_name = user_data.get('businessName', '')
+        business_line = f"<b>Business:</b> {business_name}<br/>" if business_name else ""
+        
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>Email:</b> {user_data.get('email', '')}<br/>
+        {business_line}<b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}<br/>
         <b>Report Type:</b> {data_type.upper()}
         """
@@ -109,10 +112,16 @@ class PDFGenerator:
                 date_str = date_obj.strftime('%Y-%m-%d')
                 # Use description if available, otherwise fall back to title
                 description = expense.get('description') or expense.get('notes') or expense.get('title', 'N/A')
+                category = expense.get('category', 'N/A')
+                
+                # Wrap long text in Paragraph objects for automatic text wrapping
+                category_para = Paragraph(category, self.styles['Normal'])
+                description_para = Paragraph(description, self.styles['Normal'])
+                
                 expense_data.append([
                     date_str,
-                    expense.get('category', 'N/A'),
-                    description,
+                    category_para,
+                    description_para,
                     f"₦{expense.get('amount', 0):,.2f}"
                 ])
                 total_expenses += expense.get('amount', 0)
@@ -129,6 +138,8 @@ class PDFGenerator:
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
                 ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
@@ -153,10 +164,15 @@ class PDFGenerator:
                 description = income.get('description') or income.get('source', 'N/A')
                 # Get category display name
                 category = income.get('category', 'Other')
+                
+                # Wrap long text in Paragraph objects for automatic text wrapping
+                category_para = Paragraph(category, self.styles['Normal'])
+                description_para = Paragraph(description, self.styles['Normal'])
+                
                 income_data.append([
                     date_str,
-                    category,
-                    description,
+                    category_para,
+                    description_para,
                     f"₦{income.get('amount', 0):,.2f}"
                 ])
                 total_income += income.get('amount', 0)
@@ -173,6 +189,8 @@ class PDFGenerator:
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
                 ('BACKGROUND', (0, 1), (-1, -2), colors.lightgreen),
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
@@ -566,8 +584,8 @@ class PDFGenerator:
             # Corporate Income Tax Calculation
             story.append(Paragraph("Corporate Income Tax Calculation", self.styles['SectionHeader']))
             
-            # CIT is a flat 25% rate in Nigeria (as of 2025)
-            cit_rate = 0.25
+            # CIT is a flat 30% rate in Nigeria (as of 2026)
+            cit_rate = 0.30
             total_tax = net_income * cit_rate if net_income > 0 else 0
             
             # CRITICAL: CIT Exemption requires BOTH conditions to be met (AND, not OR)

@@ -267,7 +267,7 @@ if __name__ == "__main__":
     import os
     from pymongo import MongoClient
     
-    MONGO_URI = os.environ.get('MONGO_URI', 'true')
+    MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://ficoreafrica_db_user:ScSbMkRwkauvTPyx@cluster0.53rbo1f.mongodb.net/ficore_africa?retryWrites=true&w=majority&readPreference=primary&tlsAllowInvalidCertificates=true')
     
     client = MongoClient(MONGO_URI)
     db = client['ficore_africa']
@@ -279,4 +279,3 @@ if __name__ == "__main__":
     print(f"\n\n{'=' * 60}")
     print("Would you like to mark these transactions? (y/n)")
     # In production, this would be automated
-

@@ -93,6 +93,20 @@ class DatabaseSchema:
             #     'totalDaysActive': int,
             #     'paymentMethod': str
             # }]
+            
+            # Referral System Fields (NEW - Feb 4, 2026 - Phase 1)
+            'referralCode': Optional[str],  # Unique referral code (e.g., 'AUW123')
+            'referredBy': Optional[ObjectId],  # Reference to referrer's _id
+            'referralCount': Optional[int],  # Total successful referrals, default: 0
+            'referralEarnings': Optional[float],  # Total earnings (all-time), default: 0.0
+            'pendingCommissionBalance': Optional[float],  # Pending (vesting), default: 0.0
+            'withdrawableCommissionBalance': Optional[float],  # Ready to withdraw, default: 0.0
+            'firstDepositCompleted': Optional[bool],  # North Star Metric, default: False
+            'firstDepositDate': Optional[datetime],  # When they made first deposit
+            'referralBonusReceived': Optional[bool],  # Did they get signup bonus?, default: False
+            'referralCodeGeneratedAt': Optional[datetime],  # When code was generated
+            'referredAt': Optional[datetime],  # When they were referred
+            
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled
@@ -126,6 +140,10 @@ class DatabaseSchema:
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
             {'keys': [('isActive', 1)], 'name': 'active_users'},
             {'keys': [('resetToken', 1)], 'sparse': True, 'name': 'reset_token'},
+            # Referral System Indexes (NEW - Feb 4, 2026)
+            {'keys': [('referralCode', 1)], 'unique': True, 'sparse': True, 'name': 'referral_code_unique'},
+            {'keys': [('referredBy', 1)], 'name': 'referred_by_index'},
+            {'keys': [('firstDepositCompleted', 1)], 'name': 'first_deposit_index'},
         ]
 
     # ==================== INCOMES COLLECTION ====================
@@ -1083,6 +1101,106 @@ class DatabaseSchema:
             {'keys': [('expiresAt', 1)], 'name': 'expires_at', 'expireAfterSeconds': 86400},  # TTL: 24 hours
         ]
 
+    # ==================== REFERRALS COLLECTION (NEW - Feb 4, 2026) ====================
+    
+    @staticmethod
+    def get_referral_schema() -> Dict[str, Any]:
+        """
+        Schema for referrals collection.
+        Tracks referral relationships and lifecycle.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'referrerId': ObjectId,  # Required, who referred (reference to users._id)
+            'refereeId': ObjectId,  # Required, who was referred (reference to users._id)
+            'referralCode': str,  # Required, code used for referral
+            'status': str,  # Required, lifecycle status: 'pending_deposit', 'active', 'qualified'
+            
+            # Milestones
+            'signupDate': datetime,  # Required, when referee signed up
+            'firstDepositDate': Optional[datetime],  # When referee made first deposit
+            'firstSubscriptionDate': Optional[datetime],  # When referee subscribed
+            'qualifiedDate': Optional[datetime],  # When referral became "qualified"
+            
+            # Bonuses Granted
+            'refereeDepositBonusGranted': bool,  # Did referee get ₦30 waiver + 5 FCs?, default: False
+            'referrerSubCommissionGranted': bool,  # Did referrer get ₦2,000?, default: False
+            'referrerVasShareActive': bool,  # Is 1% VAS share active?, default: False
+            'vasShareExpiryDate': Optional[datetime],  # 90 days from first deposit
+            
+            # Fraud Detection
+            'ipAddress': Optional[str],  # Signup IP address
+            'deviceId': Optional[str],  # Device fingerprint
+            'isSelfReferral': bool,  # Flagged as fraud?, default: False
+            'fraudReason': Optional[str],  # Why flagged?
+            
+            # Metadata
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_referral_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for referrals collection."""
+        return [
+            {'keys': [('referrerId', 1), ('createdAt', -1)], 'name': 'referrer_created_desc'},
+            {'keys': [('refereeId', 1)], 'unique': True, 'name': 'referee_unique'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+            {'keys': [('qualifiedDate', 1)], 'name': 'qualified_date_index'},
+            {'keys': [('referralCode', 1)], 'name': 'referral_code_index'},
+        ]
+
+    # ==================== REFERRAL_PAYOUTS COLLECTION (NEW - Feb 4, 2026) ====================
+    
+    @staticmethod
+    def get_referral_payout_schema() -> Dict[str, Any]:
+        """
+        Schema for referral_payouts collection.
+        Tracks every kobo owed to partners.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'referrerId': ObjectId,  # Required, who gets paid (reference to users._id)
+            'refereeId': ObjectId,  # Required, who triggered the payout (reference to users._id)
+            'referralId': ObjectId,  # Required, link to referrals collection
+            
+            # Payout Details
+            'type': str,  # Required, type of payout: 'SUBSCRIPTION_COMMISSION', 'VAS_SHARE', 'MILESTONE_BONUS'
+            'amount': float,  # Required, amount in Naira
+            'status': str,  # Required, payout status: 'PENDING', 'VESTING', 'WITHDRAWABLE', 'PAID'
+            
+            # Vesting Logic
+            'vestingStartDate': datetime,  # Required, when vesting started
+            'vestingEndDate': datetime,  # Required, when becomes withdrawable (7 days for subscriptions)
+            'vestedAt': Optional[datetime],  # When it became withdrawable
+            
+            # Payment Tracking
+            'paidAt': Optional[datetime],  # When actually paid
+            'paymentMethod': Optional[str],  # How paid: 'bank_transfer', 'wallet_credit'
+            'paymentReference': Optional[str],  # Transaction reference
+            'processedBy': Optional[ObjectId],  # Admin who approved (reference to users._id)
+            
+            # Source Transaction
+            'sourceTransaction': str,  # Required, Paystack reference or VAS transaction ID
+            'sourceType': str,  # Required, what triggered this: 'SUBSCRIPTION', 'VAS_TRANSACTION'
+            
+            # Metadata
+            'metadata': Optional[Dict[str, Any]],  # Additional context (plan type, commission rate, etc.)
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_referral_payout_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for referral_payouts collection."""
+        return [
+            {'keys': [('referrerId', 1), ('status', 1)], 'name': 'referrer_status'},
+            {'keys': [('refereeId', 1)], 'name': 'referee_index'},
+            {'keys': [('status', 1), ('vestingEndDate', 1)], 'name': 'status_vesting'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+            {'keys': [('referralId', 1)], 'name': 'referral_id_index'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -1130,6 +1248,9 @@ class DatabaseInitializer:
             'vas_transactions': self.schema.get_vas_transaction_indexes(),
             # Voice reporting collections
             'voice_reports': self.schema.get_voice_report_indexes(),
+            # Referral System collections (NEW - Feb 4, 2026)
+            'referrals': self.schema.get_referral_indexes(),
+            'referral_payouts': self.schema.get_referral_payout_indexes(),
             'idempotency_keys': self.schema.get_idempotency_key_indexes(),
         }
         

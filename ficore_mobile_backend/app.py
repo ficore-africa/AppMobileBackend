@@ -35,6 +35,7 @@ from blueprints.dashboard import init_dashboard_blueprint
 from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
+from blueprints.subscription_wallet import init_subscription_wallet_blueprint  # Phase 5: Wallet payment
 from blueprints.reminders import init_reminders_blueprint
 from blueprints.analytics import init_analytics_blueprint
 from blueprints.rate_limit_monitoring import init_rate_limit_monitoring_blueprint
@@ -46,6 +47,8 @@ from blueprints.voice_reporting import init_voice_reporting_blueprint
 from blueprints.vas_wallet import init_vas_wallet_blueprint
 from blueprints.vas_purchase import init_vas_purchase_blueprint
 from blueprints.vas_bills import init_vas_bills_blueprint
+# Referral System (NEW - Feb 4, 2026)
+from blueprints.referrals import referrals_bp, init_referrals_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -123,7 +126,9 @@ def log_response_info(response):
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'ficore-mobile-secret-key-2025')
 app.config['MONGO_URI'] = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/ficore_mobile')
-app.config['JWT_EXPIRATION_DELTA'] = timedelta(hours=24)
+# Extended JWT expiration to reduce frequent login prompts (Golden Rule: User Feedback)
+# 7 days for regular users, 30 days for trusted devices (handled in frontend)
+app.config['JWT_EXPIRATION_DELTA'] = timedelta(days=7)  # Changed from 24 hours to 7 days
 
 # Initialize extensions
 CORS(app, origins=['*'])
@@ -377,6 +382,7 @@ dashboard_blueprint = init_dashboard_blueprint(mongo, token_required, serialize_
 rewards_blueprint = init_rewards_blueprint(mongo, token_required, serialize_doc)
 subscription_blueprint = init_subscription_blueprint(mongo, token_required, serialize_doc)
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
+subscription_wallet_blueprint = init_subscription_wallet_blueprint(mongo, token_required)  # Phase 5: Wallet payment
 reminders_blueprint = init_reminders_blueprint(mongo, token_required, serialize_doc)
 analytics_blueprint = init_analytics_blueprint(mongo, token_required, admin_required, serialize_doc)
 admin_subscription_management_blueprint = init_admin_subscription_management_blueprint(mongo, token_required, admin_required, serialize_doc)
@@ -392,6 +398,9 @@ voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required
 vas_wallet_blueprint = init_vas_wallet_blueprint(mongo, token_required, serialize_doc)
 vas_purchase_blueprint = init_vas_purchase_blueprint(mongo, token_required, serialize_doc)
 vas_bills_blueprint = init_vas_bills_blueprint(mongo, token_required, serialize_doc)
+
+# Initialize Referral System (NEW - Feb 4, 2026)
+referrals_blueprint = init_referrals_blueprint(mongo)
 
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
@@ -432,6 +441,8 @@ app.register_blueprint(dashboard_blueprint)
 app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
+app.register_blueprint(subscription_wallet_blueprint)  # Phase 5: Wallet payment
+print("✓ Subscription wallet blueprint registered at /subscription/activate-via-wallet")
 app.register_blueprint(reminders_blueprint)
 app.register_blueprint(analytics_blueprint)
 app.register_blueprint(admin_subscription_management_blueprint)
@@ -454,6 +465,10 @@ app.register_blueprint(vas_purchase_blueprint)
 print("✓ VAS Purchase blueprint registered at /api/vas/purchase")
 app.register_blueprint(vas_bills_blueprint)
 print("✓ VAS Bills blueprint registered at /api/vas/bills")
+
+# Register Referral System (NEW - Feb 4, 2026)
+app.register_blueprint(referrals_blueprint)
+print("✓ Referrals blueprint registered at /api/referrals")
 
 # Register VAS reconciliation blueprint for admin transaction management
 from blueprints.vas_reconciliation import init_vas_reconciliation_blueprint
