@@ -4700,7 +4700,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to get treasury analytics',
+                'message': f'Failed to load treasury data: {str(e)}',
                 'error': str(e)
             }), 500
 
