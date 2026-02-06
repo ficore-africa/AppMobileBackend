@@ -194,6 +194,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             # Normalize salesType if present
             normalized_sales_type = normalize_sales_type(data.get('salesType')) if data.get('salesType') else None
+            
+            # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
+            entry_type = data.get('entryType')  # 'business', 'personal', or None
 
             income_data = {
                 'userId': current_user['_id'],
@@ -208,6 +211,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'nextRecurringDate': None,  # Always null now
                 'status': 'active',  # CRITICAL: Required for immutability system
                 'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
@@ -1063,6 +1069,11 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Invalid entry type. Must be "business", "personal", or null'
                 }), 400
             
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: income_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            
             # Update entry
             update_data = {
                 'entryType': entry_type,
@@ -1071,7 +1082,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             }
             
             result = mongo.db.incomes.update_one(
-                {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+                {'_id': ObjectId(clean_id), 'userId': current_user['_id']},
                 {'$set': update_data}
             )
             
@@ -1116,6 +1127,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'message': 'No entry IDs provided'
                 }), 400
             
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefixes before ObjectId conversion
+            # Golden Rule #46: ID Format Consistency
+            clean_ids = [id.replace('income_', '').replace('expense_', '') for id in entry_ids]
+            
             # Update entries
             update_data = {
                 'entryType': entry_type,
@@ -1125,7 +1140,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             result = mongo.db.incomes.update_many(
                 {
-                    '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                    '_id': {'$in': [ObjectId(id) for id in clean_ids]},
                     'userId': current_user['_id']
                 },
                 {'$set': update_data}

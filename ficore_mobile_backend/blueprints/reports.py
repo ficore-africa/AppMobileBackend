@@ -181,6 +181,14 @@ def init_reports_blueprint(mongo, token_required):
             request_data = request.get_json() or {}
             report_type = 'income_pdf'
             
+            # CRITICAL: Get tag filter from request
+            tag_filter = request_data.get('tagFilter', 'all').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
             # Check user access
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
             
@@ -198,8 +206,24 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch income data
-            query = {'userId': current_user['_id']}
+            # Fetch income data with tag filtering
+            query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply tag filtering
+            if tag_filter == 'business':
+                query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                query['tags'] = 'Personal'
+            elif tag_filter == 'untagged':
+                query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
             if start_date or end_date:
                 query['dateReceived'] = {}
                 if start_date:
@@ -270,6 +294,14 @@ def init_reports_blueprint(mongo, token_required):
             request_data = request.get_json() or {}
             report_type = 'income_csv'
             
+            # CRITICAL: Get tag filter from request
+            tag_filter = request_data.get('tagFilter', 'all').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
             # Check user access
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
             
@@ -287,8 +319,24 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch income data
-            query = {'userId': current_user['_id']}
+            # Fetch income data with tag filtering
+            query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply tag filtering
+            if tag_filter == 'business':
+                query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                query['tags'] = 'Personal'
+            elif tag_filter == 'untagged':
+                query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
             if start_date or end_date:
                 query['dateReceived'] = {}
                 if start_date:
@@ -361,6 +409,14 @@ def init_reports_blueprint(mongo, token_required):
             request_data = request.get_json() or {}
             report_type = 'expense_pdf'
             
+            # CRITICAL: Get tag filter from request
+            tag_filter = request_data.get('tagFilter', 'all').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
             # Check user access
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
             
@@ -378,8 +434,24 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch expense data
-            query = {'userId': current_user['_id']}
+            # Fetch expense data with tag filtering
+            query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply tag filtering
+            if tag_filter == 'business':
+                query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                query['tags'] = 'Personal'
+            elif tag_filter == 'untagged':
+                query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
             if start_date or end_date:
                 query['date'] = {}
                 if start_date:
@@ -453,6 +525,14 @@ def init_reports_blueprint(mongo, token_required):
             request_data = request.get_json() or {}
             report_type = 'expense_csv'
             
+            # CRITICAL: Get tag filter from request
+            tag_filter = request_data.get('tagFilter', 'all').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
             # Check user access
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
             
@@ -470,8 +550,24 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch expense data
-            query = {'userId': current_user['_id']}
+            # Fetch expense data with tag filtering
+            query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply tag filtering
+            if tag_filter == 'business':
+                query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                query['tags'] = 'Personal'
+            elif tag_filter == 'untagged':
+                query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
             if start_date or end_date:
                 query['date'] = {}
                 if start_date:
@@ -544,6 +640,15 @@ def init_reports_blueprint(mongo, token_required):
             request_data = request.get_json() or {}
             report_type = 'profit_loss_pdf'
             
+            # CRITICAL: Get tag filter from request (default to 'all' for general P&L)
+            # For tax-specific P&L, frontend should pass 'business'
+            tag_filter = request_data.get('tagFilter', 'all').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
             # Check user access
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
             
@@ -561,9 +666,36 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch income and expense data
-            income_query = {'userId': current_user['_id']}
-            expense_query = {'userId': current_user['_id']}
+            # Fetch income and expense data with tag filtering
+            income_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            expense_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply tag filtering
+            if tag_filter == 'business':
+                income_query['tags'] = 'Business'
+                expense_query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                income_query['tags'] = 'Personal'
+                expense_query['tags'] = 'Personal'
+            elif tag_filter == 'untagged':
+                income_query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
+                expense_query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
             
             if start_date or end_date:
                 if start_date:
@@ -755,6 +887,15 @@ def init_reports_blueprint(mongo, token_required):
                     'message': 'Invalid tax type. Must be either PIT (Personal Income Tax) or CIT (Corporate Income Tax)'
                 }), 400
             
+            # CRITICAL: Get tag filter from request (default to 'business' for tax reports)
+            # Options: 'business', 'personal', 'all', 'untagged'
+            tag_filter = request_data.get('tagFilter', 'business').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
             # Check user access
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
             
@@ -773,8 +914,40 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # Fetch income and expense data for tax calculation
-            income_query = {'userId': current_user['_id']}
-            expense_query = {'userId': current_user['_id']}
+            # CRITICAL: Apply tag filtering for tax compliance
+            income_query = {
+                'userId': current_user['_id'],
+                'status': 'active',  # Only active entries
+                'isDeleted': False   # Exclude soft-deleted entries
+            }
+            expense_query = {
+                'userId': current_user['_id'],
+                'status': 'active',  # Only active entries
+                'isDeleted': False   # Exclude soft-deleted entries
+            }
+            
+            # Apply tag filtering based on user selection
+            if tag_filter == 'business':
+                # Only entries tagged as "Business"
+                income_query['tags'] = 'Business'
+                expense_query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                # Only entries tagged as "Personal"
+                income_query['tags'] = 'Personal'
+                expense_query['tags'] = 'Personal'
+            elif tag_filter == 'untagged':
+                # Only entries without any tags
+                income_query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
+                expense_query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
+            # If 'all', no tag filtering applied
             
             if start_date or end_date:
                 if start_date:
@@ -804,7 +977,14 @@ def init_reports_blueprint(mongo, token_required):
             # Prepare comprehensive tax data
             tax_data = {
                 'total_income': total_income,
-                'deductible_expenses': total_expenses
+                'deductible_expenses': total_expenses,
+                'tag_filter': tag_filter,  # Include filter info in report
+                'tag_filter_label': {
+                    'business': 'Business Only',
+                    'personal': 'Personal Only',
+                    'all': 'All Entries',
+                    'untagged': 'Untagged Only'
+                }.get(tag_filter, 'All Entries')
             }
             
             # For CIT, add comprehensive business data for exemption check
@@ -2472,5 +2652,519 @@ def init_reports_blueprint(mongo, token_required):
                 'success': False,
                 'message': f'Failed to generate Credit Transactions CSV: {str(e)}'
             }), 500
+    
+    # ============================================================================
+    # PREVIEW ENDPOINT - Unified preview for all report types
+    # ============================================================================
+    
+    @reports_bp.route('/preview', methods=['POST'])
+    @token_required
+    def preview_report(current_user):
+        """
+        Preview report data before exporting
+        Returns first 50 entries + summary statistics
+        
+        Request body:
+        {
+            "reportType": "income|expenses|profit_loss|cash_flow|tax_summary|debtors|creditors|assets|asset_depreciation|inventory|credits",
+            "startDate": "2024-01-01T00:00:00Z" (optional),
+            "endDate": "2024-01-31T23:59:59Z" (optional)
+        }
+        
+        Response:
+        {
+            "success": true,
+            "preview": true,
+            "total_count": 250,
+            "showing_count": 50,
+            "data": [...],
+            "summary": {...}
+        }
+        """
+        try:
+            request_data = request.get_json() or {}
+            report_type = request_data.get('reportType')
+            
+            if not report_type:
+                return jsonify({
+                    'success': False,
+                    'message': 'Report type is required'
+                }), 400
+            
+            # Parse date range
+            start_date, end_date = parse_date_range(request_data)
+            
+            # Preview limit (50 entries as per founder's specification)
+            PREVIEW_LIMIT = 50
+            
+            # Route to appropriate preview handler
+            if report_type == 'income':
+                return _preview_income(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'expenses':
+                return _preview_expenses(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'profit_loss':
+                return _preview_profit_loss(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'cash_flow':
+                return _preview_cash_flow(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'tax_summary':
+                return _preview_tax_summary(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'debtors':
+                return _preview_debtors(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'creditors':
+                return _preview_creditors(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'assets':
+                return _preview_assets(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'asset_depreciation':
+                return _preview_asset_depreciation(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'inventory':
+                return _preview_inventory(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'credits':
+                return _preview_credits(current_user, start_date, end_date, PREVIEW_LIMIT)
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'Unknown report type: {report_type}'
+                }), 400
+                
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate preview: {str(e)}'
+            }), 500
+    
+    # Preview helper functions
+    
+    def _preview_income(current_user, start_date, end_date, limit):
+        """Preview income records"""
+        query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        if start_date or end_date:
+            query['dateReceived'] = {}
+            if start_date:
+                query['dateReceived']['$gte'] = start_date
+            if end_date:
+                query['dateReceived']['$lte'] = end_date
+        
+        total_count = mongo.db.incomes.count_documents(query)
+        incomes = list(mongo.db.incomes.find(query).sort('dateReceived', -1).limit(limit))
+        
+        # Calculate summary
+        all_incomes = list(mongo.db.incomes.find(query))
+        total_amount = sum(inc.get('amount', 0) for inc in all_incomes)
+        
+        # Format data
+        data = []
+        for income in incomes:
+            data.append({
+                'id': str(income['_id']),
+                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'source': income.get('source', ''),
+                'category': income.get('category', {}).get('name', 'Other') if isinstance(income.get('category'), dict) else income.get('category', 'Other'),
+                'amount': income.get('amount', 0),
+                'description': income.get('description', '')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_income': total_amount,
+                'average_income': total_amount / total_count if total_count > 0 else 0,
+                'count': total_count
+            }
+        })
+    
+    def _preview_expenses(current_user, start_date, end_date, limit):
+        """Preview expense records"""
+        query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        if start_date or end_date:
+            query['date'] = {}
+            if start_date:
+                query['date']['$gte'] = start_date
+            if end_date:
+                query['date']['$lte'] = end_date
+        
+        total_count = mongo.db.expenses.count_documents(query)
+        expenses = list(mongo.db.expenses.find(query).sort('date', -1).limit(limit))
+        
+        # Calculate summary
+        all_expenses = list(mongo.db.expenses.find(query))
+        total_amount = sum(exp.get('amount', 0) for exp in all_expenses)
+        
+        # Format data
+        data = []
+        for expense in expenses:
+            data.append({
+                'id': str(expense['_id']),
+                'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                'title': expense.get('title', ''),
+                'category': expense.get('category', 'Other'),
+                'amount': expense.get('amount', 0),
+                'description': expense.get('description', '')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_expenses': total_amount,
+                'average_expense': total_amount / total_count if total_count > 0 else 0,
+                'count': total_count
+            }
+        })
+    
+    def _preview_profit_loss(current_user, start_date, end_date, limit):
+        """Preview profit & loss data"""
+        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        
+        if start_date or end_date:
+            if start_date:
+                income_query['dateReceived'] = {'$gte': start_date}
+                expense_query['date'] = {'$gte': start_date}
+            if end_date:
+                income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                expense_query.setdefault('date', {})['$lte'] = end_date
+        
+        # Get all for summary
+        all_incomes = list(mongo.db.incomes.find(income_query))
+        all_expenses = list(mongo.db.expenses.find(expense_query))
+        
+        total_income = sum(inc.get('amount', 0) for inc in all_incomes)
+        total_expenses = sum(exp.get('amount', 0) for exp in all_expenses)
+        net_profit = total_income - total_expenses
+        
+        # Get limited data for preview
+        incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', -1).limit(limit // 2))
+        expenses = list(mongo.db.expenses.find(expense_query).sort('date', -1).limit(limit // 2))
+        
+        # Format data
+        data = {
+            'incomes': [],
+            'expenses': []
+        }
+        
+        for income in incomes:
+            data['incomes'].append({
+                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'source': income.get('source', ''),
+                'amount': income.get('amount', 0)
+            })
+        
+        for expense in expenses:
+            data['expenses'].append({
+                'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                'title': expense.get('title', ''),
+                'category': expense.get('category', 'Other'),
+                'amount': expense.get('amount', 0)
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': len(all_incomes) + len(all_expenses),
+            'showing_count': len(incomes) + len(expenses),
+            'data': data,
+            'summary': {
+                'total_income': total_income,
+                'total_expenses': total_expenses,
+                'net_profit': net_profit,
+                'profit_margin': (net_profit / total_income * 100) if total_income > 0 else 0
+            }
+        })
+    
+    def _preview_cash_flow(current_user, start_date, end_date, limit):
+        """Preview cash flow data"""
+        # Same as profit_loss but with different presentation
+        return _preview_profit_loss(current_user, start_date, end_date, limit)
+    
+    def _preview_tax_summary(current_user, start_date, end_date, limit):
+        """Preview tax summary data"""
+        # Get income and expense data
+        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        
+        if start_date or end_date:
+            if start_date:
+                income_query['dateReceived'] = {'$gte': start_date}
+                expense_query['date'] = {'$gte': start_date}
+            if end_date:
+                income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                expense_query.setdefault('date', {})['$lte'] = end_date
+        
+        all_incomes = list(mongo.db.incomes.find(income_query))
+        all_expenses = list(mongo.db.expenses.find(expense_query))
+        
+        total_income = sum(inc.get('amount', 0) for inc in all_incomes)
+        total_expenses = sum(exp.get('amount', 0) for exp in all_expenses)
+        taxable_income = total_income - total_expenses
+        
+        # Get user's tax profile
+        user = mongo.db.users.find_one({'_id': current_user['_id']})
+        tax_profile = user.get('taxProfile', {})
+        
+        # Calculate estimated tax (simplified)
+        estimated_tax = 0
+        if taxable_income > 0:
+            # Use 7% flat rate for simplicity (actual calculation is more complex)
+            estimated_tax = taxable_income * 0.07
+        
+        # Get limited transactions
+        incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', -1).limit(limit // 2))
+        expenses = list(mongo.db.expenses.find(expense_query).sort('date', -1).limit(limit // 2))
+        
+        data = {
+            'incomes': [{'date': inc.get('dateReceived', datetime.utcnow()).isoformat() + 'Z', 'source': inc.get('source', ''), 'amount': inc.get('amount', 0)} for inc in incomes],
+            'expenses': [{'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z', 'title': exp.get('title', ''), 'amount': exp.get('amount', 0)} for exp in expenses]
+        }
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': len(all_incomes) + len(all_expenses),
+            'showing_count': len(incomes) + len(expenses),
+            'data': data,
+            'summary': {
+                'total_income': total_income,
+                'total_expenses': total_expenses,
+                'taxable_income': taxable_income,
+                'estimated_tax': estimated_tax
+            }
+        })
+    
+    def _preview_debtors(current_user, start_date, end_date, limit):
+        """Preview debtors data"""
+        query = {'userId': current_user['_id']}
+        
+        total_count = mongo.db.debtors.count_documents(query)
+        debtors = list(mongo.db.debtors.find(query).sort('createdAt', -1).limit(limit))
+        
+        # Calculate summary
+        all_debtors = list(mongo.db.debtors.find(query))
+        total_owed = sum(d.get('totalOwed', 0) for d in all_debtors)
+        total_paid = sum(d.get('totalPaid', 0) for d in all_debtors)
+        
+        data = []
+        for debtor in debtors:
+            data.append({
+                'id': str(debtor['_id']),
+                'name': debtor.get('name', ''),
+                'phone': debtor.get('phone', ''),
+                'totalOwed': debtor.get('totalOwed', 0),
+                'totalPaid': debtor.get('totalPaid', 0),
+                'balance': debtor.get('totalOwed', 0) - debtor.get('totalPaid', 0),
+                'createdAt': debtor.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_owed': total_owed,
+                'total_paid': total_paid,
+                'outstanding_balance': total_owed - total_paid,
+                'count': total_count
+            }
+        })
+    
+    def _preview_creditors(current_user, start_date, end_date, limit):
+        """Preview creditors data"""
+        query = {'userId': current_user['_id']}
+        
+        total_count = mongo.db.creditors.count_documents(query)
+        creditors = list(mongo.db.creditors.find(query).sort('createdAt', -1).limit(limit))
+        
+        # Calculate summary
+        all_creditors = list(mongo.db.creditors.find(query))
+        total_owed = sum(c.get('totalOwed', 0) for c in all_creditors)
+        total_paid = sum(c.get('totalPaid', 0) for c in all_creditors)
+        
+        data = []
+        for creditor in creditors:
+            data.append({
+                'id': str(creditor['_id']),
+                'name': creditor.get('name', ''),
+                'phone': creditor.get('phone', ''),
+                'totalOwed': creditor.get('totalOwed', 0),
+                'totalPaid': creditor.get('totalPaid', 0),
+                'balance': creditor.get('totalOwed', 0) - creditor.get('totalPaid', 0),
+                'createdAt': creditor.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_owed': total_owed,
+                'total_paid': total_paid,
+                'outstanding_balance': total_owed - total_paid,
+                'count': total_count
+            }
+        })
+    
+    def _preview_assets(current_user, start_date, end_date, limit):
+        """Preview assets data"""
+        query = {'userId': current_user['_id']}
+        
+        total_count = mongo.db.assets.count_documents(query)
+        assets = list(mongo.db.assets.find(query).sort('purchaseDate', -1).limit(limit))
+        
+        # Calculate summary
+        all_assets = list(mongo.db.assets.find(query))
+        total_value = sum(a.get('purchasePrice', 0) for a in all_assets)
+        total_depreciation = sum(a.get('accumulatedDepreciation', 0) for a in all_assets)
+        
+        data = []
+        for asset in assets:
+            data.append({
+                'id': str(asset['_id']),
+                'name': asset.get('name', ''),
+                'category': asset.get('category', ''),
+                'purchasePrice': asset.get('purchasePrice', 0),
+                'currentValue': asset.get('currentValue', 0),
+                'purchaseDate': asset.get('purchaseDate', datetime.utcnow()).isoformat() + 'Z',
+                'depreciationMethod': asset.get('depreciationMethod', 'None')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_purchase_value': total_value,
+                'total_depreciation': total_depreciation,
+                'net_book_value': total_value - total_depreciation,
+                'count': total_count
+            }
+        })
+    
+    def _preview_asset_depreciation(current_user, start_date, end_date, limit):
+        """Preview asset depreciation schedule"""
+        query = {'userId': current_user['_id'], 'depreciationMethod': {'$ne': 'None'}}
+        
+        total_count = mongo.db.assets.count_documents(query)
+        assets = list(mongo.db.assets.find(query).sort('purchaseDate', -1).limit(limit))
+        
+        # Calculate summary
+        all_assets = list(mongo.db.assets.find(query))
+        total_depreciation = sum(a.get('accumulatedDepreciation', 0) for a in all_assets)
+        
+        data = []
+        for asset in assets:
+            data.append({
+                'id': str(asset['_id']),
+                'name': asset.get('name', ''),
+                'purchasePrice': asset.get('purchasePrice', 0),
+                'accumulatedDepreciation': asset.get('accumulatedDepreciation', 0),
+                'currentValue': asset.get('currentValue', 0),
+                'depreciationMethod': asset.get('depreciationMethod', ''),
+                'usefulLife': asset.get('usefulLife', 0)
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_depreciation': total_depreciation,
+                'count': total_count
+            }
+        })
+    
+    def _preview_inventory(current_user, start_date, end_date, limit):
+        """Preview inventory data"""
+        query = {'userId': current_user['_id']}
+        
+        total_count = mongo.db.inventory_items.count_documents(query)
+        items = list(mongo.db.inventory_items.find(query).sort('createdAt', -1).limit(limit))
+        
+        # Calculate summary
+        all_items = list(mongo.db.inventory_items.find(query))
+        total_value = sum(i.get('quantity', 0) * i.get('unitCost', 0) for i in all_items)
+        total_quantity = sum(i.get('quantity', 0) for i in all_items)
+        
+        data = []
+        for item in items:
+            data.append({
+                'id': str(item['_id']),
+                'name': item.get('name', ''),
+                'sku': item.get('sku', ''),
+                'quantity': item.get('quantity', 0),
+                'unitCost': item.get('unitCost', 0),
+                'sellingPrice': item.get('sellingPrice', 0),
+                'totalValue': item.get('quantity', 0) * item.get('unitCost', 0)
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_inventory_value': total_value,
+                'total_items': total_quantity,
+                'count': total_count
+            }
+        })
+    
+    def _preview_credits(current_user, start_date, end_date, limit):
+        """Preview FiCore Credits transactions"""
+        query = {'userId': current_user['_id']}
+        if start_date or end_date:
+            query['createdAt'] = {}
+            if start_date:
+                query['createdAt']['$gte'] = start_date
+            if end_date:
+                query['createdAt']['$lte'] = end_date
+        
+        total_count = mongo.db.credit_transactions.count_documents(query)
+        transactions = list(mongo.db.credit_transactions.find(query).sort('createdAt', -1).limit(limit))
+        
+        # Calculate summary
+        all_transactions = list(mongo.db.credit_transactions.find(query))
+        total_earned = sum(t.get('amount', 0) for t in all_transactions if t.get('amount', 0) > 0)
+        total_spent = sum(abs(t.get('amount', 0)) for t in all_transactions if t.get('amount', 0) < 0)
+        
+        data = []
+        for txn in transactions:
+            data.append({
+                'id': str(txn['_id']),
+                'type': txn.get('type', ''),
+                'amount': txn.get('amount', 0),
+                'description': txn.get('description', ''),
+                'balanceBefore': txn.get('balanceBefore', 0),
+                'balanceAfter': txn.get('balanceAfter', 0),
+                'createdAt': txn.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_earned': total_earned,
+                'total_spent': total_spent,
+                'net_change': total_earned - total_spent,
+                'count': total_count
+            }
+        })
     
     return reports_bp

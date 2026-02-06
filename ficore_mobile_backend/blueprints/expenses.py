@@ -176,6 +176,9 @@ def create_expense():
             # Import auto-population utility
             from ..utils.expense_utils import auto_populate_expense_fields
             
+            # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
+            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -189,6 +192,9 @@ def create_expense():
                 'notes': data.get('notes', ''),
                 'status': 'active',  # CRITICAL: Required for immutability system
                 'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
@@ -848,6 +854,11 @@ def tag_expense_entry(entry_id):
                     'message': 'Invalid entry type. Must be "business", "personal", or null'
                 }), 400
             
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: expense_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = entry_id.replace('expense_', '').replace('income_', '')
+            
             # Update entry
             update_data = {
                 'entryType': entry_type,
@@ -856,7 +867,7 @@ def tag_expense_entry(entry_id):
             }
             
             result = expenses_bp.mongo.db.expenses.update_one(
-                {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+                {'_id': ObjectId(clean_id), 'userId': current_user['_id']},
                 {'$set': update_data}
             )
             
@@ -904,6 +915,10 @@ def bulk_tag_expense_entries():
                     'message': 'No entry IDs provided'
                 }), 400
             
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefixes before ObjectId conversion
+            # Golden Rule #46: ID Format Consistency
+            clean_ids = [id.replace('expense_', '').replace('income_', '') for id in entry_ids]
+            
             # Update entries
             update_data = {
                 'entryType': entry_type,
@@ -913,7 +928,7 @@ def bulk_tag_expense_entries():
             
             result = expenses_bp.mongo.db.expenses.update_many(
                 {
-                    '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                    '_id': {'$in': [ObjectId(id) for id in clean_ids]},
                     'userId': current_user['_id']
                 },
                 {'$set': update_data}
