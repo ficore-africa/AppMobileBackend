@@ -1054,16 +1054,24 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     # ENTRY TAGGING ENDPOINTS (Phase 3B)
     # ============================================================================
     
-    @income_bp.route('/tag/<entry_id>', methods=['PATCH'])
+    @income_bp.route('/<entry_id>/tag', methods=['PATCH', 'PUT'])
     @token_required
     def tag_income_entry(current_user, entry_id):
         """Tag an income entry as business or personal"""
         try:
+            print(f"\n{'='*80}")
+            print(f"TAGGING INCOME - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Raw entry_id received: {entry_id}")
+            print(f"User ID: {current_user['_id']}")
+            
             data = request.get_json() or {}
             entry_type = data.get('entryType')
+            print(f"Entry type requested: {entry_type}")
             
             # Validate entry type
             if entry_type not in ['business', 'personal', None]:
+                print(f"❌ Invalid entry type: {entry_type}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid entry type. Must be "business", "personal", or null'
@@ -1073,6 +1081,25 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Frontend sends: income_<mongoId>, backend needs: <mongoId>
             # Golden Rule #46: ID Format Consistency
             clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            print(f"Cleaned ID: {clean_id}")
+            
+            # Check if income exists first
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(clean_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                print(f"❌ Income not found with _id={clean_id} and userId={current_user['_id']}")
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found'
+                }), 404
+            
+            print(f"✅ Income found:")
+            print(f"   Amount: ₦{income.get('amount')}")
+            print(f"   Source: {income.get('source')}")
+            print(f"   Current entryType: {income.get('entryType', 'NOT SET')}")
             
             # Update entry
             update_data = {
@@ -1081,24 +1108,35 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'taggedBy': 'user' if entry_type else None
             }
             
+            print(f"Updating with: {update_data}")
+            
             result = mongo.db.incomes.update_one(
                 {'_id': ObjectId(clean_id), 'userId': current_user['_id']},
                 {'$set': update_data}
             )
             
+            print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+            
             if result.modified_count > 0:
+                print(f"✅ Entry tagged successfully")
+                print(f"{'='*80}\n")
                 return jsonify({
                     'success': True,
                     'message': 'Entry tagged successfully'
                 })
             else:
+                print(f"⚠️  Entry not modified (already had same tag?)")
+                print(f"{'='*80}\n")
                 return jsonify({
                     'success': False,
                     'message': 'Entry not found or already tagged'
                 }), 404
                 
         except Exception as e:
-            print(f"Error in tag_income_entry: {e}")
+            print(f"❌ ERROR in tag_income_entry: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to tag entry',
