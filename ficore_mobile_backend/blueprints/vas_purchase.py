@@ -2706,6 +2706,8 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Airtime', network],
                 'vasTransactionId': transaction_id,
+                'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
+                'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'metadata': {
                     'faceValue': amount,
                     'actualCost': amount,  # Actual cost is now the purchase amount (fees eliminated)
@@ -3442,6 +3444,8 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Data', network],
                 'vasTransactionId': transaction_id,
+                'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
+                'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'metadata': {
                     'planName': data_plan_name,
                     'planId': data_plan_id,

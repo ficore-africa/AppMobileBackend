@@ -83,6 +83,8 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
                 'tags': ['COGS', 'Inventory', 'Auto-generated'],
                 'paymentMethod': 'inventory',
                 'notes': f"Auto-generated COGS expense for inventory sale. Item: {item['itemName']}, Quantity: {quantity_sold}, Unit Cost: {item['costPrice']}",
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }

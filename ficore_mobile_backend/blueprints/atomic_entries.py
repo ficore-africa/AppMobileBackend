@@ -183,6 +183,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'paymentMethod': normalized_payment,
                 'location': data.get('location', ''),
                 'notes': data.get('notes', ''),
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),
                 # Track FC charge status
@@ -502,6 +504,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'dateReceived': datetime.fromisoformat(data.get('dateReceived', datetime.utcnow().isoformat()).replace('Z', '')),
                 'isRecurring': data.get('isRecurring', False),
                 'nextRecurringDate': datetime.fromisoformat(data['nextRecurringDate'].replace('Z', '')) if data.get('nextRecurringDate') else None,
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),

@@ -206,6 +206,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'dateReceived': datetime.fromisoformat((data.get('dateReceived') or data.get('date_received') or datetime.utcnow().isoformat()).replace('Z', '')),
                 'isRecurring': False,  # Always false now
                 'nextRecurringDate': None,  # Always null now
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()

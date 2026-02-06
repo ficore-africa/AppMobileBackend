@@ -856,6 +856,8 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                         'description': retention_description,
                         'isPending': False,
                         'isRecurring': False,
+                        'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
+                        'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                         'metadata': {
                             'source': 'vas_bill_payment',
                             'billCategory': category,

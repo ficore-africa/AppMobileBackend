@@ -187,6 +187,8 @@ def create_expense():
                 'paymentMethod': normalized_payment,
                 'location': data.get('location', ''),
                 'notes': data.get('notes', ''),
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
