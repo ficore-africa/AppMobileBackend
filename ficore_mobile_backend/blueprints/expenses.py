@@ -128,7 +128,15 @@ def create_expense():
     @expenses_bp.token_required
     def _create_expense(current_user):
         try:
+            print(f"\n{'='*80}")
+            print(f"CREATING EXPENSE - DEBUG LOG")
+            print(f"{'='*80}")
+            
             data = request.get_json()
+            print(f"Request data: {data}")
+            print(f"User ID: {current_user['_id']}")
+            print(f"User Email: {current_user.get('email', 'N/A')}")
+            
             errors = {}
             if not data.get('amount') or data.get('amount', 0) <= 0:
                 errors['amount'] = ['Valid amount is required']
@@ -138,6 +146,7 @@ def create_expense():
                 errors['category'] = ['Category is required']
            
             if errors:
+                print(f"❌ Validation errors: {errors}")
                 return jsonify({
                     'success': False,
                     'message': 'Validation failed',
@@ -147,13 +156,16 @@ def create_expense():
             # NEW: Check monthly entry limit for free tier users
             entry_tracker = MonthlyEntryTracker(expenses_bp.mongo)
             fc_check = entry_tracker.should_deduct_fc(current_user['_id'], 'expense')
+            print(f"FC check result: {fc_check}")
             
             # If FC deduction is required, check user has sufficient credits
             if fc_check['deduct_fc']:
                 user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
                 current_balance = user.get('ficoreCreditBalance', 0.0)
+                print(f"FC deduction required. Current balance: {current_balance}, Required: {fc_check['fc_cost']}")
                 
                 if current_balance < fc_check['fc_cost']:
+                    print(f"❌ Insufficient credits!")
                     return jsonify({
                         'success': False,
                         'message': f'Insufficient credits. {fc_check["reason"]}',
@@ -167,6 +179,7 @@ def create_expense():
             raw_payment = data.get('paymentMethod')
             normalized_payment = normalize_payment_method(raw_payment) if raw_payment is not None else 'cash'
             if raw_payment is not None and not validate_payment_method(raw_payment):
+                print(f"❌ Invalid payment method: {raw_payment}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid payment method',
@@ -178,6 +191,7 @@ def create_expense():
             
             # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
             entry_type = data.get('entryType')  # 'business', 'personal', or None
+            print(f"Entry type: {entry_type}")
             
             expense_data = {
                 'userId': current_user['_id'],
@@ -201,9 +215,19 @@ def create_expense():
             
             # Auto-populate title and description if missing
             expense_data = auto_populate_expense_fields(expense_data)
+            print(f"Expense data prepared: amount=₦{expense_data['amount']}, category={expense_data['category']}")
            
             result = expenses_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
+            print(f"✅ Expense created with ID: {expense_id}")
+            
+            # CRITICAL VERIFICATION: Check if expense actually exists in database
+            verification = expenses_bp.mongo.db.expenses.find_one({'_id': result.inserted_id})
+            if not verification:
+                print(f"❌ CRITICAL ERROR: Expense {expense_id} was inserted but cannot be found in database!")
+                raise Exception("Database insert verification failed - expense not found after insert")
+            else:
+                print(f"✅ VERIFIED: Expense {expense_id} exists in database with amount ₦{verification.get('amount')}")
             
             # Track expense creation event
             try:
@@ -217,6 +241,7 @@ def create_expense():
             
             # NEW: Deduct FC if required (over monthly limit)
             if fc_check['deduct_fc']:
+                print(f"Deducting {fc_check['fc_cost']} FC credits...")
                 # Deduct credits from user account
                 user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
                 current_balance = user.get('ficoreCreditBalance', 0.0)
@@ -247,6 +272,7 @@ def create_expense():
                 }
                 
                 expenses_bp.mongo.db.credit_transactions.insert_one(transaction)
+                print(f"✅ FC credits deducted. New balance: {new_balance}")
            
             # NEW: Check if this is user's first entry and mark onboarding complete
             # This ensures backend state stays in sync with frontend wizard
@@ -838,17 +864,25 @@ def get_expense_insights():
 # ENTRY TAGGING ENDPOINTS (Phase 3B)
 # ============================================================================
 
-@expenses_bp.route('/tag/<entry_id>', methods=['PATCH'])
+@expenses_bp.route('/<entry_id>/tag', methods=['PATCH', 'PUT'])
 def tag_expense_entry(entry_id):
     @expenses_bp.token_required
     def _tag_expense_entry(current_user):
         """Tag an expense entry as business or personal"""
         try:
+            print(f"\n{'='*80}")
+            print(f"TAGGING EXPENSE - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Raw entry_id received: {entry_id}")
+            print(f"User ID: {current_user['_id']}")
+            
             data = request.get_json() or {}
             entry_type = data.get('entryType')
+            print(f"Entry type requested: {entry_type}")
             
             # Validate entry type
             if entry_type not in ['business', 'personal', None]:
+                print(f"❌ Invalid entry type: {entry_type}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid entry type. Must be "business", "personal", or null'
@@ -858,6 +892,31 @@ def tag_expense_entry(entry_id):
             # Frontend sends: expense_<mongoId>, backend needs: <mongoId>
             # Golden Rule #46: ID Format Consistency
             clean_id = entry_id.replace('expense_', '').replace('income_', '')
+            print(f"Cleaned ID: {clean_id}")
+            
+            # Check if expense exists first
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(clean_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                print(f"❌ Expense not found with _id={clean_id} and userId={current_user['_id']}")
+                print(f"Checking if expense exists with different userId...")
+                any_expense = expenses_bp.mongo.db.expenses.find_one({'_id': ObjectId(clean_id)})
+                if any_expense:
+                    print(f"⚠️  Expense exists but belongs to different user: {any_expense.get('userId')}")
+                else:
+                    print(f"❌ Expense does not exist in database at all")
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found'
+                }), 404
+            
+            print(f"✅ Expense found:")
+            print(f"   Amount: ₦{expense.get('amount')}")
+            print(f"   Category: {expense.get('category')}")
+            print(f"   Current entryType: {expense.get('entryType', 'NOT SET')}")
             
             # Update entry
             update_data = {
@@ -866,24 +925,35 @@ def tag_expense_entry(entry_id):
                 'taggedBy': 'user' if entry_type else None
             }
             
+            print(f"Updating with: {update_data}")
+            
             result = expenses_bp.mongo.db.expenses.update_one(
                 {'_id': ObjectId(clean_id), 'userId': current_user['_id']},
                 {'$set': update_data}
             )
             
+            print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+            
             if result.modified_count > 0:
+                print(f"✅ Entry tagged successfully")
+                print(f"{'='*80}\n")
                 return jsonify({
                     'success': True,
                     'message': 'Entry tagged successfully'
                 })
             else:
+                print(f"⚠️  Entry not modified (already had same tag?)")
+                print(f"{'='*80}\n")
                 return jsonify({
                     'success': False,
                     'message': 'Entry not found or already tagged'
                 }), 404
                 
         except Exception as e:
-            print(f"Error in tag_expense_entry: {e}")
+            print(f"❌ ERROR in tag_expense_entry: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to tag entry',
@@ -892,7 +962,7 @@ def tag_expense_entry(entry_id):
     
     return _tag_expense_entry()
 
-@expenses_bp.route('/bulk-tag', methods=['PATCH'])
+@expenses_bp.route('/bulk-tag', methods=['PATCH', 'PUT'])
 def bulk_tag_expense_entries():
     @expenses_bp.token_required
     def _bulk_tag_expense_entries(current_user):
