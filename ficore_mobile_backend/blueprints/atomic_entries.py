@@ -83,7 +83,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             # Import auto-population utility
-            from ..utils.expense_utils import auto_populate_expense_fields
+            from utils.expense_utils import auto_populate_expense_fields
             
             # Validate payment method
             raw_payment = data.get('paymentMethod')
@@ -517,7 +517,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             }
             
             # Import and apply auto-population for proper source/description
-            from ..utils.income_utils import auto_populate_income_fields
+            from utils.income_utils import auto_populate_income_fields
             income_data = auto_populate_income_fields(income_data)
             
             # STEP 6: Insert income into database
