@@ -259,6 +259,28 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             )
             
             if van_response.status_code != 200:
+                # Parse Monnify error response
+                error_data = van_response.json()
+                error_message = error_data.get('responseMessage', 'Unknown error')
+                error_code = error_data.get('responseCode', '99')
+                
+                # Check if error is BVN/NIN requirement
+                if 'BVN' in error_message or 'NIN' in error_message or error_code == '99':
+                    print(f'INFO: Monnify requires KYC for user {user_id}')
+                    return jsonify({
+                        'success': False,
+                        'requiresKyc': True,
+                        'message': 'Identity verification required',
+                        'userMessage': {
+                            'title': 'Verification Required',
+                            'message': 'To use VAS features, we need to verify your identity. Please submit your BVN or NIN.',
+                            'action': 'submit_kyc',
+                            'type': 'info'
+                        },
+                        'errors': {'kyc': ['BVN or NIN verification required']}
+                    }), 400  # 400 instead of 500 - this is a client action required
+                
+                # Other Monnify errors
                 raise Exception(f'VAN creation failed: {van_response.text}')
             
             van_data = van_response.json()['responseBody']
@@ -289,11 +311,34 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             }), 201
             
         except Exception as e:
-            print(f'ERROR: Error creating wallet: {str(e)}')
+            error_str = str(e)
+            print(f'ERROR: Error creating wallet: {error_str}')
+            
+            # Check if error is BVN/NIN related (fallback check)
+            if 'BVN' in error_str or 'NIN' in error_str:
+                return jsonify({
+                    'success': False,
+                    'requiresKyc': True,
+                    'message': 'Identity verification required',
+                    'userMessage': {
+                        'title': 'Verification Required',
+                        'message': 'To use VAS features, we need to verify your identity. Please submit your BVN or NIN for verification.',
+                        'action': 'submit_kyc',
+                        'type': 'info'
+                    },
+                    'errors': {'kyc': ['BVN or NIN verification required']}
+                }), 400
+            
+            # Generic error
             return jsonify({
                 'success': False,
                 'message': 'Failed to create wallet',
-                'errors': {'general': [str(e)]}
+                'userMessage': {
+                    'title': 'Wallet Creation Failed',
+                    'message': 'We couldn\'t create your VAS wallet at this time. Please try again later or contact support.',
+                    'type': 'error'
+                },
+                'errors': {'general': [error_str]}
             }), 500
     
     @vas_wallet_bp.route('/balance', methods=['GET'])
