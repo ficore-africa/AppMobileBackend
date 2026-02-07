@@ -57,6 +57,26 @@ Three critical capabilities to achieve "Everyday Necessity" status:
    - Becomes primary payment method
    - Path to "Legacy" company status
 
+**Phase 3+ Eligibility Criteria:**
+
+Before adding new features to Phase 3, verify:
+- ✅ OCR is live and proven (receipt scanning works reliably)
+- ✅ Open Banking is integrated (3+ banks syncing)
+- ✅ Full spending wallet is operational (P2P transfers, merchant payments)
+- ✅ Merchant network established (100+ partners)
+- ✅ User data shows demand (20%+ of active users requesting feature)
+
+**Phase 3+ Potential Features:**
+- Lightweight invoicing (as part of merchant suite)
+- Advanced inventory management (for retail businesses)
+- Multi-currency support (for international traders)
+- API access for accountants/bookkeepers
+- White-label solutions for corporate clients
+
+A trader in Sabon Gari, Kano, or a hustler in Yaba doesn't want to "issue an invoice." They want to receive money and know they are safe from the tax man. Invoicing is a Western accounting construct that doesn't fit the high-velocity, cash-and-transfer reality of the Nigerian informal sector. We are in the Active Spender phase. Our job right now is to make sure every time a user buys data, our "plumbing" is so good that the expense entry appears perfectly. If we spend 3 months on CSS letterheads, we lose the window to dominate the VAS-to-Bookkeeping market.
+
+Next Steps: Use the Feature Prioritization Framework for all future feature requests. When in doubt, ask: "Does this make bookkeeping more automatic?"
+
 ---
 
 ## The Business Model
@@ -297,11 +317,60 @@ We are building the financial operating system for African SMEs and individuals.
 
 ## Competitive Advantages
 
-1. **Tax Intelligence:** No competitor has our Audit Shield
-2. **Cultural Localization:** Hausa + Pidgin = Northern + Southern Nigeria
-3. **Wallet Integration:** Zero-friction payments = higher conversion
-4. **Automated Records:** Spending → Bookkeeping pipeline is unique
-5. **Compliance Focus:** We solve the #1 fear (tax audits)
+**FiCore's Core Competitive Moats:**
+
+1. **Tax Intelligence (Audit Shield):** No competitor has our context-aware tax categorization
+2. **Automated Bookkeeping:** Spending → Records pipeline is unique (bookkeeping as a by-product)
+3. **Cultural Localization:** Hausa + Pidgin = Northern + Southern Nigeria coverage
+4. **Wallet Integration:** Zero-friction payments = higher conversion and retention
+5. **Compliance Focus:** We solve the #1 fear (tax audits and penalties)
+
+**Strategic Positioning:**
+> "FiCore's competitive advantage is tax intelligence and automated bookkeeping. Any feature that dilutes this positioning, distracts from core value, or competes with established tools should be declined."
+
+### Feature Prioritization Framework
+
+**✅ BUILD (Aligned with Core Promise):**
+- Features that automate bookkeeping (OCR, Open Banking, auto-entries)
+- Features that enhance tax intelligence (deduction tracking, audit readiness)
+- Features that increase daily engagement (VAS services, wallet payments)
+- Features that reduce friction (voice entry, instant updates, offline support)
+
+**⏸️ DEFER (Phase 3+ Only):**
+- Features that require manual work (invoicing, inventory management)
+- Features that compete with established tools (full accounting software)
+- Features that serve niche segments (< 20% user demand)
+- Features that add complexity without automation
+
+**❌ DECLINE (Strategic Misalignment):**
+- Features that contradict "bookkeeping as a by-product" promise
+- Features that dilute product positioning
+- Features that distract from Phase 2 priorities
+- Features that add maintenance burden without strategic value
+
+### Example: Invoicing Feature Analysis (Feb 2026)
+
+**Proposal:** CSS-based letterhead invoicing with monogram logos  
+**Technical Merit:** ✅ Sound (small file size, no image uploads, crisp rendering)  
+**Strategic Fit:** ❌ Misaligned
+
+**Reasons for Decline:**
+1. **User Segments:** Primary users (freelancers, traders, hustlers) don't need formal invoicing
+2. **Product Promise:** Invoicing is active work, not passive recording (violates core promise)
+3. **Phase Misalignment:** Belongs to Phase 3+ (Intelligence Layer), not Phase 2 (Active Spender)
+4. **Competitive Position:** Not unique (Wave, Zoho, QuickBooks already do this well)
+5. **Scope Creep:** 3-month project disguised as 1-week feature (templates, branding, tracking)
+
+**When to Revisit:**
+- ✅ Phase 3+ conditions met:
+  - OCR is live and proven
+  - Open Banking is integrated
+  - Full spending wallet is operational
+  - Merchant network established (100+ partners)
+  - User data shows demand (20%+ requesting it)
+- **Then:** Consider lightweight invoicing as part of merchant suite
+
+**For Now:** Stay focused. Stay lean. Stay true to the promise.
 
 ---
 
@@ -341,8 +410,34 @@ That's when FiCore becomes indispensable.
 
 ---
 
+## The Strategic Discipline
+
+**"Stay focused. Stay lean. Stay true to the promise."**
+
+As FiCore grows, the temptation to add features will increase. User requests, competitive pressure, and technical feasibility will all push us toward feature bloat.
+
+**Our North Star:**
+- ✅ Tax Intelligence (Audit Shield)
+- ✅ Automated Bookkeeping (spending → records)
+- ✅ Cultural Localization (Hausa + Pidgin)
+- ✅ Wallet Integration (zero-friction payments)
+
+**Our Discipline:**
+- ❌ Decline features that require manual work
+- ❌ Decline features that compete with established tools
+- ❌ Decline features that dilute product positioning
+- ❌ Decline features that distract from current phase priorities
+
+**The Test:**
+> "Does this feature make bookkeeping more automatic, or does it add manual work?"
+
+If the answer is "adds manual work," the feature doesn't belong in FiCore—no matter how technically elegant or user-requested it may be.
+
+---
+
 **Hassan Ahmad**  
 Founder, FiCore Africa  
-February 5, 2026
+February 5, 2026  
+**Updated:** February 7, 2026 (Feature Prioritization Framework added)
 
 *"Stability is the new Marketing. Trust is the new Growth Hack."*
