@@ -1117,19 +1117,38 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
             
-            if result.modified_count > 0:
-                print(f"✅ Entry tagged successfully")
-                print(f"{'='*80}\n")
-                return jsonify({
-                    'success': True,
-                    'message': 'Entry tagged successfully'
+            if result.matched_count > 0:
+                # Fetch the updated income to return to frontend
+                updated_income = mongo.db.incomes.find_one({
+                    '_id': ObjectId(clean_id),
+                    'userId': current_user['_id']
                 })
+                
+                if updated_income:
+                    # Convert ObjectId to string for JSON serialization
+                    updated_income['_id'] = str(updated_income['_id'])
+                    updated_income['userId'] = str(updated_income['userId'])
+                    
+                    print(f"✅ Entry tagged successfully, returning updated income")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully',
+                        'data': updated_income
+                    })
+                else:
+                    print(f"⚠️  Entry updated but could not fetch updated data")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully'
+                    })
             else:
-                print(f"⚠️  Entry not modified (already had same tag?)")
+                print(f"⚠️  Entry not found")
                 print(f"{'='*80}\n")
                 return jsonify({
                     'success': False,
-                    'message': 'Entry not found or already tagged'
+                    'message': 'Entry not found'
                 }), 404
                 
         except Exception as e:

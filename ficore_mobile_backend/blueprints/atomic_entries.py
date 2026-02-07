@@ -294,7 +294,38 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             except Exception as analytics_error:
                 print(f"Analytics tracking failed (non-critical): {analytics_error}")
             
-            # STEP 9: Prepare response
+            # STEP 9: Create notification to remind user to attach supporting documents
+            try:
+                from blueprints.notifications import create_user_notification
+                
+                # CRITICAL: Format relatedId as "expense_<id>" for frontend navigation
+                formatted_related_id = f'expense_{expense_id}'
+                
+                notification_id = create_user_notification(
+                    mongo=atomic_entries_bp.mongo,
+                    user_id=str(current_user['_id']),
+                    category='missingReceipt',
+                    title='Don\'t forget to attach supporting documents',
+                    body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} expense entry to keep better records.',
+                    related_id=formatted_related_id,
+                    metadata={
+                        'transactionType': 'expense',
+                        'amount': float(data['amount']),
+                        'category': data['category'],
+                        'description': data['description']
+                    },
+                    priority='normal'
+                )
+                
+                if notification_id:
+                    print(f"✓ Notification created: {notification_id} (relatedId: {formatted_related_id})")
+                else:
+                    print(f"⚠ Notification creation returned None (non-critical)")
+                    
+            except Exception as notification_error:
+                print(f"Notification creation failed (non-critical): {notification_error}")
+            
+            # STEP 10: Prepare response
             created_expense = atomic_entries_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
             # Keep auto-generated title, don't override with description
@@ -620,7 +651,38 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             except Exception as analytics_error:
                 print(f"Analytics tracking failed (non-critical): {analytics_error}")
             
-            # STEP 9: Prepare response
+            # STEP 9: Create notification to remind user to attach supporting documents
+            try:
+                from blueprints.notifications import create_user_notification
+                
+                # CRITICAL: Format relatedId as "income_<id>" for frontend navigation
+                formatted_related_id = f'income_{income_id}'
+                
+                notification_id = create_user_notification(
+                    mongo=atomic_entries_bp.mongo,
+                    user_id=str(current_user['_id']),
+                    category='missingReceipt',
+                    title='Don\'t forget to attach supporting documents',
+                    body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} income entry to keep better records.',
+                    related_id=formatted_related_id,
+                    metadata={
+                        'transactionType': 'income',
+                        'amount': float(data['amount']),
+                        'category': data['category'],
+                        'source': data['source']
+                    },
+                    priority='normal'
+                )
+                
+                if notification_id:
+                    print(f"✓ Notification created: {notification_id} (relatedId: {formatted_related_id})")
+                else:
+                    print(f"⚠ Notification creation returned None (non-critical)")
+                    
+            except Exception as notification_error:
+                print(f"Notification creation failed (non-critical): {notification_error}")
+            
+            # STEP 10: Prepare response
             created_income = atomic_entries_bp.serialize_doc(income_data.copy())
             created_income['id'] = income_id
             created_income['dateReceived'] = created_income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'

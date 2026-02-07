@@ -934,19 +934,38 @@ def tag_expense_entry(entry_id):
             
             print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
             
-            if result.modified_count > 0:
-                print(f"✅ Entry tagged successfully")
-                print(f"{'='*80}\n")
-                return jsonify({
-                    'success': True,
-                    'message': 'Entry tagged successfully'
+            if result.matched_count > 0:
+                # Fetch the updated expense to return to frontend
+                updated_expense = expenses_bp.mongo.db.expenses.find_one({
+                    '_id': ObjectId(clean_id),
+                    'userId': current_user['_id']
                 })
+                
+                if updated_expense:
+                    # Convert ObjectId to string for JSON serialization
+                    updated_expense['_id'] = str(updated_expense['_id'])
+                    updated_expense['userId'] = str(updated_expense['userId'])
+                    
+                    print(f"✅ Entry tagged successfully, returning updated expense")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully',
+                        'data': updated_expense
+                    })
+                else:
+                    print(f"⚠️  Entry updated but could not fetch updated data")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully'
+                    })
             else:
-                print(f"⚠️  Entry not modified (already had same tag?)")
+                print(f"⚠️  Entry not found")
                 print(f"{'='*80}\n")
                 return jsonify({
                     'success': False,
-                    'message': 'Entry not found or already tagged'
+                    'message': 'Entry not found'
                 }), 404
                 
         except Exception as e:
