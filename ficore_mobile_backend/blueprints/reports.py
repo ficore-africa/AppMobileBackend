@@ -2873,8 +2873,7 @@ def init_reports_blueprint(mongo, token_required):
             'summary': {
                 'total_income': total_income,
                 'total_expenses': total_expenses,
-                'net_profit': net_profit,
-                'profit_margin': (net_profit / total_income * 100) if total_income > 0 else 0
+                'net_profit': net_profit
             }
         })
     
