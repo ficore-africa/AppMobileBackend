@@ -1242,5 +1242,388 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ============================================================================
+    # AUDIT SHIELD: Report Discrepancy & Version Tracking (Feb 7, 2026)
+    # ============================================================================
+    
+    @income_bp.route('/<income_id>/discrepancy-check', methods=['GET'])
+    @token_required
+    def check_income_discrepancy(current_user, income_id):
+        """
+        Check if income was edited after being exported in a report
+        
+        GUARDIAN LOGIC: Detects when current version > exported version
+        Returns data for "Report Discrepancy" warning in UI
+        """
+        try:
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import check_report_discrepancy
+            
+            result = check_report_discrepancy(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id
+            )
+            
+            # Serialize dates
+            for export in result.get('affected_exports', []):
+                if export.get('exported_at'):
+                    export['exported_at'] = export['exported_at'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'hasDiscrepancy': result['has_discrepancy'],
+                    'affectedExports': result['affected_exports'],
+                    'currentVersion': result['current_version'],
+                    'exportedVersions': result['exported_versions']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in check_income_discrepancy: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to check discrepancy',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/version-comparison', methods=['GET'])
+    @token_required
+    def get_income_version_comparison(current_user, income_id):
+        """
+        Get side-by-side comparison of two versions
+        
+        DIFF VIEW: Shows what changed between exported and current version
+        Used in "Version Comparison Modal" in UI
+        """
+        try:
+            version1 = int(request.args.get('version1', 1))
+            version2 = int(request.args.get('version2', 2))
+            
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import get_version_comparison
+            
+            result = get_version_comparison(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id,
+                version1=version1,
+                version2=version2
+            )
+            
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
+            
+            # Serialize dates
+            if result['version1_data'].get('dateReceived'):
+                result['version1_data']['dateReceived'] = result['version1_data']['dateReceived'].isoformat() + 'Z'
+            if result['version2_data'].get('dateReceived'):
+                result['version2_data']['dateReceived'] = result['version2_data']['dateReceived'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'version1': result['version1_data'],
+                    'version2': result['version2_data'],
+                    'changes': result['changes']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_income_version_comparison: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version comparison',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/version-history', methods=['GET'])
+    @token_required
+    def get_income_version_history(current_user, income_id):
+        """
+        Get complete version history for an income entry
+        
+        TRANSPARENCY: Shows all versions with timestamps and changes
+        Used in "Version History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            version_log = income.get('versionLog', [])
+            current_version = income.get('version', 1)
+            
+            # Serialize dates
+            for version in version_log:
+                if version.get('createdAt'):
+                    version['createdAt'] = version['createdAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'versionLog': version_log,
+                    'currentVersion': current_version,
+                    'totalVersions': len(version_log) + 1  # +1 for current
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_income_version_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/export-history', methods=['GET'])
+    @token_required
+    def get_income_export_history(current_user, income_id):
+        """
+        Get complete export history for an income entry
+        
+        TRANSPARENCY: Shows all reports this entry was included in
+        Used in "Export History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            export_history = income.get('exportHistory', [])
+            
+            # Serialize dates
+            for export in export_history:
+                if export.get('exportedAt'):
+                    export['exportedAt'] = export['exportedAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'exportHistory': export_history,
+                    'totalExports': len(export_history)
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_income_export_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get export history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/rollback/<int:target_version>', methods=['POST'])
+    @token_required
+    def rollback_income_version(current_user, income_id, target_version):
+        """
+        Rollback income entry to a previous version
+        
+        INSURANCE POLICY: Allows manual restore of accidentally overwritten data
+        Creates NEW version with old data (maintains audit trail)
+        
+        Example: v1 → v2 → v3 → v4 (rollback to v2) = v4 looks like v2
+        
+        Usage:
+        - High-value user accidentally overwrites complex entry
+        - Admin can restore via API call or Postman
+        - No data is actually deleted, just new version created
+        """
+        try:
+            print(f"\n{'='*80}")
+            print(f"ROLLBACK INCOME - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Income ID: {income_id}")
+            print(f"Target version: {target_version}")
+            print(f"User ID: {current_user['_id']}")
+            
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            if target_version < 1:
+                return jsonify({'success': False, 'message': 'Invalid target version'}), 400
+            
+            # Get the income entry
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id'],
+                'status': 'active'
+            })
+            
+            if not income:
+                print(f"❌ Income not found")
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            current_version = income.get('version', 1)
+            print(f"Current version: {current_version}")
+            
+            # Can't rollback to current version
+            if target_version == current_version:
+                print(f"⚠️ Target version is current version")
+                return jsonify({
+                    'success': False,
+                    'message': f'Entry is already at version {target_version}'
+                }), 400
+            
+            # Can't rollback to future version
+            if target_version > current_version:
+                print(f"❌ Target version is in the future")
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot rollback to future version {target_version} (current: {current_version})'
+                }), 400
+            
+            # Find the target version in versionLog
+            version_log = income.get('versionLog', [])
+            target_data = None
+            
+            for version_entry in version_log:
+                if version_entry.get('version') == target_version:
+                    target_data = version_entry.get('data', {})
+                    break
+            
+            if not target_data:
+                print(f"❌ Target version not found in version log")
+                return jsonify({
+                    'success': False,
+                    'message': f'Version {target_version} not found in version history'
+                }), 404
+            
+            print(f"✅ Found target version data:")
+            print(f"   Amount: ₦{target_data.get('amount')}")
+            print(f"   Source: {target_data.get('source')}")
+            
+            # Prepare rollback data (restore old values)
+            rollback_data = {}
+            
+            # Restore all fields from target version
+            if 'amount' in target_data:
+                rollback_data['amount'] = target_data['amount']
+            if 'source' in target_data:
+                rollback_data['source'] = target_data['source']
+            if 'description' in target_data:
+                rollback_data['description'] = target_data['description']
+            if 'category' in target_data:
+                rollback_data['category'] = target_data['category']
+            if 'dateReceived' in target_data:
+                rollback_data['dateReceived'] = target_data['dateReceived']
+            
+            print(f"Rollback data prepared: {list(rollback_data.keys())}")
+            
+            # Use supersede_transaction to create new version with old data
+            from utils.immutable_ledger_helper import supersede_transaction
+            
+            result = supersede_transaction(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id,
+                user_id=current_user['_id'],
+                update_data=rollback_data
+            )
+            
+            if not result['success']:
+                print(f"❌ Rollback failed: {result['message']}")
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 500
+            
+            # Add rollback metadata to the new version
+            new_version_number = result['new_version'].get('version', current_version + 1)
+            
+            # Update the new version to mark it as a rollback
+            mongo.db.incomes.update_one(
+                {'_id': ObjectId(income_id)},
+                {'$set': {
+                    'lastRollback': {
+                        'rolledBackAt': datetime.utcnow(),
+                        'rolledBackBy': current_user['_id'],
+                        'fromVersion': current_version,
+                        'toVersion': target_version,
+                        'newVersion': new_version_number
+                    }
+                }}
+            )
+            
+            print(f"✅ Rollback successful!")
+            print(f"   From version: {current_version}")
+            print(f"   To version: {target_version}")
+            print(f"   New version: {new_version_number}")
+            print(f"{'='*80}\n")
+            
+            # Serialize the restored version for response
+            restored_income = result['new_version']
+            income_data = serialize_doc(restored_income.copy())
+            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'message': f'Income rolled back to version {target_version}',
+                'data': income_data,
+                'metadata': {
+                    'fromVersion': current_version,
+                    'toVersion': target_version,
+                    'newVersion': new_version_number,
+                    'rolledBackAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ ERROR in rollback_income_version: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to rollback income version',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     return income_bp
 

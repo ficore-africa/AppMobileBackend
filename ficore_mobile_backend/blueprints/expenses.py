@@ -1066,3 +1066,401 @@ def get_untagged_expense_count():
             }), 500
     
     return _get_untagged_expense_count()
+
+# ============================================================================
+# AUDIT SHIELD: Report Discrepancy & Version Tracking (Feb 7, 2026)
+# ============================================================================
+
+@expenses_bp.route('/<expense_id>/discrepancy-check', methods=['GET'])
+def check_expense_discrepancy(expense_id):
+    @expenses_bp.token_required
+    def _check_expense_discrepancy(current_user):
+        """
+        Check if expense was edited after being exported in a report
+        
+        GUARDIAN LOGIC: Detects when current version > exported version
+        Returns data for "Report Discrepancy" warning in UI
+        """
+        try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import check_report_discrepancy
+            
+            result = check_report_discrepancy(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id
+            )
+            
+            # Serialize dates
+            for export in result.get('affected_exports', []):
+                if export.get('exported_at'):
+                    export['exported_at'] = export['exported_at'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'hasDiscrepancy': result['has_discrepancy'],
+                    'affectedExports': result['affected_exports'],
+                    'currentVersion': result['current_version'],
+                    'exportedVersions': result['exported_versions']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in check_expense_discrepancy: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to check discrepancy',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _check_expense_discrepancy()
+
+@expenses_bp.route('/<expense_id>/version-comparison', methods=['GET'])
+def get_expense_version_comparison(expense_id):
+    @expenses_bp.token_required
+    def _get_expense_version_comparison(current_user):
+        """
+        Get side-by-side comparison of two versions
+        
+        DIFF VIEW: Shows what changed between exported and current version
+        Used in "Version Comparison Modal" in UI
+        """
+        try:
+            version1 = int(request.args.get('version1', 1))
+            version2 = int(request.args.get('version2', 2))
+            
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import get_version_comparison
+            
+            result = get_version_comparison(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id,
+                version1=version1,
+                version2=version2
+            )
+            
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
+            
+            # Serialize dates
+            if result['version1_data'].get('date'):
+                result['version1_data']['date'] = result['version1_data']['date'].isoformat() + 'Z'
+            if result['version2_data'].get('date'):
+                result['version2_data']['date'] = result['version2_data']['date'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'version1': result['version1_data'],
+                    'version2': result['version2_data'],
+                    'changes': result['changes']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_expense_version_comparison: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version comparison',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_expense_version_comparison()
+
+@expenses_bp.route('/<expense_id>/version-history', methods=['GET'])
+def get_expense_version_history(expense_id):
+    @expenses_bp.token_required
+    def _get_expense_version_history(current_user):
+        """
+        Get complete version history for an expense entry
+        
+        TRANSPARENCY: Shows all versions with timestamps and changes
+        Used in "Version History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            version_log = expense.get('versionLog', [])
+            current_version = expense.get('version', 1)
+            
+            # Serialize dates
+            for version in version_log:
+                if version.get('createdAt'):
+                    version['createdAt'] = version['createdAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'versionLog': version_log,
+                    'currentVersion': current_version,
+                    'totalVersions': len(version_log) + 1  # +1 for current
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_expense_version_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_expense_version_history()
+
+@expenses_bp.route('/<expense_id>/export-history', methods=['GET'])
+def get_expense_export_history(expense_id):
+    @expenses_bp.token_required
+    def _get_expense_export_history(current_user):
+        """
+        Get complete export history for an expense entry
+        
+        TRANSPARENCY: Shows all reports this entry was included in
+        Used in "Export History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            export_history = expense.get('exportHistory', [])
+            
+            # Serialize dates
+            for export in export_history:
+                if export.get('exportedAt'):
+                    export['exportedAt'] = export['exportedAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'exportHistory': export_history,
+                    'totalExports': len(export_history)
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_expense_export_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get export history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_expense_export_history()
+
+@expenses_bp.route('/<expense_id>/rollback/<int:target_version>', methods=['POST'])
+def rollback_expense_version(expense_id, target_version):
+    @expenses_bp.token_required
+    def _rollback_expense_version(current_user):
+        """
+        Rollback expense entry to a previous version
+        
+        INSURANCE POLICY: Allows manual restore of accidentally overwritten data
+        Creates NEW version with old data (maintains audit trail)
+        
+        Example: v1 → v2 → v3 → v4 (rollback to v2) = v4 looks like v2
+        
+        Usage:
+        - High-value user accidentally overwrites complex entry
+        - Admin can restore via API call or Postman
+        - No data is actually deleted, just new version created
+        """
+        try:
+            print(f"\n{'='*80}")
+            print(f"ROLLBACK EXPENSE - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Expense ID: {expense_id}")
+            print(f"Target version: {target_version}")
+            print(f"User ID: {current_user['_id']}")
+            
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            if target_version < 1:
+                return jsonify({'success': False, 'message': 'Invalid target version'}), 400
+            
+            # Get the expense entry
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id'],
+                'status': 'active'
+            })
+            
+            if not expense:
+                print(f"❌ Expense not found")
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            current_version = expense.get('version', 1)
+            print(f"Current version: {current_version}")
+            
+            # Can't rollback to current version
+            if target_version == current_version:
+                print(f"⚠️ Target version is current version")
+                return jsonify({
+                    'success': False,
+                    'message': f'Entry is already at version {target_version}'
+                }), 400
+            
+            # Can't rollback to future version
+            if target_version > current_version:
+                print(f"❌ Target version is in the future")
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot rollback to future version {target_version} (current: {current_version})'
+                }), 400
+            
+            # Find the target version in versionLog
+            version_log = expense.get('versionLog', [])
+            target_data = None
+            
+            for version_entry in version_log:
+                if version_entry.get('version') == target_version:
+                    target_data = version_entry.get('data', {})
+                    break
+            
+            if not target_data:
+                print(f"❌ Target version not found in version log")
+                return jsonify({
+                    'success': False,
+                    'message': f'Version {target_version} not found in version history'
+                }), 404
+            
+            print(f"✅ Found target version data:")
+            print(f"   Amount: ₦{target_data.get('amount')}")
+            print(f"   Title: {target_data.get('title')}")
+            
+            # Prepare rollback data (restore old values)
+            rollback_data = {}
+            
+            # Restore all fields from target version
+            if 'amount' in target_data:
+                rollback_data['amount'] = target_data['amount']
+            if 'title' in target_data:
+                rollback_data['title'] = target_data['title']
+            if 'description' in target_data:
+                rollback_data['description'] = target_data['description']
+            if 'category' in target_data:
+                rollback_data['category'] = target_data['category']
+            if 'date' in target_data:
+                rollback_data['date'] = target_data['date']
+            
+            print(f"Rollback data prepared: {list(rollback_data.keys())}")
+            
+            # Use supersede_transaction to create new version with old data
+            from utils.immutable_ledger_helper import supersede_transaction
+            
+            result = supersede_transaction(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id,
+                user_id=current_user['_id'],
+                update_data=rollback_data
+            )
+            
+            if not result['success']:
+                print(f"❌ Rollback failed: {result['message']}")
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 500
+            
+            # Add rollback metadata to the new version
+            new_version_number = result['new_version'].get('version', current_version + 1)
+            
+            # Update the new version to mark it as a rollback
+            expenses_bp.mongo.db.expenses.update_one(
+                {'_id': ObjectId(expense_id)},
+                {'$set': {
+                    'lastRollback': {
+                        'rolledBackAt': datetime.utcnow(),
+                        'rolledBackBy': current_user['_id'],
+                        'fromVersion': current_version,
+                        'toVersion': target_version,
+                        'newVersion': new_version_number
+                    }
+                }}
+            )
+            
+            print(f"✅ Rollback successful!")
+            print(f"   From version: {current_version}")
+            print(f"   To version: {target_version}")
+            print(f"   New version: {new_version_number}")
+            print(f"{'='*80}\n")
+            
+            # Serialize the restored version for response
+            restored_expense = result['new_version']
+            expense_data = expenses_bp.serialize_doc(restored_expense.copy())
+            expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+            expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'message': f'Expense rolled back to version {target_version}',
+                'data': expense_data,
+                'metadata': {
+                    'fromVersion': current_version,
+                    'toVersion': target_version,
+                    'newVersion': new_version_number,
+                    'rolledBackAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ ERROR in rollback_expense_version: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to rollback expense version',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _rollback_expense_version()

@@ -264,6 +264,27 @@ def init_reports_blueprint(mongo, token_required):
             pdf_generator = PDFGenerator()
             pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'incomes')
             
+            # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
+            # This enables "Report Discrepancy" warnings when entries are edited after export
+            try:
+                from utils.immutable_ledger_helper import track_export
+                
+                entry_ids = [str(income['_id']) for income in incomes]
+                report_id = f"income_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{current_user['_id']}"
+                report_name = f"Income Report - {datetime.utcnow().strftime('%Y-%m-%d')}"
+                
+                track_export(
+                    db=mongo.db,
+                    collection_name='incomes',
+                    entry_ids=entry_ids,
+                    report_id=report_id,
+                    report_name=report_name,
+                    export_type='income_report'
+                )
+            except Exception as e:
+                # Don't fail export if tracking fails
+                print(f"⚠️ Export tracking failed (non-critical): {e}")
+            
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
                 new_balance = deduct_credits(current_user, credit_cost, report_type)
@@ -494,6 +515,27 @@ def init_reports_blueprint(mongo, token_required):
             # Generate PDF
             pdf_generator = PDFGenerator()
             pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'expenses')
+            
+            # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
+            # This enables "Report Discrepancy" warnings when entries are edited after export
+            try:
+                from utils.immutable_ledger_helper import track_export
+                
+                entry_ids = [str(expense['_id']) for expense in expenses]
+                report_id = f"expense_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{current_user['_id']}"
+                report_name = f"Expense Report - {datetime.utcnow().strftime('%Y-%m-%d')}"
+                
+                track_export(
+                    db=mongo.db,
+                    collection_name='expenses',
+                    entry_ids=entry_ids,
+                    report_id=report_id,
+                    report_name=report_name,
+                    export_type='expense_report'
+                )
+            except Exception as e:
+                # Don't fail export if tracking fails
+                print(f"⚠️ Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -742,6 +784,41 @@ def init_reports_blueprint(mongo, token_required):
             pdf_generator = PDFGenerator()
             pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'all')
             
+            # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
+            # Track both incomes and expenses for P&L report
+            try:
+                from utils.immutable_ledger_helper import track_export
+                
+                report_id = f"profit_loss_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{current_user['_id']}"
+                report_name = f"Profit & Loss Report - {datetime.utcnow().strftime('%Y-%m-%d')}"
+                
+                # Track incomes
+                income_ids = [str(income['_id']) for income in incomes]
+                if income_ids:
+                    track_export(
+                        db=mongo.db,
+                        collection_name='incomes',
+                        entry_ids=income_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='profit_loss_report'
+                    )
+                
+                # Track expenses
+                expense_ids = [str(expense['_id']) for expense in expenses]
+                if expense_ids:
+                    track_export(
+                        db=mongo.db,
+                        collection_name='expenses',
+                        entry_ids=expense_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='profit_loss_report'
+                    )
+            except Exception as e:
+                # Don't fail export if tracking fails
+                print(f"⚠️ Export tracking failed (non-critical): {e}")
+            
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
                 new_balance = deduct_credits(current_user, credit_cost, report_type)
@@ -844,6 +921,41 @@ def init_reports_blueprint(mongo, token_required):
             # Generate PDF
             pdf_generator = PDFGenerator()
             pdf_buffer = pdf_generator.generate_cash_flow_report(user_data, transactions, start_date, end_date)
+            
+            # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
+            # Track both incomes and expenses for cash flow report
+            try:
+                from utils.immutable_ledger_helper import track_export
+                
+                report_id = f"cash_flow_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{current_user['_id']}"
+                report_name = f"Cash Flow Report - {datetime.utcnow().strftime('%Y-%m-%d')}"
+                
+                # Track incomes
+                income_ids = [str(income['_id']) for income in incomes]
+                if income_ids:
+                    track_export(
+                        db=mongo.db,
+                        collection_name='incomes',
+                        entry_ids=income_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='cash_flow_report'
+                    )
+                
+                # Track expenses
+                expense_ids = [str(expense['_id']) for expense in expenses]
+                if expense_ids:
+                    track_export(
+                        db=mongo.db,
+                        collection_name='expenses',
+                        entry_ids=expense_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='cash_flow_report'
+                    )
+            except Exception as e:
+                # Don't fail export if tracking fails
+                print(f"⚠️ Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -1155,6 +1267,42 @@ def init_reports_blueprint(mongo, token_required):
             # Generate PDF
             pdf_generator = PDFGenerator()
             pdf_buffer = pdf_generator.generate_tax_summary_report(user_data, tax_data, start_date, end_date, tax_type)
+            
+            # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
+            # CRITICAL: Tax reports are the most important for audit trail
+            # Track both incomes and expenses with tax_report type
+            try:
+                from utils.immutable_ledger_helper import track_export
+                
+                report_id = f"tax_summary_{tax_type}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{current_user['_id']}"
+                report_name = f"Tax Summary Report ({tax_type}) - {datetime.utcnow().strftime('%Y-%m-%d')}"
+                
+                # Track incomes
+                income_ids = [str(income['_id']) for income in incomes]
+                if income_ids:
+                    track_export(
+                        db=mongo.db,
+                        collection_name='incomes',
+                        entry_ids=income_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='tax_report'  # CRITICAL: tax_report type for highest priority
+                    )
+                
+                # Track expenses
+                expense_ids = [str(expense['_id']) for expense in expenses]
+                if expense_ids:
+                    track_export(
+                        db=mongo.db,
+                        collection_name='expenses',
+                        entry_ids=expense_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='tax_report'  # CRITICAL: tax_report type for highest priority
+                    )
+            except Exception as e:
+                # Don't fail export if tracking fails
+                print(f"⚠️ Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:

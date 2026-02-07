@@ -6473,5 +6473,733 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'error': str(e)
             }), 500
     
+    # ===== VERSION CONTROL & AUDIT ENDPOINTS (NEW - Feb 7, 2026) =====
+    
+    @admin_bp.route('/financial-entries', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_all_financial_entries(current_user):
+        """
+        Get all income/expense entries across all users (admin only)
+        
+        Query Parameters:
+        - user_id: Filter by specific user (optional)
+        - entry_type: 'income' | 'expense' | 'both' (default: 'both')
+        - status: 'active' | 'voided' | 'superseded' | 'all' (default: 'active')
+        - start_date: Start date (YYYY-MM-DD) (optional)
+        - end_date: End date (YYYY-MM-DD) (optional)
+        - page: Page number (default: 1)
+        - limit: Items per page (default: 50, max: 100)
+        - search: Search in description/category (optional)
+        """
+        try:
+            # Get query parameters
+            user_id = request.args.get('user_id', '')
+            entry_type = request.args.get('entry_type', 'both')
+            status = request.args.get('status', 'active')
+            start_date_str = request.args.get('start_date', '')
+            end_date_str = request.args.get('end_date', '')
+            page = int(request.args.get('page', 1))
+            limit = min(int(request.args.get('limit', 50)), 100)
+            search = request.args.get('search', '').strip()
+            
+            # Build base query
+            base_query = {}
+            
+            # User filter
+            if user_id:
+                base_query['userId'] = ObjectId(user_id)
+            
+            # Status filter
+            if status != 'all':
+                base_query['status'] = status
+                if status == 'active':
+                    base_query['isDeleted'] = False
+            
+            # Date filter
+            date_filter = {}
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                date_filter['$gte'] = start_date
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                date_filter['$lte'] = end_date
+            
+            # Search filter
+            if search:
+                search_filter = {
+                    '$or': [
+                        {'description': {'$regex': search, '$options': 'i'}},
+                        {'title': {'$regex': search, '$options': 'i'}},
+                        {'category': {'$regex': search, '$options': 'i'}}
+                    ]
+                }
+            
+            # Collect entries
+            all_entries = []
+            
+            # Get income entries
+            if entry_type in ['income', 'both']:
+                income_query = base_query.copy()
+                if date_filter:
+                    income_query['dateReceived'] = date_filter
+                if search:
+                    income_query.update(search_filter)
+                
+                incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', -1))
+                for income in incomes:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': income['userId']})
+                    
+                    entry = serialize_doc(income)
+                    entry['entryType'] = 'income'
+                    entry['date'] = income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    entry['version'] = income.get('version', 1)
+                    entry['user'] = {
+                        'id': str(user['_id']) if user else '',
+                        'email': user.get('email', '') if user else '',
+                        'displayName': user.get('displayName', '') if user else ''
+                    }
+                    all_entries.append(entry)
+            
+            # Get expense entries
+            if entry_type in ['expense', 'both']:
+                expense_query = base_query.copy()
+                if date_filter:
+                    expense_query['date'] = date_filter
+                if search:
+                    expense_query.update(search_filter)
+                
+                expenses = list(mongo.db.expenses.find(expense_query).sort('date', -1))
+                for expense in expenses:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': expense['userId']})
+                    
+                    entry = serialize_doc(expense)
+                    entry['entryType'] = 'expense'
+                    entry['date'] = expense.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    entry['version'] = expense.get('version', 1)
+                    entry['user'] = {
+                        'id': str(user['_id']) if user else '',
+                        'email': user.get('email', '') if user else '',
+                        'displayName': user.get('displayName', '') if user else ''
+                    }
+                    all_entries.append(entry)
+            
+            # Sort by date (newest first)
+            all_entries.sort(key=lambda x: x['date'], reverse=True)
+            
+            # Pagination
+            total = len(all_entries)
+            skip = (page - 1) * limit
+            paginated_entries = all_entries[skip:skip + limit]
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'entries': paginated_entries,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    }
+                },
+                'message': 'Financial entries retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting financial entries: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve financial entries',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/financial-entries/<entry_id>/version-history', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_entry_version_history(current_user, entry_id):
+        """
+        Get version history for any entry (income or expense)
+        
+        Query Parameters:
+        - entry_type: 'income' | 'expense' (required)
+        """
+        try:
+            entry_type = request.args.get('entry_type', '').lower()
+            
+            if entry_type not in ['income', 'expense']:
+                return jsonify({
+                    'success': False,
+                    'message': 'entry_type parameter is required (income or expense)'
+                }), 400
+            
+            # Strip prefix if present (frontend sends income_xxx or expense_xxx)
+            clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            
+            # Get entry from appropriate collection
+            collection = mongo.db.incomes if entry_type == 'income' else mongo.db.expenses
+            entry = collection.find_one({'_id': ObjectId(clean_id)})
+            
+            if not entry:
+                return jsonify({
+                    'success': False,
+                    'message': f'{entry_type.capitalize()} entry not found'
+                }), 404
+            
+            # Get user info
+            user = mongo.db.users.find_one({'_id': entry['userId']})
+            
+            # Get version log
+            version_log = entry.get('versionLog', [])
+            
+            # Format version history
+            history = []
+            for version in version_log:
+                history.append({
+                    'version': version.get('version', 1),
+                    'timestamp': version.get('timestamp', datetime.utcnow()).isoformat() + 'Z',
+                    'data': version.get('data', {}),
+                    'reason': version.get('reason', ''),
+                    'changedBy': version.get('changedBy', 'user')
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'entryId': str(entry['_id']),
+                    'entryType': entry_type,
+                    'currentVersion': entry.get('version', 1),
+                    'user': {
+                        'id': str(user['_id']) if user else '',
+                        'email': user.get('email', '') if user else '',
+                        'displayName': user.get('displayName', '') if user else ''
+                    },
+                    'versionHistory': history
+                },
+                'message': 'Version history retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting version history: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve version history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/financial-entries/<entry_id>/rollback', methods=['POST'])
+    @token_required
+    @admin_required
+    def rollback_entry_version(current_user, entry_id):
+        """
+        Rollback any entry to a previous version (admin only)
+        
+        Request Body:
+        - entry_type: 'income' | 'expense' (required)
+        - target_version: Version number to rollback to (required)
+        - admin_reason: Reason for rollback (required, min 10 characters)
+        """
+        try:
+            data = request.get_json()
+            
+            entry_type = data.get('entry_type', '').lower()
+            target_version = data.get('target_version')
+            admin_reason = data.get('admin_reason', '').strip()
+            
+            # Validation
+            if entry_type not in ['income', 'expense']:
+                return jsonify({
+                    'success': False,
+                    'message': 'entry_type is required (income or expense)'
+                }), 400
+            
+            if not target_version:
+                return jsonify({
+                    'success': False,
+                    'message': 'target_version is required'
+                }), 400
+            
+            if not admin_reason or len(admin_reason) < 10:
+                return jsonify({
+                    'success': False,
+                    'message': 'admin_reason is required (minimum 10 characters)'
+                }), 400
+            
+            # Strip prefix if present
+            clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            
+            # Call the appropriate rollback endpoint
+            if entry_type == 'income':
+                # Import income blueprint functions
+                from blueprints.income import income_bp
+                
+                # Make internal request to rollback endpoint
+                with current_app.test_request_context(
+                    f'/income/{clean_id}/rollback/{target_version}',
+                    method='POST',
+                    json={'reason': f'Admin rollback: {admin_reason}'}
+                ):
+                    # Set current user in request context
+                    from flask import g
+                    g.current_user = current_user
+                    
+                    # Call the rollback function
+                    response = current_app.test_client().post(
+                        f'/income/{clean_id}/rollback/{target_version}',
+                        json={'reason': f'Admin rollback: {admin_reason}'},
+                        headers={'Authorization': f'Bearer {request.headers.get("Authorization", "").replace("Bearer ", "")}'}
+                    )
+                    
+                    result = response.get_json()
+            else:
+                # Import expense blueprint functions
+                from blueprints.expenses import expenses_bp
+                
+                # Make internal request to rollback endpoint
+                with current_app.test_request_context(
+                    f'/expenses/{clean_id}/rollback/{target_version}',
+                    method='POST',
+                    json={'reason': f'Admin rollback: {admin_reason}'}
+                ):
+                    # Set current user in request context
+                    from flask import g
+                    g.current_user = current_user
+                    
+                    # Call the rollback function
+                    response = current_app.test_client().post(
+                        f'/expenses/{clean_id}/rollback/{target_version}',
+                        json={'reason': f'Admin rollback: {admin_reason}'},
+                        headers={'Authorization': f'Bearer {request.headers.get("Authorization", "").replace("Bearer ", "")}'}
+                    )
+                    
+                    result = response.get_json()
+            
+            # Log admin action
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', ''),
+                'action': 'entry_rollback',
+                'targetEntryId': ObjectId(clean_id),
+                'targetEntryType': entry_type,
+                'targetVersion': target_version,
+                'reason': admin_reason,
+                'timestamp': datetime.utcnow(),
+                'result': 'success' if result.get('success') else 'failed'
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+            
+            if result.get('success'):
+                return jsonify({
+                    'success': True,
+                    'data': result.get('data', {}),
+                    'message': f'Entry rolled back to version {target_version} successfully'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': result.get('message', 'Rollback failed'),
+                    'errors': result.get('errors', {})
+                }), 400
+            
+        except Exception as e:
+            print(f"Error rolling back entry: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to rollback entry',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/financial-entries/discrepancies', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_entry_discrepancies(current_user):
+        """
+        Get all entries that were edited after being exported
+        
+        Query Parameters:
+        - user_id: Filter by specific user (optional)
+        - entry_type: 'income' | 'expense' | 'both' (default: 'both')
+        - severity: 'low' | 'medium' | 'high' | 'all' (default: 'all')
+        - start_date: Start date (YYYY-MM-DD) (optional)
+        - end_date: End date (YYYY-MM-DD) (optional)
+        - page: Page number (default: 1)
+        - limit: Items per page (default: 50, max: 100)
+        """
+        try:
+            # Get query parameters
+            user_id = request.args.get('user_id', '')
+            entry_type = request.args.get('entry_type', 'both')
+            severity = request.args.get('severity', 'all')
+            start_date_str = request.args.get('start_date', '')
+            end_date_str = request.args.get('end_date', '')
+            page = int(request.args.get('page', 1))
+            limit = min(int(request.args.get('limit', 50)), 100)
+            
+            # Build base query - entries with export history
+            base_query = {
+                'exportHistory': {'$exists': True, '$ne': []}
+            }
+            
+            # User filter
+            if user_id:
+                base_query['userId'] = ObjectId(user_id)
+            
+            # Date filter
+            date_filter = {}
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                date_filter['$gte'] = start_date
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                date_filter['$lte'] = end_date
+            
+            # Collect discrepancies
+            discrepancies = []
+            
+            # Check income entries
+            if entry_type in ['income', 'both']:
+                income_query = base_query.copy()
+                if date_filter:
+                    income_query['dateReceived'] = date_filter
+                
+                incomes = list(mongo.db.incomes.find(income_query))
+                for income in incomes:
+                    # Check if current version > any exported version
+                    current_version = income.get('version', 1)
+                    export_history = income.get('exportHistory', [])
+                    
+                    for export in export_history:
+                        exported_version = export.get('versionAtExport', 1)
+                        if current_version > exported_version:
+                            # Discrepancy found
+                            user = mongo.db.users.find_one({'_id': income['userId']})
+                            
+                            # Determine severity
+                            version_log = income.get('versionLog', [])
+                            changes_after_export = [v for v in version_log if v.get('version', 1) > exported_version]
+                            
+                            severity_level = 'low'
+                            if any('amount' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'high'
+                            elif any('date' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'medium'
+                            
+                            if severity != 'all' and severity_level != severity:
+                                continue
+                            
+                            discrepancies.append({
+                                'entryId': str(income['_id']),
+                                'entryType': 'income',
+                                'user': {
+                                    'id': str(user['_id']) if user else '',
+                                    'email': user.get('email', '') if user else '',
+                                    'displayName': user.get('displayName', '') if user else ''
+                                },
+                                'currentVersion': current_version,
+                                'exportedVersion': exported_version,
+                                'exportedAt': export.get('exportedAt', datetime.utcnow()).isoformat() + 'Z',
+                                'reportName': export.get('reportName', 'Unknown'),
+                                'severity': severity_level,
+                                'amount': income.get('amount', 0),
+                                'category': income.get('category', ''),
+                                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                            })
+            
+            # Check expense entries
+            if entry_type in ['expense', 'both']:
+                expense_query = base_query.copy()
+                if date_filter:
+                    expense_query['date'] = date_filter
+                
+                expenses = list(mongo.db.expenses.find(expense_query))
+                for expense in expenses:
+                    # Check if current version > any exported version
+                    current_version = expense.get('version', 1)
+                    export_history = expense.get('exportHistory', [])
+                    
+                    for export in export_history:
+                        exported_version = export.get('versionAtExport', 1)
+                        if current_version > exported_version:
+                            # Discrepancy found
+                            user = mongo.db.users.find_one({'_id': expense['userId']})
+                            
+                            # Determine severity
+                            version_log = expense.get('versionLog', [])
+                            changes_after_export = [v for v in version_log if v.get('version', 1) > exported_version]
+                            
+                            severity_level = 'low'
+                            if any('amount' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'high'
+                            elif any('date' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'medium'
+                            
+                            if severity != 'all' and severity_level != severity:
+                                continue
+                            
+                            discrepancies.append({
+                                'entryId': str(expense['_id']),
+                                'entryType': 'expense',
+                                'user': {
+                                    'id': str(user['_id']) if user else '',
+                                    'email': user.get('email', '') if user else '',
+                                    'displayName': user.get('displayName', '') if user else ''
+                                },
+                                'currentVersion': current_version,
+                                'exportedVersion': exported_version,
+                                'exportedAt': export.get('exportedAt', datetime.utcnow()).isoformat() + 'Z',
+                                'reportName': export.get('reportName', 'Unknown'),
+                                'severity': severity_level,
+                                'amount': expense.get('amount', 0),
+                                'category': expense.get('category', ''),
+                                'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z'
+                            })
+            
+            # Sort by severity (high first) and date
+            severity_order = {'high': 0, 'medium': 1, 'low': 2}
+            discrepancies.sort(key=lambda x: (severity_order.get(x['severity'], 3), x['date']), reverse=True)
+            
+            # Pagination
+            total = len(discrepancies)
+            skip = (page - 1) * limit
+            paginated_discrepancies = discrepancies[skip:skip + limit]
+            
+            # Count by severity
+            severity_counts = {
+                'high': len([d for d in discrepancies if d['severity'] == 'high']),
+                'medium': len([d for d in discrepancies if d['severity'] == 'medium']),
+                'low': len([d for d in discrepancies if d['severity'] == 'low'])
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'discrepancies': paginated_discrepancies,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    },
+                    'severityCounts': severity_counts
+                },
+                'message': 'Discrepancies retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting discrepancies: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve discrepancies',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/audit-trail/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_audit_trail(current_user):
+        """
+        Export complete audit trail as CSV
+        
+        Query Parameters:
+        - user_id: Filter by specific user (optional)
+        - entry_type: 'income' | 'expense' | 'both' (default: 'both')
+        - start_date: Start date (YYYY-MM-DD) (optional)
+        - end_date: End date (YYYY-MM-DD) (optional)
+        """
+        try:
+            from io import StringIO
+            import csv
+            from flask import make_response
+            
+            # Get query parameters
+            user_id = request.args.get('user_id', '')
+            entry_type = request.args.get('entry_type', 'both')
+            start_date_str = request.args.get('start_date', '')
+            end_date_str = request.args.get('end_date', '')
+            
+            # Build base query
+            base_query = {
+                'versionLog': {'$exists': True, '$ne': []}
+            }
+            
+            # User filter
+            if user_id:
+                base_query['userId'] = ObjectId(user_id)
+            
+            # Date filter
+            date_filter = {}
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                date_filter['$gte'] = start_date
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                date_filter['$lte'] = end_date
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Entry ID',
+                'Entry Type',
+                'User Email',
+                'User Name',
+                'Version',
+                'Timestamp',
+                'Amount',
+                'Category',
+                'Description',
+                'Date',
+                'Status',
+                'Changed By',
+                'Reason',
+                'Exported In Reports'
+            ])
+            
+            # Collect audit trail data
+            audit_data = []
+            
+            # Get income entries
+            if entry_type in ['income', 'both']:
+                income_query = base_query.copy()
+                if date_filter:
+                    income_query['dateReceived'] = date_filter
+                
+                incomes = list(mongo.db.incomes.find(income_query))
+                for income in incomes:
+                    user = mongo.db.users.find_one({'_id': income['userId']})
+                    version_log = income.get('versionLog', [])
+                    export_history = income.get('exportHistory', [])
+                    
+                    for version in version_log:
+                        data = version.get('data', {})
+                        exported_in = ', '.join([e.get('reportName', '') for e in export_history if e.get('versionAtExport', 1) == version.get('version', 1)])
+                        
+                        audit_data.append([
+                            str(income['_id']),
+                            'income',
+                            user.get('email', '') if user else '',
+                            user.get('displayName', '') if user else '',
+                            version.get('version', 1),
+                            version.get('timestamp', datetime.utcnow()).isoformat(),
+                            data.get('amount', ''),
+                            data.get('category', ''),
+                            data.get('description', ''),
+                            data.get('dateReceived', ''),
+                            income.get('status', 'active'),
+                            version.get('changedBy', 'user'),
+                            version.get('reason', ''),
+                            exported_in
+                        ])
+            
+            # Get expense entries
+            if entry_type in ['expense', 'both']:
+                expense_query = base_query.copy()
+                if date_filter:
+                    expense_query['date'] = date_filter
+                
+                expenses = list(mongo.db.expenses.find(expense_query))
+                for expense in expenses:
+                    user = mongo.db.users.find_one({'_id': expense['userId']})
+                    version_log = expense.get('versionLog', [])
+                    export_history = expense.get('exportHistory', [])
+                    
+                    for version in version_log:
+                        data = version.get('data', {})
+                        exported_in = ', '.join([e.get('reportName', '') for e in export_history if e.get('versionAtExport', 1) == version.get('version', 1)])
+                        
+                        audit_data.append([
+                            str(expense['_id']),
+                            'expense',
+                            user.get('email', '') if user else '',
+                            user.get('displayName', '') if user else '',
+                            version.get('version', 1),
+                            version.get('timestamp', datetime.utcnow()).isoformat(),
+                            data.get('amount', ''),
+                            data.get('category', ''),
+                            data.get('description', ''),
+                            data.get('date', ''),
+                            expense.get('status', 'active'),
+                            version.get('changedBy', 'user'),
+                            version.get('reason', ''),
+                            exported_in
+                        ])
+            
+            # Sort by timestamp
+            audit_data.sort(key=lambda x: x[5], reverse=True)
+            
+            # Write data
+            for row in audit_data:
+                writer.writerow(row)
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Log admin action
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', ''),
+                'action': 'audit_trail_export',
+                'filters': {
+                    'user_id': user_id,
+                    'entry_type': entry_type,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str
+                },
+                'recordCount': len(audit_data),
+                'timestamp': datetime.utcnow()
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+            
+            # Return as downloadable file
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            
+            # Generate filename
+            filename_parts = ['ficore_audit_trail']
+            if user_id:
+                user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                if user:
+                    filename_parts.append(user.get('email', '').replace('@', '_at_'))
+            if start_date_str:
+                filename_parts.append(f'from_{start_date_str}')
+            if end_date_str:
+                filename_parts.append(f'to_{end_date_str}')
+            filename_parts.append(datetime.utcnow().strftime('%Y%m%d_%H%M%S'))
+            
+            filename = '_'.join(filename_parts) + '.csv'
+            response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting audit trail: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export audit trail',
+                'errors': {'general': [str(e)]}
+            }), 500
 
     return admin_bp
