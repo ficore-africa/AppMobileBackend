@@ -241,6 +241,11 @@ def get_active_transactions_query(user_id):
     CRITICAL FIX: Exclude superseded entries to prevent duplicate counting
     in balance calculations after edits
     
+    CRITICAL FIX (Feb 8, 2026): Handle entries without status field (created before version control)
+    - Old entries don't have 'status' field
+    - These should be treated as 'active' by default
+    - Use $in with 'active' and null to include both
+    
     Args:
         user_id: ObjectId of the user
     
@@ -249,8 +254,12 @@ def get_active_transactions_query(user_id):
     """
     return {
         'userId': user_id,
-        'status': 'active',  # Only active entries (excludes voided AND superseded)
-        'isDeleted': False
+        '$or': [
+            {'status': 'active'},  # Entries with explicit active status
+            {'status': {'$exists': False}},  # Old entries without status field
+            {'status': None},  # Entries with null status
+        ],
+        'isDeleted': {'$ne': True}  # Exclude deleted entries (handles missing field too)
     }
 
 

@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Deletion Requests - FiCore Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header h1 {
+            color: #FFD700;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #b0b0b0;
+            font-size: 16px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(255, 215, 0, 0.2);
+        }
+
+        .stat-card h3 {
+            color: #b0b0b0;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            color: #FFD700;
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .filters {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .filters-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-group label {
+            display: block;
+            color: #b0b0b0;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #FFD700;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #1a1a2e;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .requests-table {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: rgba(255, 215, 0, 0.1);
+        }
+
+        th {
+            padding: 20px;
+            text-align: left;
+            color: #FFD700;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+
+        td {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+        }
+
+        tbody tr {
+            transition: background 0.3s ease;
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-pending {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
+            border: 1px solid #FFC107;
+        }
+
+        .status-approved {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+            border: 1px solid #4CAF50;
+        }
+
+        .status-rejected {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+            border: 1px solid #f44336;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-buttons button {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a2e;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-header h2 {
+            color: #FFD700;
+            font-size: 24px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #e0e0e0;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .detail-row {
+            margin-bottom: 20px;
+        }
+
+        .detail-row label {
+            display: block;
+            color: #b0b0b0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .detail-row .value {
+            color: #e0e0e0;
+            font-size: 16px;
+        }
+
+        .user-snapshot {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .user-snapshot h3 {
+            color: #FFD700;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .snapshot-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #FFD700;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+            justify-content: flex-end;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #b0b0b0;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #FFD700;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 215, 0, 0.1);
+            border-top: 3px solid #FFD700;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #f44336;
+            border-radius: 8px;
+            padding: 15px;
+            color: #f44336;
+            margin-bottom: 20px;
+        }
+
+        .success-message {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4CAF50;
+            border-radius: 8px;
+            padding: 15px;
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🗑️ Account Deletion Requests</h1>
+            <p>Review and manage user account deletion requests</p>
+        </div>
+
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Pending Requests</h3>
+                <div class="value" id="stat-pending">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Approved Today</h3>
+                <div class="value" id="stat-approved">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Rejected Today</h3>
+                <div class="value" id="stat-rejected">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Requests</h3>
+                <div class="value" id="stat-total">0</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filters-row">
+                <div class="filter-group">
+                    <label for="status-filter">Status</label>
+                    <select id="status-filter" onchange="loadRequests()">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="search-input">Search</label>
+                    <input type="text" id="search-input" placeholder="Search by email or name..." onkeyup="filterTable()">
+                </div>
+                <div class="filter-group" style="display: flex; align-items: flex-end;">
+                    <button class="btn btn-primary" onclick="loadRequests()">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Requests Table -->
+        <div class="requests-table">
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Loading deletion requests...</p>
+            </div>
+            <div id="error" class="error-message" style="display: none;"></div>
+            <table id="requests-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Email</th>
+                        <th>Requested</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="requests-tbody">
+                </tbody>
+            </table>
+            <div id="empty-state" class="empty-state" style="display: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                </svg>
+                <h3>No deletion requests found</h3>
+                <p>There are no deletion requests matching your filters.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Request Details</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Approve Modal -->
+    <div id="approve-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Approve Deletion Request</h2>
+                <button class="close-btn" onclick="closeApproveModal()">&times;</button>
+            </div>
+            <div id="approve-error" class="error-message" style="display: none;"></div>
+            <div class="detail-row">
+                <label>Processing Notes (Optional)</label>
+                <textarea id="approve-notes" placeholder="Add any notes about this approval..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeApproveModal()">Cancel</button>
+                <button class="btn btn-success" onclick="confirmApprove()">✓ Approve & Delete Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reject Modal -->
+    <div id="reject-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Reject Deletion Request</h2>
+                <button class="close-btn" onclick="closeRejectModal()">&times;</button>
+            </div>
+            <div id="reject-error" class="error-message" style="display: none;"></div>
+            <div class="detail-row">
+                <label>Rejection Reason (Required)</label>
+                <textarea id="reject-notes" placeholder="Explain why this request is being rejected..." required></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeRejectModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmReject()">✗ Reject Request</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://ficore-mobile-backend.onrender.com';
+        let currentRequests = [];
+        let currentRequestId = null;
+
+        // Get admin token from localStorage or prompt
+        function getAdminToken() {
+            let token = localStorage.getItem('admin_token');
+            if (!token) {
+                token = prompt('Enter your admin token:');
+                if (token) {
+                    localStorage.setItem('admin_token', token);
+                }
+            }
+            return token;
+        }
+
+        // Load deletion requests
+        async function loadRequests() {
+            const token = getAdminToken();
+            if (!token) {
+                showError('Admin token required');
+                return;
+            }
+
+            const status = document.getElementById('status-filter').value;
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('requests-table').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/deletion-requests?status=${status}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('admin_token');
+                    showError('Invalid token. Please refresh and enter a valid admin token.');
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error('Failed to load requests');
+                }
+
+                const data = await response.json();
+                currentRequests = data.data || [];
+                
+                updateStats();
+                renderTable();
+                
+            } catch (error) {
+                showError('Failed to load deletion requests: ' + error.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            const pending = currentRequests.filter(r => r.status === 'pending').length;
+            const today = new Date().toISOString().split('T')[0];
+            const approvedToday = currentRequests.filter(r => 
+                r.status === 'approved' && r.processedAt && r.processedAt.startsWith(today)
+            ).length;
+            const rejectedToday = currentRequests.filter(r => 
+                r.status === 'rejected' && r.processedAt && r.processedAt.startsWith(today)
+            ).length;
+
+            document.getElementById('stat-pending').textContent = pending;
+            document.getElementById('stat-approved').textContent = approvedToday;
+            document.getElementById('stat-rejected').textContent = rejectedToday;
+            document.getElementById('stat-total').textContent = currentRequests.length;
+        }
+
+        // Render table
+        function renderTable() {
+            const tbody = document.getElementById('requests-tbody');
+            tbody.innerHTML = '';
+
+            if (currentRequests.length === 0) {
+                document.getElementById('empty-state').style.display = 'block';
+                return;
+            }
+
+            document.getElementById('requests-table').style.display = 'table';
+
+            currentRequests.forEach(request => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${request.userName || 'N/A'}</td>
+                    <td>${request.email}</td>
+                    <td>${formatDate(request.requestedAt)}</td>
+                    <td><span class="status-badge status-${request.status}">${request.status}</span></td>
+                    <td>${request.reason || '<em>No reason provided</em>'}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-secondary" onclick="viewDetails('${request._id}')">View</button>
+                            ${request.status === 'pending' ? `
+                                <button class="btn btn-success" onclick="showApproveModal('${request._id}')">Approve</button>
+                                <button class="btn btn-danger" onclick="showRejectModal('${request._id}')">Reject</button>
+                            ` : ''}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Filter table by search
+        function filterTable() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            const rows = document.querySelectorAll('#requests-tbody tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        }
+
+        // View request details
+        async function viewDetails(requestId) {
+            const token = getAdminToken();
+            const request = currentRequests.find(r => r._id === requestId);
+            
+            if (!request) return;
+
+            const modalBody = document.getElementById('modal-body');
+            modalBody.innerHTML = `
+                <div class="detail-row">
+                    <label>User Name</label>
+                    <div class="value">${request.userName || 'N/A'}</div>
+                </div>
+                <div class="detail-row">
+                    <label>Email</label>
+                    <div class="value">${request.email}</div>
+                </div>
+                <div class="detail-row">
+                    <label>Status</label>
+                    <div class="value"><span class="status-badge status-${request.status}">${request.status}</span></div>
+                </div>
+                <div class="detail-row">
+                    <label>Requested At</label>
+                    <div class="value">${formatDate(request.requestedAt)}</div>
+                </div>
+                ${request.processedAt ? `
+                    <div class="detail-row">
+                        <label>Processed At</label>
+                        <div class="value">${formatDate(request.processedAt)}</div>
+                    </div>
+                ` : ''}
+                <div class="detail-row">
+                    <label>Reason</label>
+                    <div class="value">${request.reason || '<em>No reason provided</em>'}</div>
+                </div>
+                ${request.processingNotes ? `
+                    <div class="detail-row">
+                        <label>Processing Notes</label>
+                        <div class="value">${request.processingNotes}</div>
+                    </div>
+                ` : ''}
+                ${request.userSnapshot ? `
+                    <div class="user-snapshot">
+                        <h3>User Snapshot</h3>
+                        <div class="snapshot-grid">
+                            <div class="detail-row">
+                                <label>FiCore Credits</label>
+                                <div class="value">₦${request.userSnapshot.ficoreCreditBalance || 0}</div>
+                            </div>
+                            <div class="detail-row">
+                                <label>Subscription</label>
+                                <div class="value">${request.userSnapshot.subscriptionStatus || 'basic'}</div>
+                            </div>
+                            <div class="detail-row">
+                                <label>Total Incomes</label>
+                                <div class="value">${request.userSnapshot.totalIncomes || 0}</div>
+                            </div>
+                            <div class="detail-row">
+                                <label>Total Expenses</label>
+                                <div class="value">${request.userSnapshot.totalExpenses || 0}</div>
+                            </div>
+                            <div class="detail-row">
+                                <label>Account Created</label>
+                                <div class="value">${formatDate(request.userSnapshot.createdAt)}</div>
+                            </div>
+                            <div class="detail-row">
+                                <label>Last Login</label>
+                                <div class="value">${formatDate(request.userSnapshot.lastLogin)}</div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+
+            document.getElementById('detail-modal').classList.add('active');
+        }
+
+        // Show approve modal
+        function showApproveModal(requestId) {
+            currentRequestId = requestId;
+            document.getElementById('approve-notes').value = '';
+            document.getElementById('approve-error').style.display = 'none';
+            document.getElementById('approve-modal').classList.add('active');
+        }
+
+        // Show reject modal
+        function showRejectModal(requestId) {
+            currentRequestId = requestId;
+            document.getElementById('reject-notes').value = '';
+            document.getElementById('reject-error').style.display = 'none';
+            document.getElementById('reject-modal').classList.add('active');
+        }
+
+        // Confirm approve
+        async function confirmApprove() {
+            const token = getAdminToken();
+            const notes = document.getElementById('approve-notes').value.trim();
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/deletion-requests/${currentRequestId}/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ notes })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to approve request');
+                }
+
+                closeApproveModal();
+                alert('✓ Deletion request approved successfully. User account has been soft deleted.');
+                loadRequests();
+                
+            } catch (error) {
+                document.getElementById('approve-error').textContent = error.message;
+                document.getElementById('approve-error').style.display = 'block';
+            }
+        }
+
+        // Confirm reject
+        async function confirmReject() {
+            const token = getAdminToken();
+            const notes = document.getElementById('reject-notes').value.trim();
+
+            if (!notes) {
+                document.getElementById('reject-error').textContent = 'Rejection reason is required';
+                document.getElementById('reject-error').style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/deletion-requests/${currentRequestId}/reject`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ notes })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to reject request');
+                }
+
+                closeRejectModal();
+                alert('✗ Deletion request rejected successfully.');
+                loadRequests();
+                
+            } catch (error) {
+                document.getElementById('reject-error').textContent = error.message;
+                document.getElementById('reject-error').style.display = 'block';
+            }
+        }
+
+        // Close modals
+        function closeModal() {
+            document.getElementById('detail-modal').classList.remove('active');
+        }
+
+        function closeApproveModal() {
+            document.getElementById('approve-modal').classList.remove('active');
+            currentRequestId = null;
+        }
+
+        function closeRejectModal() {
+            document.getElementById('reject-modal').classList.remove('active');
+            currentRequestId = null;
+        }
+
+        // Show error
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        // Format date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Load requests on page load
+        window.addEventListener('DOMContentLoaded', loadRequests);
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadRequests, 30000);
+    </script>
+</body>
+</html>

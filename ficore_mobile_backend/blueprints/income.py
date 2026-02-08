@@ -103,6 +103,15 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_income(current_user, income_id):
         try:
+            # CRITICAL FIX: Handle optimistic/temp IDs from frontend
+            # These IDs start with 'optimistic_' or 'temp_' and are not yet in the database
+            if income_id.startswith('optimistic_') or income_id.startswith('temp_') or income_id.startswith('local_'):
+                return jsonify({
+                    'success': False,
+                    'message': 'Income record is pending sync',
+                    'error_type': 'pending_sync'
+                }), 202  # 202 Accepted - processing in background
+            
             income = mongo.db.incomes.find_one({
                 '_id': ObjectId(income_id),
                 'userId': current_user['_id']

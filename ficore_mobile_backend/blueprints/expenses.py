@@ -95,6 +95,15 @@ def get_expense(expense_id):
     @expenses_bp.token_required
     def _get_expense(current_user):
         try:
+            # CRITICAL FIX: Handle optimistic/temp IDs from frontend
+            # These IDs start with 'optimistic_' or 'temp_' and are not yet in the database
+            if expense_id.startswith('optimistic_') or expense_id.startswith('temp_') or expense_id.startswith('local_'):
+                return jsonify({
+                    'success': False,
+                    'message': 'Expense record is pending sync',
+                    'error_type': 'pending_sync'
+                }), 202  # 202 Accepted - processing in background
+            
             expense = expenses_bp.mongo.db.expenses.find_one({
                 '_id': ObjectId(expense_id),
                 'userId': current_user['_id']

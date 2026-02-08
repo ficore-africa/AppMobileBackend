@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Treasury Analytics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header-left h1 {
+            color: #FFD700;
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .header-left p {
+            color: #b0b0b0;
+            font-size: 14px;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .period-selector {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .period-selector:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #1a1a2e;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .overview-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .overview-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(255, 215, 0, 0.2);
+        }
+
+        .card-label {
+            color: #b0b0b0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        .card-value {
+            color: #FFD700;
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .card-value.positive {
+            color: #4CAF50;
+        }
+
+        .card-value.negative {
+            color: #f44336;
+        }
+
+        .card-subtitle {
+            color: #b0b0b0;
+            font-size: 14px;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .section-title {
+            color: #FFD700;
+            font-size: 24px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .breakdown-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .breakdown-item {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .breakdown-label {
+            color: #b0b0b0;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .breakdown-value {
+            color: #e0e0e0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .provider-comparison {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .provider-card {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .provider-name {
+            color: #FFD700;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            text-transform: capitalize;
+        }
+
+        .provider-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .provider-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .provider-stat:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #b0b0b0;
+            font-size: 14px;
+        }
+
+        .stat-value {
+            color: #e0e0e0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .user-search {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .search-input::placeholder {
+            color: #b0b0b0;
+        }
+
+        .user-result {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .user-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .user-info h3 {
+            color: #FFD700;
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .user-info p {
+            color: #b0b0b0;
+            font-size: 14px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-premium {
+            background: rgba(255, 215, 0, 0.2);
+            color: #FFD700;
+            border: 1px solid #FFD700;
+        }
+
+        .badge-free {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e0e0e0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-profitable {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+            border: 1px solid #4CAF50;
+        }
+
+        .badge-at-risk {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
+            border: 1px solid #FFC107;
+        }
+
+        .badge-unprofitable {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+            border: 1px solid #f44336;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #b0b0b0;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 215, 0, 0.2);
+            border-top-color: #FFD700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid #f44336;
+            color: #f44336;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #FFD700;
+            text-decoration: none;
+            margin-bottom: 20px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .back-link:hover {
+            color: #FFA500;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .overview-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .breakdown-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .provider-comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="admin_dashboard.html" class="back-link">← Back to Admin Dashboard</a>
+
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>💰 Treasury Analytics</h1>
+                <p>Unit Economics & Profitability Tracking</p>
+            </div>
+            <div class="header-right">
+                <select class="period-selector" id="periodSelector" onchange="loadAnalytics()">
+                    <option value="">All Time</option>
+                    <option value="1">Last 24 Hours</option>
+                    <option value="7" selected>Last 7 Days</option>
+                    <option value="30">Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportData()">📊 Export CSV</button>
+                <button class="btn btn-secondary" onclick="loadAnalytics()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <!-- Overview Cards -->
+        <div class="overview-grid" id="overviewGrid">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p style="margin-top: 15px;">Loading analytics...</p>
+            </div>
+        </div>
+
+        <!-- Revenue Breakdown -->
+        <div class="section" id="revenueSection" style="display: none;">
+            <h2 class="section-title">📈 Revenue Breakdown</h2>
+            <div class="breakdown-grid" id="revenueBreakdown"></div>
+        </div>
+
+        <!-- Cost Breakdown -->
+        <div class="section" id="costSection" style="display: none;">
+            <h2 class="section-title">💸 Cost Breakdown</h2>
+            <div class="breakdown-grid" id="costBreakdown"></div>
+        </div>
+
+        <!-- Provider Comparison -->
+        <div class="section" id="providerSection" style="display: none;">
+            <h2 class="section-title">🏢 Provider Performance</h2>
+            <div class="provider-comparison" id="providerComparison"></div>
+        </div>
+
+        <!-- Transaction Type Stats -->
+        <div class="section" id="transactionSection" style="display: none;">
+            <h2 class="section-title">📊 Transaction Type Breakdown</h2>
+            <div class="provider-comparison" id="transactionStats"></div>
+        </div>
+
+        <!-- User Profitability Search -->
+        <div class="section">
+            <h2 class="section-title">🔍 User Profitability Search</h2>
+            <div class="user-search">
+                <input 
+                    type="text" 
+                    class="search-input" 
+                    id="userIdInput" 
+                    placeholder="Enter User ID (e.g., 68e11e3bd594fe6a85546181)"
+                >
+                <button class="btn btn-primary" onclick="searchUserProfitability()">Search</button>
+            </div>
+            <div id="userResult"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://ficore-mobile-backend.onrender.com';
+        let currentAnalytics = null;
+
+        // Get admin token (camelCase as per Golden Rule #37)
+        function getAdminToken() {
+            let token = localStorage.getItem('adminToken');
+            if (!token) {
+                // Fallback to snake_case for backward compatibility
+                token = localStorage.getItem('admin_token');
+                if (token) {
+                    // Migrate to camelCase
+                    localStorage.setItem('adminToken', token);
+                    localStorage.removeItem('admin_token');
+                }
+            }
+
+            if (!token) {
+                token = prompt('Enter your admin token:');
+                if (token) {
+                    localStorage.setItem('adminToken', token);
+                }
+            }
+            return token;
+        }
+
+        // Format currency
+        function formatCurrency(amount) {
+            return '₦' + parseFloat(amount).toLocaleString('en-NG', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Format percentage
+        function formatPercentage(value) {
+            return parseFloat(value).toFixed(2) + '%';
+        }
+
+        // Load analytics data
+        async function loadAnalytics() {
+            const token = getAdminToken();
+            if (!token) {
+                showError('Admin token required');
+                return;
+            }
+
+            const period = document.getElementById('periodSelector').value;
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/analytics?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/analytics`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    showError('Authentication failed. Please refresh and enter your token again.');
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentAnalytics = data.data;
+                    displayAnalytics(data.data);
+                } else {
+                    showError(data.message || 'Failed to load analytics');
+                }
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+                showError('Failed to load analytics: ' + error.message);
+            }
+        }
+
+        // Display analytics data
+        function displayAnalytics(data) {
+            // Overview cards
+            const overview = data.overview;
+            const overviewGrid = document.getElementById('overviewGrid');
+            
+            const profitClass = overview.netProfit >= 0 ? 'positive' : 'negative';
+            
+            overviewGrid.innerHTML = `
+                <div class="overview-card">
+                    <div class="card-label">Total Revenue</div>
+                    <div class="card-value">${formatCurrency(overview.totalRevenue)}</div>
+                    <div class="card-subtitle">${overview.totalTransactions} transactions</div>
+                </div>
+                <div class="overview-card">
+                    <div class="card-label">Total Costs</div>
+                    <div class="card-value">${formatCurrency(overview.totalCosts)}</div>
+                    <div class="card-subtitle">Gateway fees</div>
+                </div>
+                <div class="overview-card">
+                    <div class="card-label">Net Profit</div>
+                    <div class="card-value ${profitClass}">${formatCurrency(overview.netProfit)}</div>
+                    <div class="card-subtitle">${overview.netProfit >= 0 ? 'Profitable' : 'Loss'}</div>
+                </div>
+                <div class="overview-card">
+                    <div class="card-label">Profit Margin</div>
+                    <div class="card-value ${profitClass}">${formatPercentage(overview.profitMargin)}</div>
+                    <div class="card-subtitle">Net margin</div>
+                </div>
+            `;
+
+            // Revenue breakdown
+            displayRevenueBreakdown(data.revenueBreakdown);
+            
+            // Cost breakdown
+            displayCostBreakdown(data.costBreakdown);
+            
+            // Provider comparison
+            displayProviderComparison(data.providerStats);
+            
+            // Transaction type stats
+            displayTransactionStats(data.transactionTypeStats);
+
+            // Show sections
+            document.getElementById('revenueSection').style.display = 'block';
+            document.getElementById('costSection').style.display = 'block';
+            document.getElementById('providerSection').style.display = 'block';
+            document.getElementById('transactionSection').style.display = 'block';
+        }
+
+        // Display revenue breakdown
+        function displayRevenueBreakdown(revenue) {
+            const container = document.getElementById('revenueBreakdown');
+            
+            container.innerHTML = `
+                <div class="breakdown-item">
+                    <div class="breakdown-label">VAS Commissions (Total)</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.vasCommissions.total)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">VAS - Monnify</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.vasCommissions.monnify)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">VAS - Peyflex</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.vasCommissions.peyflex)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">VAS - Airtime</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.vasCommissions.airtime)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">VAS - Data</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.vasCommissions.data)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Subscriptions (Net)</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.subscriptions.net)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">FC Credits (Net)</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.credits.net)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Deposit Fees (Net)</div>
+                    <div class="breakdown-value">${formatCurrency(revenue.depositFees.net)}</div>
+                </div>
+            `;
+        }
+
+        // Display cost breakdown
+        function displayCostBreakdown(costs) {
+            const container = document.getElementById('costBreakdown');
+            
+            container.innerHTML = `
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total Gateway Fees</div>
+                    <div class="breakdown-value">${formatCurrency(costs.gatewayFees.total)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Deposit Gateway Fees</div>
+                    <div class="breakdown-value">${formatCurrency(costs.gatewayFees.deposits)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Subscription Gateway Fees</div>
+                    <div class="breakdown-value">${formatCurrency(costs.gatewayFees.subscriptions)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Credits Gateway Fees</div>
+                    <div class="breakdown-value">${formatCurrency(costs.gatewayFees.credits)}</div>
+                </div>
+            `;
+        }
+
+        // Display provider comparison
+        function displayProviderComparison(providers) {
+            const container = document.getElementById('providerComparison');
+            
+            if (!providers || providers.length === 0) {
+                container.innerHTML = '<p style="color: #b0b0b0;">No provider data available</p>';
+                return;
+            }
+
+            container.innerHTML = providers.map(provider => `
+                <div class="provider-card">
+                    <div class="provider-name">${provider.name}</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat">
+                            <span class="stat-label">Transactions</span>
+                            <span class="stat-value">${provider.count}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Volume</span>
+                            <span class="stat-value">${formatCurrency(provider.volume)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Commission</span>
+                            <span class="stat-value">${formatCurrency(provider.commission)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Commission Rate</span>
+                            <span class="stat-value">${provider.commissionRate}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Display transaction type stats
+        function displayTransactionStats(transactions) {
+            const container = document.getElementById('transactionStats');
+            
+            if (!transactions || transactions.length === 0) {
+                container.innerHTML = '<p style="color: #b0b0b0;">No transaction data available</p>';
+                return;
+            }
+
+            container.innerHTML = transactions.map(txn => `
+                <div class="provider-card">
+                    <div class="provider-name">${txn.type}</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat">
+                            <span class="stat-label">Transactions</span>
+                            <span class="stat-value">${txn.count}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Volume</span>
+                            <span class="stat-value">${formatCurrency(txn.volume)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Commission</span>
+                            <span class="stat-value">${formatCurrency(txn.commission)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Search user profitability
+        async function searchUserProfitability() {
+            const userId = document.getElementById('userIdInput').value.trim();
+            if (!userId) {
+                alert('Please enter a User ID');
+                return;
+            }
+
+            const token = getAdminToken();
+            if (!token) {
+                showError('Admin token required');
+                return;
+            }
+
+            const period = document.getElementById('periodSelector').value;
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/user-profitability/${userId}?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/user-profitability/${userId}`;
+
+            const resultContainer = document.getElementById('userResult');
+            resultContainer.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p style="margin-top: 15px;">Loading user data...</p></div>';
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    showError('Authentication failed. Please refresh and enter your token again.');
+                    return;
+                }
+
+                if (response.status === 404) {
+                    resultContainer.innerHTML = '<div class="error">User not found</div>';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayUserProfitability(data.data);
+                } else {
+                    resultContainer.innerHTML = `<div class="error">${data.message || 'Failed to load user data'}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to load user profitability:', error);
+                resultContainer.innerHTML = `<div class="error">Failed to load user data: ${error.message}</div>`;
+            }
+        }
+
+        // Display user profitability
+        function displayUserProfitability(user) {
+            const container = document.getElementById('userResult');
+            
+            const assessmentBadge = {
+                'profitable': 'badge-profitable',
+                'at_risk': 'badge-at-risk',
+                'low_vas_usage': 'badge-at-risk',
+                'unprofitable': 'badge-unprofitable'
+            }[user.profitability.assessment] || 'badge-free';
+
+            const profitClass = user.profitability.isProfitable ? 'positive' : 'negative';
+
+            container.innerHTML = `
+                <div class="user-result">
+                    <div class="user-header">
+                        <div class="user-info">
+                            <h3>${user.userName || 'Unknown User'}</h3>
+                            <p>${user.userEmail}</p>
+                            <p style="font-size: 12px; margin-top: 5px;">User ID: ${user.userId}</p>
+                        </div>
+                        <div>
+                            <span class="badge ${user.isPremium ? 'badge-premium' : 'badge-free'}">
+                                ${user.isPremium ? 'Premium' : 'Free'}
+                            </span>
+                            <span class="badge ${assessmentBadge}" style="margin-left: 10px;">
+                                ${user.profitability.assessment.replace('_', ' ').toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+
+                    ${user.profitability.warning ? `
+                        <div class="error" style="margin-bottom: 20px;">
+                            ⚠️ ${user.profitability.warning}
+                        </div>
+                    ` : ''}
+
+                    <div class="overview-grid" style="margin-bottom: 20px;">
+                        <div class="overview-card">
+                            <div class="card-label">Total Revenue</div>
+                            <div class="card-value">${formatCurrency(user.revenue.total)}</div>
+                        </div>
+                        <div class="overview-card">
+                            <div class="card-label">Total Costs</div>
+                            <div class="card-value">${formatCurrency(user.costs.total)}</div>
+                        </div>
+                        <div class="overview-card">
+                            <div class="card-label">Net Profit</div>
+                            <div class="card-value ${profitClass}">${formatCurrency(user.profitability.netProfit)}</div>
+                        </div>
+                        <div class="overview-card">
+                            <div class="card-label">Profit Margin</div>
+                            <div class="card-value ${profitClass}">${formatPercentage(user.profitability.profitMargin)}</div>
+                        </div>
+                    </div>
+
+                    <div class="breakdown-grid">
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">Subscription Revenue</div>
+                            <div class="breakdown-value">${formatCurrency(user.revenue.subscription.net)}</div>
+                        </div>
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">VAS Commissions</div>
+                            <div class="breakdown-value">${formatCurrency(user.revenue.vasCommissions)}</div>
+                        </div>
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">Deposit Fees</div>
+                            <div class="breakdown-value">${formatCurrency(user.revenue.depositFees.net)}</div>
+                        </div>
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">Total Deposits</div>
+                            <div class="breakdown-value">${user.usage.totalDeposits}</div>
+                        </div>
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">Total Deposited</div>
+                            <div class="breakdown-value">${formatCurrency(user.usage.totalDeposited)}</div>
+                        </div>
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">VAS Transactions</div>
+                            <div class="breakdown-value">${user.usage.totalVasTransactions}</div>
+                        </div>
+                        <div class="breakdown-item">
+                            <div class="breakdown-label">VAS Volume</div>
+                            <div class="breakdown-value">${formatCurrency(user.usage.totalVasVolume)}</div>
+                        </div>
+                        ${user.subscriptionType ? `
+                            <div class="breakdown-item">
+                                <div class="breakdown-label">Subscription Type</div>
+                                <div class="breakdown-value">${user.subscriptionType}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Export data to CSV
+        function exportData() {
+            if (!currentAnalytics) {
+                alert('No data to export. Please load analytics first.');
+                return;
+            }
+
+            const period = document.getElementById('periodSelector').value;
+            const periodLabel = period ? `${period}_days` : 'all_time';
+            
+            // Create CSV content
+            let csv = 'FiCore Treasury Analytics Report\n';
+            csv += `Period: ${periodLabel}\n`;
+            csv += `Generated: ${new Date().toLocaleString()}\n\n`;
+            
+            // Overview
+            csv += 'OVERVIEW\n';
+            csv += 'Metric,Value\n';
+            csv += `Total Revenue,${currentAnalytics.overview.totalRevenue}\n`;
+            csv += `Total Costs,${currentAnalytics.overview.totalCosts}\n`;
+            csv += `Net Profit,${currentAnalytics.overview.netProfit}\n`;
+            csv += `Profit Margin,${currentAnalytics.overview.profitMargin}%\n`;
+            csv += `Total Transactions,${currentAnalytics.overview.totalTransactions}\n\n`;
+            
+            // Revenue breakdown
+            csv += 'REVENUE BREAKDOWN\n';
+            csv += 'Source,Amount\n';
+            csv += `VAS Commissions Total,${currentAnalytics.revenueBreakdown.vasCommissions.total}\n`;
+            csv += `VAS Monnify,${currentAnalytics.revenueBreakdown.vasCommissions.monnify}\n`;
+            csv += `VAS Peyflex,${currentAnalytics.revenueBreakdown.vasCommissions.peyflex}\n`;
+            csv += `VAS Airtime,${currentAnalytics.revenueBreakdown.vasCommissions.airtime}\n`;
+            csv += `VAS Data,${currentAnalytics.revenueBreakdown.vasCommissions.data}\n`;
+            csv += `Subscriptions Net,${currentAnalytics.revenueBreakdown.subscriptions.net}\n`;
+            csv += `Credits Net,${currentAnalytics.revenueBreakdown.credits.net}\n`;
+            csv += `Deposit Fees Net,${currentAnalytics.revenueBreakdown.depositFees.net}\n\n`;
+            
+            // Provider stats
+            csv += 'PROVIDER PERFORMANCE\n';
+            csv += 'Provider,Transactions,Volume,Commission,Rate\n';
+            currentAnalytics.providerStats.forEach(provider => {
+                csv += `${provider.name},${provider.count},${provider.volume},${provider.commission},${provider.commissionRate}\n`;
+            });
+            csv += '\n';
+            
+            // Transaction type stats
+            csv += 'TRANSACTION TYPE BREAKDOWN\n';
+            csv += 'Type,Transactions,Volume,Commission\n';
+            currentAnalytics.transactionTypeStats.forEach(txn => {
+                csv += `${txn.type},${txn.count},${txn.volume},${txn.commission}\n`;
+            });
+            
+            // Download CSV
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ficore_treasury_${periodLabel}_${Date.now()}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Show error message
+        function showError(message) {
+            const overviewGrid = document.getElementById('overviewGrid');
+            overviewGrid.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        // Load analytics on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadAnalytics();
+        });
+
+        // Auto-refresh every 60 seconds
+        setInterval(loadAnalytics, 60000);
+    </script>
+</body>
+</html>
