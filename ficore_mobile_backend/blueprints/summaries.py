@@ -29,13 +29,17 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 now = datetime.utcnow()
                 one_minute_ago = now - timedelta(minutes=1)
                 
-                recent_expenses = list(mongo.db.expenses.find({
-                    'userId': current_user['_id'],
-                    '$or': [
-                        {'date': {'$lte': now}},  # Past & present entries
-                        {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
-                    ]
-                }).sort('createdAt', -1).limit(limit))
+                # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for consistency
+                from utils.immutable_ledger_helper import get_active_transactions_query
+                base_query = get_active_transactions_query(current_user['_id'])
+                
+                # Add date filtering
+                base_query['$or'] = [
+                    {'date': {'$lte': now}},  # Past & present entries
+                    {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                ]
+                
+                recent_expenses = list(mongo.db.expenses.find(base_query).sort('createdAt', -1).limit(limit))
                 
                 # DISABLED FOR LIQUID WALLET FOCUS
                 # print(f"Found {len(recent_expenses)} expense transactions for user {current_user['_id']}")
@@ -69,13 +73,17 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 now = datetime.utcnow()
                 one_minute_ago = now - timedelta(minutes=1)
                 
-                recent_incomes = list(mongo.db.incomes.find({
-                    'userId': current_user['_id'],
-                    '$or': [
-                        {'dateReceived': {'$lte': now}},  # Past & present entries
-                        {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
-                    ]
-                }).sort('createdAt', -1).limit(limit))
+                # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for consistency
+                from utils.immutable_ledger_helper import get_active_transactions_query
+                base_query = get_active_transactions_query(current_user['_id'])
+                
+                # Add date filtering
+                base_query['$or'] = [
+                    {'dateReceived': {'$lte': now}},  # Past & present entries
+                    {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                ]
+                
+                recent_incomes = list(mongo.db.incomes.find(base_query).sort('createdAt', -1).limit(limit))
                 
                 # DISABLED FOR LIQUID WALLET FOCUS
                 # print(f"Found {len(recent_incomes)} income transactions for user {current_user['_id']}")

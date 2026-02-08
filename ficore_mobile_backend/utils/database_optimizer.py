@@ -183,6 +183,7 @@ class DatabaseOptimizer:
         Uses compound indexes and efficient query patterns with enhanced performance.
         CRITICAL FIX: Ensures amount field is properly converted to numeric type before aggregation.
         CRITICAL FIX: For incomes, only include past/present (dateReceived <= now) to match Recent Activity behavior.
+        CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query to filter out voided/deleted entries.
         
         Args:
             user_id: User's ObjectId
@@ -193,20 +194,26 @@ class DatabaseOptimizer:
         Returns:
             List of aggregation pipeline stages
         """
+        # CRITICAL FIX (Feb 8, 2026): Import and use get_active_transactions_query
+        from utils.immutable_ledger_helper import get_active_transactions_query
+        
         # Use appropriate date field based on collection type
         date_field = 'dateReceived' if collection_type == 'income' else 'date'
         
+        # Get base query with active transactions filter
+        base_query = get_active_transactions_query(user_id)
+        
+        # Add date range filter
+        base_query[date_field] = {
+            '$gte': start_date,
+            '$lte': end_date
+        }
+        base_query['amount'] = {'$exists': True, '$ne': None}  # Ensure amount field exists and is not null
+        
         return [
-            # Enhanced match stage with optimized index usage
+            # Enhanced match stage with optimized index usage AND active transactions filter
             {
-                '$match': {
-                    'userId': user_id,
-                    date_field: {
-                        '$gte': start_date,
-                        '$lte': end_date
-                    },
-                    'amount': {'$exists': True, '$ne': None}  # Ensure amount field exists and is not null
-                }
+                '$match': base_query
             },
             # CRITICAL FIX: Add fields stage to ensure amount is numeric
             {
@@ -265,6 +272,7 @@ class DatabaseOptimizer:
         Get optimized aggregation pipeline for year-to-date calculations.
         Enhanced with better index utilization and performance optimizations.
         CRITICAL FIX: Ensures amount field is properly converted to numeric type before aggregation.
+        CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query to filter out voided/deleted entries.
         
         Args:
             user_id: User's ObjectId
@@ -274,17 +282,23 @@ class DatabaseOptimizer:
         Returns:
             List of aggregation pipeline stages
         """
+        # CRITICAL FIX (Feb 8, 2026): Import and use get_active_transactions_query
+        from utils.immutable_ledger_helper import get_active_transactions_query
+        
         # Use appropriate date field based on collection type
         date_field = 'dateReceived' if collection_type == 'income' else 'date'
         
+        # Get base query with active transactions filter
+        base_query = get_active_transactions_query(user_id)
+        
+        # Add date range filter
+        base_query[date_field] = {'$gte': start_of_year}
+        base_query['amount'] = {'$exists': True, '$ne': None}  # Ensure amount field exists and is not null
+        
         return [
-            # Optimized match stage using ascending date index for range queries
+            # Optimized match stage using ascending date index for range queries AND active transactions filter
             {
-                '$match': {
-                    'userId': user_id,
-                    date_field: {'$gte': start_of_year},
-                    'amount': {'$exists': True, '$ne': None}  # Ensure amount field exists and is not null
-                }
+                '$match': base_query
             },
             # CRITICAL FIX: Add fields stage to ensure amount is numeric
             {

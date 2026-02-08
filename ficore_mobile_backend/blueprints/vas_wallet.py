@@ -1675,9 +1675,13 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
             # If VAS-only requested, skip income/expense transactions
             if not vas_only:
-                # Get Income transactions
+                # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for consistency
+                from utils.immutable_ledger_helper import get_active_transactions_query
+                
+                # Get Income transactions with active filter
+                income_query = get_active_transactions_query(ObjectId(user_id))
                 income_transactions = list(
-                    mongo.db.incomes.find({'userId': ObjectId(user_id)})
+                    mongo.db.incomes.find(income_query)
                     .sort('dateReceived', -1)
                 )
                 
@@ -1707,9 +1711,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'isOptimistic': False,
                     })
                 
-                # Get Expense transactions
+                # Get Expense transactions with active filter
+                expense_query = get_active_transactions_query(ObjectId(user_id))
                 expense_transactions = list(
-                    mongo.db.expenses.find({'userId': ObjectId(user_id)})
+                    mongo.db.expenses.find(expense_query)
                     .sort('date', -1)
                 )
                 

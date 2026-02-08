@@ -1042,6 +1042,11 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             all_transactions = []
             
             # OPTIMIZATION 1: Use aggregation pipeline with $unionWith for better performance
+            # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for income/expense filtering
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            # Get active transactions query (returns dict with userId, status, isDeleted filters)
+            active_query = get_active_transactions_query(ObjectId(user_id))
             
             # Build aggregation pipeline to combine all collections efficiently
             pipeline = [
@@ -1064,12 +1069,12 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                         'subtype': '$type'
                     }
                 },
-                # Union with income transactions
+                # Union with income transactions (with active filter)
                 {
                     '$unionWith': {
                         'coll': 'incomes',
                         'pipeline': [
-                            {'$match': {'userId': ObjectId(user_id)}},
+                            {'$match': active_query},  # Use active transactions filter
                             {
                                 '$addFields': {
                                     'transactionType': 'INCOME',
@@ -1080,12 +1085,12 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                         ]
                     }
                 },
-                # Union with expense transactions
+                # Union with expense transactions (with active filter)
                 {
                     '$unionWith': {
                         'coll': 'expenses',
                         'pipeline': [
-                            {'$match': {'userId': ObjectId(user_id)}},
+                            {'$match': active_query},  # Use active transactions filter
                             {
                                 '$addFields': {
                                     'transactionType': 'EXPENSE',
