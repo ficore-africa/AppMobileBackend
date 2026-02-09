@@ -1436,6 +1436,22 @@ class PDFGenerator:
             ['Total Transactions', str(credit_data.get('transaction_count', 0))]
         ]
         
+        # Add breakdown by source if available (Feb 9, 2026)
+        breakdown = credit_data.get('earned_breakdown', {})
+        if breakdown:
+            summary_data.append(['', ''])  # Spacer row
+            summary_data.append(['Credits Earned By Source:', ''])
+            if breakdown.get('purchased', 0) > 0:
+                summary_data.append(['  • Purchased', f"+{breakdown['purchased']:.2f} FC"])
+            if breakdown.get('signup_bonus', 0) > 0:
+                summary_data.append(['  • Signup Bonus', f"+{breakdown['signup_bonus']:.2f} FC"])
+            if breakdown.get('rewards', 0) > 0:
+                summary_data.append(['  • Rewards Screen', f"+{breakdown['rewards']:.2f} FC"])
+            if breakdown.get('tax_education', 0) > 0:
+                summary_data.append(['  • Tax Education', f"+{breakdown['tax_education']:.2f} FC"])
+            if breakdown.get('other', 0) > 0:
+                summary_data.append(['  • Other', f"+{breakdown['other']:.2f} FC"])
+        
         summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
         summary_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f0f0f0')),
@@ -1797,6 +1813,355 @@ class PDFGenerator:
         story.append(Paragraph(footer_text, self.styles['InfoText']))
         
         # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_wallet_funding_report(self, user_data, export_data, start_date=None, end_date=None):
+        """Generate Wallet Funding Report PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+        story = []
+        
+        # Header
+        story.append(Paragraph("FiCore Africa", self.styles['Title']))
+        story.append(Paragraph("Wallet Funding Report", self.styles['Heading1']))
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        user_info = f"""
+        <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
+        <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
+        """
+        if start_date and end_date:
+            user_info += f"<br/><b>Period:</b> {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Transactions Table
+        story.append(Paragraph("Wallet Funding Transactions", self.styles['SectionHeader']))
+        story.append(Spacer(1, 12))
+        
+        table_data = [['Date', 'Reference', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        total_amount = 0
+        total_fees = 0
+        
+        for txn in export_data.get('transactions', []):
+            date_str = txn['date'].strftime('%Y-%m-%d %H:%M')
+            amount = txn.get('amount', 0)
+            fee = txn.get('fee', 0)
+            
+            table_data.append([
+                date_str,
+                txn.get('reference', 'N/A'),
+                f'₦{amount:,.2f}',
+                f'₦{fee:,.2f}',
+                txn.get('status', 'UNKNOWN')
+            ])
+            total_amount += amount
+            total_fees += fee
+        
+        # Add totals row
+        table_data.append(['', 'Totals:', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        
+        table = Table(table_data, colWidths=[1.5*inch, 2*inch, 1.2*inch, 1.2*inch, 1*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(table)
+        story.append(Spacer(1, 20))
+        
+        # Summary
+        summary_text = f"""
+        <b>Summary:</b><br/>
+        Total Funded: ₦{total_amount:,.2f}<br/>
+        Total Fees: ₦{total_fees:,.2f}<br/>
+        Number of Transactions: {len(export_data.get('transactions', []))}
+        """
+        story.append(Paragraph(summary_text, self.styles['InfoText']))
+        
+        footer_text = f"""<i>This report was generated on {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}.
+        <br/>
+        Generated by FiCore Africa | Wallet Services</i>
+        """
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_bill_payments_report(self, user_data, export_data, start_date=None, end_date=None):
+        """Generate Bill Payments Report PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+        story = []
+        
+        # Header
+        story.append(Paragraph("FiCore Africa", self.styles['Title']))
+        story.append(Paragraph("Bill Payments Report", self.styles['Heading1']))
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        user_info = f"""
+        <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
+        <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
+        """
+        if start_date and end_date:
+            user_info += f"<br/><b>Period:</b> {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Transactions Table
+        story.append(Paragraph("Bill Payment Transactions", self.styles['SectionHeader']))
+        story.append(Spacer(1, 12))
+        
+        table_data = [['Date', 'Reference', 'Category', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        total_amount = 0
+        total_fees = 0
+        
+        for txn in export_data.get('transactions', []):
+            date_str = txn['date'].strftime('%Y-%m-%d %H:%M')
+            amount = txn.get('amount', 0)
+            fee = txn.get('fee', 0)
+            
+            table_data.append([
+                date_str,
+                txn.get('reference', 'N/A'),
+                txn.get('category', 'N/A'),
+                f'₦{amount:,.2f}',
+                f'₦{fee:,.2f}',
+                txn.get('status', 'UNKNOWN')
+            ])
+            total_amount += amount
+            total_fees += fee
+        
+        # Add totals row
+        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        
+        table = Table(table_data, colWidths=[1.3*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1*inch, 0.8*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(table)
+        story.append(Spacer(1, 20))
+        
+        # Summary
+        summary_text = f"""
+        <b>Summary:</b><br/>
+        Total Spent: ₦{total_amount:,.2f}<br/>
+        Total Fees: ₦{total_fees:,.2f}<br/>
+        Number of Transactions: {len(export_data.get('transactions', []))}
+        """
+        story.append(Paragraph(summary_text, self.styles['InfoText']))
+        
+        footer_text = f"""<i>This report was generated on {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}.
+        <br/>
+        Generated by FiCore Africa | Bill Payment Services</i>
+        """
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_airtime_purchases_report(self, user_data, export_data, start_date=None, end_date=None):
+        """Generate Airtime Purchases Report PDF"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+        story = []
+        
+        # Header
+        story.append(Paragraph("FiCore Africa", self.styles['Title']))
+        story.append(Paragraph("Airtime Purchases Report", self.styles['Heading1']))
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        user_info = f"""
+        <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
+        <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
+        """
+        if start_date and end_date:
+            user_info += f"<br/><b>Period:</b> {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Transactions Table
+        story.append(Paragraph("Airtime Purchase Transactions", self.styles['SectionHeader']))
+        story.append(Spacer(1, 12))
+        
+        table_data = [['Date', 'Reference', 'Phone Number', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        total_amount = 0
+        total_fees = 0
+        
+        for txn in export_data.get('transactions', []):
+            date_str = txn['date'].strftime('%Y-%m-%d %H:%M')
+            amount = txn.get('amount', 0)
+            fee = txn.get('fee', 0)
+            
+            table_data.append([
+                date_str,
+                txn.get('reference', 'N/A'),
+                txn.get('phone', 'N/A'),
+                f'₦{amount:,.2f}',
+                f'₦{fee:,.2f}',
+                txn.get('status', 'UNKNOWN')
+            ])
+            total_amount += amount
+            total_fees += fee
+        
+        # Add totals row
+        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        
+        table = Table(table_data, colWidths=[1.3*inch, 1.5*inch, 1.3*inch, 1.2*inch, 1*inch, 0.7*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(table)
+        story.append(Spacer(1, 20))
+        
+        # Summary
+        summary_text = f"""
+        <b>Summary:</b><br/>
+        Total Spent: ₦{total_amount:,.2f}<br/>
+        Total Fees: ₦{total_fees:,.2f}<br/>
+        Number of Transactions: {len(export_data.get('transactions', []))}
+        """
+        story.append(Paragraph(summary_text, self.styles['InfoText']))
+        
+        footer_text = f"""<i>This report was generated on {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}.
+        <br/>
+        Generated by FiCore Africa | Airtime Services</i>
+        """
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def generate_full_wallet_report(self, user_data, export_data, start_date=None, end_date=None):
+        """Generate Full Wallet Report PDF (all transaction types)"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+        story = []
+        
+        # Header
+        story.append(Paragraph("FiCore Africa", self.styles['Title']))
+        story.append(Paragraph("Full Wallet Report", self.styles['Heading1']))
+        story.append(Spacer(1, 12))
+        
+        # User Info
+        user_info = f"""
+        <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>Email:</b> {user_data.get('email', '')}<br/>
+        <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
+        <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
+        """
+        if start_date and end_date:
+            user_info += f"<br/><b>Period:</b> {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        
+        story.append(Paragraph(user_info, self.styles['InfoText']))
+        story.append(Spacer(1, 20))
+        
+        # Transactions Table
+        story.append(Paragraph("All Wallet Transactions", self.styles['SectionHeader']))
+        story.append(Spacer(1, 12))
+        
+        table_data = [['Date', 'Reference', 'Type', 'Description', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        total_amount = 0
+        total_fees = 0
+        
+        for txn in export_data.get('transactions', []):
+            date_str = txn['date'].strftime('%Y-%m-%d %H:%M')
+            amount = txn.get('amount', 0)
+            fee = txn.get('fee', 0)
+            
+            table_data.append([
+                date_str,
+                txn.get('reference', 'N/A')[:15],  # Truncate long references
+                txn.get('type', 'N/A')[:12],  # Truncate type
+                txn.get('description', 'N/A')[:25],  # Truncate description
+                f'₦{amount:,.2f}',
+                f'₦{fee:,.2f}',
+                txn.get('status', 'UNKNOWN')[:8]
+            ])
+            total_amount += amount
+            total_fees += fee
+        
+        # Add totals row
+        table_data.append(['', 'Totals:', '', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        
+        table = Table(table_data, colWidths=[1*inch, 1.2*inch, 0.9*inch, 1.5*inch, 1*inch, 0.8*inch, 0.6*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(table)
+        story.append(Spacer(1, 20))
+        
+        # Summary
+        summary_text = f"""
+        <b>Summary:</b><br/>
+        Total Amount: ₦{total_amount:,.2f}<br/>
+        Total Fees: ₦{total_fees:,.2f}<br/>
+        Number of Transactions: {len(export_data.get('transactions', []))}
+        """
+        story.append(Paragraph(summary_text, self.styles['InfoText']))
+        
+        footer_text = f"""<i>This report was generated on {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}.
+        <br/>
+        Generated by FiCore Africa | Complete Wallet Services</i>
+        """
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
         doc.build(story)
         buffer.seek(0)
         return buffer
