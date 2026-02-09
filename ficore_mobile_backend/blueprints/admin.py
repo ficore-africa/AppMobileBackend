@@ -5262,20 +5262,26 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # 4. Start atomic transaction
             try:
                 # 4a. Update user balances
-                # CRITICAL: Update ALL THREE wallet balance fields (Golden Rule 38)
+                # CRITICAL: Update wallet balance using centralized utility (Golden Rule 38)
+                from utils.balance_sync import update_liquid_wallet_balance, get_liquid_wallet_balance
+                
+                # Deduct from withdrawable balance
                 mongo.db.users.update_one(
                     {'_id': user['_id']},
                     {
-                        '$inc': {
-                            'withdrawableCommissionBalance': -withdrawal['amount'],
-                            'walletBalance': withdrawal['amount'],
-                            'liquidWalletBalance': withdrawal['amount'],
-                            'vasWalletBalance': withdrawal['amount']
-                        },
-                        '$set': {
-                            'updatedAt': datetime.utcnow()
-                        }
+                        '$inc': {'withdrawableCommissionBalance': -withdrawal['amount']},
+                        '$set': {'updatedAt': datetime.utcnow()}
                     }
+                )
+                
+                # Add to wallet balance (all 4 places synced)
+                current_balance = get_liquid_wallet_balance(mongo, user['_id'])
+                new_balance = current_balance + withdrawal['amount']
+                update_liquid_wallet_balance(
+                    mongo=mongo,
+                    user_id=user['_id'],
+                    new_balance=new_balance,
+                    reason=f"Withdrawal approved: {withdrawal['_id']}"
                 )
                 
                 # 4b. Create VAS transaction for wallet funding
@@ -6007,16 +6013,16 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             )
             
-            # 🚀 STREAM FIX: Update ALL THREE wallet balance fields for instant frontend updates
-            # CRITICAL: walletBalance, liquidWalletBalance, and vasWalletBalance MUST always be the same
-            mongo.db.users.update_one(
-                {'_id': ObjectId(user_id)},
-                {
-                    '$set': {
-                        'walletBalance': new_balance,
-                        'liquidWalletBalance': new_balance,
-                        'vasWalletBalance': new_balance,
-                        'liquidWalletLastUpdated': datetime.utcnow(),
+            # 🚀 Use centralized balance sync utility (Golden Rule 38)
+            from utils.balance_sync import update_liquid_wallet_balance
+            
+            update_liquid_wallet_balance(
+                mongo=mongo,
+                user_id=user_id,
+                new_balance=new_balance,
+                reason="Admin balance adjustment",
+                skip_wallet_update=True  # Already updated above
+            )
                         'updatedAt': datetime.utcnow()
                     }
                 }
@@ -6227,15 +6233,15 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'error': 'RACE_CONDITION_DETECTED'
                 }), 409  # Conflict
             
-            # Update user's liquid wallet balance (for backward compatibility)
-            mongo.db.users.update_one(
-                {'_id': ObjectId(user_id)},
-                {
-                    '$set': {
-                        'liquidWalletBalance': new_balance,
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
+            # Update all wallet balance fields using centralized utility
+            from utils.balance_sync import update_liquid_wallet_balance
+            
+            update_liquid_wallet_balance(
+                mongo=mongo,
+                user_id=user_id,
+                new_balance=new_balance,
+                reason="Admin balance correction",
+                skip_wallet_update=True  # Already updated above atomically
             )
             
             print(f'SUCCESS: Updated balance after admin deduction - Liquid wallet: ₦{current_balance:,.2f} → ₦{new_balance:,.2f}')

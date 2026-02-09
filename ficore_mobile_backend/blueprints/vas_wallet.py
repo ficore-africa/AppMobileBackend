@@ -2050,20 +2050,18 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         
                         # BONUS 1: Waive the ₦30 deposit fee (credit it back)
                         if deposit_fee > 0:
-                            mongo.db.vas_wallets.update_one(
-                                {'userId': ObjectId(user_id)},
-                                {'$inc': {'balance': deposit_fee}}
-                            )
-                            # Also update users collection balances
-                            mongo.db.users.update_one(
-                                {'_id': ObjectId(user_id)},
-                                {
-                                    '$inc': {
-                                        'walletBalance': deposit_fee,
-                                        'liquidWalletBalance': deposit_fee,
-                                        'vasWalletBalance': deposit_fee
-                                    }
-                                }
+                            from utils.balance_sync import update_liquid_wallet_balance, get_liquid_wallet_balance
+                            
+                            # Get current balance and add deposit fee
+                            current_balance = get_liquid_wallet_balance(mongo, user_id)
+                            new_balance = current_balance + deposit_fee
+                            
+                            # Use centralized balance update utility
+                            update_liquid_wallet_balance(
+                                mongo=mongo,
+                                user_id=user_id,
+                                new_balance=new_balance,
+                                reason="Deposit fee refund (first-time funding bonus)"
                             )
                             print(f'✅ Credited back ₦{deposit_fee} deposit fee')
                         

@@ -22,6 +22,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_incomes(current_user):
         try:
+            print(f"\n{'='*80}")
+            print(f"🔍 [Income API] GET /income")
+            print(f"{'='*80}")
+            print(f"🔍 [Income API] User ID: {current_user['_id']}")
+            print(f"🔍 [Income API] User Email: {current_user.get('email', 'N/A')}")
+            
             # FIXED: Use offset/limit instead of page for consistency with frontend
             limit = min(int(request.args.get('limit', 50)), 100)
             offset = max(int(request.args.get('offset', 0)), 0)
@@ -32,12 +38,24 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             sort_by = request.args.get('sort_by', 'dateReceived')
             sort_order = request.args.get('sort_order', 'desc')
             
+            print(f"🔍 [Income API] Query Params:")
+            print(f"  - limit: {limit}")
+            print(f"  - offset: {offset}")
+            print(f"  - category: {category}")
+            print(f"  - frequency: {frequency}")
+            print(f"  - start_date: {start_date}")
+            print(f"  - end_date: {end_date}")
+            print(f"  - sort_by: {sort_by}")
+            print(f"  - sort_order: {sort_order}")
+            
             # Build query - ONLY active, non-deleted incomes
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             now = datetime.utcnow()
             query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
             query['dateReceived'] = {'$lte': now}  # Only past and present incomes
+            
+            print(f"🔍 [Income API] Base query (after active filter): {query}")
             
             if category:
                 query['category'] = category
@@ -51,6 +69,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     date_query['$lte'] = min(datetime.fromisoformat(end_date.replace('Z', '')), now)
                 query['dateReceived'] = date_query
             
+            print(f"🔍 [Income API] Final MongoDB query: {query}")
+            
             # FIXED: Proper sorting
             sort_direction = -1 if sort_order == 'desc' else 1
             sort_field = sort_by if sort_by in ['dateReceived', 'amount', 'source', 'createdAt'] else 'dateReceived'
@@ -58,6 +78,27 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Get incomes with pagination
             incomes = list(mongo.db.incomes.find(query).sort(sort_field, sort_direction).skip(offset).limit(limit))
             total = mongo.db.incomes.count_documents(query)
+            
+            print(f"🔍 [Income API] Query Results:")
+            print(f"  - Total matching documents: {total}")
+            print(f"  - Returned in this page: {len(incomes)}")
+            
+            if incomes:
+                sample = incomes[0]
+                print(f"🔍 [Income API] Sample entry:")
+                print(f"  - ID: {sample.get('_id')}")
+                print(f"  - Source: {sample.get('source')}")
+                print(f"  - Amount: {sample.get('amount')}")
+                print(f"  - DateReceived: {sample.get('dateReceived')}")
+                print(f"  - Status: {sample.get('status', 'NO STATUS FIELD')}")
+                print(f"  - IsDeleted: {sample.get('isDeleted', 'NO FIELD')}")
+            else:
+                print(f"🔍 [Income API] ⚠️ NO ENTRIES FOUND!")
+                print(f"🔍 [Income API] Debugging: Let's check if ANY entries exist for this user...")
+                any_entries = mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                print(f"🔍 [Income API] Total entries for user (no filters): {any_entries}")
+            
+            print(f"{'='*80}\n")
             
             # Serialize incomes with proper field mapping
             income_list = []

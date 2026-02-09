@@ -1473,6 +1473,86 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 print(f"Error fetching credits statistics: {str(credits_error)}")
                 credits_amount = 0
                 credits_count = 0
+            
+            # Get credits breakdown by source (NEW: Feb 9, 2026)
+            try:
+                # 1. Credits from BUYING (Paystack purchases)
+                purchased_credits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            '$or': [
+                                {'metadata.purchaseType': {'$exists': True}},
+                                {'paymentMethod': 'paystack'},
+                                {'description': {'$regex': 'purchase', '$options': 'i'}}
+                            ]
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                purchased_amount = purchased_credits[0]['total'] if purchased_credits else 0.0
+                
+                # 2. Credits from SIGNUP BONUS
+                signup_bonus = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            'operation': 'signup_bonus'
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                signup_bonus_amount = signup_bonus[0]['total'] if signup_bonus else 0.0
+                
+                # 3. Credits from REWARDS SCREEN (engagement, streaks, exploration)
+                rewards_credits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            '$or': [
+                                {'operation': 'engagement_reward'},
+                                {'operation': 'streak_milestone'},
+                                {'operation': 'exploration_bonus'},
+                                {'operation': 'profile_completion'},
+                                {'description': {'$regex': 'reward|streak|exploration|milestone', '$options': 'i'}}
+                            ]
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                rewards_amount = rewards_credits[0]['total'] if rewards_credits else 0.0
+                
+                # 4. Credits from TAX EDUCATION MODULES
+                tax_education_credits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            '$or': [
+                                {'operation': 'tax_education_progress'},
+                                {'description': {'$regex': 'tax education|tax module', '$options': 'i'}}
+                            ]
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                tax_education_amount = tax_education_credits[0]['total'] if tax_education_credits else 0.0
+                
+                # 5. Other credits (referral bonuses, admin awards, etc.)
+                other_credits_amount = credits_amount - (purchased_amount + signup_bonus_amount + rewards_amount + tax_education_amount)
+                if other_credits_amount < 0:
+                    other_credits_amount = 0.0  # Safety check
+                
+            except Exception as breakdown_error:
+                print(f"Error fetching credits breakdown: {str(breakdown_error)}")
+                purchased_amount = 0.0
+                signup_bonus_amount = 0.0
+                rewards_amount = 0.0
+                tax_education_amount = 0.0
+                other_credits_amount = 0.0
 
             try:
                 total_debits = list(mongo.db.credit_transactions.aggregate([
@@ -1506,6 +1586,14 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 'totalCredits': credits_amount,
                 'totalDebits': debits_amount,
                 'netCredits': credits_amount - debits_amount,
+                # NEW: Credits breakdown by source (Feb 9, 2026)
+                'creditsBreakdown': {
+                    'purchased': float(purchased_amount),
+                    'signupBonus': float(signup_bonus_amount),
+                    'rewards': float(rewards_amount),
+                    'taxEducation': float(tax_education_amount),
+                    'other': float(other_credits_amount)
+                },
                 'transactionCounts': {
                     'credits': int(credits_count),
                     'debits': int(debits_count),

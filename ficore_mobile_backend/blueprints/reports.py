@@ -47,6 +47,16 @@ def init_reports_blueprint(mongo, token_required):
         'asset_depreciation_csv': 5,
         'inventory_pdf': 5,
         'inventory_csv': 5,
+        
+        # Wallet Reports (2-4 FC each)
+        'wallet_funding_csv': 2,
+        'wallet_funding_pdf': 3,
+        'wallet_vas_csv': 2,
+        'wallet_vas_pdf': 3,
+        'wallet_bills_csv': 2,
+        'wallet_bills_pdf': 3,
+        'wallet_full_csv': 3,
+        'wallet_full_pdf': 4,
     }
     
     def check_user_access(current_user, report_type):
@@ -2623,6 +2633,41 @@ def init_reports_blueprint(mongo, token_required):
             total_spent = abs(sum(t.get('amount', 0) for t in transactions if t.get('amount', 0) < 0))
             net_change = total_earned - total_spent
             
+            # Calculate breakdown by source (Feb 9, 2026)
+            purchased = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and (
+                    t.get('metadata', {}).get('purchaseType') or 
+                    t.get('paymentMethod') == 'paystack' or
+                    'purchase' in t.get('description', '').lower()
+                )
+            )
+            
+            signup_bonus = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and t.get('operation') == 'signup_bonus'
+            )
+            
+            rewards = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and (
+                    t.get('operation') in ['engagement_reward', 'streak_milestone', 'exploration_bonus', 'profile_completion'] or
+                    any(keyword in t.get('description', '').lower() for keyword in ['reward', 'streak', 'exploration', 'milestone'])
+                )
+            )
+            
+            tax_education = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and (
+                    t.get('operation') == 'tax_education_progress' or
+                    any(keyword in t.get('description', '').lower() for keyword in ['tax education', 'tax module'])
+                )
+            )
+            
+            other = total_earned - (purchased + signup_bonus + rewards + tax_education)
+            if other < 0:
+                other = 0.0
+            
             # Get current balance
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             current_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -2634,7 +2679,15 @@ def init_reports_blueprint(mongo, token_required):
                 'total_spent': total_spent,
                 'net_change': net_change,
                 'current_balance': current_fc_balance,
-                'transaction_count': len(transactions)
+                'transaction_count': len(transactions),
+                # NEW: Credits breakdown by source (Feb 9, 2026)
+                'earned_breakdown': {
+                    'purchased': purchased,
+                    'signup_bonus': signup_bonus,
+                    'rewards': rewards,
+                    'tax_education': tax_education,
+                    'other': other
+                }
             }
             
             # User data
@@ -2718,6 +2771,41 @@ def init_reports_blueprint(mongo, token_required):
             total_spent = abs(sum(t.get('amount', 0) for t in transactions if t.get('amount', 0) < 0))
             net_change = total_earned - total_spent
             
+            # Calculate breakdown by source (Feb 9, 2026)
+            purchased = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and (
+                    t.get('metadata', {}).get('purchaseType') or 
+                    t.get('paymentMethod') == 'paystack' or
+                    'purchase' in t.get('description', '').lower()
+                )
+            )
+            
+            signup_bonus = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and t.get('operation') == 'signup_bonus'
+            )
+            
+            rewards = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and (
+                    t.get('operation') in ['engagement_reward', 'streak_milestone', 'exploration_bonus', 'profile_completion'] or
+                    any(keyword in t.get('description', '').lower() for keyword in ['reward', 'streak', 'exploration', 'milestone'])
+                )
+            )
+            
+            tax_education = sum(
+                t.get('amount', 0) for t in transactions 
+                if t.get('amount', 0) > 0 and (
+                    t.get('operation') == 'tax_education_progress' or
+                    any(keyword in t.get('description', '').lower() for keyword in ['tax education', 'tax module'])
+                )
+            )
+            
+            other = total_earned - (purchased + signup_bonus + rewards + tax_education)
+            if other < 0:
+                other = 0.0
+            
             # Get current balance
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             current_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -2745,6 +2833,20 @@ def init_reports_blueprint(mongo, token_required):
             writer.writerow(['Net Change (FC)', f'{net_change:,.2f}'])
             writer.writerow(['Current Balance (FC)', f'{current_fc_balance:,.2f}'])
             writer.writerow(['Total Transactions', len(transactions)])
+            writer.writerow([])
+            
+            # Credits Earned Breakdown (Feb 9, 2026)
+            writer.writerow(['CREDITS EARNED BY SOURCE'])
+            if purchased > 0:
+                writer.writerow(['Purchased', f'{purchased:,.2f}'])
+            if signup_bonus > 0:
+                writer.writerow(['Signup Bonus', f'{signup_bonus:,.2f}'])
+            if rewards > 0:
+                writer.writerow(['Rewards Screen', f'{rewards:,.2f}'])
+            if tax_education > 0:
+                writer.writerow(['Tax Education', f'{tax_education:,.2f}'])
+            if other > 0:
+                writer.writerow(['Other', f'{other:,.2f}'])
             writer.writerow([])
             
             # Transactions table
@@ -3283,10 +3385,45 @@ def init_reports_blueprint(mongo, token_required):
         total_count = mongo.db.credit_transactions.count_documents(query)
         transactions = list(mongo.db.credit_transactions.find(query).sort('createdAt', -1).limit(limit))
         
-        # Calculate summary
+        # Calculate summary with breakdown by source (Feb 9, 2026)
         all_transactions = list(mongo.db.credit_transactions.find(query))
         total_earned = sum(t.get('amount', 0) for t in all_transactions if t.get('amount', 0) > 0)
         total_spent = sum(abs(t.get('amount', 0)) for t in all_transactions if t.get('amount', 0) < 0)
+        
+        # Credits breakdown by source
+        purchased = sum(
+            t.get('amount', 0) for t in all_transactions 
+            if t.get('amount', 0) > 0 and (
+                t.get('metadata', {}).get('purchaseType') or 
+                t.get('paymentMethod') == 'paystack' or
+                'purchase' in t.get('description', '').lower()
+            )
+        )
+        
+        signup_bonus = sum(
+            t.get('amount', 0) for t in all_transactions 
+            if t.get('amount', 0) > 0 and t.get('operation') == 'signup_bonus'
+        )
+        
+        rewards = sum(
+            t.get('amount', 0) for t in all_transactions 
+            if t.get('amount', 0) > 0 and (
+                t.get('operation') in ['engagement_reward', 'streak_milestone', 'exploration_bonus', 'profile_completion'] or
+                any(keyword in t.get('description', '').lower() for keyword in ['reward', 'streak', 'exploration', 'milestone'])
+            )
+        )
+        
+        tax_education = sum(
+            t.get('amount', 0) for t in all_transactions 
+            if t.get('amount', 0) > 0 and (
+                t.get('operation') == 'tax_education_progress' or
+                any(keyword in t.get('description', '').lower() for keyword in ['tax education', 'tax module'])
+            )
+        )
+        
+        other = total_earned - (purchased + signup_bonus + rewards + tax_education)
+        if other < 0:
+            other = 0.0
         
         data = []
         for txn in transactions:
@@ -3295,6 +3432,7 @@ def init_reports_blueprint(mongo, token_required):
                 'type': txn.get('type', ''),
                 'amount': txn.get('amount', 0),
                 'description': txn.get('description', ''),
+                'operation': txn.get('operation', ''),
                 'balanceBefore': txn.get('balanceBefore', 0),
                 'balanceAfter': txn.get('balanceAfter', 0),
                 'createdAt': txn.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
@@ -3310,8 +3448,754 @@ def init_reports_blueprint(mongo, token_required):
                 'total_earned': total_earned,
                 'total_spent': total_spent,
                 'net_change': total_earned - total_spent,
-                'count': total_count
+                'count': total_count,
+                # NEW: Credits breakdown by source (Feb 9, 2026)
+                'earned_breakdown': {
+                    'purchased': purchased,
+                    'signup_bonus': signup_bonus,
+                    'rewards': rewards,
+                    'tax_education': tax_education,
+                    'other': other
+                }
             }
         })
+    
+    # ============================================================================
+    # WALLET REPORTS ENDPOINTS
+    # ============================================================================
+    
+    # Wallet Funding Report - PDF
+    @reports_bp.route('/wallet-funding-pdf', methods=['POST'])
+    @token_required
+    def export_wallet_funding_pdf(current_user):
+        """Export Wallet Funding transactions as PDF"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'wallet_funding_pdf'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id'])),
+                'type': 'WALLET_FUNDING'
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_data = {
+                'firstName': user.get('firstName', ''),
+                'lastName': user.get('lastName', ''),
+                'email': user.get('email', ''),
+                'businessName': user.get('businessName', '')
+            }
+            
+            export_data = {'transactions': []}
+            
+            for txn in transactions:
+                export_data['transactions'].append({
+                    'date': txn.get('createdAt', datetime.utcnow()),
+                    'reference': txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    'amount': txn.get('amount', 0),
+                    'fee': txn.get('depositFee', 0),
+                    'status': txn.get('status', 'UNKNOWN'),
+                    'description': f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
+                })
+            
+            pdf_generator = PDFGenerator()
+            pdf_buffer = pdf_generator.generate_wallet_funding_report(user_data, export_data, start_date, end_date)
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'pdf', success=True)
+            
+            pdf_buffer.seek(0)
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'ficore_wallet_funding_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'wallet_funding_pdf', 'pdf', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Wallet Funding PDF: {str(e)}'
+            }), 500
+    
+    # Wallet Funding Report - CSV
+    @reports_bp.route('/wallet-funding-csv', methods=['POST'])
+    @token_required
+    def export_wallet_funding_csv(current_user):
+        """Export Wallet Funding transactions as CSV"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'wallet_funding_csv'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id'])),
+                'type': 'WALLET_FUNDING'
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            writer.writerow(['FiCore Africa - Wallet Funding Report'])
+            writer.writerow(['Generated:', datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')])
+            if start_date and end_date:
+                writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+            writer.writerow([])
+            
+            writer.writerow(['Date', 'Reference', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            total_amount = 0
+            total_fees = 0
+            
+            for txn in transactions:
+                date_obj = txn.get('createdAt', datetime.utcnow())
+                date_str = date_obj.strftime('%Y-%m-%d %H:%M')
+                amount = txn.get('amount', 0)
+                fee = txn.get('depositFee', 0)
+                
+                writer.writerow([
+                    date_str,
+                    txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    f'{amount:,.2f}',
+                    f'{fee:,.2f}',
+                    txn.get('status', 'UNKNOWN')
+                ])
+                total_amount += amount
+                total_fees += fee
+            
+            writer.writerow(['', 'Totals:', f'{total_amount:,.2f}', f'{total_fees:,.2f}', ''])
+            writer.writerow([])
+            
+            writer.writerow(['SUMMARY'])
+            writer.writerow(['Total Funded', f'{total_amount:,.2f}'])
+            writer.writerow(['Total Fees', f'{total_fees:,.2f}'])
+            writer.writerow(['Number of Transactions', len(transactions)])
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'csv', success=True)
+            
+            output.seek(0)
+            return send_file(
+                io.BytesIO(output.getvalue().encode('utf-8')),
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'ficore_wallet_funding_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'wallet_funding_csv', 'csv', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Wallet Funding CSV: {str(e)}'
+            }), 500
+    
+    # Bill Payments Report - PDF
+    @reports_bp.route('/bill-payments-pdf', methods=['POST'])
+    @token_required
+    def export_bill_payments_pdf(current_user):
+        """Export Bill Payments transactions as PDF"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'bill_payments_pdf'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id'])),
+                'type': 'BILL_PAYMENT'
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_data = {
+                'firstName': user.get('firstName', ''),
+                'lastName': user.get('lastName', ''),
+                'email': user.get('email', ''),
+                'businessName': user.get('businessName', '')
+            }
+            
+            export_data = {'transactions': []}
+            
+            for txn in transactions:
+                export_data['transactions'].append({
+                    'date': txn.get('createdAt', datetime.utcnow()),
+                    'reference': txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    'amount': txn.get('amount', 0),
+                    'fee': txn.get('fee', 0),
+                    'status': txn.get('status', 'UNKNOWN'),
+                    'category': txn.get('category', 'N/A'),
+                    'description': txn.get('description', f"Bill Payment - {txn.get('category', 'N/A')}")
+                })
+            
+            pdf_generator = PDFGenerator()
+            pdf_buffer = pdf_generator.generate_bill_payments_report(user_data, export_data, start_date, end_date)
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'pdf', success=True)
+            
+            pdf_buffer.seek(0)
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'ficore_bill_payments_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'bill_payments_pdf', 'pdf', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Bill Payments PDF: {str(e)}'
+            }), 500
+    
+    # Bill Payments Report - CSV
+    @reports_bp.route('/bill-payments-csv', methods=['POST'])
+    @token_required
+    def export_bill_payments_csv(current_user):
+        """Export Bill Payments transactions as CSV"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'bill_payments_csv'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id'])),
+                'type': 'BILL_PAYMENT'
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            writer.writerow(['FiCore Africa - Bill Payments Report'])
+            writer.writerow(['Generated:', datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')])
+            if start_date and end_date:
+                writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+            writer.writerow([])
+            
+            writer.writerow(['Date', 'Reference', 'Category', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            total_amount = 0
+            total_fees = 0
+            
+            for txn in transactions:
+                date_obj = txn.get('createdAt', datetime.utcnow())
+                date_str = date_obj.strftime('%Y-%m-%d %H:%M')
+                amount = txn.get('amount', 0)
+                fee = txn.get('fee', 0)
+                
+                writer.writerow([
+                    date_str,
+                    txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    txn.get('category', 'N/A'),
+                    f'{amount:,.2f}',
+                    f'{fee:,.2f}',
+                    txn.get('status', 'UNKNOWN')
+                ])
+                total_amount += amount
+                total_fees += fee
+            
+            writer.writerow(['', 'Totals:', '', f'{total_amount:,.2f}', f'{total_fees:,.2f}', ''])
+            writer.writerow([])
+            
+            writer.writerow(['SUMMARY'])
+            writer.writerow(['Total Spent', f'{total_amount:,.2f}'])
+            writer.writerow(['Total Fees', f'{total_fees:,.2f}'])
+            writer.writerow(['Number of Transactions', len(transactions)])
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'csv', success=True)
+            
+            output.seek(0)
+            return send_file(
+                io.BytesIO(output.getvalue().encode('utf-8')),
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'ficore_bill_payments_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'bill_payments_csv', 'csv', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Bill Payments CSV: {str(e)}'
+            }), 500
+    
+    # Airtime Purchases Report - PDF
+    @reports_bp.route('/airtime-purchases-pdf', methods=['POST'])
+    @token_required
+    def export_airtime_purchases_pdf(current_user):
+        """Export Airtime Purchases transactions as PDF"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'airtime_purchases_pdf'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id'])),
+                'type': 'AIRTIME_PURCHASE'
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_data = {
+                'firstName': user.get('firstName', ''),
+                'lastName': user.get('lastName', ''),
+                'email': user.get('email', ''),
+                'businessName': user.get('businessName', '')
+            }
+            
+            export_data = {'transactions': []}
+            
+            for txn in transactions:
+                export_data['transactions'].append({
+                    'date': txn.get('createdAt', datetime.utcnow()),
+                    'reference': txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    'amount': txn.get('amount', 0),
+                    'fee': txn.get('fee', 0),
+                    'status': txn.get('status', 'UNKNOWN'),
+                    'phone': txn.get('phoneNumber', 'N/A'),
+                    'description': f"Airtime - {txn.get('phoneNumber', 'N/A')}"
+                })
+            
+            pdf_generator = PDFGenerator()
+            pdf_buffer = pdf_generator.generate_airtime_purchases_report(user_data, export_data, start_date, end_date)
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'pdf', success=True)
+            
+            pdf_buffer.seek(0)
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'ficore_airtime_purchases_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'airtime_purchases_pdf', 'pdf', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Airtime Purchases PDF: {str(e)}'
+            }), 500
+    
+    # Airtime Purchases Report - CSV
+    @reports_bp.route('/airtime-purchases-csv', methods=['POST'])
+    @token_required
+    def export_airtime_purchases_csv(current_user):
+        """Export Airtime Purchases transactions as CSV"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'airtime_purchases_csv'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id'])),
+                'type': 'AIRTIME_PURCHASE'
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            writer.writerow(['FiCore Africa - Airtime Purchases Report'])
+            writer.writerow(['Generated:', datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')])
+            if start_date and end_date:
+                writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+            writer.writerow([])
+            
+            writer.writerow(['Date', 'Reference', 'Phone Number', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            total_amount = 0
+            total_fees = 0
+            
+            for txn in transactions:
+                date_obj = txn.get('createdAt', datetime.utcnow())
+                date_str = date_obj.strftime('%Y-%m-%d %H:%M')
+                amount = txn.get('amount', 0)
+                fee = txn.get('fee', 0)
+                
+                writer.writerow([
+                    date_str,
+                    txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    txn.get('phoneNumber', 'N/A'),
+                    f'{amount:,.2f}',
+                    f'{fee:,.2f}',
+                    txn.get('status', 'UNKNOWN')
+                ])
+                total_amount += amount
+                total_fees += fee
+            
+            writer.writerow(['', 'Totals:', '', f'{total_amount:,.2f}', f'{total_fees:,.2f}', ''])
+            writer.writerow([])
+            
+            writer.writerow(['SUMMARY'])
+            writer.writerow(['Total Spent', f'{total_amount:,.2f}'])
+            writer.writerow(['Total Fees', f'{total_fees:,.2f}'])
+            writer.writerow(['Number of Transactions', len(transactions)])
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'csv', success=True)
+            
+            output.seek(0)
+            return send_file(
+                io.BytesIO(output.getvalue().encode('utf-8')),
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'ficore_airtime_purchases_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'airtime_purchases_csv', 'csv', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Airtime Purchases CSV: {str(e)}'
+            }), 500
+    
+    # Full Wallet Report - PDF
+    @reports_bp.route('/full-wallet-pdf', methods=['POST'])
+    @token_required
+    def export_full_wallet_pdf(current_user):
+        """Export Full Wallet transactions (all types) as PDF"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'full_wallet_pdf'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id']))
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_data = {
+                'firstName': user.get('firstName', ''),
+                'lastName': user.get('lastName', ''),
+                'email': user.get('email', ''),
+                'businessName': user.get('businessName', '')
+            }
+            
+            export_data = {'transactions': []}
+            
+            for txn in transactions:
+                txn_type = txn.get('type', 'UNKNOWN')
+                description = txn.get('description', '')
+                
+                if not description:
+                    if txn_type == 'WALLET_FUNDING':
+                        description = f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
+                    elif txn_type == 'BILL_PAYMENT':
+                        description = f"Bill Payment - {txn.get('category', 'N/A')}"
+                    elif txn_type == 'AIRTIME_PURCHASE':
+                        description = f"Airtime - {txn.get('phoneNumber', 'N/A')}"
+                    else:
+                        description = txn_type
+                
+                export_data['transactions'].append({
+                    'date': txn.get('createdAt', datetime.utcnow()),
+                    'reference': txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    'type': txn_type,
+                    'amount': txn.get('amount', 0),
+                    'fee': txn.get('fee', txn.get('depositFee', 0)),
+                    'status': txn.get('status', 'UNKNOWN'),
+                    'description': description
+                })
+            
+            pdf_generator = PDFGenerator()
+            pdf_buffer = pdf_generator.generate_full_wallet_report(user_data, export_data, start_date, end_date)
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'pdf', success=True)
+            
+            pdf_buffer.seek(0)
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'ficore_full_wallet_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'full_wallet_pdf', 'pdf', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Full Wallet PDF: {str(e)}'
+            }), 500
+    
+    # Full Wallet Report - CSV
+    @reports_bp.route('/full-wallet-csv', methods=['POST'])
+    @token_required
+    def export_full_wallet_csv(current_user):
+        """Export Full Wallet transactions (all types) as CSV"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'full_wallet_csv'
+            
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            start_date, end_date = parse_date_range(request_data)
+            
+            query = {
+                'userId': ObjectId(str(current_user['_id']))
+            }
+            
+            if start_date or end_date:
+                query['createdAt'] = {}
+                if start_date:
+                    query['createdAt']['$gte'] = start_date
+                if end_date:
+                    query['createdAt']['$lte'] = end_date
+            
+            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            writer.writerow(['FiCore Africa - Full Wallet Report'])
+            writer.writerow(['Generated:', datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')])
+            if start_date and end_date:
+                writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+            writer.writerow([])
+            
+            writer.writerow(['Date', 'Reference', 'Type', 'Description', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            total_amount = 0
+            total_fees = 0
+            
+            for txn in transactions:
+                date_obj = txn.get('createdAt', datetime.utcnow())
+                date_str = date_obj.strftime('%Y-%m-%d %H:%M')
+                amount = txn.get('amount', 0)
+                fee = txn.get('fee', txn.get('depositFee', 0))
+                txn_type = txn.get('type', 'UNKNOWN')
+                description = txn.get('description', '')
+                
+                if not description:
+                    if txn_type == 'WALLET_FUNDING':
+                        description = f"Wallet Funding - ₦{amount:,.2f}"
+                    elif txn_type == 'BILL_PAYMENT':
+                        description = f"Bill Payment - {txn.get('category', 'N/A')}"
+                    elif txn_type == 'AIRTIME_PURCHASE':
+                        description = f"Airtime - {txn.get('phoneNumber', 'N/A')}"
+                    else:
+                        description = txn_type
+                
+                writer.writerow([
+                    date_str,
+                    txn.get('reference', txn.get('transactionReference', 'N/A')),
+                    txn_type,
+                    description,
+                    f'{amount:,.2f}',
+                    f'{fee:,.2f}',
+                    txn.get('status', 'UNKNOWN')
+                ])
+                total_amount += amount
+                total_fees += fee
+            
+            writer.writerow(['', 'Totals:', '', '', f'{total_amount:,.2f}', f'{total_fees:,.2f}', ''])
+            writer.writerow([])
+            
+            writer.writerow(['SUMMARY'])
+            writer.writerow(['Total Amount', f'{total_amount:,.2f}'])
+            writer.writerow(['Total Fees', f'{total_fees:,.2f}'])
+            writer.writerow(['Number of Transactions', len(transactions)])
+            
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            log_export_event(current_user, report_type, 'csv', success=True)
+            
+            output.seek(0)
+            return send_file(
+                io.BytesIO(output.getvalue().encode('utf-8')),
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'ficore_full_wallet_report_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'full_wallet_csv', 'csv', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Full Wallet CSV: {str(e)}'
+            }), 500
     
     return reports_bp
