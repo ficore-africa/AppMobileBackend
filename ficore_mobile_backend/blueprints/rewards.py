@@ -227,26 +227,36 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                 'cap_message': 'You\'ve reached your max FC wallet limit! Upgrade to Premium or spend FCs to earn more.' if current_fc_balance >= MAX_EARNED_FC_CAP else None
             }
             
-            # Get FC breakdown (earned vs purchased)
+            # Get FC breakdown (earned vs purchased) with detailed sources
             try:
                 from utils.fc_expiration_manager import FCExpirationManager
                 fc_manager = FCExpirationManager(mongo)
-                fc_breakdown = fc_manager.get_user_fc_breakdown(current_user['_id'])
-                earned_fc = fc_breakdown.get('earned_fc', 0.0)
-                purchased_fc = fc_breakdown.get('purchased_fc', 0.0)
+                fc_breakdown_data = fc_manager.get_user_fc_breakdown(current_user['_id'])
+                earned_fc = fc_breakdown_data.get('earned_fc', 0.0)
+                purchased_fc = fc_breakdown_data.get('purchased_fc', 0.0)
+                breakdown = fc_breakdown_data.get('breakdown', {})
             except Exception as e:
                 print(f"Error getting FC breakdown: {str(e)}")
+                traceback.print_exc()
                 # Fallback: assume all FC is earned if we can't get breakdown
                 earned_fc = current_fc_balance
                 purchased_fc = 0.0
+                breakdown = {
+                    'purchased': 0.0,
+                    'signup_bonus': 0.0,
+                    'rewards': 0.0,
+                    'tax_education': 0.0,
+                    'other': current_fc_balance
+                }
             
             return jsonify({
                 'success': True,
                 'data': {
                     'fc_balance': current_fc_balance,
-                    'earned_fc': earned_fc,  # NEW: Earned FC breakdown
-                    'purchased_fc': purchased_fc,  # NEW: Purchased FC breakdown
-                    'fc_cap_info': fc_cap_info,  # NEW: FC cap information
+                    'earned_fc': earned_fc,  # Total earned FC
+                    'purchased_fc': purchased_fc,  # Total purchased FC
+                    'breakdown': breakdown,  # Detailed breakdown by source
+                    'fc_cap_info': fc_cap_info,  # FC cap information
                     'streak': current_streak,
                     'entry_streak': entry_streak,
                     'next_milestone': next_milestone,
