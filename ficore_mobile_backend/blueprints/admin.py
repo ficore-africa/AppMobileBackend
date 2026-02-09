@@ -6023,10 +6023,6 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 reason="Admin balance adjustment",
                 skip_wallet_update=True  # Already updated above
             )
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
-            )
             
             print(f'SUCCESS: Updated BOTH balances after admin refund - VAS wallet: ₦{new_balance:,.2f}, Liquid wallet: ₦{new_balance:,.2f}')
             
