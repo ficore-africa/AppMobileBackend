@@ -1,6 +1,7 @@
 """
 Referral System API Endpoints
 Created: February 4, 2026
+Updated: February 9, 2026 - Fixed generate_referral_code db parameter
 Purpose: Handle referral stats, validation, and partner management
 """
 from flask import Blueprint, jsonify, request
@@ -128,7 +129,11 @@ def get_my_referral_stats(current_user):
         if not referral_code:
             # Generate code if user doesn't have one yet
             from .auth import generate_referral_code
-            referral_code = generate_referral_code(user.get('firstName', 'USER'), user.get('phone', '0000000000'))
+            referral_code = generate_referral_code(
+                user.get('firstName', 'USER'), 
+                user.get('phone', '0000000000'),
+                referrals_bp.mongo.db
+            )
             referrals_bp.mongo.db.users.update_one(
                 {"_id": user_id},
                 {"$set": {"referralCode": referral_code}}
