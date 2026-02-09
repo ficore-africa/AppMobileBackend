@@ -441,12 +441,14 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             try:
-            # DISABLED FOR VAS FOCUS
-            # print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
-            # print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
+            # ENABLED FOR DEBUGGING BALANCE ISSUE
+            print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
+            print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
                 # Base query for active transactions only
                 base_query = get_active_transactions_query(current_user['_id'])
+                
+                print(f"DEBUG: Base query: {base_query}")
                 
                 total_this_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
@@ -457,8 +459,17 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 ]))
                 total_this_month = total_this_month_result[0]['total'] if total_this_month_result else 0.0
                 this_month_count = total_this_month_result[0]['count'] if total_this_month_result else 0
-                # DISABLED FOR VAS FOCUS
-                # print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
+                print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
+                print(f"DEBUG: Aggregation result: {total_this_month_result}")
+                
+                # Let's also check what entries match the query
+                matching_entries = list(mongo.db.incomes.find({
+                    **base_query,
+                    'dateReceived': {'$gte': start_of_month, '$lte': now}
+                }))
+                print(f"DEBUG: Found {len(matching_entries)} matching entries:")
+                for entry in matching_entries:
+                    print(f"  - {entry.get('source')}: ₦{entry.get('amount')} on {entry.get('dateReceived')}")
                 
                 total_last_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
@@ -468,8 +479,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
                 ]))
                 total_last_month = total_last_month_result[0]['total'] if total_last_month_result else 0.0
-                # DISABLED FOR VAS FOCUS
-                # print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
+                print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
                 
                 year_to_date_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
