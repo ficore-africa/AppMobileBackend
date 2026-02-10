@@ -336,6 +336,33 @@ def signup():
         }
         auth_bp.mongo.db.credit_transactions.insert_one(signup_transaction)
         
+        # 🆕 AUTO-CREATE VAS WALLET (Feb 10, 2026)
+        # Create a basic VAS wallet for new user - no KYC required initially
+        # This prevents 404 errors when user tries to access VAS features
+        try:
+            wallet_data = {
+                '_id': ObjectId(),
+                'userId': result.inserted_id,
+                'balance': 0.0,
+                'status': 'pending_activation',  # Will be activated when user creates reserved account
+                'tier': 'TIER_0',  # Basic tier - no reserved account yet
+                'kycTier': 0,
+                'kycVerified': False,
+                'kycStatus': 'not_submitted',
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'accounts': [],  # Empty until reserved account created
+                'accountReference': None,
+                'accountName': None,
+                'reservedAmount': 0.0
+            }
+            auth_bp.mongo.db.vas_wallets.insert_one(wallet_data)
+            print(f"✅ VAS wallet auto-created for new user {user_id}")
+        except Exception as wallet_error:
+            # Log but don't fail signup if wallet creation fails
+            # User can still use the app, wallet will be created on first VAS access
+            print(f"⚠️ Failed to auto-create VAS wallet for user {user_id}: {wallet_error}")
+        
         # Track registration event
         try:
             device_info = {

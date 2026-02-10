@@ -272,11 +272,25 @@ def create_user_notification(mongo, user_id, category, title, body,
         }
         
         result = mongo.db.user_notifications.insert_one(notification)
+        
+        # DEBUG LOGGING
+        print(f"📱 NOTIFICATION CREATED:")
+        print(f"   User ID: {user_id}")
+        print(f"   Category: {category}")
+        print(f"   Title: {title}")
+        print(f"   Body: {body[:100]}..." if len(body) > 100 else f"   Body: {body}")
+        print(f"   Priority: {priority}")
+        print(f"   Notification ID: {result.inserted_id}")
+        print(f"   Timestamp: {datetime.utcnow().isoformat()}")
+        
         return str(result.inserted_id)
         
     except Exception as e:
-        # DISABLED FOR LIQUID WALLET FOCUS
-        # print(f'Failed to create notification: {str(e)}')
+        print(f'❌ NOTIFICATION CREATION FAILED:')
+        print(f'   User ID: {user_id}')
+        print(f'   Error: {str(e)}')
+        import traceback
+        traceback.print_exc()
         return None
 
 # Notification categories (matching frontend)

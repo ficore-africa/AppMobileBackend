@@ -387,17 +387,29 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @vas_wallet_bp.route('/balance/current', methods=['GET'])
     @token_required
     def get_current_balance(current_user):
-        """Get current wallet balance - lightweight polling endpoint"""
+        """Get current wallet balance - lightweight polling endpoint
+        
+        Returns 404 with helpful message if wallet doesn't exist yet.
+        Frontend should handle this by triggering wallet creation.
+        """
         try:
             user_id = str(current_user['_id'])
             
             # Get wallet from database
             wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             if not wallet:
+                # ENHANCED ERROR RESPONSE: Provide actionable information
                 return jsonify({
                     'success': False,
                     'message': 'Wallet not found',
-                    'errors': {'wallet': ['No wallet found for user']}
+                    'userMessage': {
+                        'title': 'Wallet Setup Required',
+                        'message': 'Your VAS wallet needs to be set up. This will only take a moment.',
+                        'action': 'create_wallet',
+                        'type': 'info'
+                    },
+                    'errors': {'wallet': ['No wallet found for user']},
+                    'requiresSetup': True  # Flag for frontend to trigger wallet creation
                 }), 404
             
             from utils.transaction_task_queue import get_user_available_balance
@@ -418,7 +430,9 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'availableBalance': available_balance,
                     'liquidWalletBalance': liquid_wallet_balance,
                     'timestamp': datetime.utcnow().isoformat(),
-                    'source': 'polling_endpoint'
+                    'source': 'polling_endpoint',
+                    'walletStatus': wallet.get('status', 'active'),
+                    'hasReservedAccount': len(wallet.get('accounts', [])) > 0
                 }
             }
             
@@ -426,10 +440,19 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
         except Exception as e:
             print(f'ERROR: Failed to get current balance: {str(e)}')
+            import traceback
+            traceback.print_exc()  # Print full stack trace for debugging
+            
             return jsonify({
                 'success': False,
                 'message': 'Failed to get balance',
-                'errors': {'general': [str(e)]}
+                'userMessage': {
+                    'title': 'Unable to Load Balance',
+                    'message': 'We couldn\'t load your wallet balance. Please try again or contact support if the issue persists.',
+                    'type': 'error'
+                },
+                'errors': {'general': [str(e)]},
+                'stackTrace': traceback.format_exc() if os.environ.get('FLASK_ENV') == 'development' else None
             }), 500
     
     @vas_wallet_bp.route('/pending-tasks', methods=['GET'])

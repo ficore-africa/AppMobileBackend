@@ -5692,6 +5692,90 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
     
+    @admin_bp.route('/users/<user_id>/wallet/create', methods=['POST'])
+    @token_required
+    @admin_required
+    def create_user_wallet(current_user, user_id):
+        """
+        Create VAS wallet for user (Admin action)
+        Used when wallet creation failed during signup or for existing users
+        """
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check if wallet already exists
+            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if existing_wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet already exists for this user',
+                    'data': serialize_doc(existing_wallet)
+                }), 400
+            
+            # Create wallet with same structure as signup auto-creation
+            wallet_data = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'balance': 0.0,
+                'status': 'pending_activation',  # Will be activated when user creates reserved account
+                'tier': 'TIER_0',  # Basic tier - no reserved account yet
+                'kycTier': 0,
+                'kycVerified': False,
+                'kycStatus': 'not_submitted',
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'accounts': [],  # Empty until reserved account created
+                'accountReference': None,
+                'accountName': user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip(),
+                'reservedAmount': 0.0
+            }
+            
+            mongo.db.vas_wallets.insert_one(wallet_data)
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'CREATE_VAS_WALLET',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'walletId': str(wallet_data['_id']),
+                    'initialBalance': 0.0,
+                    'tier': 'TIER_0',
+                    'reason': 'Admin manual wallet creation'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} created VAS wallet for user {user_id}")
+            
+            return jsonify({
+                'success': True,
+                'data': serialize_doc(wallet_data),
+                'message': 'VAS wallet created successfully'
+            }), 201
+            
+        except Exception as e:
+            print(f"❌ Error creating user wallet: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to create wallet',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
     @admin_bp.route('/users/<user_id>/wallet/transactions', methods=['GET'])
     @token_required
     @admin_required
@@ -7201,6 +7285,302 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to export audit trail',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== KYC MANAGEMENT ENDPOINTS =====
+    
+    @admin_bp.route('/kyc/pending', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_pending_kyc_submissions(current_user):
+        """Get all pending KYC submissions for admin review"""
+        try:
+            # Get all submissions with status SUBMITTED
+            submissions = list(mongo.db.kyc_submissions.find({
+                'status': 'SUBMITTED'
+            }).sort('submittedAt', -1))
+            
+            # Enrich with user data
+            enriched_submissions = []
+            for submission in submissions:
+                user = mongo.db.users.find_one({'_id': submission['userId']})
+                
+                # Decrypt and mask sensitive data for display
+                from utils.kyc_encryption import decrypt_sensitive_data, mask_sensitive_data
+                
+                bvn_decrypted = decrypt_sensitive_data(submission.get('bvnNumber', ''))
+                nin_decrypted = decrypt_sensitive_data(submission.get('ninNumber', ''))
+                
+                enriched_submission = {
+                    '_id': str(submission['_id']),
+                    'userId': str(submission['userId']),
+                    'userEmail': user.get('email', 'Unknown') if user else 'Unknown',
+                    'submissionType': submission.get('submissionType', 'UNKNOWN'),
+                    'firstName': submission.get('firstName', ''),
+                    'lastName': submission.get('lastName', ''),
+                    'phoneNumber': submission.get('phoneNumber', ''),
+                    'dateOfBirth': submission.get('dateOfBirth', ''),
+                    'bvnNumberMasked': mask_sensitive_data(bvn_decrypted) if bvn_decrypted else None,
+                    'ninNumberMasked': mask_sensitive_data(nin_decrypted) if nin_decrypted else None,
+                    'status': submission.get('status', 'UNKNOWN'),
+                    'submittedAt': submission.get('submittedAt').isoformat() + 'Z' if submission.get('submittedAt') else None,
+                    'metadata': submission.get('metadata', {})
+                }
+                
+                enriched_submissions.append(enriched_submission)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'submissions': enriched_submissions,
+                    'total': len(enriched_submissions)
+                },
+                'message': 'KYC submissions retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting KYC submissions: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get KYC submissions',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/kyc/verify/<submission_id>', methods=['POST'])
+    @token_required
+    @admin_required
+    def verify_kyc_submission(current_user, submission_id):
+        """Verify or reject a KYC submission and upgrade wallet tier"""
+        try:
+            data = request.get_json()
+            action = data.get('action')  # 'VERIFY' or 'REJECT'
+            reason = data.get('reason', '')  # Required for REJECT
+            
+            if action not in ['VERIFY', 'REJECT']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid action. Must be VERIFY or REJECT'
+                }), 400
+            
+            # Get submission
+            submission = mongo.db.kyc_submissions.find_one({'_id': ObjectId(submission_id)})
+            if not submission:
+                return jsonify({
+                    'success': False,
+                    'message': 'KYC submission not found'
+                }), 404
+            
+            user_id = submission['userId']
+            user = mongo.db.users.find_one({'_id': user_id})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            if action == 'VERIFY':
+                # Decrypt sensitive data
+                from utils.kyc_encryption import decrypt_sensitive_data
+                
+                bvn = decrypt_sensitive_data(submission.get('bvnNumber', ''))
+                nin = decrypt_sensitive_data(submission.get('ninNumber', ''))
+                
+                # Update submission status
+                mongo.db.kyc_submissions.update_one(
+                    {'_id': ObjectId(submission_id)},
+                    {
+                        '$set': {
+                            'status': 'VERIFIED',
+                            'verifiedAt': datetime.utcnow(),
+                            'verifiedBy': current_user['_id'],
+                            'verifiedByEmail': current_user.get('email', 'Unknown')
+                        }
+                    }
+                )
+                
+                # Update user profile
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {
+                        '$set': {
+                            'kycStatus': 'verified',
+                            'kycVerified': True,
+                            'kycVerifiedAt': datetime.utcnow(),
+                            'bvn': bvn,
+                            'nin': nin,
+                            'bvnVerified': True,
+                            'ninVerified': True,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                # CRITICAL: Upgrade wallet to TIER_2
+                wallet = mongo.db.vas_wallets.find_one({'userId': user_id})
+                if wallet:
+                    mongo.db.vas_wallets.update_one(
+                        {'userId': user_id},
+                        {
+                            '$set': {
+                                'tier': 'TIER_2',
+                                'kycTier': 2,
+                                'kycVerified': True,
+                                'kycStatus': 'verified',
+                                'bvnVerified': True,
+                                'ninVerified': True,
+                                'updatedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f"✅ Wallet upgraded to TIER_2 for user {user_id}")
+                else:
+                    print(f"⚠️ No wallet found for user {user_id} - wallet will be TIER_2 when created")
+                
+                # Create audit log
+                audit_log = {
+                    '_id': ObjectId(),
+                    'adminId': current_user['_id'],
+                    'adminEmail': current_user.get('email', 'unknown'),
+                    'action': 'VERIFY_KYC',
+                    'targetUserId': user_id,
+                    'targetUserEmail': user.get('email', 'unknown'),
+                    'details': {
+                        'submissionId': submission_id,
+                        'submissionType': submission.get('submissionType'),
+                        'walletUpgraded': wallet is not None,
+                        'newTier': 'TIER_2'
+                    },
+                    'timestamp': datetime.utcnow(),
+                    'ipAddress': request.remote_addr,
+                    'userAgent': request.headers.get('User-Agent', 'Unknown')
+                }
+                mongo.db.audit_logs.insert_one(audit_log)
+                
+                # Send notification to user
+                from blueprints.notifications import create_user_notification
+                
+                create_user_notification(
+                    mongo=mongo,
+                    user_id=str(user_id),
+                    category='wallet',
+                    title='🎉 KYC Verified!',
+                    body='Your identity verification has been approved. Your wallet has been upgraded to TIER 2 with full VAS access and higher transaction limits.',
+                    metadata={
+                        'type': 'kyc_verified',
+                        'newTier': 'TIER_2',
+                        'verifiedAt': datetime.utcnow().isoformat() + 'Z',
+                        'action': 'view_wallet'
+                    },
+                    priority='high'
+                )
+                
+                print(f"✅ Admin {current_user.get('email')} verified KYC for user {user.get('email')}")
+                print(f"📱 Notification sent to user about KYC verification")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'KYC verified successfully. User wallet upgraded to TIER_2.',
+                    'data': {
+                        'userId': str(user_id),
+                        'newTier': 'TIER_2',
+                        'verifiedAt': datetime.utcnow().isoformat() + 'Z'
+                    }
+                })
+                
+            else:  # REJECT
+                if not reason or len(reason) < 10:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Rejection reason must be at least 10 characters'
+                    }), 400
+                
+                # Update submission status
+                mongo.db.kyc_submissions.update_one(
+                    {'_id': ObjectId(submission_id)},
+                    {
+                        '$set': {
+                            'status': 'REJECTED',
+                            'rejectedAt': datetime.utcnow(),
+                            'rejectedBy': current_user['_id'],
+                            'rejectedByEmail': current_user.get('email', 'Unknown'),
+                            'rejectionReason': reason
+                        }
+                    }
+                )
+                
+                # Update user status
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {
+                        '$set': {
+                            'kycStatus': 'rejected',
+                            'kycRejectedAt': datetime.utcnow(),
+                            'kycRejectionReason': reason,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                # Create audit log
+                audit_log = {
+                    '_id': ObjectId(),
+                    'adminId': current_user['_id'],
+                    'adminEmail': current_user.get('email', 'unknown'),
+                    'action': 'REJECT_KYC',
+                    'targetUserId': user_id,
+                    'targetUserEmail': user.get('email', 'unknown'),
+                    'details': {
+                        'submissionId': submission_id,
+                        'submissionType': submission.get('submissionType'),
+                        'rejectionReason': reason
+                    },
+                    'timestamp': datetime.utcnow(),
+                    'ipAddress': request.remote_addr,
+                    'userAgent': request.headers.get('User-Agent', 'Unknown')
+                }
+                mongo.db.audit_logs.insert_one(audit_log)
+                
+                # Send notification to user
+                from blueprints.notifications import create_user_notification
+                
+                create_user_notification(
+                    mongo=mongo,
+                    user_id=str(user_id),
+                    category='wallet',
+                    title='❌ KYC Verification Issue',
+                    body=f'Your identity verification was not approved. Reason: {reason}\n\nPlease review and resubmit with correct information.',
+                    metadata={
+                        'type': 'kyc_rejected',
+                        'rejectionReason': reason,
+                        'rejectedAt': datetime.utcnow().isoformat() + 'Z',
+                        'action': 'resubmit_kyc'
+                    },
+                    priority='high'
+                )
+                
+                print(f"❌ Admin {current_user.get('email')} rejected KYC for user {user.get('email')}: {reason}")
+                print(f"📱 Notification sent to user about KYC rejection")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'KYC rejected successfully',
+                    'data': {
+                        'userId': str(user_id),
+                        'rejectedAt': datetime.utcnow().isoformat() + 'Z',
+                        'reason': reason
+                    }
+                })
+            
+        except Exception as e:
+            print(f"❌ Error verifying KYC: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to process KYC verification',
                 'errors': {'general': [str(e)]}
             }), 500
 
