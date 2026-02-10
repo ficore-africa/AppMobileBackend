@@ -1109,8 +1109,77 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             )
             
             if van_response.status_code != 200:
-                raise Exception(f'Reserved account creation failed: {van_response.text}')
+                # Parse Monnify error response
+                try:
+                    error_data = van_response.json()
+                    error_message = error_data.get('responseMessage', 'Unknown error')
+                    error_code = error_data.get('responseCode', '99')
+                    
+                    print(f'ERROR: Monnify error - Code: {error_code}, Message: {error_message}')
+                    
+                    # Check if error is BVN/NIN requirement (Monnify changed policy Feb 2026)
+                    if 'BVN' in error_message.upper() or 'NIN' in error_message.upper():
+                        print(f'INFO: Monnify requires KYC for user {user_id} (new policy since Feb 2026)')
+                        
+                        # Check if user already has BVN/NIN in profile
+                        user_bvn = current_user.get('bvn', '').strip()
+                        user_nin = current_user.get('nin', '').strip()
+                        
+                        if user_bvn or user_nin:
+                            # User HAS BVN/NIN but we didn't send it - AUTO-RETRY with credentials
+                            print(f'INFO: User has BVN/NIN in profile, auto-retrying with credentials...')
+                            
+                            # Add BVN/NIN to request
+                            account_data['bvn'] = user_bvn
+                            account_data['nin'] = user_nin
+                            
+                            # Retry with BVN/NIN
+                            van_response_retry = requests.post(
+                                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                                headers={
+                                    'Authorization': f'Bearer {access_token}',
+                                    'Content-Type': 'application/json'
+                                },
+                                json=account_data,
+                                timeout=30
+                            )
+                            
+                            if van_response_retry.status_code == 200:
+                                print(f'SUCCESS: Account created with BVN/NIN on auto-retry')
+                                van_response = van_response_retry  # Use retry response
+                                # Continue to process successful response below
+                            else:
+                                # Retry also failed
+                                retry_error = van_response_retry.json()
+                                retry_message = retry_error.get('responseMessage', 'Unknown error')
+                                print(f'ERROR: Auto-retry failed: {retry_message}')
+                                raise Exception(f'Account creation failed even with BVN/NIN: {retry_message}')
+                        else:
+                            # User does NOT have BVN/NIN - guide them to KYC
+                            print(f'INFO: User has no BVN/NIN in profile - returning KYC requirement')
+                            return jsonify({
+                                'success': False,
+                                'requiresKyc': True,
+                                'kycType': 'bvn_or_nin',
+                                'message': 'Identity verification required to create wallet',
+                                'userMessage': {
+                                    'title': 'Verification Required',
+                                    'message': 'To create your wallet, we need to verify your identity with your BVN or NIN. This is a one-time requirement to comply with financial regulations.',
+                                    'action': 'submit_kyc',
+                                    'actionLabel': 'Submit BVN/NIN',
+                                    'type': 'info'
+                                },
+                                'errors': {'kyc': ['BVN or NIN verification required']}
+                            }), 400  # 400 = client action required, not server error
+                    else:
+                        # Other Monnify error (not BVN/NIN related)
+                        raise Exception(f'Monnify error: {error_message}')
+                        
+                except ValueError:
+                    # Response is not JSON
+                    raise Exception(f'Reserved account creation failed: {van_response.text}')
             
+            # If we reach here, van_response.status_code == 200 (success)
             van_data = van_response.json()['responseBody']
             
             # Log what Monnify actually returned
@@ -1122,7 +1191,11 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             if not van_data.get('accounts') or len(van_data['accounts']) == 0:
                 raise Exception('Monnify returned no accounts in response')
             
-            # Create wallet record with KYC verification
+            # Check if BVN/NIN was sent in this request (for tracking)
+            bvn_sent = bool(account_data.get('bvn', '').strip())
+            nin_sent = bool(account_data.get('nin', '').strip())
+            
+            # Create wallet record with KYC verification and Monnify metadata
             wallet_data = {
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
@@ -1130,6 +1203,27 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accountReference': van_data['accountReference'],
                 'contractCode': van_data['contractCode'],
                 'accounts': van_data['accounts'],
+                
+                # NEW: Store customer info from Monnify response (for audit trail)
+                'customerEmail': van_data.get('customerEmail', account_data.get('customerEmail')),
+                'customerName': van_data.get('customerName', account_data.get('customerName')),
+                
+                # NEW: Store Monnify metadata (from response)
+                'reservationReference': van_data.get('reservationReference'),
+                'reservedAccountType': van_data.get('reservedAccountType', 'GENERAL'),
+                'collectionChannel': van_data.get('collectionChannel', 'RESERVED_ACCOUNT'),
+                'monnifyStatus': van_data.get('status', 'ACTIVE'),
+                'monnifyCreatedOn': van_data.get('createdOn'),
+                
+                # NEW: Track BVN/NIN submission (CRITICAL - prevents duplicate submissions)
+                'bvnSubmittedToMonnify': bvn_sent,
+                'ninSubmittedToMonnify': nin_sent,
+                'kycSubmittedAt': datetime.utcnow() if (bvn_sent or nin_sent) else None,
+                
+                # NEW: Payment restrictions (from Monnify response)
+                'restrictPaymentSource': van_data.get('restrictPaymentSource', False),
+                'allowedPaymentSources': van_data.get('allowedPaymentSources'),
+                
                 'status': 'ACTIVE',
                 'tier': 'TIER_1',  # Basic account - will upgrade when KYC verified
                 'kycTier': 1,  # Will be updated to 2 when internal KYC is verified
@@ -1142,7 +1236,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.vas_wallets.insert_one(wallet_data)
             
-            print(f'SUCCESS: Basic reserved account created for user {user_id} - KYC can be submitted separately')
+            if bvn_sent or nin_sent:
+                print(f'SUCCESS: Reserved account created for user {user_id} WITH BVN/NIN submission')
+            else:
+                print(f'SUCCESS: Basic reserved account created for user {user_id} - KYC can be submitted separately')
             
             # Return all accounts for frontend to choose from
             return jsonify({

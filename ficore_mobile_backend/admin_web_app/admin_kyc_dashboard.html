@@ -452,7 +452,7 @@
         }
         
         // Display submissions
-        function displaySubmissions(submissions) {
+        async function displaySubmissions(submissions) {
             const container = document.getElementById('submissionsContainer');
             
             if (submissions.length === 0) {
@@ -466,7 +466,36 @@
                 return;
             }
             
-            container.innerHTML = submissions.map(submission => `
+            // Fetch wallet status for each user
+            const submissionsWithWallet = await Promise.all(submissions.map(async (submission) => {
+                try {
+                    const walletResponse = await fetch(`${API_BASE_URL}/admin/users/${submission.userId}/wallet`, {
+                        headers: {
+                            'Authorization': `Bearer ${getAdminToken()}`
+                        }
+                    });
+                    
+                    if (walletResponse.ok) {
+                        const walletData = await walletResponse.json();
+                        submission.wallet = walletData.data;
+                    } else {
+                        submission.wallet = null;
+                    }
+                } catch (error) {
+                    console.error('Error fetching wallet for user:', submission.userId, error);
+                    submission.wallet = null;
+                }
+                return submission;
+            }));
+            
+            container.innerHTML = submissionsWithWallet.map(submission => {
+                const wallet = submission.wallet;
+                const hasBvn = submission.bvnNumberMasked && submission.bvnNumberMasked !== 'N/A';
+                const hasNin = submission.ninNumberMasked && submission.ninNumberMasked !== 'N/A';
+                const bvnSubmitted = wallet?.bvnSubmittedToMonnify || false;
+                const ninSubmitted = wallet?.ninSubmittedToMonnify || false;
+                
+                return `
                 <div class="kyc-card status-${submission.status.toLowerCase()}">
                     <div class="kyc-header">
                         <div>
@@ -487,11 +516,17 @@
                         </div>
                         <div class="detail-item">
                             <div class="detail-label">BVN (Masked)</div>
-                            <div class="detail-value">${submission.bvnNumberMasked || 'N/A'}</div>
+                            <div class="detail-value">
+                                ${submission.bvnNumberMasked || 'N/A'}
+                                ${hasBvn && bvnSubmitted ? '<span class="badge badge-success" style="margin-left: 8px; font-size: 10px;">✓ Submitted to Monnify</span>' : ''}
+                            </div>
                         </div>
                         <div class="detail-item">
                             <div class="detail-label">NIN (Masked)</div>
-                            <div class="detail-value">${submission.ninNumberMasked || 'N/A'}</div>
+                            <div class="detail-value">
+                                ${submission.ninNumberMasked || 'N/A'}
+                                ${hasNin && ninSubmitted ? '<span class="badge badge-success" style="margin-left: 8px; font-size: 10px;">✓ Submitted to Monnify</span>' : ''}
+                            </div>
                         </div>
                         <div class="detail-item">
                             <div class="detail-label">Submitted At</div>
@@ -503,6 +538,53 @@
                         </div>
                     </div>
                     
+                    ${wallet ? `
+                    <div class="kyc-details" style="border-top: 1px solid #E5E7EB; margin-top: 15px; padding-top: 15px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <i class="fas fa-wallet" style="color: #1E3A8A;"></i>
+                            <strong>Wallet Status</strong>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Wallet</div>
+                            <div class="detail-value">
+                                <span class="badge badge-${wallet.status === 'active' ? 'success' : 'warning'}">${wallet.status || 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Accounts</div>
+                            <div class="detail-value">${wallet.accounts?.length || 0} bank(s)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Monnify Status</div>
+                            <div class="detail-value">
+                                <span class="badge badge-${wallet.monnifyStatus === 'ACTIVE' ? 'success' : 'warning'}">${wallet.monnifyStatus || 'N/A'}</span>
+                            </div>
+                        </div>
+                        ${wallet.kycSubmittedAt ? `
+                        <div class="detail-item">
+                            <div class="detail-label">KYC Submitted to Monnify</div>
+                            <div class="detail-value">${formatDate(wallet.kycSubmittedAt)}</div>
+                        </div>
+                        ` : ''}
+                        ${(bvnSubmitted || ninSubmitted) ? `
+                        <div style="background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 6px; padding: 10px; margin-top: 10px; font-size: 12px;">
+                            <i class="fas fa-exclamation-triangle" style="color: #F59E0B;"></i>
+                            <strong>Note:</strong> BVN/NIN already submitted to Monnify. Resubmitting will incur additional charges.
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : `
+                    <div class="kyc-details" style="border-top: 1px solid #E5E7EB; margin-top: 15px; padding-top: 15px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <i class="fas fa-wallet" style="color: #6B7280;"></i>
+                            <strong>Wallet Status</strong>
+                        </div>
+                        <div style="color: #6B7280; font-size: 14px;">
+                            <i class="fas fa-info-circle"></i> No wallet created yet
+                        </div>
+                    </div>
+                    `}
+                    
                     <div class="actions">
                         <button class="btn btn-success" onclick="verifySubmission('${submission._id}', '${submission.userEmail}')">
                             <i class="fas fa-check"></i> Verify
@@ -512,7 +594,8 @@
                         </button>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
         
         // Update stats

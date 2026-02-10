@@ -816,6 +816,9 @@ class DatabaseSchema:
         """
         Schema for vas_wallets collection.
         Stores VAS wallet information including balance, account details, and KYC status.
+        
+        NEW (Feb 2026): Added Monnify metadata fields to track account creation details
+        and prevent duplicate BVN/NIN submissions (each submission costs money).
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -834,6 +837,27 @@ class DatabaseSchema:
             'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
             'bvn': Optional[str],  # Bank Verification Number (11 digits)
             'nin': Optional[str],  # National Identification Number (11 digits)
+            
+            # NEW: Monnify Customer Info (for audit trail)
+            'customerEmail': Optional[str],  # Email sent to Monnify during account creation
+            'customerName': Optional[str],  # Name sent to Monnify during account creation
+            
+            # NEW: Monnify Account Metadata (from Monnify response)
+            'reservationReference': Optional[str],  # Monnify's unique ID (e.g., "96ZPXECUD84UQTB00931")
+            'reservedAccountType': Optional[str],  # Always "GENERAL" for us (ignore INVOICE)
+            'collectionChannel': Optional[str],  # Always "RESERVED_ACCOUNT"
+            'monnifyStatus': Optional[str],  # "ACTIVE" or "INACTIVE" from Monnify
+            'monnifyCreatedOn': Optional[str],  # Monnify's creation timestamp
+            
+            # NEW: BVN/NIN Submission Tracking (CRITICAL - prevents duplicate submissions)
+            'bvnSubmittedToMonnify': Optional[bool],  # True if BVN was sent to Monnify
+            'ninSubmittedToMonnify': Optional[bool],  # True if NIN was sent to Monnify
+            'kycSubmittedAt': Optional[datetime],  # When BVN/NIN was first submitted to Monnify
+            
+            # NEW: Payment Restrictions (optional, usually false for us)
+            'restrictPaymentSource': Optional[bool],  # Default: False (accept from anyone)
+            'allowedPaymentSources': Optional[Dict[str, Any]],  # BVNs, accounts, names allowed to pay
+            
             'transactionHistory': List[Dict[str, Any]],  # Transaction history for quick access
             'createdAt': datetime,  # Wallet creation timestamp
             'updatedAt': datetime,  # Last update timestamp

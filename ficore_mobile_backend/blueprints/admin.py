@@ -5782,14 +5782,65 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def complete_wallet_setup(current_user, user_id):
         """
         Complete wallet setup for broken/incomplete wallets
-        DEPRECATED: Use the proper wallet creation flow instead
+        This is for admin support when users get stuck with account creation
         """
-        return jsonify({
-            'success': False,
-            'message': 'This endpoint is deprecated. Please use the wallet creation flow in the app or contact support.',
-            'errors': {'general': ['Wallet setup must be done through the app with proper KYC verification']}
-        }), 400
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check if wallet exists
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'No wallet found for this user'
+                }), 404
+            
+            # Check if wallet needs fixing
+            needs_fixing = (
+                wallet.get('status') == 'pending_activation' or
+                not wallet.get('accounts') or
+                len(wallet.get('accounts', [])) == 0
+            )
+            
+            if not needs_fixing:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet does not need fixing. It already has accounts and is active.'
                 }), 400
+            
+            # CRITICAL: Check if BVN/NIN already submitted to Monnify (prevents duplicate charges)
+            already_submitted_bvn = wallet.get('bvnSubmittedToMonnify', False)
+            already_submitted_nin = wallet.get('ninSubmittedToMonnify', False)
+            
+            if already_submitted_bvn or already_submitted_nin:
+                print(f"⚠️ WARNING: User {user_id} already submitted BVN/NIN to Monnify")
+                print(f"   Submitted at: {wallet.get('kycSubmittedAt')}")
+                print(f"   This retry will NOT send BVN/NIN again (avoid duplicate charges)")
+                send_kyc = False
+            else:
+                # First time or old wallet (created before Feb 2026) - check if user has BVN/NIN
+                user_bvn = user.get('bvn', '').strip()
+                user_nin = user.get('nin', '').strip()
+                
+                if not user_bvn and not user_nin:
+                    return jsonify({
+                        'success': False,
+                        'message': 'User has no BVN/NIN. Cannot create reserved account.',
+                        'errors': {
+                            'kyc': ['User must submit BVN or NIN through the app KYC flow first']
+                        },
+                        'adminAction': 'Ask user to complete KYC verification in the app',
+                        'userEmail': user.get('email', 'unknown')
+                    }), 400
+                
+                send_kyc = True
+                print(f"✅ User has BVN/NIN and hasn't submitted yet - will send to Monnify")
             
             # Create reserved account
             account_name = wallet.get('accountName') or user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
@@ -5797,25 +5848,84 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             
             print(f"🔧 Admin completing wallet setup for {user_email}...")
             print(f"   Creating reserved account with name: {account_name}")
+            print(f"   Send BVN/NIN: {send_kyc}")
             
-            reserved_account_result = create_reserved_account(
-                account_name=account_name,
-                user_email=user_email,
-                bvn=user.get('bvn', '')  # Optional
-            )
+            # Import monnify utils
+            from utils.monnify_utils import get_monnify_access_token
+            import requests
+            from config.environment import MONNIFY_BASE_URL, MONNIFY_CONTRACT_CODE
             
-            if not reserved_account_result.get('success'):
+            # Get access token
+            access_token = get_monnify_access_token()
+            if not access_token:
                 return jsonify({
                     'success': False,
-                    'message': f"Failed to create reserved account: {reserved_account_result.get('message', 'Unknown error')}"
+                    'message': 'Failed to authenticate with payment provider'
+                }), 500
+            
+            # Build request data
+            request_data = {
+                'accountReference': wallet.get('accountReference') or f"USER_{user_id}_{int(datetime.utcnow().timestamp())}",
+                'accountName': account_name,
+                'currencyCode': 'NGN',
+                'contractCode': MONNIFY_CONTRACT_CODE,
+                'customerEmail': user_email,
+                'customerName': account_name,
+                'getAllAvailableBanks': True
+            }
+            
+            # Only add BVN/NIN if not already submitted (prevents duplicate charges)
+            if send_kyc:
+                request_data['bvn'] = user.get('bvn', '')
+                request_data['nin'] = user.get('nin', '')
+                print(f"   Including BVN/NIN in request")
+            
+            # Create reserved account
+            van_response = requests.post(
+                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                json=request_data,
+                headers={
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=30
+            )
+            
+            if van_response.status_code != 200:
+                error_msg = van_response.json().get('responseMessage', 'Unknown error')
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to create reserved account: {error_msg}"
                 }), 500
             
             # Update wallet with reserved account info
-            account_data = reserved_account_result['data']
+            account_data = van_response.json().get('responseBody', {})
+            
             update_data = {
                 'accounts': account_data.get('accounts', []),
                 'accountReference': account_data.get('accountReference'),
                 'accountName': account_data.get('accountName', account_name),
+                
+                # NEW: Store customer info (for audit trail)
+                'customerEmail': account_data.get('customerEmail', user_email),
+                'customerName': account_data.get('customerName', account_name),
+                
+                # NEW: Store Monnify metadata
+                'reservationReference': account_data.get('reservationReference'),
+                'reservedAccountType': account_data.get('reservedAccountType', 'GENERAL'),
+                'collectionChannel': account_data.get('collectionChannel', 'RESERVED_ACCOUNT'),
+                'monnifyStatus': account_data.get('status', 'ACTIVE'),
+                'monnifyCreatedOn': account_data.get('createdOn'),
+                
+                # NEW: Track BVN/NIN submission if sent (CRITICAL - prevents duplicates)
+                'bvnSubmittedToMonnify': send_kyc and bool(user.get('bvn', '').strip()),
+                'ninSubmittedToMonnify': send_kyc and bool(user.get('nin', '').strip()),
+                'kycSubmittedAt': datetime.utcnow() if send_kyc else wallet.get('kycSubmittedAt'),
+                
+                # NEW: Payment restrictions
+                'restrictPaymentSource': account_data.get('restrictPaymentSource', False),
+                'allowedPaymentSources': account_data.get('allowedPaymentSources'),
+                
                 'status': 'active',
                 'tier': 'TIER_1',  # TIER_1 is the default with reserved account
                 'updatedAt': datetime.utcnow()
@@ -5875,32 +5985,76 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def recreate_user_wallet(current_user, user_id):
         """
         Delete and recreate wallet (for completely broken wallets)
-        DEPRECATED: Use the proper wallet creation flow instead
+        This is for admin support when wallet is beyond repair
         """
-        return jsonify({
-            'success': False,
-            'message': 'This endpoint is deprecated. Please use the wallet creation flow in the app or contact support.',
-            'errors': {'general': ['Wallet recreation must be done through the app with proper KYC verification']}
-        }), 400
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check if wallet exists and save old balance for audit
+            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            old_balance = existing_wallet.get('balance', 0.0) if existing_wallet else 0.0
+            
+            # Delete existing wallet if it exists
+            if existing_wallet:
+                mongo.db.vas_wallets.delete_one({'_id': existing_wallet['_id']})
+                print(f"🗑️ Deleted old wallet with balance: ₦{old_balance}")
+            
+            # Prepare account name
+            account_name = user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
             user_email = user.get('email', '')
             
             print(f"🔧 Admin recreating wallet for {user_email}...")
             print(f"   Creating reserved account with name: {account_name}")
             
-            reserved_account_result = create_reserved_account(
-                account_name=account_name,
-                user_email=user_email,
-                bvn=user.get('bvn', '')
-            )
+            # Import monnify utils
+            from utils.monnify_utils import get_monnify_access_token
+            import requests
+            from config.environment import MONNIFY_BASE_URL, MONNIFY_CONTRACT_CODE
             
-            if not reserved_account_result.get('success'):
+            # Get access token
+            access_token = get_monnify_access_token()
+            if not access_token:
                 return jsonify({
                     'success': False,
-                    'message': f"Failed to create reserved account: {reserved_account_result.get('message', 'Unknown error')}"
+                    'message': 'Failed to authenticate with payment provider'
+                }), 500
+            
+            # Create reserved account
+            account_reference = f"USER_{user_id}_{int(datetime.utcnow().timestamp())}"
+            van_response = requests.post(
+                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                json={
+                    'accountReference': account_reference,
+                    'accountName': account_name,
+                    'currencyCode': 'NGN',
+                    'contractCode': MONNIFY_CONTRACT_CODE,
+                    'customerEmail': user_email,
+                    'customerName': account_name,
+                    'getAllAvailableBanks': True,
+                    'bvn': user.get('bvn', '')
+                },
+                headers={
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=30
+            )
+            
+            if van_response.status_code != 200:
+                error_msg = van_response.json().get('responseMessage', 'Unknown error')
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to create reserved account: {error_msg}"
                 }), 500
             
             # Create new wallet
-            account_data = reserved_account_result['data']
+            account_data = van_response.json().get('responseBody', {})
             wallet_data = {
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
