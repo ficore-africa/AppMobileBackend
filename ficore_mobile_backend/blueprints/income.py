@@ -1185,16 +1185,21 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 })
                 
                 if updated_income:
-                    # Convert ObjectId to string for JSON serialization
-                    updated_income['_id'] = str(updated_income['_id'])
-                    updated_income['userId'] = str(updated_income['userId'])
+                    # CRITICAL FIX: Use serialize_doc to properly convert _id → id
+                    income_data = serialize_doc(updated_income.copy())
+                    
+                    # Ensure date fields are properly formatted
+                    income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
+                    income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
                     
                     print(f"✅ Entry tagged successfully, returning updated income")
                     print(f"{'='*80}\n")
                     return jsonify({
                         'success': True,
                         'message': 'Entry tagged successfully',
-                        'data': updated_income
+                        'data': income_data
                     })
                 else:
                     print(f"⚠️  Entry updated but could not fetch updated data")
