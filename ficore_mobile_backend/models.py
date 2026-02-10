@@ -829,7 +829,7 @@ class DatabaseSchema:
             'bankCode': Optional[str],  # Primary bank code
             'accounts': List[Dict[str, Any]],  # List of all available bank accounts
             'status': str,  # 'active', 'inactive', 'suspended', default: 'active'
-            'tier': str,  # 'TIER_0', 'TIER_1', 'TIER_2', default: 'TIER_1'
+            'tier': str,  # 'TIER_1' (default), 'TIER_2' (KYC verified)
             'kycVerified': bool,  # KYC verification status, default: False
             'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
             'bvn': Optional[str],  # Bank Verification Number (11 digits)
