@@ -92,6 +92,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 print(f"  - DateReceived: {sample.get('dateReceived')}")
                 print(f"  - Status: {sample.get('status', 'NO STATUS FIELD')}")
                 print(f"  - IsDeleted: {sample.get('isDeleted', 'NO FIELD')}")
+                print(f"  - EntryType: {sample.get('entryType', 'NO TAG')}")
+                print(f"  - TaggedAt: {sample.get('taggedAt', 'NO TIMESTAMP')}")
+                print(f"  - TaggedBy: {sample.get('taggedBy', 'NO USER')}")
             else:
                 print(f"🔍 [Income API] ⚠️ NO ENTRIES FOUND!")
                 print(f"🔍 [Income API] Debugging: Let's check if ANY entries exist for this user...")
@@ -109,6 +112,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
                 income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
+                # ENTRY TAGGING FIELDS: Format tagging fields for frontend
+                income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
                 # Removed recurring date logic - simplified income tracking
                 income_data['nextRecurringDate'] = None
                 income_list.append(income_data)
@@ -153,8 +158,13 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'error_type': 'pending_sync'
                 }), 202  # 202 Accepted - processing in background
             
+            # CRITICAL FIX (Feb 10, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: income_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = income_id.replace('income_', '').replace('expense_', '')
+            
             income = mongo.db.incomes.find_one({
-                '_id': ObjectId(income_id),
+                '_id': ObjectId(clean_id),
                 'userId': current_user['_id']
             })
             
@@ -168,6 +178,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
+            income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
             # Removed recurring date logic - simplified income tracking
             income_data['nextRecurringDate'] = None
             
