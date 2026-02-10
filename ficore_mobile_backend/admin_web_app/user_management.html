@@ -683,6 +683,20 @@
                     </div>
                 </div>
                 
+                <!-- Show this section when wallet doesn't exist -->
+                <div id="noWalletSection" class="action-section" style="display: none; background: #FEF3C7; border: 2px solid #F59E0B;">
+                    <h3 style="color: #92400E;">⚠️ No VAS Wallet Found</h3>
+                    <p style="color: #92400E; margin-bottom: 15px;">
+                        This user doesn't have a VAS wallet yet. This may happen if wallet creation failed during signup.
+                        You can create one now to enable VAS features for this user.
+                    </p>
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="createUserWallet()">
+                            <i class="fas fa-plus-circle"></i> Create VAS Wallet
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="action-section" id="walletActions">
                     <h3>Liquid Wallet Management</h3>
                     <div class="action-buttons">
@@ -944,13 +958,24 @@
         
         // Display wallet details
         function displayWalletDetails(wallet) {
+            const noWalletSection = document.getElementById('noWalletSection');
+            const walletActions = document.getElementById('walletActions');
+            
             if (!wallet) {
                 document.getElementById('walletBalance').textContent = 'No wallet found';
                 document.getElementById('walletAccountName').textContent = '-';
                 document.getElementById('walletStatus').textContent = 'Not created';
                 document.getElementById('walletAccounts').textContent = '-';
+                
+                // Show create wallet section, hide normal actions
+                noWalletSection.style.display = 'block';
+                walletActions.style.display = 'none';
                 return;
             }
+            
+            // Hide create wallet section, show normal actions
+            noWalletSection.style.display = 'none';
+            walletActions.style.display = 'block';
             
             document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0, 'NGN');
             document.getElementById('walletAccountName').textContent = wallet.accountName || '-';
@@ -962,6 +987,40 @@
                 document.getElementById('walletAccounts').textContent = accountNumbers;
             } else {
                 document.getElementById('walletAccounts').textContent = 'No accounts';
+            }
+        }
+        
+        // Create VAS wallet for user (Admin action)
+        async function createUserWallet() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`Create VAS wallet for ${currentUser.email}?\n\nThis will create a basic TIER_0 wallet that the user can upgrade by completing KYC and creating a reserved account.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/create`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('VAS wallet created successfully!');
+                    // Refresh wallet data to show the new wallet
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to create wallet');
+                }
+            } catch (error) {
+                showError('Error creating wallet: ' + error.message);
             }
         }
         
@@ -981,6 +1040,13 @@
         async function showFundWalletModal() {
             if (!currentUser) {
                 showError('No user selected');
+                return;
+            }
+            
+            // Check if wallet exists first
+            const walletBalanceText = document.getElementById('walletBalance').textContent;
+            if (walletBalanceText === 'No wallet found') {
+                showError('User does not have a VAS wallet. Please create one first.');
                 return;
             }
             
@@ -1047,8 +1113,14 @@
                 return;
             }
             
-            // Check current balance first
+            // Check if wallet exists first
             const currentBalanceText = document.getElementById('walletBalance').textContent;
+            if (currentBalanceText === 'No wallet found') {
+                showError('User does not have a VAS wallet. Please create one first.');
+                return;
+            }
+            
+            // Check current balance
             const currentBalance = parseFloat(currentBalanceText.replace(/[₦,]/g, ''));
             
             const amount = prompt('Enter deduction amount (₦):');

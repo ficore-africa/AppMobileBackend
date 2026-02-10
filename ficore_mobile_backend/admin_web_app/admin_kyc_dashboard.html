@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KYC Management Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>KYC Management - FiCore Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="responsive.css">
+    <script src="utils.js"></script>
     <style>
         * {
             margin: 0;
@@ -12,82 +15,163 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f5f5f5;
-            color: #333;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: white;
+            color: #1E3A8A;
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .header h1 {
-            font-size: 28px;
-            font-weight: 600;
+            font-size: 24px;
         }
         
-        .stats {
+        .header-actions {
             display: flex;
-            justify-content: center;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #1E3A8A;
+        }
+        
+        .btn-secondary:hover {
+            background: #f0f0f0;
+        }
+        
+        .btn-success {
+            background: #16A34A;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #15803D;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #B91C1C;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
-            margin: 20px;
-            flex-wrap: wrap;
+            margin-bottom: 30px;
         }
         
         .stat-card {
             background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            text-align: center;
-            min-width: 150px;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         
-        .stat-number {
+        .stat-card h3 {
+            font-size: 14px;
+            color: #6B7280;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .stat-card .stat-number {
             font-size: 32px;
             font-weight: bold;
-            color: #667eea;
+            color: #1E3A8A;
         }
         
-        .stat-label {
-            color: #666;
-            margin-top: 5px;
+        .submissions-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .section-header h2 {
+            font-size: 20px;
+            color: #1E3A8A;
         }
         
         .kyc-card {
-            background: white;
-            border-radius: 12px;
-            margin: 15px 0;
+            background: #F9FAFB;
+            border-radius: 10px;
             padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            transition: transform 0.2s ease;
+            margin-bottom: 15px;
+            border-left: 4px solid #E5E7EB;
+            transition: all 0.2s;
         }
         
         .kyc-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         
-        .status-submitted {
-            border-left: 4px solid #2196F3;
+        .kyc-card.status-submitted {
+            border-left-color: #F59E0B;
         }
         
-        .status-verified {
-            border-left: 4px solid #4CAF50;
+        .kyc-card.status-verified {
+            border-left-color: #16A34A;
         }
         
-        .status-rejected {
-            border-left: 4px solid #f44336;
+        .kyc-card.status-rejected {
+            border-left-color: #DC2626;
         }
         
         .kyc-header {
@@ -100,30 +184,36 @@
         .kyc-title {
             font-size: 18px;
             font-weight: 600;
-            color: #333;
+            color: #2E2E2E;
         }
         
-        .status-badge {
+        .kyc-email {
+            font-size: 14px;
+            color: #6B7280;
+        }
+        
+        .badge {
+            display: inline-block;
             padding: 4px 12px;
-            border-radius: 20px;
+            border-radius: 12px;
             font-size: 12px;
             font-weight: 600;
             text-transform: uppercase;
         }
         
-        .status-submitted .status-badge {
-            background: #e3f2fd;
-            color: #1976d2;
+        .badge-submitted {
+            background: #FEF3C7;
+            color: #92400E;
         }
         
-        .status-verified .status-badge {
-            background: #e8f5e8;
-            color: #388e3c;
+        .badge-verified {
+            background: #D1FAE5;
+            color: #065F46;
         }
         
-        .status-rejected .status-badge {
-            background: #ffebee;
-            color: #d32f2f;
+        .badge-rejected {
+            background: #FEE2E2;
+            color: #991B1B;
         }
         
         .kyc-details {
@@ -134,22 +224,23 @@
         }
         
         .detail-item {
-            display: flex;
-            flex-direction: column;
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
         }
         
         .detail-label {
             font-size: 12px;
-            color: #666;
+            color: #6B7280;
+            margin-bottom: 4px;
             text-transform: uppercase;
             font-weight: 600;
-            margin-bottom: 4px;
         }
         
         .detail-value {
             font-size: 14px;
-            color: #333;
-            font-weight: 500;
+            color: #2E2E2E;
+            font-weight: 600;
         }
         
         .actions {
@@ -158,321 +249,361 @@
             justify-content: flex-end;
         }
         
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.2s ease;
-        }
-        
-        .btn:hover {
-            transform: translateY(-1px);
-        }
-        
-        .btn-verify {
-            background: #4CAF50;
-            color: white;
-        }
-        
-        .btn-verify:hover {
-            background: #45a049;
-        }
-        
-        .btn-reject {
-            background: #f44336;
-            color: white;
-        }
-        
-        .btn-reject:hover {
-            background: #da190b;
-        }
-        
         .loading {
             text-align: center;
-            padding: 40px;
-            color: #666;
+            padding: 60px 20px;
+            color: #6B7280;
+        }
+        
+        .loading i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
         }
         
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #666;
+            color: #6B7280;
         }
         
-        .empty-state-icon {
-            font-size: 64px;
+        .empty-state i {
+            font-size: 48px;
             margin-bottom: 20px;
             opacity: 0.5;
         }
         
-        .refresh-btn {
+        /* Backend Switcher */
+        .backend-switcher {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 56px;
-            height: 56px;
-            cursor: pointer;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            font-size: 20px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
         }
         
-        .refresh-btn:hover {
-            background: #5a6fd8;
+        .backend-switcher label {
+            font-weight: 600;
+            color: #6B7280;
         }
         
-        @media (max-width: 768px) {
-            .kyc-details {
-                grid-template-columns: 1fr;
-            }
-            
-            .actions {
-                justify-content: center;
-            }
-            
-            .stats {
-                flex-direction: column;
-                align-items: center;
-            }
+        .backend-toggle {
+            display: flex;
+            background: #F3F4F6;
+            border-radius: 6px;
+            padding: 3px;
+        }
+        
+        .backend-toggle button {
+            padding: 6px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6B7280;
+            transition: all 0.2s;
+        }
+        
+        .backend-toggle button.active {
+            background: white;
+            color: #1E3A8A;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .backend-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .backend-indicator.production {
+            background: #16A34A;
+        }
+        
+        .backend-indicator.dev {
+            background: #F59E0B;
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🔒 KYC Management Dashboard</h1>
-        <p>Internal KYC Verification System - Zero External Charges</p>
-    </div>
-    
-    <div class="stats" id="stats">
-        <div class="stat-card">
-            <div class="stat-number" id="pendingCount">-</div>
-            <div class="stat-label">Pending Review</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-number" id="verifiedCount">-</div>
-            <div class="stat-label">Verified Today</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-number" id="rejectedCount">-</div>
-            <div class="stat-label">Rejected Today</div>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div id="kycSubmissions">
-            <div class="loading">
-                <div>Loading KYC submissions...</div>
+        <div class="header-content">
+            <h1><i class="fas fa-id-card"></i> KYC Management</h1>
+            <div class="header-actions">
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="user_management.html" class="btn btn-secondary">
+                    <i class="fas fa-users"></i> Users
+                </a>
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="audit_logs.html" class="btn btn-secondary">
+                    <i class="fas fa-clipboard-list"></i> Audit Logs
+                </a>
+                <button onclick="logout()" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
             </div>
         </div>
     </div>
     
-    <button class="refresh-btn" onclick="loadKycSubmissions()" title="Refresh">
-        🔄
-    </button>
-
-    <script>
-        let submissions = [];
+    <div class="container">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Pending Submissions</h3>
+                <div class="stat-number" id="pendingCount">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Verified Today</h3>
+                <div class="stat-number" id="verifiedTodayCount">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Rejected Today</h3>
+                <div class="stat-number" id="rejectedTodayCount">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Processed</h3>
+                <div class="stat-number" id="totalProcessedCount">-</div>
+            </div>
+        </div>
         
-        async function loadKycSubmissions() {
+        <!-- Submissions Section -->
+        <div class="submissions-section">
+            <div class="section-header">
+                <h2>Pending KYC Submissions</h2>
+                <button class="btn btn-primary" onclick="loadSubmissions()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            
+            <div id="submissionsContainer">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading KYC submissions...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Backend Switcher -->
+        <div class="backend-switcher">
+            <label>Backend:</label>
+            <div class="backend-toggle">
+                <button id="prodBtn" onclick="switchBackend('production')">
+                    <span class="backend-indicator production"></span>
+                    Production
+                </button>
+                <button id="devBtn" onclick="switchBackend('dev')">
+                    <span class="backend-indicator dev"></span>
+                    Dev
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Update backend switcher UI
+        function updateBackendSwitcherUI() {
+            const currentBackend = getCurrentBackend();
+            document.getElementById('prodBtn').classList.toggle('active', currentBackend === 'production');
+            document.getElementById('devBtn').classList.toggle('active', currentBackend === 'dev');
+        }
+        
+        // Check authentication on load
+        window.addEventListener('load', () => {
+            if (!checkAuth()) return;
+            updateBackendSwitcherUI();
+            loadSubmissions();
+        });
+        
+        // Load KYC submissions
+        async function loadSubmissions() {
             try {
-                const response = await fetch('/api/admin/kyc/pending');
+                const response = await fetch(`${API_BASE_URL}/admin/kyc/pending`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
                 const data = await response.json();
                 
                 if (data.success) {
-                    submissions = data.data.submissions;
-                    displaySubmissions(submissions);
-                    updateStats();
+                    displaySubmissions(data.data.submissions);
+                    updateStats(data.data.submissions);
                 } else {
-                    showError('Failed to load submissions: ' + data.message);
+                    showError(data.message || 'Failed to load submissions');
                 }
             } catch (error) {
-                console.error('Error loading KYC submissions:', error);
-                showError('Network error. Please check your connection.');
+                showError('Error loading submissions: ' + error.message);
             }
         }
         
+        // Display submissions
         function displaySubmissions(submissions) {
-            const container = document.getElementById('kycSubmissions');
+            const container = document.getElementById('submissionsContainer');
             
             if (submissions.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">📋</div>
-                        <h3>No Pending KYC Submissions</h3>
-                        <p>All submissions have been reviewed.</p>
+                        <i class="fas fa-check-circle"></i>
+                        <h3>No Pending Submissions</h3>
+                        <p>All KYC submissions have been processed</p>
                     </div>
                 `;
                 return;
             }
             
-            container.innerHTML = '';
-            
-            submissions.forEach(submission => {
-                const card = document.createElement('div');
-                card.className = `kyc-card status-${submission.status.toLowerCase()}`;
-                
-                const submittedDate = new Date(submission.submittedAt).toLocaleString();
-                
-                card.innerHTML = `
+            container.innerHTML = submissions.map(submission => `
+                <div class="kyc-card status-${submission.status.toLowerCase()}">
                     <div class="kyc-header">
-                        <div class="kyc-title">
-                            ${submission.submissionType} Verification
+                        <div>
+                            <div class="kyc-title">${submission.firstName} ${submission.lastName}</div>
+                            <div class="kyc-email">${submission.userEmail}</div>
                         </div>
-                        <div class="status-badge">${submission.status}</div>
+                        <span class="badge badge-${submission.status.toLowerCase()}">${submission.status}</span>
                     </div>
                     
                     <div class="kyc-details">
                         <div class="detail-item">
-                            <div class="detail-label">User Email</div>
-                            <div class="detail-value">${submission.userEmail || 'N/A'}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Full Name</div>
-                            <div class="detail-value">${submission.firstName} ${submission.lastName}</div>
+                            <div class="detail-label">Submission Type</div>
+                            <div class="detail-value">${submission.submissionType}</div>
                         </div>
                         <div class="detail-item">
                             <div class="detail-label">Phone Number</div>
                             <div class="detail-value">${submission.phoneNumber || 'N/A'}</div>
                         </div>
                         <div class="detail-item">
-                            <div class="detail-label">${submission.submissionType} Number</div>
-                            <div class="detail-value">${submission.bvnNumberMasked || submission.ninNumberMasked || 'N/A'}</div>
+                            <div class="detail-label">BVN (Masked)</div>
+                            <div class="detail-value">${submission.bvnNumberMasked || 'N/A'}</div>
                         </div>
                         <div class="detail-item">
-                            <div class="detail-label">Date of Birth</div>
-                            <div class="detail-value">${submission.dateOfBirth || 'N/A'}</div>
+                            <div class="detail-label">NIN (Masked)</div>
+                            <div class="detail-value">${submission.ninNumberMasked || 'N/A'}</div>
                         </div>
                         <div class="detail-item">
-                            <div class="detail-label">Submitted</div>
-                            <div class="detail-value">${submittedDate}</div>
+                            <div class="detail-label">Submitted At</div>
+                            <div class="detail-value">${formatDate(submission.submittedAt)}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">User ID</div>
+                            <div class="detail-value">${submission.userId.substring(0, 8)}...</div>
                         </div>
                     </div>
                     
                     <div class="actions">
-                        <button class="btn btn-verify" onclick="verifySubmission('${submission._id}')">
-                            ✅ Verify
+                        <button class="btn btn-success" onclick="verifySubmission('${submission._id}', '${submission.userEmail}')">
+                            <i class="fas fa-check"></i> Verify
                         </button>
-                        <button class="btn btn-reject" onclick="rejectSubmission('${submission._id}')">
-                            ❌ Reject
+                        <button class="btn btn-danger" onclick="rejectSubmission('${submission._id}', '${submission.userEmail}')">
+                            <i class="fas fa-times"></i> Reject
                         </button>
                     </div>
-                `;
-                
-                container.appendChild(card);
-            });
+                </div>
+            `).join('');
         }
         
-        function updateStats() {
-            const pending = submissions.filter(s => s.status === 'SUBMITTED').length;
-            document.getElementById('pendingCount').textContent = pending;
-            
-            // For demo purposes - in real implementation, fetch from API
-            document.getElementById('verifiedCount').textContent = '0';
-            document.getElementById('rejectedCount').textContent = '0';
+        // Update stats
+        function updateStats(submissions) {
+            document.getElementById('pendingCount').textContent = submissions.length;
+            // TODO: Fetch verified/rejected today counts from backend
+            document.getElementById('verifiedTodayCount').textContent = '-';
+            document.getElementById('rejectedTodayCount').textContent = '-';
+            document.getElementById('totalProcessedCount').textContent = '-';
         }
         
-        async function verifySubmission(submissionId) {
-            if (!confirm('Are you sure you want to verify this KYC submission?')) return;
+        // Verify submission
+        async function verifySubmission(submissionId, userEmail) {
+            if (!confirm(`Verify KYC for ${userEmail}?\n\nThis will:\n- Mark KYC as verified\n- Upgrade wallet to TIER_2\n- Grant full VAS access`)) {
+                return;
+            }
             
             try {
-                const response = await fetch(`/api/admin/kyc/verify/${submissionId}`, {
+                const response = await fetch(`${API_BASE_URL}/admin/kyc/verify/${submissionId}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'VERIFY' })
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'VERIFY'
+                    })
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    showSuccess('KYC verified successfully');
-                    loadKycSubmissions(); // Reload
+                    showSuccess('KYC verified successfully! User wallet upgraded to TIER_2.');
+                    loadSubmissions(); // Refresh list
                 } else {
-                    showError('Error: ' + data.message);
+                    showError(data.message || 'Failed to verify KYC');
                 }
             } catch (error) {
                 showError('Error verifying KYC: ' + error.message);
             }
         }
         
-        async function rejectSubmission(submissionId) {
-            const reason = prompt('Enter rejection reason:');
+        // Reject submission
+        async function rejectSubmission(submissionId, userEmail) {
+            const reason = prompt(`Reject KYC for ${userEmail}?\n\nPlease provide a reason (minimum 10 characters):`);
+            
             if (!reason) return;
             
+            if (reason.length < 10) {
+                showError('Rejection reason must be at least 10 characters');
+                return;
+            }
+            
             try {
-                const response = await fetch(`/api/admin/kyc/verify/${submissionId}`, {
+                const response = await fetch(`${API_BASE_URL}/admin/kyc/verify/${submissionId}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'REJECT', reason: reason })
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'REJECT',
+                        reason: reason
+                    })
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    showSuccess('KYC rejected');
-                    loadKycSubmissions(); // Reload
+                    showSuccess('KYC rejected successfully');
+                    loadSubmissions(); // Refresh list
                 } else {
-                    showError('Error: ' + data.message);
+                    showError(data.message || 'Failed to reject KYC');
                 }
             } catch (error) {
                 showError('Error rejecting KYC: ' + error.message);
             }
         }
         
-        function showSuccess(message) {
-            // Simple success notification
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: #4CAF50;
-                color: white;
-                padding: 15px 20px;
-                border-radius: 8px;
-                z-index: 1000;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            `;
-            notification.textContent = message;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                document.body.removeChild(notification);
-            }, 3000);
+        // Format date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
         }
-        
-        function showError(message) {
-            // Simple error notification
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: #f44336;
-                color: white;
-                padding: 15px 20px;
-                border-radius: 8px;
-                z-index: 1000;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            `;
-            notification.textContent = message;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                document.body.removeChild(notification);
-            }, 5000);
-        }
-        
-        // Load submissions on page load
-        loadKycSubmissions();
-        
-        // Auto-refresh every 30 seconds
-        setInterval(loadKycSubmissions, 30000);
     </script>
 </body>
 </html>
