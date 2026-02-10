@@ -60,6 +60,8 @@ def get_expenses():
                 expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+                # ENTRY TAGGING FIELDS: Format tagging fields for frontend
+                expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
                 expense_list.append(expense_data)
            
             has_more = offset + limit < total
@@ -104,8 +106,13 @@ def get_expense(expense_id):
                     'error_type': 'pending_sync'
                 }), 202  # 202 Accepted - processing in background
             
+            # CRITICAL FIX (Feb 10, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: expense_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = expense_id.replace('expense_', '').replace('income_', '')
+            
             expense = expenses_bp.mongo.db.expenses.find_one({
-                '_id': ObjectId(expense_id),
+                '_id': ObjectId(clean_id),
                 'userId': current_user['_id']
             })
            
@@ -116,6 +123,7 @@ def get_expense(expense_id):
             expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
             expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+            expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
            
             return jsonify({
                 'success': True,
