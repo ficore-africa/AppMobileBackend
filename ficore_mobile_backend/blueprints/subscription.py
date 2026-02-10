@@ -6,15 +6,16 @@ import requests
 import hmac
 import hashlib
 import traceback
+import uuid
 
 def init_subscription_blueprint(mongo, token_required, serialize_doc):
     from utils.analytics_tracker import create_tracker
+    from config.test_accounts import is_test_account, get_paystack_keys
+    
     subscription_bp = Blueprint('subscription', __name__, url_prefix='/subscription')
     tracker = create_tracker(mongo.db)
     
-    # Paystack configuration
-    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
-    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_your_public_key')
+    # Paystack configuration (defaults - will be overridden per user)
     PAYSTACK_BASE_URL = 'https://api.paystack.co'
     
     # Subscription plans configuration
@@ -53,10 +54,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
         }
     }
 
-    def _make_paystack_request(endpoint, method='GET', data=None):
-        """Make authenticated request to Paystack API"""
+    def _make_paystack_request(endpoint, method='GET', data=None, user_email=None):
+        """Make authenticated request to Paystack API with test mode support"""
+        # Get appropriate keys based on user
+        paystack_keys = get_paystack_keys(user_email) if user_email else {
+            'secret_key': os.getenv('PAYSTACK_SECRET_KEY'),
+            'mode': 'live'
+        }
+        
         headers = {
-            'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+            'Authorization': f'Bearer {paystack_keys["secret_key"]}',
             'Content-Type': 'application/json'
         }
         
@@ -72,7 +79,10 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            return response.json()
+            result = response.json()
+            if paystack_keys['mode'] == 'test':
+                print(f"[TEST MODE] Paystack {method} {endpoint}: {result}")
+            return result
         except Exception as e:
             print(f"Paystack API error: {str(e)}")
             return {'status': False, 'message': f'Payment service error: {str(e)}'}
@@ -128,12 +138,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     @subscription_bp.route('/initialize', methods=['POST'])
     @token_required
     def initialize_subscription(current_user):
-        """Initialize subscription payment with Paystack"""
+        """Initialize subscription payment with Paystack (with test mode support)"""
         try:
             data = request.get_json()
             
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_email = user.get('email', '')
+            
             # Log incoming request for debugging
-            print(f"[SUBSCRIPTION INIT] User: {current_user.get('email', 'unknown')}")
+            print(f"[SUBSCRIPTION INIT] User: {user_email}")
+            print(f"[SUBSCRIPTION INIT] Test mode: {is_test_account(user_email)}")
             print(f"[SUBSCRIPTION INIT] Request data: {data}")
             
             # Validate required fields
@@ -168,7 +182,6 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             plan = SUBSCRIPTION_PLANS[plan_type]
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
             
             # Check if user is already subscribed
             if user.get('isSubscribed', False):
@@ -184,12 +197,47 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             # Initialize Paystack transaction
             reference = f"sub_{current_user['_id']}_{plan_type}_{int(datetime.utcnow().timestamp())}"
+            
+            # TEST MODE: For test accounts, simulate instant success
+            if is_test_account(user_email):
+                print(f"[TEST MODE] Simulating subscription payment for {user_email}")
+                
+                # Store pending subscription
+                pending_subscription = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'reference': reference,
+                    'planType': plan_type,
+                    'amount': plan['price'],
+                    'status': 'pending',
+                    'createdAt': datetime.utcnow(),
+                    'testMode': True
+                }
+                mongo.db.pending_subscriptions.insert_one(pending_subscription)
+                
+                # Return mock authorization URL that will auto-verify
+                mock_url = f"{request.host_url.rstrip('/')}/subscription/verify-callback?reference={reference}&test_mode=true"
+                
+                print(f"[TEST MODE] Mock payment URL: {mock_url}")
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'authorization_url': mock_url,
+                        'access_code': f'TEST_{uuid.uuid4().hex[:10]}',
+                        'reference': reference,
+                        'test_mode': True
+                    },
+                    'message': 'Payment initialized successfully (TEST MODE)'
+                })
+            
+            # LIVE MODE: Normal Paystack flow
             paystack_data = {
                 'email': user['email'],
                 'amount': int(plan['price'] * 100),  # Paystack expects kobo
                 'currency': 'NGN',
                 'reference': reference,
-                'callback_url': f"{request.host_url.rstrip('/')}subscription/verify-callback?reference={reference}",
+                'callback_url': f"{request.host_url.rstrip('/')}/subscription/verify-callback?reference={reference}",
                 'metadata': {
                     'user_id': str(current_user['_id']),
                     'plan_type': plan_type,
@@ -198,7 +246,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             }
             
             print(f"[SUBSCRIPTION INIT] Calling Paystack with data: {paystack_data}")
-            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data)
+            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data, user_email)
             print(f"[SUBSCRIPTION INIT] Paystack response: {paystack_response}")
             
             if paystack_response.get('status'):

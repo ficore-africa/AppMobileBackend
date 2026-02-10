@@ -21,6 +21,8 @@ from utils.emergency_pricing_recovery import tag_emergency_transaction
 from blueprints.notifications import create_user_notification
 from utils.atomic_transactions import check_recent_duplicate_transaction
 from utils.transaction_task_queue import process_vas_transaction_with_reservation, get_user_available_balance
+from config.test_accounts import is_test_account
+from utils.test_mode_vas import simulate_airtime_purchase, simulate_data_purchase, simulate_electricity_purchase
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):
@@ -2312,6 +2314,60 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             user_id = str(current_user['_id'])
+            user_email = current_user.get('email', '')
+            
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate successful purchase
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Simulating airtime purchase for {user_email}')
+                print(f'[TEST MODE] Network: {network}, Amount: ₦{amount}, Phone: {phone_number}')
+                
+                # Check wallet balance
+                wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+                if not wallet:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet not found. Please create a wallet first.',
+                        'errors': {'wallet': ['Wallet not found']}
+                    }), 404
+                
+                current_balance = wallet.get('balance', 0)
+                if current_balance < amount:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
+                        'errors': {'wallet': ['Insufficient balance']}
+                    }), 400
+                
+                # Deduct from wallet
+                mongo.db.vas_wallets.update_one(
+                    {'userId': ObjectId(user_id)},
+                    {
+                        '$inc': {'balance': -amount},
+                        '$set': {'updatedAt': datetime.utcnow()}
+                    }
+                )
+                
+                # Simulate successful purchase
+                result = simulate_airtime_purchase(mongo, user_id, network, amount, phone_number)
+                
+                print(f'[TEST MODE] Purchase successful: {result["transactionId"]}')
+                print(f'[TEST MODE] New wallet balance: ₦{current_balance - amount:,.2f}')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'₦{amount} {network} airtime purchased successfully (TEST MODE)',
+                    'data': {
+                        'transactionId': result['transactionId'],
+                        'reference': result['reference'],
+                        'amount': amount,
+                        'network': network,
+                        'phoneNumber': phone_number,
+                        'newBalance': current_balance - amount,
+                        'testMode': True
+                    }
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
             
             # Determine user tier for record keeping
             user_tier = 'basic'
@@ -2826,6 +2882,61 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             user_id = str(current_user['_id'])
+            user_email = current_user.get('email', '')
+            
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate successful purchase
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Simulating data purchase for {user_email}')
+                print(f'[TEST MODE] Network: {network}, Plan: {data_plan_name}, Amount: ₦{amount}')
+                
+                # Check wallet balance
+                wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+                if not wallet:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet not found. Please create a wallet first.',
+                        'errors': {'wallet': ['Wallet not found']}
+                    }), 404
+                
+                current_balance = wallet.get('balance', 0)
+                if current_balance < amount:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
+                        'errors': {'wallet': ['Insufficient balance']}
+                    }), 400
+                
+                # Deduct from wallet
+                mongo.db.vas_wallets.update_one(
+                    {'userId': ObjectId(user_id)},
+                    {
+                        '$inc': {'balance': -amount},
+                        '$set': {'updatedAt': datetime.utcnow()}
+                    }
+                )
+                
+                # Simulate successful purchase
+                result = simulate_data_purchase(mongo, user_id, network, data_plan_id, phone_number, amount, data_plan_name)
+                
+                print(f'[TEST MODE] Purchase successful: {result["transactionId"]}')
+                print(f'[TEST MODE] New wallet balance: ₦{current_balance - amount:,.2f}')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{data_plan_name} purchased successfully (TEST MODE)',
+                    'data': {
+                        'transactionId': result['transactionId'],
+                        'reference': result['reference'],
+                        'amount': amount,
+                        'network': network,
+                        'phoneNumber': phone_number,
+                        'planName': data_plan_name,
+                        'newBalance': current_balance - amount,
+                        'testMode': True
+                    }
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
             
             # Determine user tier for pricing
             user_tier = 'basic'

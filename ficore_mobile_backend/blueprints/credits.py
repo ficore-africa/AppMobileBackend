@@ -11,11 +11,11 @@ import hmac
 import hashlib
 
 def init_credits_blueprint(mongo, token_required, serialize_doc):
+    from config.test_accounts import is_test_account, get_paystack_keys
+    
     credits_bp = Blueprint('credits', __name__, url_prefix='/credits')
     
-    # Paystack configuration for FC purchases
-    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
-    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_your_public_key')
+    # Paystack configuration for FC purchases (defaults - will be overridden per user)
     PAYSTACK_BASE_URL = 'https://api.paystack.co'
     
     # Credit top-up configuration - For NON-SUBSCRIBERS ONLY
@@ -43,10 +43,16 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
         """Check if file extension is allowed"""
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    def _make_paystack_request(endpoint, method='GET', data=None):
-        """Make authenticated request to Paystack API"""
+    def _make_paystack_request(endpoint, method='GET', data=None, user_email=None):
+        """Make authenticated request to Paystack API with test mode support"""
+        # Get appropriate keys based on user
+        paystack_keys = get_paystack_keys(user_email) if user_email else {
+            'secret_key': os.getenv('PAYSTACK_SECRET_KEY'),
+            'mode': 'live'
+        }
+        
         headers = {
-            'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+            'Authorization': f'Bearer {paystack_keys["secret_key"]}',
             'Content-Type': 'application/json'
         }
         
@@ -62,7 +68,10 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            return response.json()
+            result = response.json()
+            if paystack_keys['mode'] == 'test':
+                print(f"[TEST MODE] Paystack {method} {endpoint}: {result}")
+            return result
         except Exception as e:
             print(f"Paystack API error: {str(e)}")
             return {'status': False, 'message': f'Payment service error: {str(e)}'}
@@ -262,9 +271,16 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
     @credits_bp.route('/purchase/initialize', methods=['POST'])
     @token_required
     def initialize_credit_purchase(current_user):
-        """Initialize automated FC purchase with Paystack"""
+        """Initialize automated FC purchase with Paystack (with test mode support)"""
         try:
             data = request.get_json()
+            
+            # Get user email
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_email = user.get('email', 'user@example.com')
+            
+            print(f"[CREDITS] Initialize purchase for {user_email}")
+            print(f"[CREDITS] Test mode: {is_test_account(user_email)}")
             
             # Validate required fields
             if 'credits' not in data:
@@ -291,13 +307,54 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
 
             naira_amount = selected_package['naira']
             
-            # Get user email for Paystack
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
-            user_email = user.get('email', 'user@example.com')
-            
             # Create transaction reference
             transaction_ref = f"fc_purchase_{current_user['_id']}_{uuid.uuid4().hex[:8]}"
             
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate instant success
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Simulating credit purchase for {user_email}')
+                print(f'[TEST MODE] Credits: {credit_amount}, Amount: ₦{naira_amount}')
+                
+                # Store pending transaction
+                pending_transaction = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'transactionRef': transaction_ref,
+                    'paystackRef': f'TEST_{uuid.uuid4().hex[:10]}',
+                    'accessCode': f'TEST_{uuid.uuid4().hex[:10]}',
+                    'creditAmount': credit_amount,
+                    'nairaAmount': naira_amount,
+                    'status': 'pending',
+                    'paymentMethod': 'paystack_test',
+                    'testMode': True,
+                    'createdAt': datetime.utcnow(),
+                    'expiresAt': datetime.utcnow() + timedelta(minutes=15)
+                }
+                
+                mongo.db.pending_credit_purchases.insert_one(pending_transaction)
+                
+                # Return mock authorization URL
+                mock_url = f"{request.host_url.rstrip('/')}/credits/verify-callback?reference={transaction_ref}&test_mode=true"
+                
+                print(f'[TEST MODE] Mock payment URL: {mock_url}')
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'transactionRef': transaction_ref,
+                        'paystackRef': pending_transaction['paystackRef'],
+                        'accessCode': pending_transaction['accessCode'],
+                        'authorizationUrl': mock_url,
+                        'creditAmount': credit_amount,
+                        'nairaAmount': naira_amount,
+                        'testMode': True
+                    },
+                    'message': 'Payment initialized successfully (TEST MODE)'
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
+            
+            # LIVE MODE: Normal Paystack flow
             # Initialize Paystack transaction
             paystack_data = {
                 'email': user_email,
@@ -313,7 +370,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 }
             }
             
-            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data)
+            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data, user_email)
             
             if not paystack_response.get('status'):
                 return jsonify({
