@@ -697,6 +697,27 @@
                     </div>
                 </div>
                 
+                <!-- Show this section when wallet exists but is broken/incomplete -->
+                <div id="brokenWalletSection" class="action-section" style="display: none; background: #FEE2E2; border: 2px solid #DC2626;">
+                    <h3 style="color: #991B1B;">🔧 Wallet Needs Repair</h3>
+                    <p style="color: #991B1B; margin-bottom: 15px;">
+                        This wallet is in <strong id="brokenWalletStatus">pending_activation</strong> status. 
+                        This usually means the reserved account creation failed during signup.
+                        You can fix this by completing the wallet setup or recreating it entirely.
+                    </p>
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="completeWalletSetup()">
+                            <i class="fas fa-wrench"></i> Complete Wallet Setup
+                        </button>
+                        <button class="btn btn-warning" onclick="recreateUserWallet()">
+                            <i class="fas fa-redo"></i> Recreate Wallet
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteUserWallet()">
+                            <i class="fas fa-trash"></i> Delete Wallet
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="action-section" id="walletActions">
                     <h3>Liquid Wallet Management</h3>
                     <div class="action-buttons">
@@ -959,6 +980,7 @@
         // Display wallet details
         function displayWalletDetails(wallet) {
             const noWalletSection = document.getElementById('noWalletSection');
+            const brokenWalletSection = document.getElementById('brokenWalletSection');
             const walletActions = document.getElementById('walletActions');
             
             if (!wallet) {
@@ -967,14 +989,35 @@
                 document.getElementById('walletStatus').textContent = 'Not created';
                 document.getElementById('walletAccounts').textContent = '-';
                 
-                // Show create wallet section, hide normal actions
+                // Show create wallet section, hide others
                 noWalletSection.style.display = 'block';
+                brokenWalletSection.style.display = 'none';
                 walletActions.style.display = 'none';
                 return;
             }
             
-            // Hide create wallet section, show normal actions
+            // Check if wallet is broken/incomplete (pending_activation, no accounts, or balance is 0)
+            const isBroken = wallet.status === 'pending_activation' || 
+                           (!wallet.accounts || wallet.accounts.length === 0) ||
+                           (wallet.balance === 0 && wallet.status !== 'active');
+            
+            if (isBroken) {
+                // Show broken wallet section
+                document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0, 'NGN');
+                document.getElementById('walletAccountName').textContent = wallet.accountName || '-';
+                document.getElementById('walletStatus').textContent = wallet.status || 'unknown';
+                document.getElementById('walletAccounts').textContent = 'No accounts';
+                document.getElementById('brokenWalletStatus').textContent = wallet.status || 'unknown';
+                
+                noWalletSection.style.display = 'none';
+                brokenWalletSection.style.display = 'block';
+                walletActions.style.display = 'none';
+                return;
+            }
+            
+            // Hide special sections, show normal actions
             noWalletSection.style.display = 'none';
+            brokenWalletSection.style.display = 'none';
             walletActions.style.display = 'block';
             
             document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0, 'NGN');
@@ -1021,6 +1064,108 @@
                 }
             } catch (error) {
                 showError('Error creating wallet: ' + error.message);
+            }
+        }
+        
+        // Complete wallet setup (fix broken wallet)
+        async function completeWalletSetup() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`Complete wallet setup for ${currentUser.email}?\n\nThis will:\n- Create reserved account if missing\n- Update wallet status to active\n- Enable VAS features for the user`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/complete-setup`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Wallet setup completed successfully!');
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to complete wallet setup');
+                }
+            } catch (error) {
+                showError('Error completing wallet setup: ' + error.message);
+            }
+        }
+        
+        // Recreate wallet (delete and create new)
+        async function recreateUserWallet() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`⚠️ RECREATE wallet for ${currentUser.email}?\n\nThis will:\n- DELETE the existing broken wallet\n- CREATE a new wallet from scratch\n- User's balance will be RESET to ₦0.00\n\nOnly do this if the wallet is completely broken and cannot be fixed.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/recreate`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Wallet recreated successfully!');
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to recreate wallet');
+                }
+            } catch (error) {
+                showError('Error recreating wallet: ' + error.message);
+            }
+        }
+        
+        // Delete wallet
+        async function deleteUserWallet() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`⚠️ DELETE wallet for ${currentUser.email}?\n\nThis will PERMANENTLY delete the wallet and all associated data.\n\nAre you absolutely sure?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Wallet deleted successfully!');
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to delete wallet');
+                }
+            } catch (error) {
+                showError('Error deleting wallet: ' + error.message);
             }
         }
         

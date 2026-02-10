@@ -345,7 +345,7 @@ def signup():
                 'userId': result.inserted_id,
                 'balance': 0.0,
                 'status': 'pending_activation',  # Will be activated when user creates reserved account
-                'tier': 'TIER_0',  # Basic tier - no reserved account yet
+                'tier': 'TIER_1',  # TIER_1 is the default ground zero
                 'kycTier': 0,
                 'kycVerified': False,
                 'kycStatus': 'not_submitted',

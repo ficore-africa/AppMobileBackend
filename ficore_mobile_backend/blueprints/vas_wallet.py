@@ -1056,17 +1056,26 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             # Check if wallet already exists
             existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             if existing_wallet:
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'accountNumber': existing_wallet.get('accounts', [{}])[0].get('accountNumber', ''),
-                        'accountName': existing_wallet.get('accounts', [{}])[0].get('accountName', ''),
-                        'bankName': existing_wallet.get('accounts', [{}])[0].get('bankName', 'Wema Bank'),
-                        'bankCode': existing_wallet.get('accounts', [{}])[0].get('bankCode', '035'),
-                        'createdAt': existing_wallet.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
-                    },
-                    'message': 'Reserved account already exists'
-                }), 200
+                # CRITICAL FIX: Check if accounts array exists and has elements
+                accounts = existing_wallet.get('accounts', [])
+                if accounts and len(accounts) > 0:
+                    # Wallet has valid accounts, return existing
+                    return jsonify({
+                        'success': True,
+                        'data': {
+                            'accountNumber': accounts[0].get('accountNumber', ''),
+                            'accountName': accounts[0].get('accountName', ''),
+                            'bankName': accounts[0].get('bankName', 'Wema Bank'),
+                            'bankCode': accounts[0].get('bankCode', '035'),
+                            'createdAt': existing_wallet.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                        },
+                        'message': 'Reserved account already exists'
+                    }), 200
+                else:
+                    # Wallet exists but has no accounts - delete broken wallet and recreate
+                    print(f'WARNING: Found wallet without accounts for user {user_id}, deleting and recreating')
+                    mongo.db.vas_wallets.delete_one({'_id': existing_wallet['_id']})
+                    # Continue to create new wallet below
             
             # REMOVED: BVN/NIN check for reserved account creation
             # Since we now use internal KYC system, users can create accounts
@@ -1084,8 +1093,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'customerEmail': current_user.get('email', ''),
                 'customerName': current_user.get('fullName', f"FiCore User {user_id[:8]}")[:50],  # Monnify 50-char limit
                 # BVN/NIN removed - using internal KYC system
-                'getAllAvailableBanks': True  # Moniepoint default, user choice
+                'getAllAvailableBanks': True  # Request all available banks
             }
+            
+            print(f'DEBUG: Requesting reserved account with getAllAvailableBanks=True for user {user_id}')
             
             van_response = requests.post(
                 f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
@@ -1101,6 +1112,15 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 raise Exception(f'Reserved account creation failed: {van_response.text}')
             
             van_data = van_response.json()['responseBody']
+            
+            # Log what Monnify actually returned
+            print(f'DEBUG: Monnify returned {len(van_data.get("accounts", []))} accounts')
+            for i, acc in enumerate(van_data.get('accounts', [])):
+                print(f'  Account {i+1}: {acc.get("bankName")} ({acc.get("bankCode")}) - {acc.get("accountNumber")}')
+            
+            # CRITICAL FIX: Validate that Monnify returned accounts
+            if not van_data.get('accounts') or len(van_data['accounts']) == 0:
+                raise Exception('Monnify returned no accounts in response')
             
             # Create wallet record with KYC verification
             wallet_data = {
@@ -1136,10 +1156,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'createdAt': wallet_data['createdAt'].isoformat() + 'Z',
                     # Keep backward compatibility - return first account as default
                     'defaultAccount': {
-                        'accountNumber': van_data['accounts'][0].get('accountNumber', '') if van_data['accounts'] else '',
-                        'accountName': van_data['accounts'][0].get('accountName', '') if van_data['accounts'] else '',
-                        'bankName': van_data['accounts'][0].get('bankName', 'Wema Bank') if van_data['accounts'] else 'Wema Bank',
-                        'bankCode': van_data['accounts'][0].get('bankCode', '035') if van_data['accounts'] else '035',
+                        'accountNumber': van_data['accounts'][0].get('accountNumber', ''),
+                        'accountName': van_data['accounts'][0].get('accountName', ''),
+                        'bankName': van_data['accounts'][0].get('bankName', 'Wema Bank'),
+                        'bankCode': van_data['accounts'][0].get('bankCode', '035'),
                     }
                 },
                 'message': f'Reserved account created successfully with {len(van_data["accounts"])} available banks. Submit KYC for full verification.'

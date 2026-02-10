@@ -28,7 +28,7 @@ def get_expenses():
             category = request.args.get('category')
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
-            sort_by = request.args.get('sort_by', 'date')
+            sort_by = request.args.get('sort_by', 'createdAt')  # CRITICAL FIX: Default to createdAt for consistent "just now" timestamps
             sort_order = request.args.get('sort_order', 'desc')
            
             query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted

@@ -116,8 +116,8 @@ def init_admin_kyc_debug_blueprint(mongo, token_required, admin_required):
                 expected_tier = "TIER_1"
                 expected_display = "Basic"
             else:
-                expected_tier = "TIER_0"
-                expected_display = "Unverified"
+                expected_tier = "TIER_1"  # Default is TIER_1, not TIER_0
+                expected_display = "No Wallet"
             
             # Check for issues
             issues = []

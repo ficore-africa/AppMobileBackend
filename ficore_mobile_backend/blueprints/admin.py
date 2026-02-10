@@ -5723,8 +5723,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
                 'balance': 0.0,
-                'status': 'pending_activation',  # Will be activated when user creates reserved account
-                'tier': 'TIER_0',  # Basic tier - no reserved account yet
+                'status': 'pending_activation',  # Will be activated when reserved account is created
+                'tier': 'TIER_1',  # TIER_1 is the default ground zero
                 'kycTier': 0,
                 'kycVerified': False,
                 'kycStatus': 'not_submitted',
@@ -5749,7 +5749,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'details': {
                     'walletId': str(wallet_data['_id']),
                     'initialBalance': 0.0,
-                    'tier': 'TIER_0',
+                    'tier': 'TIER_1',
                     'reason': 'Admin manual wallet creation'
                 },
                 'timestamp': datetime.utcnow(),
@@ -5773,6 +5773,298 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to create wallet',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/complete-setup', methods=['POST'])
+    @token_required
+    @admin_required
+    def complete_wallet_setup(current_user, user_id):
+        """
+        Complete wallet setup for broken/incomplete wallets
+        Creates reserved account if missing and activates wallet
+        """
+        try:
+            from utils.monnify_utils import create_reserved_account
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get wallet
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet not found. Please create wallet first.'
+                }), 404
+            
+            # Check if wallet needs fixing
+            if wallet.get('status') == 'active' and wallet.get('accounts') and len(wallet.get('accounts', [])) > 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet is already active and has accounts'
+                }), 400
+            
+            # Create reserved account
+            account_name = wallet.get('accountName') or user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
+            user_email = user.get('email', '')
+            
+            print(f"🔧 Admin completing wallet setup for {user_email}...")
+            print(f"   Creating reserved account with name: {account_name}")
+            
+            reserved_account_result = create_reserved_account(
+                account_name=account_name,
+                user_email=user_email,
+                bvn=user.get('bvn', '')  # Optional
+            )
+            
+            if not reserved_account_result.get('success'):
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to create reserved account: {reserved_account_result.get('message', 'Unknown error')}"
+                }), 500
+            
+            # Update wallet with reserved account info
+            account_data = reserved_account_result['data']
+            update_data = {
+                'accounts': account_data.get('accounts', []),
+                'accountReference': account_data.get('accountReference'),
+                'accountName': account_data.get('accountName', account_name),
+                'status': 'active',
+                'tier': 'TIER_1',  # TIER_1 is the default with reserved account
+                'updatedAt': datetime.utcnow()
+            }
+            
+            mongo.db.vas_wallets.update_one(
+                {'_id': wallet['_id']},
+                {'$set': update_data}
+            )
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'COMPLETE_WALLET_SETUP',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'walletId': str(wallet['_id']),
+                    'accountReference': account_data.get('accountReference'),
+                    'accountsCreated': len(account_data.get('accounts', [])),
+                    'newStatus': 'active',
+                    'newTier': 'TIER_1',
+                    'reason': 'Admin manual wallet completion'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} completed wallet setup for user {user_id}")
+            
+            # Get updated wallet
+            updated_wallet = mongo.db.vas_wallets.find_one({'_id': wallet['_id']})
+            
+            return jsonify({
+                'success': True,
+                'data': serialize_doc(updated_wallet),
+                'message': 'Wallet setup completed successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error completing wallet setup: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to complete wallet setup',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/recreate', methods=['POST'])
+    @token_required
+    @admin_required
+    def recreate_user_wallet(current_user, user_id):
+        """
+        Delete and recreate wallet (for completely broken wallets)
+        """
+        try:
+            from utils.monnify_utils import create_reserved_account
+            
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get existing wallet
+            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            old_balance = existing_wallet.get('balance', 0.0) if existing_wallet else 0.0
+            
+            # Delete existing wallet if it exists
+            if existing_wallet:
+                mongo.db.vas_wallets.delete_one({'_id': existing_wallet['_id']})
+                print(f"🗑️ Deleted existing wallet for user {user_id} (balance was ₦{old_balance})")
+            
+            # Create new wallet with reserved account
+            account_name = user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
+            user_email = user.get('email', '')
+            
+            print(f"🔧 Admin recreating wallet for {user_email}...")
+            print(f"   Creating reserved account with name: {account_name}")
+            
+            reserved_account_result = create_reserved_account(
+                account_name=account_name,
+                user_email=user_email,
+                bvn=user.get('bvn', '')
+            )
+            
+            if not reserved_account_result.get('success'):
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to create reserved account: {reserved_account_result.get('message', 'Unknown error')}"
+                }), 500
+            
+            # Create new wallet
+            account_data = reserved_account_result['data']
+            wallet_data = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'balance': 0.0,  # Reset balance
+                'status': 'active',
+                'tier': 'TIER_1',
+                'kycTier': 0,
+                'kycVerified': False,
+                'kycStatus': user.get('kycStatus', 'not_submitted'),
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'accounts': account_data.get('accounts', []),
+                'accountReference': account_data.get('accountReference'),
+                'accountName': account_data.get('accountName', account_name),
+                'reservedAmount': 0.0
+            }
+            
+            mongo.db.vas_wallets.insert_one(wallet_data)
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'RECREATE_VAS_WALLET',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'oldWalletId': str(existing_wallet['_id']) if existing_wallet else None,
+                    'oldBalance': old_balance,
+                    'newWalletId': str(wallet_data['_id']),
+                    'newBalance': 0.0,
+                    'accountReference': account_data.get('accountReference'),
+                    'accountsCreated': len(account_data.get('accounts', [])),
+                    'reason': 'Admin wallet recreation - old wallet was broken'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} recreated VAS wallet for user {user_id}")
+            
+            return jsonify({
+                'success': True,
+                'data': serialize_doc(wallet_data),
+                'message': 'Wallet recreated successfully'
+            }), 201
+            
+        except Exception as e:
+            print(f"❌ Error recreating wallet: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to recreate wallet',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet', methods=['DELETE'])
+    @token_required
+    @admin_required
+    def delete_user_wallet(current_user, user_id):
+        """
+        Delete user's wallet (use with caution)
+        """
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get wallet
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet not found'
+                }), 404
+            
+            # Check if wallet has balance
+            if wallet.get('balance', 0.0) > 0:
+                return jsonify({
+                    'success': False,
+                    'message': f"Cannot delete wallet with balance ₦{wallet['balance']}. Please deduct balance first."
+                }), 400
+            
+            # Delete wallet
+            mongo.db.vas_wallets.delete_one({'_id': wallet['_id']})
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'DELETE_VAS_WALLET',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'walletId': str(wallet['_id']),
+                    'finalBalance': wallet.get('balance', 0.0),
+                    'status': wallet.get('status'),
+                    'tier': wallet.get('tier'),
+                    'reason': 'Admin wallet deletion'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} deleted VAS wallet for user {user_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Wallet deleted successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error deleting wallet: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to delete wallet',
                 'errors': {'general': [str(e)]}
             }), 500
     

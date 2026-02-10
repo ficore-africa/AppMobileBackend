@@ -35,7 +35,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             frequency = request.args.get('frequency')
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
-            sort_by = request.args.get('sort_by', 'dateReceived')
+            sort_by = request.args.get('sort_by', 'createdAt')  # CRITICAL FIX: Default to createdAt for consistent "just now" timestamps
             sort_order = request.args.get('sort_order', 'desc')
             
             print(f"🔍 [Income API] Query Params:")
