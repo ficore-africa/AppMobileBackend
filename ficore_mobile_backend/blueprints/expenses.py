@@ -951,16 +951,21 @@ def tag_expense_entry(entry_id):
                 })
                 
                 if updated_expense:
-                    # Convert ObjectId to string for JSON serialization
-                    updated_expense['_id'] = str(updated_expense['_id'])
-                    updated_expense['userId'] = str(updated_expense['userId'])
+                    # CRITICAL FIX: Use serialize_doc to properly convert _id → id
+                    expense_data = expenses_bp.serialize_doc(updated_expense.copy())
+                    
+                    # Ensure date fields are properly formatted
+                    expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                    expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+                    expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
                     
                     print(f"✅ Entry tagged successfully, returning updated expense")
                     print(f"{'='*80}\n")
                     return jsonify({
                         'success': True,
                         'message': 'Entry tagged successfully',
-                        'data': updated_expense
+                        'data': expense_data
                     })
                 else:
                     print(f"⚠️  Entry updated but could not fetch updated data")
