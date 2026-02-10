@@ -30,6 +30,7 @@ class DatabaseSchema:
             'bvn': Optional[str],  # Bank Verification Number (11 digits)
             'nin': Optional[str],  # National Identification Number (11 digits)
             'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
+            'kycRejectionReason': Optional[str],  # Reason for KYC rejection (set by admin)
             'kycVerifiedAt': Optional[datetime],  # KYC verification timestamp
             'role': str,  # 'personal' or 'admin', default: 'personal'
             'ficoreCreditBalance': float,  # FiCore Credits balance, default: 1000.0
