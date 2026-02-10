@@ -441,9 +441,9 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             try:
-            # ENABLED FOR DEBUGGING BALANCE ISSUE
-            print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
-            print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
+                # ENABLED FOR DEBUGGING BALANCE ISSUE
+                print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
+                print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
                 # Base query for active transactions only
                 base_query = get_active_transactions_query(current_user['_id'])
