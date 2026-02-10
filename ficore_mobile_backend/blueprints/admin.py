@@ -5782,32 +5782,13 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def complete_wallet_setup(current_user, user_id):
         """
         Complete wallet setup for broken/incomplete wallets
-        Creates reserved account if missing and activates wallet
+        DEPRECATED: Use the proper wallet creation flow instead
         """
-        try:
-            from utils.monnify_utils import create_reserved_account
-            
-            # Validate user exists
-            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-            if not user:
-                return jsonify({
-                    'success': False,
-                    'message': 'User not found'
-                }), 404
-            
-            # Get wallet
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
-            if not wallet:
-                return jsonify({
-                    'success': False,
-                    'message': 'Wallet not found. Please create wallet first.'
-                }), 404
-            
-            # Check if wallet needs fixing
-            if wallet.get('status') == 'active' and wallet.get('accounts') and len(wallet.get('accounts', [])) > 0:
-                return jsonify({
-                    'success': False,
-                    'message': 'Wallet is already active and has accounts'
+        return jsonify({
+            'success': False,
+            'message': 'This endpoint is deprecated. Please use the wallet creation flow in the app or contact support.',
+            'errors': {'general': ['Wallet setup must be done through the app with proper KYC verification']}
+        }), 400
                 }), 400
             
             # Create reserved account
@@ -5894,29 +5875,13 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     def recreate_user_wallet(current_user, user_id):
         """
         Delete and recreate wallet (for completely broken wallets)
+        DEPRECATED: Use the proper wallet creation flow instead
         """
-        try:
-            from utils.monnify_utils import create_reserved_account
-            
-            # Validate user exists
-            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-            if not user:
-                return jsonify({
-                    'success': False,
-                    'message': 'User not found'
-                }), 404
-            
-            # Get existing wallet
-            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
-            old_balance = existing_wallet.get('balance', 0.0) if existing_wallet else 0.0
-            
-            # Delete existing wallet if it exists
-            if existing_wallet:
-                mongo.db.vas_wallets.delete_one({'_id': existing_wallet['_id']})
-                print(f"🗑️ Deleted existing wallet for user {user_id} (balance was ₦{old_balance})")
-            
-            # Create new wallet with reserved account
-            account_name = user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
+        return jsonify({
+            'success': False,
+            'message': 'This endpoint is deprecated. Please use the wallet creation flow in the app or contact support.',
+            'errors': {'general': ['Wallet recreation must be done through the app with proper KYC verification']}
+        }), 400
             user_email = user.get('email', '')
             
             print(f"🔧 Admin recreating wallet for {user_email}...")
