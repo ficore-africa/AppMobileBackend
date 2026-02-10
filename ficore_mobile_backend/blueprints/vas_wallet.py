@@ -1223,33 +1223,83 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_reserved_accounts_with_banks(current_user):
         """Get user's reserved accounts with available banks (explicit endpoint for frontend compatibility)"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info('═══════════════════════════════════════════════════════')
+        logger.info('🔍 GET /api/vas/wallet/reserved-accounts/with-banks')
+        logger.info(f'   User ID: {current_user.get("_id")}')
+        logger.info(f'   User Email: {current_user.get("email", "N/A")}')
+        logger.info(f'   Request Time: {datetime.utcnow().isoformat()}Z')
+        logger.info(f'   IP Address: {request.remote_addr}')
+        logger.info(f'   User Agent: {request.headers.get("User-Agent", "N/A")}')
+        
         # Call the same business logic function as /reserved-accounts
         result, status_code = _get_reserved_accounts_with_banks_logic(current_user)
+        
+        logger.info(f'📤 Response Status: {status_code}')
+        logger.info(f'   Success: {result.get("success")}')
+        logger.info(f'   Message: {result.get("message")}')
+        if result.get('success') and result.get('data'):
+            accounts = result['data'].get('accounts', [])
+            logger.info(f'   Accounts Count: {len(accounts)}')
+            for i, acc in enumerate(accounts):
+                logger.info(f'   Account {i}: {acc.get("bankName")} - {acc.get("accountNumber")}')
+        logger.info('═══════════════════════════════════════════════════════')
+        
         return jsonify(result), status_code
     
     def _get_reserved_accounts_with_banks_logic(current_user):
         """Business logic for getting user's reserved accounts with available banks"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             user_id = str(current_user['_id'])
+            logger.info(f'📝 Step 1: Looking up wallet for user {user_id}...')
+            
             wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             
             if not wallet:
+                logger.warning(f'⚠️ No wallet found for user {user_id}')
+                logger.info('   User needs to create a wallet first')
                 return {
                     'success': False,
                     'message': 'Reserved account not found. Please create a wallet first.'
                 }, 404
             
+            logger.info(f'✅ Wallet found: {wallet.get("_id")}')
+            logger.info(f'   Wallet Status: {wallet.get("status")}')
+            logger.info(f'   Wallet Tier: {wallet.get("tier")}')
+            logger.info(f'   KYC Verified: {wallet.get("kycVerified")}')
+            logger.info(f'   Account Reference: {wallet.get("accountReference")}')
+            
             # Get all available accounts
+            logger.info(f'📝 Step 2: Extracting accounts from wallet...')
             accounts = wallet.get('accounts', [])
+            logger.info(f'   Accounts field type: {type(accounts)}')
+            logger.info(f'   Accounts count: {len(accounts) if accounts else 0}')
             
             if not accounts:
+                logger.warning(f'⚠️ No accounts found in wallet for user {user_id}')
+                logger.info('   Wallet exists but accounts array is empty')
+                logger.info(f'   Wallet data keys: {list(wallet.keys())}')
                 return {
                     'success': False,
                     'message': 'No accounts found in wallet'
                 }, 404
             
+            logger.info(f'✅ Found {len(accounts)} accounts')
+            for i, acc in enumerate(accounts):
+                logger.info(f'   Account {i}:')
+                logger.info(f'     - Bank: {acc.get("bankName")} ({acc.get("bankCode")})')
+                logger.info(f'     - Account Number: {acc.get("accountNumber")}')
+                logger.info(f'     - Account Name: {acc.get("accountName")}')
+                logger.info(f'     - Status: {acc.get("status", "N/A")}')
+            
             # Return all accounts for frontend to choose from
-            return {
+            logger.info(f'📝 Step 3: Preparing response...')
+            response_data = {
                 'success': True,
                 'data': {
                     'accounts': accounts,  # All available bank accounts
@@ -1267,10 +1317,24 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     }
                 },
                 'message': f'Reserved account retrieved successfully with {len(accounts)} available banks'
-            }, 200
+            }
+            
+            logger.info(f'✅ Response prepared successfully')
+            logger.info(f'   Returning {len(accounts)} accounts to frontend')
+            return response_data, 200
             
         except Exception as e:
-            print(f'ERROR: Error getting reserved accounts: {str(e)}')
+            logger.error(f'❌ EXCEPTION in _get_reserved_accounts_with_banks_logic')
+            logger.error(f'   Error Type: {type(e).__name__}')
+            logger.error(f'   Error Message: {str(e)}')
+            logger.error(f'   User ID: {current_user.get("_id")}')
+            
+            import traceback
+            logger.error('   Stack Trace:')
+            for line in traceback.format_exc().split('\n'):
+                if line.strip():
+                    logger.error(f'     {line}')
+            
             return {
                 'success': False,
                 'message': 'Failed to retrieve reserved accounts',
