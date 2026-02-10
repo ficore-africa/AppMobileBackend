@@ -4,10 +4,17 @@ Handles test mode detection and API key selection
 """
 import os
 
-# Test accounts for Google Play review
+# Test account domains for Google Play review
+# Any email ending with these domains will be treated as test accounts
+TEST_DOMAINS = [
+    '@ficoreafrica.com',  # Company domain - all internal accounts
+]
+
+# Specific test accounts (for extra safety)
 TEST_ACCOUNTS = [
     'premiumtester@ficoreafrica.com',
-    'newtester@ficoreafrica.com'
+    'newtester@ficoreafrica.com',
+    'testernew@ficoreafrica.com',
 ]
 
 def is_test_account(email):
@@ -22,7 +29,19 @@ def is_test_account(email):
     """
     if not email:
         return False
-    return email.lower() in [acc.lower() for acc in TEST_ACCOUNTS]
+    
+    email_lower = email.lower().strip()
+    
+    # Check specific test accounts first
+    if email_lower in [acc.lower() for acc in TEST_ACCOUNTS]:
+        return True
+    
+    # Check if email ends with any test domain
+    for domain in TEST_DOMAINS:
+        if email_lower.endswith(domain.lower()):
+            return True
+    
+    return False
 
 def get_paystack_keys(email):
     """
