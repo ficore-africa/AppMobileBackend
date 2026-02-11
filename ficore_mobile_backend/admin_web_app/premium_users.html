@@ -8,6 +8,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="responsive.css">
     <link rel="stylesheet" href="backend_switcher.css">
+    <script src="utils.js"></script>
     <style>
         :root {
             --primary-color: #B88A44;
@@ -155,6 +156,9 @@
                 <a class="nav-link active" href="premium_users.html">
                     <i class="fas fa-crown"></i> Premium Users
                 </a>
+                <a class="nav-link" href="admin_credit_purchases.html">
+                    <i class="fas fa-shopping-cart"></i> Credit Purchases
+                </a>
                 <a class="nav-link" href="cancellation_requests.html">
                     <i class="fas fa-ban"></i> Cancellation Requests
                 </a>
@@ -294,6 +298,12 @@
                             <th onclick="sortTable('timeLeft')" style="cursor: pointer;">
                                 Time Left <i class="fas fa-sort"></i>
                             </th>
+                            <th onclick="sortTable('testMode')" style="cursor: pointer;">
+                                Mode <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortTable('paymentReference')" style="cursor: pointer;">
+                                Payment Ref <i class="fas fa-sort"></i>
+                            </th>
                             <th>Auto-Renew</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -301,7 +311,7 @@
                     </thead>
                     <tbody id="premiumUsersTableBody">
                         <tr>
-                            <td colspan="9" class="text-center">
+                            <td colspan="11" class="text-center">
                                 <div class="spinner-border text-primary" role="status">
                                     <span class="visually-hidden">Loading...</span>
                                 </div>
@@ -442,17 +452,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Configuration
-        let API_BASE_URL = (() => {
-            const customApiUrl = localStorage.getItem('customApiUrl');
-            if (customApiUrl) return customApiUrl;
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                return 'http://localhost:5000';
-            }
-            return window.location.origin;
-        })();
-
-        let authToken = localStorage.getItem('adminToken');
+        // Use standardized utils.js functions
         let allPremiumUsers = [];
         let filteredUsers = [];
         let sortColumn = 'subscriptionEndDate';
@@ -460,13 +460,11 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            if (!authToken) {
-                window.location.href = 'admin_login.html';
-                return;
-            }
+            // Check authentication using standardized function
+            if (!checkAuth()) return;
             
-            const adminName = localStorage.getItem('adminName') || 'Admin';
-            document.getElementById('adminName').textContent = adminName;
+            // Load admin info using standardized function
+            loadAdminInfo();
             
             loadPremiumUsers();
         });
@@ -484,7 +482,7 @@
                 
                 // Get all users
                 const response = await fetch(`${API_BASE_URL}/admin/users?limit=1000`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                    headers: { 'Authorization': `Bearer ${getAdminToken()}` }
                 });
                 
                 if (!response.ok) {
@@ -594,7 +592,7 @@
             if (filteredUsers.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="text-center text-muted">
+                        <td colspan="11" class="text-center text-muted">
                             <i class="fas fa-inbox"></i> No premium users found
                         </td>
                     </tr>
@@ -622,6 +620,14 @@
                         <td>${formatDate(user.subscriptionStartDate)}</td>
                         <td>${formatDate(user.subscriptionEndDate)}</td>
                         <td>${formatTimeLeft(user.timeLeft)}</td>
+                        <td>
+                            ${user.testMode ? 
+                                '<span class="badge bg-warning"><i class="fas fa-flask"></i> TEST</span>' : 
+                                '<span class="badge bg-success"><i class="fas fa-dollar-sign"></i> LIVE</span>'}
+                        </td>
+                        <td style="font-size: 0.75rem; font-family: monospace;">
+                            ${user.paymentReference || 'N/A'}
+                        </td>
                         <td>
                             ${user.subscriptionAutoRenew ? 
                                 '<i class="fas fa-check-circle auto-renew-yes"></i> Yes' : 
@@ -742,6 +748,8 @@
                 'Date Subscribed',
                 'Date Will Expire',
                 'Days Left',
+                'Mode',
+                'Payment Reference',
                 'Auto-Renew',
                 'Status'
             ];
@@ -755,6 +763,8 @@
                 formatDate(user.subscriptionStartDate),
                 formatDate(user.subscriptionEndDate),
                 user.timeLeft.days,
+                user.testMode ? 'TEST' : 'LIVE',
+                user.paymentReference || 'N/A',
                 user.subscriptionAutoRenew ? 'Yes' : 'No',
                 user.timeLeft.status
             ]);
@@ -781,7 +791,7 @@
         async function viewUserDetail(userId) {
             try {
                 const response = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                    headers: { 'Authorization': `Bearer ${getAdminToken()}` }
                 });
                 
                 if (!response.ok) {
@@ -854,7 +864,7 @@
                 
                 const daysAgo = document.getElementById('expiredDaysFilter').value;
                 const response = await fetch(`${API_BASE_URL}/admin/subscriptions/expired-users?days_ago=${daysAgo}&limit=1000`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                    headers: { 'Authorization': `Bearer ${getAdminToken()}` }
                 });
                 
                 if (!response.ok) {
@@ -1019,7 +1029,7 @@
         async function viewUserHistory(userId) {
             try {
                 const response = await fetch(`${API_BASE_URL}/admin/subscriptions/user/${userId}/history`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                    headers: { 'Authorization': `Bearer ${getAdminToken()}` }
                 });
                 
                 if (!response.ok) {

@@ -2474,6 +2474,123 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @admin_bp.route('/credit-purchases', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_credit_purchases(current_user):
+        """Get all credit purchases (Paystack automated flow)"""
+        try:
+            # Get pagination parameters
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            status = request.args.get('status', 'all')  # all, pending, completed, failed, expired
+            test_mode = request.args.get('testMode', 'all')  # all, test, live
+            
+            # Build query for credit_transactions (type: credit, automated purchases)
+            query = {
+                'type': 'credit',
+                'metadata.purchaseType': {'$in': ['test_mode_auto', 'paystack_callback', 'paystack_webhook']}
+            }
+            
+            # Filter by status
+            if status != 'all':
+                query['status'] = status
+            
+            # Filter by test mode
+            if test_mode == 'test':
+                query['metadata.testMode'] = True
+            elif test_mode == 'live':
+                query['$or'] = [
+                    {'metadata.testMode': False},
+                    {'metadata.testMode': {'$exists': False}}
+                ]
+            
+            # Get total count
+            total = mongo.db.credit_transactions.count_documents(query)
+            
+            # Get transactions with pagination
+            skip = (page - 1) * limit
+            transactions = list(mongo.db.credit_transactions.find(query)
+                              .sort('createdAt', -1)
+                              .skip(skip)
+                              .limit(limit))
+            
+            # Enrich with user details
+            transaction_data = []
+            for txn in transactions:
+                txn_data = serialize_doc(txn.copy())
+                
+                # Get user info
+                user = mongo.db.users.find_one({'_id': txn['userId']})
+                if user:
+                    txn_data['user'] = {
+                        'id': str(user['_id']),
+                        'email': user.get('email', ''),
+                        'displayName': user.get('displayName', ''),
+                        'name': user.get('displayName', '')
+                    }
+                
+                # Format dates
+                if txn_data.get('createdAt'):
+                    txn_data['createdAt'] = txn['createdAt'].isoformat() + 'Z'
+                
+                # Extract test mode from metadata
+                txn_data['testMode'] = txn.get('metadata', {}).get('testMode', False)
+                
+                # Extract payment reference
+                txn_data['paymentReference'] = txn.get('metadata', {}).get('paymentReference', '')
+                
+                # Extract amount in Naira
+                txn_data['amountNaira'] = txn.get('metadata', {}).get('amountNaira', 0)
+                
+                transaction_data.append(txn_data)
+            
+            # Get statistics
+            stats = {
+                'total': total,
+                'completed': mongo.db.credit_transactions.count_documents({**query, 'status': 'completed'}),
+                'pending': mongo.db.credit_transactions.count_documents({**query, 'status': 'pending'}),
+                'failed': mongo.db.credit_transactions.count_documents({**query, 'status': 'failed'}),
+                'test': mongo.db.credit_transactions.count_documents({
+                    'type': 'credit',
+                    'metadata.purchaseType': {'$in': ['test_mode_auto', 'paystack_callback', 'paystack_webhook']},
+                    'metadata.testMode': True
+                }),
+                'live': mongo.db.credit_transactions.count_documents({
+                    'type': 'credit',
+                    'metadata.purchaseType': {'$in': ['test_mode_auto', 'paystack_callback', 'paystack_webhook']},
+                    '$or': [
+                        {'metadata.testMode': False},
+                        {'metadata.testMode': {'$exists': False}}
+                    ]
+                })
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactions': transaction_data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    },
+                    'statistics': stats
+                },
+                'message': 'Credit purchases retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error in get_credit_purchases: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve credit purchases',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     # ===== SUBSCRIPTION MANAGEMENT ENDPOINTS =====
 
     @admin_bp.route('/users/<user_id>/subscription', methods=['GET'])
@@ -2974,6 +3091,11 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                         'displayName': user.get('displayName', ''),
                         'name': user.get('displayName', '')
                     }
+                
+                # Add test mode and payment details
+                sub_data['testMode'] = sub.get('testMode', False)
+                sub_data['paymentReference'] = sub.get('paymentReference', '')
+                sub_data['paystackTransactionId'] = sub.get('paystackTransactionId', '')
                 
                 # Calculate days remaining
                 days_remaining = None
