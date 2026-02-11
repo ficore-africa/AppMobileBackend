@@ -31,7 +31,7 @@ def run_migration():
     """Run the migration to fix superseded entries"""
     
     # Connect to MongoDB
-    mongo_uri = os.getenv('MONGO_URI')
+    mongo_uri = os.getenv('MONGO_URI', 'mongodb+srv://ficoreapp:ficoreapp2024@cluster0.ixqhj.mongodb.net/ficore_mobile?retryWrites=true&w=majority')
     if not mongo_uri:
         print("ERROR: MONGO_URI not found in environment variables")
         return False
@@ -117,4 +117,3 @@ def run_migration():
 
 if __name__ == '__main__':
     run_migration()
-

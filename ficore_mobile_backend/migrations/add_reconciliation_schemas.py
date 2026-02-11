@@ -15,7 +15,7 @@ import os
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from datetime import datetime
 
-MONGO_URI = os.environ.get('MONGO_URI')
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://ficoreafrica_db_user:ScSbMkRwkauvTPyx@cluster0.53rbo1f.mongodb.net/ficore_africa?retryWrites=true&w=majority&readPreference=primary&tlsAllowInvalidCertificates=true')
 
 def add_reconciliation_schemas():
     """Add schemas and indexes for reconciliation system"""
@@ -327,4 +327,3 @@ def add_reconciliation_schemas():
 if __name__ == "__main__":
     success = add_reconciliation_schemas()
     exit(0 if success else 1)
-
