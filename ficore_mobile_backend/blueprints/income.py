@@ -198,6 +198,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @income_bp.route('', methods=['POST'])
     @token_required
     def create_income(current_user):
+        print(f"🎤 [Income API] POST /income called by user: {current_user.get('_id')}")
+        print(f"🎤 [Income API] Request data: {request.get_json()}")
         try:
             data = request.get_json()
             
@@ -246,7 +248,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # If over limit, FC will be deducted after successful creation
             
             # Import auto-population utility
-            from ..utils.income_utils import auto_populate_income_fields
+            from utils.income_utils import auto_populate_income_fields
             
             # Simplified: No recurring logic - all incomes are one-time entries
             
@@ -357,8 +359,17 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # PHASE 4: Create context-aware notification reminder to attach documents
             # This is the "Audit Shield" - persistent reminder that survives app reinstalls
             try:
-                from blueprints.notifications import create_user_notification
-                from utils.notification_context import get_notification_context
+                try:
+                    from blueprints.notifications import create_user_notification
+                except ImportError as import_err:
+                    print(f'⚠️ Failed to import create_user_notification: {import_err}')
+                    raise
+                
+                try:
+                    from utils.notification_context import get_notification_context
+                except ImportError as import_err:
+                    print(f'⚠️ Failed to import get_notification_context: {import_err}')
+                    raise
                 
                 # Determine entry title for notification
                 entry_title = income_data.get('source', 'Income')
@@ -416,6 +427,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             })
             
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"❌ ERROR in create_income: {str(e)}")
+            print(f"❌ Full traceback:\n{error_trace}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to create income record',

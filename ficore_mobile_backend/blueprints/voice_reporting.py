@@ -122,6 +122,29 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
         voice_report_id = None
 
         try:
+            # Determine what activity to create based on category
+            category = voice_doc.get('category', 'expense')
+            amount = voice_doc.get('extractedAmount', 0.0)
+
+            if amount <= 0:
+                return False, 'Extracted amount must be > 0', None, None, 'Invalid amount extraction'
+            
+            # NEW: Check monthly entry limit for income entries (same as regular income endpoint)
+            if category == 'income':
+                from utils.monthly_entry_tracker import MonthlyEntryTracker
+                entry_tracker = MonthlyEntryTracker(mongo)
+                fc_check = entry_tracker.should_deduct_fc(user_id, 'income')
+                
+                # If FC deduction is required, check user has sufficient credits
+                if fc_check['deduct_fc']:
+                    user = mongo.db.users.find_one({'_id': user_id})
+                    current_balance = user.get('ficoreCreditBalance', 0.0)
+                    
+                    if current_balance < fc_check['fc_cost']:
+                        return False, f'Insufficient credits. {fc_check["reason"]}', None, None, 'Insufficient credits'
+            else:
+                fc_check = {'deduct_fc': False}  # No FC check for expenses
+
             client = mongo.cx
             session = None
             
@@ -146,6 +169,10 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
 
             if category == 'income':
                 activity_collection = 'incomes'  # CORRECT: Plural form
+                
+                # Import auto-population utility (same as regular income endpoint)
+                from utils.income_utils import auto_populate_income_fields
+                
                 activity_doc = {
                     '_id': ObjectId(),  # NEW: Explicit ID for reference
                     'userId': user_id,
@@ -153,20 +180,14 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
                     'source': voice_doc.get('transactionType', 'voice_entry'),
                     'description': voice_doc.get('description', voice_doc.get('transcription', '')),
                     'category': voice_doc.get('transactionType', 'other_income'),
-                    'frequency': 'one_time',
+                    'frequency': 'one_time',  # Always one-time now
                     'salesType': None,
                     'dateReceived': now,
-                    'isRecurring': False,
-                    'nextRecurringDate': None,
-                    # CRITICAL: Missing fields from comparison
-                    'entryType': 'personal',
-                    'exportHistory': [],
-                    'fcChargeAmount': 0.0,
-                    'fcChargeAttemptedAt': None,
-                    'fcChargeCompleted': False,
-                    'fcChargeRequired': False,
-                    'isDeleted': False,
-                    'status': 'active',
+                    'isRecurring': False,  # Always false now
+                    'nextRecurringDate': None,  # Always null now
+                    'status': 'active',  # CRITICAL: Required for immutability system
+                    'isDeleted': False,  # CRITICAL: Required for immutability system
+                    'entryType': 'personal',  # Default to personal for voice entries
                     'taggedAt': now,
                     'taggedBy': 'voice_system',
                     'metadata': {
@@ -177,6 +198,9 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
                     'createdAt': now,
                     'updatedAt': now,
                 }
+                
+                # Auto-populate title and description if missing (same as regular income endpoint)
+                activity_doc = auto_populate_income_fields(activity_doc)
 
             elif category == 'expense':
                 activity_collection = 'expenses'
@@ -243,6 +267,101 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
                             },
                             session=session
                         )
+                        
+                        # Track income creation event (same as regular income endpoint)
+                        if category == 'income':
+                            try:
+                                from utils.analytics_tracker import create_tracker
+                                tracker = create_tracker(mongo.db)
+                                tracker.track_income_created(
+                                    user_id=user_id,
+                                    amount=amount,
+                                    category=activity_doc.get('category'),
+                                    source=activity_doc.get('source')
+                                )
+                            except Exception as analytics_error:
+                                current_app.logger.warning(f'Analytics tracking failed: {analytics_error}')
+                        
+                        # 5. Create notification for income entries (same as regular income endpoint)
+                        if category == 'income':
+                            try:
+                                from blueprints.notifications import create_user_notification
+                                from utils.notification_context import get_notification_context
+                                
+                                # Get user document for notification context
+                                user = mongo.db.users.find_one({'_id': user_id})
+                                
+                                # Get context-aware notification content
+                                notification_context = get_notification_context(
+                                    user=user,
+                                    entry_data=activity_doc,
+                                    entry_type='income'
+                                )
+                                
+                                # Create persistent notification with context
+                                notification_id = create_user_notification(
+                                    mongo=mongo,
+                                    user_id=user_id,
+                                    category=notification_context['category'],
+                                    title=notification_context['title'],
+                                    body=notification_context['body'],
+                                    related_id=str(activity_id),
+                                    metadata={
+                                        'entryType': 'income',
+                                        'entryTitle': activity_doc.get('source', 'Income'),
+                                        'amount': amount,
+                                        'category': activity_doc.get('category'),
+                                        'dateCreated': now.isoformat(),
+                                        'businessStructure': user.get('taxProfile', {}).get('businessStructure') if user else None,
+                                        'entryTag': activity_doc.get('entryType'),
+                                        'source': 'voice_entry'
+                                    },
+                                    priority=notification_context['priority']
+                                )
+                                
+                                if notification_id:
+                                    current_app.logger.info(f'📱 Voice entry notification created: {notification_id}')
+                            except Exception as notif_error:
+                                # Don't fail the transaction if notification fails
+                                current_app.logger.warning(f'⚠️ Failed to create notification (non-critical): {notif_error}')
+                        
+                        # 6. Deduct FC if required (over monthly limit) - same as regular income endpoint
+                        if category == 'income' and fc_check['deduct_fc']:
+                            try:
+                                user = mongo.db.users.find_one({'_id': user_id}, session=session)
+                                current_balance = user.get('ficoreCreditBalance', 0.0)
+                                new_balance = current_balance - fc_check['fc_cost']
+                                
+                                mongo.db.users.update_one(
+                                    {'_id': user_id},
+                                    {'$set': {'ficoreCreditBalance': new_balance}},
+                                    session=session
+                                )
+                                
+                                # Create transaction record
+                                transaction = {
+                                    '_id': ObjectId(),
+                                    'userId': user_id,
+                                    'type': 'debit',
+                                    'amount': fc_check['fc_cost'],
+                                    'description': f'Voice income entry over monthly limit (entry #{fc_check["monthly_data"]["count"] + 1})',
+                                    'operation': 'create_income_over_limit',
+                                    'balanceBefore': current_balance,
+                                    'balanceAfter': new_balance,
+                                    'status': 'completed',
+                                    'createdAt': datetime.utcnow(),
+                                    'metadata': {
+                                        'operation': 'create_income_over_limit',
+                                        'deductionType': 'monthly_limit_exceeded',
+                                        'monthly_data': fc_check['monthly_data'],
+                                        'source': 'voice_entry'
+                                    }
+                                }
+                                
+                                mongo.db.credit_transactions.insert_one(transaction, session=session)
+                                current_app.logger.info(f'💰 FC deducted for voice income: {fc_check["fc_cost"]} credits')
+                            except Exception as fc_error:
+                                current_app.logger.warning(f'⚠️ FC deduction failed (non-critical): {fc_error}')
 
                         return True, 'Voice report and activity created successfully', str(voice_report_id), str(activity_id), None
 
@@ -280,6 +399,100 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
                                     }
                                 }
                             )
+                            
+                            # Track income creation event (same as regular income endpoint)
+                            if category == 'income':
+                                try:
+                                    from utils.analytics_tracker import create_tracker
+                                    tracker = create_tracker(mongo.db)
+                                    tracker.track_income_created(
+                                        user_id=user_id,
+                                        amount=amount,
+                                        category=activity_doc.get('category'),
+                                        source=activity_doc.get('source')
+                                    )
+                                except Exception as analytics_error:
+                                    current_app.logger.warning(f'Analytics tracking failed: {analytics_error}')
+                            
+                            # 5. Create notification for income entries (same as regular income endpoint)
+                            if category == 'income':
+                                try:
+                                    from blueprints.notifications import create_user_notification
+                                    from utils.notification_context import get_notification_context
+                                    
+                                    # Get user document for notification context
+                                    user = mongo.db.users.find_one({'_id': user_id})
+                                    
+                                    # Get context-aware notification content
+                                    notification_context = get_notification_context(
+                                        user=user,
+                                        entry_data=activity_doc,
+                                        entry_type='income'
+                                    )
+                                    
+                                    # Create persistent notification with context
+                                    notification_id = create_user_notification(
+                                        mongo=mongo,
+                                        user_id=user_id,
+                                        category=notification_context['category'],
+                                        title=notification_context['title'],
+                                        body=notification_context['body'],
+                                        related_id=str(activity_id),
+                                        metadata={
+                                            'entryType': 'income',
+                                            'entryTitle': activity_doc.get('source', 'Income'),
+                                            'amount': amount,
+                                            'category': activity_doc.get('category'),
+                                            'dateCreated': now.isoformat(),
+                                            'businessStructure': user.get('taxProfile', {}).get('businessStructure') if user else None,
+                                            'entryTag': activity_doc.get('entryType'),
+                                            'source': 'voice_entry'
+                                        },
+                                        priority=notification_context['priority']
+                                    )
+                                    
+                                    if notification_id:
+                                        current_app.logger.info(f'📱 Voice entry notification created: {notification_id}')
+                                except Exception as notif_error:
+                                    # Don't fail the transaction if notification fails
+                                    current_app.logger.warning(f'⚠️ Failed to create notification (non-critical): {notif_error}')
+                                
+                                # 6. Deduct FC if required (over monthly limit) - same as regular income endpoint
+                                if fc_check['deduct_fc']:
+                                    try:
+                                        user = mongo.db.users.find_one({'_id': user_id})
+                                        current_balance = user.get('ficoreCreditBalance', 0.0)
+                                        new_balance = current_balance - fc_check['fc_cost']
+                                        
+                                        mongo.db.users.update_one(
+                                            {'_id': user_id},
+                                            {'$set': {'ficoreCreditBalance': new_balance}}
+                                        )
+                                        
+                                        # Create transaction record
+                                        transaction = {
+                                            '_id': ObjectId(),
+                                            'userId': user_id,
+                                            'type': 'debit',
+                                            'amount': fc_check['fc_cost'],
+                                            'description': f'Voice income entry over monthly limit (entry #{fc_check["monthly_data"]["count"] + 1})',
+                                            'operation': 'create_income_over_limit',
+                                            'balanceBefore': current_balance,
+                                            'balanceAfter': new_balance,
+                                            'status': 'completed',
+                                            'createdAt': datetime.utcnow(),
+                                            'metadata': {
+                                                'operation': 'create_income_over_limit',
+                                                'deductionType': 'monthly_limit_exceeded',
+                                                'monthly_data': fc_check['monthly_data'],
+                                                'source': 'voice_entry'
+                                            }
+                                        }
+                                        
+                                        mongo.db.credit_transactions.insert_one(transaction)
+                                        current_app.logger.info(f'💰 FC deducted for voice income: {fc_check["fc_cost"]} credits')
+                                    except Exception as fc_error:
+                                        current_app.logger.warning(f'⚠️ FC deduction failed (non-critical): {fc_error}')
 
                             return True, 'Voice report and activity created successfully', str(voice_report_id), str(activity_id), None
 
