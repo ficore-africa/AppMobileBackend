@@ -30,6 +30,31 @@ def parse_date_safe(date_value):
         return datetime.now(timezone.utc)
 
 
+class ReportColors:
+    """
+    Unified color scheme matching mobile app UI
+    Ensures PDF exports have the same visual identity as in-app screens
+    """
+    
+    # Category Colors (matching app UI from screenshots)
+    WALLET_PURPLE = colors.HexColor('#9C27B0')      # Wallet Reports (Purple)
+    ACCOUNTS_ORANGE = colors.HexColor('#FF9800')    # Accounts Management (Orange)
+    INVENTORY_GREEN = colors.HexColor('#4CAF50')    # Inventory & Assets (Green)
+    FINANCIAL_GOLDEN = colors.HexColor('#D4AF37')   # Financial Reports (Golden)
+    INCOME_BLUE = colors.HexColor('#2196F3')        # Income Records (Blue)
+    EXPENSE_RED = colors.HexColor('#F44336')        # Expense Records (Red)
+    TAX_BROWN = colors.HexColor('#795548')          # Tax Reports (Brown)
+    
+    # Light backgrounds for tables (matching 10% opacity from app)
+    WALLET_LIGHT = colors.HexColor('#F3E5F5')       # Purple light
+    ACCOUNTS_LIGHT = colors.HexColor('#FFF3E0')     # Orange light
+    INVENTORY_LIGHT = colors.HexColor('#E8F5E9')    # Green light
+    FINANCIAL_LIGHT = colors.HexColor('#FFF9E6')    # Golden light
+    INCOME_LIGHT = colors.HexColor('#E3F2FD')       # Blue light
+    EXPENSE_LIGHT = colors.HexColor('#FFEBEE')      # Red light
+    TAX_LIGHT = colors.HexColor('#EFEBE9')          # Brown light
+
+
 class PDFGenerator:
     """Generate PDF reports for various data types"""
     
@@ -131,7 +156,7 @@ class PDFGenerator:
             # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
             expense_table = Table(expense_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             expense_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('BACKGROUND', (0, 0), (-1, 0), ReportColors.EXPENSE_RED),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                 ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
@@ -141,7 +166,7 @@ class PDFGenerator:
                 ('TOPPADDING', (0, 1), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
                 ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
+                ('BACKGROUND', (0, -1), (-1, -1), ReportColors.EXPENSE_LIGHT),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # Align text to top for multi-line descriptions
@@ -182,7 +207,7 @@ class PDFGenerator:
             # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
             income_table = Table(income_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             income_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
+                ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INCOME_BLUE),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                 ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
@@ -192,7 +217,7 @@ class PDFGenerator:
                 ('TOPPADDING', (0, 1), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
                 ('BACKGROUND', (0, 1), (-1, -2), colors.lightgreen),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+                ('BACKGROUND', (0, -1), (-1, -1), ReportColors.INCOME_LIGHT),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),  # Align text to top for multi-line descriptions
@@ -268,7 +293,7 @@ class PDFGenerator:
             result_text_color = colors.HexColor('#2e7d32') if net_profit_loss >= 0 else colors.HexColor('#c62828')
             
             summary_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+                ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                 ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
@@ -339,12 +364,12 @@ class PDFGenerator:
         
         income_table = Table(income_data, colWidths=[4*inch, 2*inch])
         income_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.TAX_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -371,12 +396,12 @@ class PDFGenerator:
         
         tax_table = Table(tax_breakdown_data, colWidths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
         tax_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fce8e6')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.TAX_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -451,12 +476,12 @@ class PDFGenerator:
         
         operating_table = Table(operating_data, colWidths=[4*inch, 2*inch])
         operating_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.FINANCIAL_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -566,12 +591,12 @@ class PDFGenerator:
         
         income_table = Table(income_data, colWidths=[4*inch, 2*inch])
         income_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.TAX_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -606,12 +631,12 @@ class PDFGenerator:
             
             cit_table = Table(cit_data, colWidths=[4*inch, 2*inch])
             cit_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
+                ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                 ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fce8e6')),
+                ('BACKGROUND', (0, -1), (-1, -1), ReportColors.TAX_LIGHT),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black)
             ]))
@@ -1869,14 +1894,14 @@ class PDFGenerator:
         
         table = Table(table_data, colWidths=[1.5*inch, 2*inch, 1.2*inch, 1.2*inch, 1*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.WALLET_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -1956,14 +1981,14 @@ class PDFGenerator:
         
         table = Table(table_data, colWidths=[1.3*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1*inch, 0.8*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 9),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.WALLET_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -2043,14 +2068,14 @@ class PDFGenerator:
         
         table = Table(table_data, colWidths=[1.3*inch, 1.5*inch, 1.3*inch, 1.2*inch, 1*inch, 0.7*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 9),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.WALLET_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -2131,7 +2156,7 @@ class PDFGenerator:
         
         table = Table(table_data, colWidths=[1*inch, 1.2*inch, 0.9*inch, 1.5*inch, 1*inch, 0.8*inch, 0.6*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -2139,7 +2164,7 @@ class PDFGenerator:
             ('FONTSIZE', (0, 1), (-1, -1), 7),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.WALLET_LIGHT),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
