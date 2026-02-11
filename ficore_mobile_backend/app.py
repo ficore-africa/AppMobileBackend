@@ -473,7 +473,7 @@ app.register_blueprint(referrals_blueprint)
 print("✓ Referrals blueprint registered at /api/referrals")
 
 # EMERGENCY: Register wallet recovery endpoint (TEMPORARY)
-emergency_recovery_blueprint = init_emergency_recovery_blueprint(mongo, token_required)
+emergency_recovery_blueprint = init_emergency_recovery_blueprint(mongo, token_required, admin_required)
 app.register_blueprint(emergency_recovery_blueprint)
 print("✓ EMERGENCY: Recovery blueprint registered at /api/emergency")
 
