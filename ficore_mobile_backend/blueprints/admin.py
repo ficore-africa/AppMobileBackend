@@ -6118,20 +6118,32 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'message': 'User not found'
                 }), 404
             
-            # Check if wallet exists and save old balance for audit
+            # Check if wallet exists
             existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
-            old_balance = existing_wallet.get('balance', 0.0) if existing_wallet else 0.0
             
-            # Delete existing wallet if it exists
             if existing_wallet:
-                mongo.db.vas_wallets.delete_one({'_id': existing_wallet['_id']})
-                print(f"🗑️ Deleted old wallet with balance: ₦{old_balance}")
+                # CRITICAL: NEVER DELETE WALLETS!
+                # If wallet exists, update it instead of deleting
+                print(f"⚠️ Wallet already exists for user {user_id}")
+                print(f"   Existing balance: ₦{existing_wallet.get('balance', 0.0)}")
+                print(f"   Updating wallet instead of deleting...")
+                
+                # Return existing wallet info
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet already exists. Use update endpoint instead of recreate.',
+                    'data': {
+                        'walletId': str(existing_wallet['_id']),
+                        'balance': existing_wallet.get('balance', 0.0),
+                        'accountReference': existing_wallet.get('accountReference')
+                    }
+                }), 400
             
             # Prepare account name
             account_name = user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
             user_email = user.get('email', '')
             
-            print(f"🔧 Admin recreating wallet for {user_email}...")
+            print(f"🔧 Admin creating wallet for {user_email}...")
             print(f"   Creating reserved account with name: {account_name}")
             
             # Import monnify utils
@@ -6261,15 +6273,12 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'message': 'Wallet not found'
                 }), 404
             
-            # Check if wallet has balance
-            if wallet.get('balance', 0.0) > 0:
-                return jsonify({
-                    'success': False,
-                    'message': f"Cannot delete wallet with balance ₦{wallet['balance']}. Please deduct balance first."
-                }), 400
-            
-            # Delete wallet
-            mongo.db.vas_wallets.delete_one({'_id': wallet['_id']})
+            # CRITICAL: NEVER DELETE WALLETS!
+            # Instead of deleting, mark as inactive/suspended
+            return jsonify({
+                'success': False,
+                'message': 'Wallet deletion is not allowed. Use deactivation or suspension instead.'
+            }), 403
             
             # Log audit trail
             audit_log = {

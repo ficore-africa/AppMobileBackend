@@ -80,6 +80,39 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     
     # ==================== HELPER FUNCTIONS ====================
     
+    def get_wallet_by_user_id(user_id_str):
+        """
+        Get wallet by user ID with automatic string-to-ObjectId fix.
+        
+        BUGFIX: Some wallets were created with string userId instead of ObjectId.
+        This function tries both formats and auto-fixes string userId to ObjectId.
+        
+        Args:
+            user_id_str: User ID as string
+            
+        Returns:
+            Wallet document or None
+        """
+        user_id_obj = ObjectId(user_id_str)
+        
+        # Try ObjectId first (correct format)
+        wallet = mongo.db.vas_wallets.find_one({'userId': user_id_obj})
+        
+        if not wallet:
+            # Fallback: Try string format (the bug)
+            wallet = mongo.db.vas_wallets.find_one({'userId': user_id_str})
+            
+            if wallet:
+                # Found with string - fix it immediately
+                print(f'🔧 AUTO-FIX: Wallet {wallet["_id"]} has string userId, converting to ObjectId')
+                mongo.db.vas_wallets.update_one(
+                    {'_id': wallet['_id']},
+                    {'$set': {'userId': user_id_obj}}
+                )
+                wallet['userId'] = user_id_obj  # Update in-memory
+        
+        return wallet
+    
     def call_monnify_auth():
         """Get Monnify authentication token"""
         try:
@@ -347,7 +380,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
         """Get user's wallet balance with available balance calculation"""
         try:
             user_id = str(current_user['_id'])
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            wallet = get_wallet_by_user_id(user_id)
             
             if not wallet:
                 return jsonify({
@@ -394,9 +427,8 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
         """
         try:
             user_id = str(current_user['_id'])
+            wallet = get_wallet_by_user_id(user_id)
             
-            # Get wallet from database
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             if not wallet:
                 # ENHANCED ERROR RESPONSE: Provide actionable information
                 return jsonify({
@@ -1054,7 +1086,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             user_id = str(current_user['_id'])
             
             # Check if wallet already exists
-            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            existing_wallet = get_wallet_by_user_id(user_id)
             if existing_wallet:
                 # CRITICAL FIX: Check if accounts array exists and has elements
                 accounts = existing_wallet.get('accounts', [])
@@ -1072,10 +1104,54 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'message': 'Reserved account already exists'
                     }), 200
                 else:
-                    # Wallet exists but has no accounts - delete broken wallet and recreate
-                    print(f'WARNING: Found wallet without accounts for user {user_id}, deleting and recreating')
-                    mongo.db.vas_wallets.delete_one({'_id': existing_wallet['_id']})
-                    # Continue to create new wallet below
+                    # CRITICAL: NEVER DELETE WALLETS!
+                    # If wallet exists but has no accounts, try to fetch from Monnify and update
+                    print(f'⚠️ WARNING: Wallet exists but has no accounts for user {user_id}')
+                    print(f'   Attempting to fetch accounts from Monnify...')
+                    
+                    # Try to fetch existing reserved accounts from Monnify
+                    try:
+                        access_token = call_monnify_auth()
+                        account_ref = existing_wallet.get('accountReference', user_id)
+                        
+                        fetch_response = requests.get(
+                            f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts/{account_ref}',
+                            headers={'Authorization': f'Bearer {access_token}'},
+                            timeout=30
+                        )
+                        
+                        if fetch_response.status_code == 200:
+                            fetch_data = fetch_response.json()
+                            if fetch_data.get('requestSuccessful'):
+                                monnify_accounts = fetch_data['responseBody'].get('accounts', [])
+                                if monnify_accounts:
+                                    # Update wallet with fetched accounts
+                                    mongo.db.vas_wallets.update_one(
+                                        {'_id': existing_wallet['_id']},
+                                        {'$set': {'accounts': monnify_accounts, 'updatedAt': datetime.utcnow()}}
+                                    )
+                                    print(f'✅ Successfully restored {len(monnify_accounts)} accounts from Monnify')
+                                    
+                                    return jsonify({
+                                        'success': True,
+                                        'data': {
+                                            'accountNumber': monnify_accounts[0].get('accountNumber', ''),
+                                            'accountName': monnify_accounts[0].get('accountName', ''),
+                                            'bankName': monnify_accounts[0].get('bankName', 'Wema Bank'),
+                                            'bankCode': monnify_accounts[0].get('bankCode', '035'),
+                                            'createdAt': existing_wallet.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                                        },
+                                        'message': 'Reserved account restored successfully'
+                                    }), 200
+                    except Exception as e:
+                        print(f'ERROR: Failed to fetch accounts from Monnify: {str(e)}')
+                    
+                    # If we couldn't fetch accounts, return error but NEVER delete wallet
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet exists but accounts are missing. Please contact support.',
+                        'errors': {'wallet': ['Wallet configuration issue - contact support']}
+                    }), 500
             
             # REMOVED: BVN/NIN check for reserved account creation
             # Since we now use internal KYC system, users can create accounts
@@ -1375,7 +1451,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             user_id = str(current_user['_id'])
             logger.info(f'📝 Step 1: Looking up wallet for user {user_id}...')
             
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            wallet = get_wallet_by_user_id(user_id)
             
             if not wallet:
                 logger.warning(f'⚠️ No wallet found for user {user_id}')
