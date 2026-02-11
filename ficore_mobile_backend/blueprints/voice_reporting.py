@@ -145,8 +145,9 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
             activity_collection = None
 
             if category == 'income':
-                activity_collection = 'incomes'
+                activity_collection = 'incomes'  # CORRECT: Plural form
                 activity_doc = {
+                    '_id': ObjectId(),  # NEW: Explicit ID for reference
                     'userId': user_id,
                     'amount': amount,
                     'source': voice_doc.get('transactionType', 'voice_entry'),
@@ -157,6 +158,17 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
                     'dateReceived': now,
                     'isRecurring': False,
                     'nextRecurringDate': None,
+                    # CRITICAL: Missing fields from comparison
+                    'entryType': 'personal',
+                    'exportHistory': [],
+                    'fcChargeAmount': 0.0,
+                    'fcChargeAttemptedAt': None,
+                    'fcChargeCompleted': False,
+                    'fcChargeRequired': False,
+                    'isDeleted': False,
+                    'status': 'active',
+                    'taggedAt': now,
+                    'taggedBy': 'voice_system',
                     'metadata': {
                         'source': 'voice_report',
                         'voiceReportId': None,  # Will set after voice doc creation
@@ -169,6 +181,7 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
             elif category == 'expense':
                 activity_collection = 'expenses'
                 activity_doc = {
+                    '_id': ObjectId(),  # NEW: Explicit ID for reference
                     'userId': user_id,
                     'amount': amount,
                     'title': voice_doc.get('transactionType', 'voice_entry').replace('_', ' ').title(),
@@ -179,6 +192,21 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
                     'paymentMethod': 'cash',  # Default for voice entries
                     'location': None,
                     'notes': f"From voice: {voice_doc.get('transcription', '')}",
+                    # NEW: Version control fields (CRITICAL for deduplication)
+                    'version': 1,
+                    'supersededBy': None,
+                    'superseded': False,
+                    'originalEntryId': None,
+                    # NEW: Immutable ledger fields
+                    'status': 'active',
+                    'isDeleted': False,
+                    'deletedAt': None,
+                    'deletedBy': None,
+                    'reversalEntryId': None,
+                    # NEW: Audit trail
+                    'auditLog': [],
+                    'exportHistory': [],
+                    'metadata': None,
                     'createdAt': now,
                     'updatedAt': now,
                 }
