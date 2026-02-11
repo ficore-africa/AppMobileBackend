@@ -204,7 +204,7 @@ def create_expense():
                 }), 400
 
             # Import auto-population utility
-            from ..utils.expense_utils import auto_populate_expense_fields
+            from utils.expense_utils import auto_populate_expense_fields
             
             # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
             entry_type = data.get('entryType')  # 'business', 'personal', or None
@@ -373,6 +373,10 @@ def create_expense():
             })
            
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"❌ ERROR in create_expense: {str(e)}")
+            print(f"❌ Full traceback:\n{error_trace}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to create expense',

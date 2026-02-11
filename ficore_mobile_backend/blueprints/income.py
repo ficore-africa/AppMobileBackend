@@ -51,9 +51,11 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Build query - ONLY active, non-deleted incomes
             from utils.immutable_ledger_helper import get_active_transactions_query
             
-            now = datetime.utcnow()
+            # CLOCK DRIFT FIX: Allow up to 2 hours in the future to handle device clock differences
+            # This prevents voice entries from being hidden when device time is ahead of server time
+            now = datetime.utcnow() + timedelta(hours=2)
             query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
-            query['dateReceived'] = {'$lte': now}  # Only past and present incomes
+            query['dateReceived'] = {'$lte': now}  # Only past and present incomes (with clock drift tolerance)
             
             print(f"🔍 [Income API] Base query (after active filter): {query}")
             
@@ -451,7 +453,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             # Get date ranges with error handling
             try:
-                now = datetime.utcnow()
+                # CLOCK DRIFT FIX: Allow up to 2 hours in the future to handle device clock differences
+                now = datetime.utcnow() + timedelta(hours=2)
                 start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
                 start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
