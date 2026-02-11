@@ -80,15 +80,18 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     
     # ==================== HELPER FUNCTIONS ====================
     
-    def get_wallet_by_user_id(user_id_str):
+    def get_wallet_by_user_id(user_id_str, auto_fetch_accounts=True):
         """
-        Get wallet by user ID with automatic string-to-ObjectId fix.
+        Get wallet by user ID with automatic string-to-ObjectId fix and account fetching.
         
         BUGFIX: Some wallets were created with string userId instead of ObjectId.
         This function tries both formats and auto-fixes string userId to ObjectId.
         
+        AUTO-RECOVERY: If wallet has no accounts, automatically fetches from Monnify.
+        
         Args:
             user_id_str: User ID as string
+            auto_fetch_accounts: If True, automatically fetch accounts from Monnify if empty
             
         Returns:
             Wallet document or None
@@ -110,6 +113,46 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     {'$set': {'userId': user_id_obj}}
                 )
                 wallet['userId'] = user_id_obj  # Update in-memory
+        
+        # AUTO-RECOVERY: Fetch accounts from Monnify if empty
+        if wallet and auto_fetch_accounts:
+            accounts = wallet.get('accounts', [])
+            if not accounts or len(accounts) == 0:
+                print(f'🔧 AUTO-RECOVERY: Wallet {wallet["_id"]} has no accounts, fetching from Monnify...')
+                try:
+                    access_token = call_monnify_auth()
+                    account_ref = wallet.get('accountReference', user_id_str)
+                    
+                    fetch_response = requests.get(
+                        f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts/{account_ref}',
+                        headers={'Authorization': f'Bearer {access_token}'},
+                        timeout=30
+                    )
+                    
+                    if fetch_response.status_code == 200:
+                        fetch_data = fetch_response.json()
+                        if fetch_data.get('requestSuccessful'):
+                            monnify_accounts = fetch_data['responseBody'].get('accounts', [])
+                            if monnify_accounts:
+                                # Update wallet with fetched accounts
+                                mongo.db.vas_wallets.update_one(
+                                    {'_id': wallet['_id']},
+                                    {'$set': {
+                                        'accounts': monnify_accounts,
+                                        'updatedAt': datetime.utcnow(),
+                                        'accountsRecoveredAt': datetime.utcnow()
+                                    }}
+                                )
+                                wallet['accounts'] = monnify_accounts  # Update in-memory
+                                print(f'✅ AUTO-RECOVERY: Restored {len(monnify_accounts)} accounts from Monnify')
+                            else:
+                                print(f'⚠️ AUTO-RECOVERY: Monnify returned no accounts')
+                        else:
+                            print(f'⚠️ AUTO-RECOVERY: Monnify error: {fetch_data.get("responseMessage")}')
+                    else:
+                        print(f'⚠️ AUTO-RECOVERY: Monnify fetch failed (status {fetch_response.status_code})')
+                except Exception as e:
+                    print(f'⚠️ AUTO-RECOVERY: Failed to fetch accounts: {str(e)}')
         
         return wallet
     
