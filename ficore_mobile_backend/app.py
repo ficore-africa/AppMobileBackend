@@ -49,6 +49,8 @@ from blueprints.vas_purchase import init_vas_purchase_blueprint
 from blueprints.vas_bills import init_vas_bills_blueprint
 # Referral System (NEW - Feb 4, 2026)
 from blueprints.referrals import referrals_bp, init_referrals_blueprint
+# EMERGENCY: Wallet recovery endpoint (TEMPORARY)
+from blueprints.emergency_recovery import init_emergency_recovery_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -469,6 +471,11 @@ print("✓ VAS Bills blueprint registered at /api/vas/bills")
 # Register Referral System (NEW - Feb 4, 2026)
 app.register_blueprint(referrals_blueprint)
 print("✓ Referrals blueprint registered at /api/referrals")
+
+# EMERGENCY: Register wallet recovery endpoint (TEMPORARY)
+emergency_recovery_blueprint = init_emergency_recovery_blueprint(mongo, token_required)
+app.register_blueprint(emergency_recovery_blueprint)
+print("✓ EMERGENCY: Recovery blueprint registered at /api/emergency")
 
 # Register VAS reconciliation blueprint for admin transaction management
 from blueprints.vas_reconciliation import init_vas_reconciliation_blueprint
