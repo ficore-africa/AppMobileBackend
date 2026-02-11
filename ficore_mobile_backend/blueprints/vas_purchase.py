@@ -868,6 +868,23 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
         Get data plans with dynamic pricing for a specific network
         """
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock plans for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock data plans with pricing for {user_email} - Network: {network}')
+                from utils.test_mode_vas import get_mock_data_plans
+                mock_plans = get_mock_data_plans(network)
+                return jsonify({
+                    'success': True,
+                    'data': mock_plans,
+                    'message': f'Data plans for {network.upper()} (TEST MODE)',
+                    'source': 'test_mode',
+                    'network': network,
+                    'provider': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             # Determine user tier
             user_tier = 'basic'
             if current_user.get('subscriptionStatus') == 'active':
@@ -1017,6 +1034,21 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     def get_airtime_networks(current_user):
         """Get available airtime networks from Monnify Bills API (primary) with Peyflex fallback"""
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock networks for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock airtime networks for {user_email}')
+                from utils.test_mode_vas import get_mock_airtime_networks
+                mock_networks = get_mock_airtime_networks()
+                return jsonify({
+                    'success': True,
+                    'data': mock_networks,
+                    'message': 'Airtime networks (TEST MODE)',
+                    'source': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             print('INFO: Fetching airtime networks from Monnify Bills API')
             
             # Try Monnify first
@@ -1129,6 +1161,21 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     def get_data_networks(current_user):
         """Get available data networks from Monnify Bills API (primary) with Peyflex fallback"""
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock networks for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock data networks for {user_email}')
+                from utils.test_mode_vas import get_mock_data_networks
+                mock_networks = get_mock_data_networks()
+                return jsonify({
+                    'success': True,
+                    'data': mock_networks,
+                    'message': 'Data networks (TEST MODE)',
+                    'source': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             vas_log('Fetching data networks from Monnify Bills API')
             vas_log(f'Route /api/vas/purchase/networks/data was called by user {current_user.get("_id", "unknown")}')
             
@@ -1283,6 +1330,23 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     def get_data_plans(current_user, network):
         """Get data plans for a specific network from Monnify Bills API (primary) with Peyflex fallback"""
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock plans for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock data plans for {user_email} - Network: {network}')
+                from utils.test_mode_vas import get_mock_data_plans
+                mock_plans = get_mock_data_plans(network)
+                return jsonify({
+                    'success': True,
+                    'data': mock_plans,
+                    'message': f'Data plans for {network.upper()} (TEST MODE)',
+                    'source': 'test_mode',
+                    'network': network,
+                    'provider': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             vas_log(f'Fetching data plans for network: {network}')
             vas_log(f'Route /api/vas/purchase/data-plans/{network} was called by user {current_user.get("_id", "unknown")}')
             
@@ -1648,6 +1712,21 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
         ALL NETWORKS NOW HAVE 4-STEP PROCESS (Golden Rule #33-35)
         """
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock plan types for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock plan types for {user_email} - Network: {network}')
+                from utils.test_mode_vas import get_mock_data_plan_types
+                mock_plan_types = get_mock_data_plan_types(network)
+                return jsonify({
+                    'success': True,
+                    'data': mock_plan_types,
+                    'message': f'Plan types for {network.upper()} (TEST MODE)',
+                    'source': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             vas_log(f'Fetching plan types for network: {network}')
             network_lower = network.lower()
             

@@ -243,3 +243,145 @@ def simulate_electricity_purchase(mongo, user_id, provider, amount, meter_number
         'commission': 0,
         'testMode': True
     }
+
+
+def get_mock_airtime_networks():
+    """
+    Return mock airtime networks for test accounts
+    Mimics exact structure from Monnify/Peyflex API
+    """
+    return [
+        {'id': 'mtn', 'name': 'MTN', 'source': 'test_mode'},
+        {'id': 'airtel', 'name': 'Airtel', 'source': 'test_mode'},
+        {'id': 'glo', 'name': 'Glo', 'source': 'test_mode'},
+        {'id': '9mobile', 'name': '9mobile', 'source': 'test_mode'}
+    ]
+
+def get_mock_data_networks():
+    """
+    Return mock data networks for test accounts
+    Mimics exact structure from Monnify/Peyflex API
+    """
+    return [
+        {'id': 'mtn', 'name': 'MTN', 'source': 'test_mode'},
+        {'id': 'airtel', 'name': 'Airtel', 'source': 'test_mode'},
+        {'id': 'glo', 'name': 'Glo', 'source': 'test_mode'},
+        {'id': '9mobile', 'name': '9mobile', 'source': 'test_mode'}
+    ]
+
+def get_mock_data_plan_types(network):
+    """
+    Return mock plan types for a network (e.g., MTN SHARE, MTN GIFTING)
+    Mimics exact structure from real API
+    """
+    network_lower = network.lower()
+    
+    if network_lower == 'mtn':
+        return [
+            {
+                'id': 'mtn',
+                'name': 'ALL PLANS',
+                'description': 'All available MTN data plans',
+                'source': 'test_mode'
+            },
+            {
+                'id': 'mtn_data_share',
+                'name': 'MTN SHARE',
+                'description': 'MTN Data Share plans',
+                'source': 'test_mode'
+            },
+            {
+                'id': 'mtn_gifting_data',
+                'name': 'MTN GIFTING',
+                'description': 'MTN Gifting Data plans',
+                'source': 'test_mode'
+            }
+        ]
+    else:
+        # Other networks have single plan type
+        return [
+            {
+                'id': network_lower,
+                'name': 'ALL PLANS',
+                'description': f'All available {network.upper()} data plans',
+                'source': 'test_mode'
+            }
+        ]
+
+def get_mock_data_plans(network):
+    """
+    Return realistic mock data plans for test accounts
+    Mimics exact structure from Monnify/Peyflex API responses
+    
+    Args:
+        network: Network identifier (mtn, airtel, glo, 9mobile, mtn_data_share, mtn_gifting_data)
+    
+    Returns:
+        list: Mock data plans with realistic pricing
+    """
+    network_lower = network.lower()
+    
+    # MTN Plans (Monnify-style)
+    if network_lower in ['mtn', 'mtn_data']:
+        return [
+            {'id': 'MTN_500MB', 'name': '500MB - 30 Days', 'price': 150, 'plan_code': 'MTN_500MB', 'source': 'test_mode'},
+            {'id': 'MTN_1GB', 'name': '1GB - 30 Days', 'price': 300, 'plan_code': 'MTN_1GB', 'source': 'test_mode'},
+            {'id': 'MTN_2GB', 'name': '2GB - 30 Days', 'price': 500, 'plan_code': 'MTN_2GB', 'source': 'test_mode'},
+            {'id': 'MTN_3GB', 'name': '3GB - 30 Days', 'price': 800, 'plan_code': 'MTN_3GB', 'source': 'test_mode'},
+            {'id': 'MTN_5GB', 'name': '5GB - 30 Days', 'price': 1200, 'plan_code': 'MTN_5GB', 'source': 'test_mode'},
+            {'id': 'MTN_10GB', 'name': '10GB - 30 Days', 'price': 2000, 'plan_code': 'MTN_10GB', 'source': 'test_mode'},
+            {'id': 'MTN_15GB', 'name': '15GB - 30 Days', 'price': 3000, 'plan_code': 'MTN_15GB', 'source': 'test_mode'},
+            {'id': 'MTN_20GB', 'name': '20GB - 30 Days', 'price': 4000, 'plan_code': 'MTN_20GB', 'source': 'test_mode'},
+        ]
+    
+    # MTN Data Share Plans
+    elif network_lower == 'mtn_data_share':
+        return [
+            {'id': 'MTN_SHARE_1GB', 'name': '1GB Data Share - 30 Days', 'price': 280, 'plan_code': 'MTN_SHARE_1GB', 'source': 'test_mode'},
+            {'id': 'MTN_SHARE_2GB', 'name': '2GB Data Share - 30 Days', 'price': 480, 'plan_code': 'MTN_SHARE_2GB', 'source': 'test_mode'},
+            {'id': 'MTN_SHARE_5GB', 'name': '5GB Data Share - 30 Days', 'price': 1150, 'plan_code': 'MTN_SHARE_5GB', 'source': 'test_mode'},
+            {'id': 'MTN_SHARE_10GB', 'name': '10GB Data Share - 30 Days', 'price': 1950, 'plan_code': 'MTN_SHARE_10GB', 'source': 'test_mode'},
+        ]
+    
+    # MTN Gifting Plans
+    elif network_lower == 'mtn_gifting_data':
+        return [
+            {'id': 'MTN_GIFT_1GB', 'name': '1GB Gifting - 30 Days', 'price': 290, 'plan_code': 'MTN_GIFT_1GB', 'source': 'test_mode'},
+            {'id': 'MTN_GIFT_2GB', 'name': '2GB Gifting - 30 Days', 'price': 490, 'plan_code': 'MTN_GIFT_2GB', 'source': 'test_mode'},
+            {'id': 'MTN_GIFT_5GB', 'name': '5GB Gifting - 30 Days', 'price': 1180, 'plan_code': 'MTN_GIFT_5GB', 'source': 'test_mode'},
+        ]
+    
+    # Airtel Plans
+    elif network_lower in ['airtel', 'airtel_data']:
+        return [
+            {'id': 'AIRTEL_500MB', 'name': '500MB - 30 Days', 'price': 150, 'plan_code': 'AIRTEL_500MB', 'source': 'test_mode'},
+            {'id': 'AIRTEL_1GB', 'name': '1GB - 30 Days', 'price': 300, 'plan_code': 'AIRTEL_1GB', 'source': 'test_mode'},
+            {'id': 'AIRTEL_2GB', 'name': '2GB - 30 Days', 'price': 500, 'plan_code': 'AIRTEL_2GB', 'source': 'test_mode'},
+            {'id': 'AIRTEL_5GB', 'name': '5GB - 30 Days', 'price': 1200, 'plan_code': 'AIRTEL_5GB', 'source': 'test_mode'},
+            {'id': 'AIRTEL_10GB', 'name': '10GB - 30 Days', 'price': 2000, 'plan_code': 'AIRTEL_10GB', 'source': 'test_mode'},
+            {'id': 'AIRTEL_20GB', 'name': '20GB - 30 Days', 'price': 4000, 'plan_code': 'AIRTEL_20GB', 'source': 'test_mode'},
+        ]
+    
+    # Glo Plans
+    elif network_lower in ['glo', 'glo_data']:
+        return [
+            {'id': 'GLO_500MB', 'name': '500MB - 30 Days', 'price': 150, 'plan_code': 'GLO_500MB', 'source': 'test_mode'},
+            {'id': 'GLO_1GB', 'name': '1GB - 30 Days', 'price': 300, 'plan_code': 'GLO_1GB', 'source': 'test_mode'},
+            {'id': 'GLO_2GB', 'name': '2GB - 30 Days', 'price': 500, 'plan_code': 'GLO_2GB', 'source': 'test_mode'},
+            {'id': 'GLO_5GB', 'name': '5GB - 30 Days', 'price': 1200, 'plan_code': 'GLO_5GB', 'source': 'test_mode'},
+            {'id': 'GLO_10GB', 'name': '10GB - 30 Days', 'price': 2000, 'plan_code': 'GLO_10GB', 'source': 'test_mode'},
+        ]
+    
+    # 9mobile Plans
+    elif network_lower in ['9mobile', '9mobile_data']:
+        return [
+            {'id': '9MOBILE_500MB', 'name': '500MB - 30 Days', 'price': 150, 'plan_code': '9MOBILE_500MB', 'source': 'test_mode'},
+            {'id': '9MOBILE_1GB', 'name': '1GB - 30 Days', 'price': 300, 'plan_code': '9MOBILE_1GB', 'source': 'test_mode'},
+            {'id': '9MOBILE_2GB', 'name': '2GB - 30 Days', 'price': 500, 'plan_code': '9MOBILE_2GB', 'source': 'test_mode'},
+            {'id': '9MOBILE_5GB', 'name': '5GB - 30 Days', 'price': 1200, 'plan_code': '9MOBILE_5GB', 'source': 'test_mode'},
+            {'id': '9MOBILE_10GB', 'name': '10GB - 30 Days', 'price': 2000, 'plan_code': '9MOBILE_10GB', 'source': 'test_mode'},
+        ]
+    
+    # Unknown network - return empty
+    else:
+        return []
