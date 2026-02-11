@@ -73,16 +73,30 @@ def init_internal_kyc_blueprint(mongo, token_required, serialize_doc):
                 result = mongo.db.kyc_submissions.insert_one(submission_data)
                 submission_id = result.inserted_id
             
-            # Update user status to show KYC submitted
+            # CRITICAL FIX: Update user profile with BVN/NIN for pre-population
+            # This ensures the data is available for:
+            # 1. Pre-population in VAS BVN verification screen
+            # 2. Backend auto-retry logic when creating reserved accounts
+            # 3. Unified verification status checks
+            user_profile_update = {
+                'kycStatus': 'SUBMITTED',
+                'kycSubmittedAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()
+            }
+            
+            # Add BVN to user profile if provided (unencrypted for backend logic)
+            if data.get('bvnNumber', '').strip():
+                user_profile_update['bvn'] = data.get('bvnNumber', '').strip()
+                logger.info(f"Updated user profile with BVN for user {user_id}")
+            
+            # Add NIN to user profile if provided (unencrypted for backend logic)
+            if data.get('ninNumber', '').strip():
+                user_profile_update['nin'] = data.get('ninNumber', '').strip()
+                logger.info(f"Updated user profile with NIN for user {user_id}")
+            
             mongo.db.users.update_one(
                 {'_id': ObjectId(user_id)},
-                {
-                    '$set': {
-                        'kycStatus': 'SUBMITTED',
-                        'kycSubmittedAt': datetime.utcnow(),
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
+                {'$set': user_profile_update}
             )
             
             logger.info(f"KYC submitted internally for user {user_id} - NO external charges")

@@ -58,7 +58,20 @@ def get_profile():
                 'subscriptionType': current_user.get('subscriptionType'),
                 'subscriptionStartDate': current_user.get('subscriptionStartDate').isoformat() + 'Z' if current_user.get('subscriptionStartDate') else None,
                 'subscriptionEndDate': current_user.get('subscriptionEndDate').isoformat() + 'Z' if current_user.get('subscriptionEndDate') else None,
-                'subscriptionAutoRenew': current_user.get('subscriptionAutoRenew', False)
+                'subscriptionAutoRenew': current_user.get('subscriptionAutoRenew', False),
+                # CRITICAL FIX: Add BVN/NIN fields for verification status and pre-population
+                # These are needed for:
+                # 1. Pre-populating BVN/NIN verification form if user returns
+                # 2. Checking verification status in frontend
+                # 3. Unified verification system checks
+                'bvn': current_user.get('bvn'),
+                'nin': current_user.get('nin'),
+                'kycStatus': current_user.get('kycStatus', 'not_submitted'),
+                'bvnVerified': current_user.get('bvnVerified', False),
+                'ninVerified': current_user.get('ninVerified', False),
+                'kycVerified': current_user.get('kycVerified', False),
+                'kycVerifiedAt': current_user.get('kycVerifiedAt').isoformat() + 'Z' if current_user.get('kycVerifiedAt') else None,
+                'kycSubmittedAt': current_user.get('kycSubmittedAt').isoformat() + 'Z' if current_user.get('kycSubmittedAt') else None,
             }
             
             return jsonify({

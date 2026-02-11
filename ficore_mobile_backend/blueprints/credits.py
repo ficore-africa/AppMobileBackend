@@ -646,6 +646,240 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @credits_bp.route('/verify-callback', methods=['GET'])
+    def verify_credit_callback():
+        """Handle Paystack redirect callback for credit purchases (no auth required)"""
+        try:
+            from flask import redirect, render_template
+            
+            reference = request.args.get('reference')
+            test_mode = request.args.get('test_mode', 'false').lower() == 'true'
+            
+            if not reference:
+                # Return HTML page with error
+                return render_template('payment_callback.html', 
+                                     status='failed', 
+                                     error='missing_reference'), 400
+            
+            print(f"[CREDITS CALLBACK] Received callback for reference: {reference}, test_mode: {test_mode}")
+            
+            # Find pending transaction by transactionRef (not paystackRef)
+            pending_transaction = mongo.db.pending_credit_purchases.find_one({
+                'transactionRef': reference
+            })
+            
+            if not pending_transaction:
+                print(f"[CREDITS CALLBACK] Pending transaction not found for reference: {reference}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='not_found'), 404
+            
+            # Check if already processed
+            if pending_transaction['status'] != 'pending':
+                print(f"[CREDITS CALLBACK] Transaction already processed: {pending_transaction['status']}")
+                return render_template('payment_callback.html',
+                                     status=pending_transaction['status'],
+                                     reference=reference,
+                                     message='Transaction already processed'), 200
+            
+            user_id = pending_transaction['userId']
+            credit_amount = pending_transaction['creditAmount']
+            naira_amount = pending_transaction['nairaAmount']
+            
+            # ==================== TEST MODE AUTO-COMPLETE ====================
+            if test_mode or pending_transaction.get('testMode', False):
+                print(f'[TEST MODE] Auto-completing credit purchase for user {user_id}')
+                
+                # Get current user balance
+                user = mongo.db.users.find_one({'_id': user_id})
+                current_balance = user.get('ficoreCreditBalance', 0.0)
+                new_balance = current_balance + credit_amount
+                
+                # Update user balance
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {'$set': {'ficoreCreditBalance': new_balance}}
+                )
+                
+                # Create completed transaction record
+                transaction = {
+                    '_id': ObjectId(),
+                    'userId': user_id,
+                    'type': 'credit',
+                    'amount': credit_amount,
+                    'nairaAmount': naira_amount,
+                    'description': f'FC purchase (TEST MODE) - {credit_amount} FCs',
+                    'status': 'completed',
+                    'paymentMethod': 'paystack_test',
+                    'paymentReference': pending_transaction['paystackRef'],
+                    'balanceBefore': current_balance,
+                    'balanceAfter': new_balance,
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'purchaseType': 'test_mode_auto',
+                        'testMode': True
+                    }
+                }
+                
+                mongo.db.credit_transactions.insert_one(transaction)
+                
+                # Mark pending transaction as completed
+                mongo.db.pending_credit_purchases.update_one(
+                    {'_id': pending_transaction['_id']},
+                    {
+                        '$set': {
+                            'status': 'completed',
+                            'completedAt': datetime.utcnow(),
+                            'transactionId': str(transaction['_id'])
+                        }
+                    }
+                )
+                
+                print(f'[TEST MODE] Credit purchase completed: {credit_amount} FCs added to user {user_id}')
+                
+                # Return success page
+                return render_template('payment_callback.html',
+                                     status='success',
+                                     reference=reference,
+                                     amount=f'{credit_amount} FCs',
+                                     test_mode=True,
+                                     message=f'Payment successful! {credit_amount} FCs have been added to your account.'), 200
+            
+            # ==================== LIVE MODE: VERIFY WITH PAYSTACK ====================
+            paystack_ref = pending_transaction['paystackRef']
+            
+            # Get user email for Paystack key selection
+            user = mongo.db.users.find_one({'_id': user_id})
+            user_email = user.get('email', 'user@example.com')
+            
+            # Verify with Paystack
+            paystack_response = _make_paystack_request(f'/transaction/verify/{paystack_ref}', user_email=user_email)
+            
+            if not paystack_response.get('status'):
+                print(f"[CREDITS CALLBACK] Paystack verification failed: {paystack_response}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='verification_failed'), 400
+            
+            transaction_data = paystack_response['data']
+            
+            # Check if payment was successful
+            if transaction_data['status'] != 'success':
+                print(f"[CREDITS CALLBACK] Payment status: {transaction_data['status']}")
+                
+                # Mark as failed
+                mongo.db.pending_credit_purchases.update_one(
+                    {'_id': pending_transaction['_id']},
+                    {'$set': {'status': 'failed', 'failureReason': transaction_data.get('gateway_response', 'Payment failed')}}
+                )
+                
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error=transaction_data['status']), 400
+            
+            # Verify amount matches
+            expected_amount = int(naira_amount * 100)  # Convert to kobo
+            if transaction_data['amount'] != expected_amount:
+                print(f"[CREDITS CALLBACK] Amount mismatch: expected {expected_amount}, got {transaction_data['amount']}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='amount_mismatch'), 400
+            
+            # Credit user account
+            current_balance = user.get('ficoreCreditBalance', 0.0)
+            new_balance = current_balance + credit_amount
+            
+            mongo.db.users.update_one(
+                {'_id': user_id},
+                {'$set': {'ficoreCreditBalance': new_balance}}
+            )
+            
+            # Create completed transaction record
+            transaction = {
+                '_id': ObjectId(),
+                'userId': user_id,
+                'type': 'credit',
+                'amount': credit_amount,
+                'nairaAmount': naira_amount,
+                'description': f'FC purchase via Paystack - {credit_amount} FCs',
+                'status': 'completed',
+                'paymentMethod': 'paystack',
+                'paymentReference': paystack_ref,
+                'paystackTransactionId': transaction_data.get('id'),
+                'balanceBefore': current_balance,
+                'balanceAfter': new_balance,
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'purchaseType': 'paystack_callback',
+                    'paystackData': {
+                        'transaction_id': transaction_data.get('id'),
+                        'gateway_response': transaction_data.get('gateway_response'),
+                        'paid_at': transaction_data.get('paid_at'),
+                        'channel': transaction_data.get('channel')
+                    }
+                }
+            }
+            
+            mongo.db.credit_transactions.insert_one(transaction)
+            
+            # Record corporate revenue
+            corporate_revenue = {
+                '_id': ObjectId(),
+                'type': 'CREDITS_PURCHASE',
+                'category': 'FICORE_CREDITS',
+                'amount': naira_amount,
+                'userId': user_id,
+                'relatedTransaction': paystack_ref,
+                'description': f'FiCore Credits purchase - {credit_amount} FCs (callback)',
+                'status': 'RECORDED',
+                'createdAt': datetime.utcnow(),
+                'gatewayFee': round(naira_amount * 0.016, 2),
+                'gatewayProvider': 'paystack',
+                'netRevenue': round(naira_amount * 0.984, 2),
+                'metadata': {
+                    'creditAmount': credit_amount,
+                    'nairaAmount': naira_amount,
+                    'paystackTransactionId': transaction_data.get('id'),
+                    'paymentChannel': transaction_data.get('channel'),
+                    'gatewayFeePercentage': 1.6
+                }
+            }
+            mongo.db.corporate_revenue.insert_one(corporate_revenue)
+            print(f'💰 Corporate revenue recorded: ₦{naira_amount} credits (net: ₦{naira_amount * 0.984:.2f} after gateway) via callback - User {user_id}')
+            
+            # Mark pending transaction as completed
+            mongo.db.pending_credit_purchases.update_one(
+                {'_id': pending_transaction['_id']},
+                {
+                    '$set': {
+                        'status': 'completed',
+                        'completedAt': datetime.utcnow(),
+                        'transactionId': str(transaction['_id'])
+                    }
+                }
+            )
+            
+            print(f'[CREDITS CALLBACK] Credit purchase completed: {credit_amount} FCs added to user {user_id}')
+            
+            # Return success page
+            return render_template('payment_callback.html',
+                                 status='success',
+                                 reference=reference,
+                                 amount=f'{credit_amount} FCs',
+                                 message=f'Payment successful! {credit_amount} FCs have been added to your account.'), 200
+            
+        except Exception as e:
+            print(f"[CREDITS CALLBACK] Error: {str(e)}")
+            traceback.print_exc()
+            return render_template('payment_callback.html',
+                                 status='failed',
+                                 error='processing_error',
+                                 message=str(e)), 500
+
     @credits_bp.route('/webhook/paystack', methods=['POST'])
     def paystack_webhook():
         """Handle Paystack webhook notifications"""

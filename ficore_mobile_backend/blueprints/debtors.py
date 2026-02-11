@@ -1966,9 +1966,9 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
             if stats_result:
                 stats = stats_result[0]
                 
-                # Calculate additional metrics
-                total_debt = float(stats.get('totalDebt', 0))
-                total_paid = float(stats.get('totalPaid', 0))
+                # Calculate additional metrics - handle None values
+                total_debt = float(stats.get('totalDebt') or 0)
+                total_paid = float(stats.get('totalPaid') or 0)
                 collection_rate = (total_paid / total_debt * 100) if total_debt > 0 else 0
                 
                 statistics_data = {
@@ -1978,11 +1978,11 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
                     'paidCustomers': int(stats.get('paidCustomers', 0)),
                     'totalDebt': total_debt,
                     'totalPaid': total_paid,
-                    'totalOutstanding': float(stats.get('totalOutstanding', 0)),
-                    'overdueAmount': float(stats.get('overdueAmount', 0)),
-                    'averageDebt': float(stats.get('averageDebt', 0)),
-                    'maxDebt': float(stats.get('maxDebt', 0)),
-                    'minDebt': float(stats.get('minDebt', 0)),
+                    'totalOutstanding': float(stats.get('totalOutstanding') or 0),
+                    'overdueAmount': float(stats.get('overdueAmount') or 0),
+                    'averageDebt': float(stats.get('averageDebt') or 0),
+                    'maxDebt': float(stats.get('maxDebt') or 0),
+                    'minDebt': float(stats.get('minDebt') or 0),
                     'collectionRate': round(collection_rate, 2),
                     'dateRange': {
                         'startDate': start_date.isoformat() + 'Z',

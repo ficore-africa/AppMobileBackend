@@ -304,6 +304,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             from flask import redirect, render_template
             
             reference = request.args.get('reference')
+            test_mode = request.args.get('test_mode', 'false').lower() == 'true'
             
             if not reference:
                 # Return HTML page with error
@@ -311,8 +312,83 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                                      status='failed', 
                                      error='missing_reference'), 400
             
-            print(f"[SUBSCRIPTION CALLBACK] Received callback for reference: {reference}")
+            print(f"[SUBSCRIPTION CALLBACK] Received callback for reference: {reference}, test_mode: {test_mode}")
             
+            # Find pending subscription
+            pending_sub = mongo.db.pending_subscriptions.find_one({'reference': reference})
+            
+            if not pending_sub:
+                print(f"[SUBSCRIPTION CALLBACK] Pending subscription not found for reference: {reference}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='not_found'), 404
+            
+            user_id = pending_sub['userId']
+            plan_type = pending_sub['planType']
+            plan = SUBSCRIPTION_PLANS[plan_type]
+            
+            # ==================== TEST MODE AUTO-COMPLETE ====================
+            if test_mode or pending_sub.get('testMode', False):
+                print(f'[TEST MODE] Auto-completing subscription for user {user_id}')
+                
+                # Activate subscription
+                start_date = datetime.utcnow()
+                end_date = start_date + timedelta(days=plan['duration_days'])
+                
+                # Update user subscription
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {
+                        '$set': {
+                            'isSubscribed': True,
+                            'subscriptionType': plan_type,
+                            'subscriptionStartDate': start_date,
+                            'subscriptionEndDate': end_date,
+                            'subscriptionAutoRenew': True,
+                            'paymentMethodDetails': {
+                                'last4': 'TEST',
+                                'brand': 'TEST',
+                                'authorization_code': 'TEST_AUTH'
+                            }
+                        }
+                    }
+                )
+                
+                # Create subscription record
+                subscription_record = {
+                    '_id': ObjectId(),
+                    'userId': user_id,
+                    'planType': plan_type,
+                    'amount': plan['price'],
+                    'startDate': start_date,
+                    'endDate': end_date,
+                    'status': 'active',
+                    'paymentReference': reference,
+                    'paystackTransactionId': 'TEST_MODE',
+                    'testMode': True,
+                    'createdAt': datetime.utcnow()
+                }
+                
+                mongo.db.subscriptions.insert_one(subscription_record)
+                
+                # Mark pending subscription as completed
+                mongo.db.pending_subscriptions.update_one(
+                    {'_id': pending_sub['_id']},
+                    {'$set': {'status': 'completed', 'completedAt': datetime.utcnow()}}
+                )
+                
+                print(f'[TEST MODE] Subscription activated for user {user_id}')
+                
+                # Return success page
+                return render_template('payment_callback.html',
+                                     status='success',
+                                     reference=reference,
+                                     amount=f'{plan["name"]} - ₦{plan["price"]:,}',
+                                     test_mode=True,
+                                     message=f'Subscription activated! You now have access to all premium features.'), 200
+            
+            # ==================== LIVE MODE: VERIFY WITH PAYSTACK ====================
             # Verify with Paystack
             paystack_response = _make_paystack_request(f'/transaction/verify/{reference}')
             
@@ -332,20 +408,6 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                                      status='failed',
                                      reference=reference,
                                      error=transaction_data['status']), 400
-            
-            # Find pending subscription
-            pending_sub = mongo.db.pending_subscriptions.find_one({'reference': reference})
-            
-            if not pending_sub:
-                print(f"[SUBSCRIPTION CALLBACK] Pending subscription not found for reference: {reference}")
-                return render_template('payment_callback.html',
-                                     status='failed',
-                                     reference=reference,
-                                     error='not_found'), 404
-            
-            user_id = pending_sub['userId']
-            plan_type = pending_sub['planType']
-            plan = SUBSCRIPTION_PLANS[plan_type]
             
             # Activate subscription
             start_date = datetime.utcnow()
