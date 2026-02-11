@@ -8,7 +8,7 @@ from datetime import datetime
 import requests
 import os
 
-def init_emergency_recovery_blueprint(mongo, token_required):
+def init_emergency_recovery_blueprint(mongo, token_required, admin_required):
     recovery_bp = Blueprint('emergency_recovery', __name__, url_prefix='/api/emergency')
     
     MONNIFY_API_KEY = os.environ.get('MONNIFY_API_KEY', '')
@@ -17,18 +17,12 @@ def init_emergency_recovery_blueprint(mongo, token_required):
     
     @recovery_bp.route('/recover-all-wallets', methods=['POST'])
     @token_required
+    @admin_required
     def recover_all_wallets(current_user):
         """
         Emergency endpoint to recover all deleted wallets
-        ADMIN ONLY - Requires admin privileges
+        Admin access required (checks current_user['role'] == 'admin')
         """
-        # Check if user is admin
-        if not current_user.get('isAdmin'):
-            return jsonify({
-                'success': False,
-                'message': 'Admin access required'
-            }), 403
-        
         try:
             print(f"\n{'='*80}")
             print(f"EMERGENCY WALLET RECOVERY STARTED")
