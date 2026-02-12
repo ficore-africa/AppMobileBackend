@@ -67,6 +67,11 @@ from bson import ObjectId
 def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     vas_wallet_bp = Blueprint('vas_wallet', __name__, url_prefix='/api/vas/wallet')
     
+    # CRITICAL FIX (Feb 12, 2026): Create alias blueprint for PIN endpoints without /api prefix
+    # Frontend calls /vas/wallet/pin/* but backend has /api/vas/wallet/pin/*
+    # App already submitted to Play Store, so we add backend aliases instead of changing frontend
+    vas_wallet_alias_bp = Blueprint('vas_wallet_alias', __name__, url_prefix='/vas/wallet')
+    
     # Environment variables (NEVER hardcode these)
     MONNIFY_API_KEY = os.environ.get('MONNIFY_API_KEY', '')
     MONNIFY_SECRET_KEY = os.environ.get('MONNIFY_SECRET_KEY', '')
@@ -334,14 +339,37 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 timeout=30
             )
             
+            van_data = None
+            
             if van_response.status_code != 200:
                 # Parse Monnify error response
                 error_data = van_response.json()
                 error_message = error_data.get('responseMessage', 'Unknown error')
                 error_code = error_data.get('responseCode', '99')
                 
+                # Check if account already exists (duplicate error)
+                if 'already' in error_message.lower() or 'duplicate' in error_message.lower() or 'exists' in error_message.lower():
+                    print(f'INFO: Account already exists in Monnify for user {user_id}, fetching existing account...')
+                    
+                    # Fetch existing account from Monnify
+                    fetch_response = requests.get(
+                        f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts/{user_id}',
+                        headers={'Authorization': f'Bearer {access_token}'},
+                        timeout=30
+                    )
+                    
+                    if fetch_response.status_code == 200:
+                        fetch_data = fetch_response.json()
+                        if fetch_data.get('requestSuccessful'):
+                            van_data = fetch_data['responseBody']
+                            print(f'✅ Successfully fetched existing account from Monnify')
+                        else:
+                            raise Exception(f'Failed to fetch existing account: {fetch_data.get("responseMessage")}')
+                    else:
+                        raise Exception(f'Failed to fetch existing account: {fetch_response.text}')
+                
                 # Check if error is BVN/NIN requirement
-                if 'BVN' in error_message or 'NIN' in error_message or error_code == '99':
+                elif 'BVN' in error_message or 'NIN' in error_message or error_code == '99':
                     print(f'INFO: Monnify requires KYC for user {user_id}')
                     return jsonify({
                         'success': False,
@@ -355,11 +383,16 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         },
                         'errors': {'kyc': ['BVN or NIN verification required']}
                     }), 400  # 400 instead of 500 - this is a client action required
-                
-                # Other Monnify errors
-                raise Exception(f'VAN creation failed: {van_response.text}')
+                else:
+                    # Other Monnify errors
+                    raise Exception(f'VAN creation failed: {van_response.text}')
+            else:
+                # Success - account created
+                van_data = van_response.json()['responseBody']
             
-            van_data = van_response.json()['responseBody']
+            # Ensure we have van_data at this point
+            if not van_data:
+                raise Exception('Failed to create or fetch account from Monnify')
             
             wallet = {
                 '_id': ObjectId(),
@@ -3306,4 +3339,27 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
-    return vas_wallet_bp
+    # ==================== ALIAS ROUTES FOR PIN ENDPOINTS (Feb 12, 2026) ====================
+    # Frontend calls /vas/wallet/pin/* (missing /api prefix) due to inconsistency
+    # App already submitted to Play Store, so we add backend aliases
+    # These routes point to the same handlers as /api/vas/wallet/pin/*
+    
+    @vas_wallet_alias_bp.route('/pin/status', methods=['GET'])
+    @token_required
+    def get_pin_status_alias(current_user):
+        """Alias for /api/vas/wallet/pin/status - called by frontend without /api prefix"""
+        return get_pin_status(current_user)
+    
+    @vas_wallet_alias_bp.route('/pin/validate', methods=['POST'])
+    @token_required
+    def validate_vas_pin_alias(current_user):
+        """Alias for /api/vas/wallet/pin/validate - called by frontend without /api prefix"""
+        return validate_vas_pin(current_user)
+    
+    @vas_wallet_alias_bp.route('/pin/change', methods=['POST'])
+    @token_required
+    def change_vas_pin_alias(current_user):
+        """Alias for /api/vas/wallet/pin/change - called by frontend without /api prefix"""
+        return change_vas_pin(current_user)
+    
+    return vas_wallet_bp, vas_wallet_alias_bp
