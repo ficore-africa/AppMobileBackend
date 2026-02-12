@@ -798,6 +798,17 @@
         </div>
     </div>
     
+    <!-- Modal for displaying transaction history and other data -->
+    <div id="dataModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+        <div class="modal-content" style="background-color: #fefefe; margin: 5% auto; padding: 0; border: 1px solid #888; border-radius: 10px; width: 80%; max-width: 900px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div class="modal-header" style="padding: 20px; background: #1E3A8A; color: white; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                <h2 id="modalTitle" style="margin: 0; font-size: 20px;">Modal Title</h2>
+                <button onclick="closeModal()" class="btn btn-danger" style="background: white; color: #DC2626; padding: 8px 16px;">Close</button>
+            </div>
+            <div id="modalContent" class="modal-body" style="padding: 20px; max-height: 500px; overflow-y: auto;"></div>
+        </div>
+    </div>
+    
     <script>
         let currentUser = null;
         let subscriptionPlans = [];
@@ -2315,6 +2326,25 @@
                 } else if (title.includes('Successful')) {
                     loadSuccessfulTransactions();
                 }
+            }
+        }
+        
+        // Modal functions
+        function showModal(title, content) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalContent').innerHTML = content;
+            document.getElementById('dataModal').style.display = 'block';
+        }
+        
+        function closeModal() {
+            document.getElementById('dataModal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('dataModal');
+            if (event.target === modal) {
+                closeModal();
             }
         }
     </script>
