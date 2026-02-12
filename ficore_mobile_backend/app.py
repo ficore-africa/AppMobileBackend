@@ -397,7 +397,7 @@ reports_blueprint = init_reports_blueprint(mongo, token_required)
 voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
 
 # Initialize VAS modules - broken down from monolithic blueprint
-vas_wallet_blueprint = init_vas_wallet_blueprint(mongo, token_required, serialize_doc)
+vas_wallet_blueprint, vas_wallet_alias_blueprint = init_vas_wallet_blueprint(mongo, token_required, serialize_doc)
 vas_purchase_blueprint = init_vas_purchase_blueprint(mongo, token_required, serialize_doc)
 vas_bills_blueprint = init_vas_bills_blueprint(mongo, token_required, serialize_doc)
 
@@ -463,6 +463,8 @@ print("✓ Voice reporting blueprint registered at /api/voice")
 # Register VAS modules - broken down from monolithic blueprint
 app.register_blueprint(vas_wallet_blueprint)
 print("✓ VAS Wallet blueprint registered at /api/vas/wallet")
+app.register_blueprint(vas_wallet_alias_blueprint)
+print("✓ VAS Wallet alias blueprint registered at /vas/wallet (for PIN endpoints)")
 app.register_blueprint(vas_purchase_blueprint)
 print("✓ VAS Purchase blueprint registered at /api/vas/purchase")
 app.register_blueprint(vas_bills_blueprint)
