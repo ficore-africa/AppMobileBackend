@@ -454,6 +454,11 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Serialize users (exclude sensitive data)
             user_data = []
             for user in users:
+                # Check subscription status
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end_date = user.get('subscriptionEndDate')
+                subscription_status = user.get('subscriptionStatus', 'inactive')
+                
                 user_info = {
                     'id': str(user['_id']),
                     'email': user.get('email', ''),
@@ -469,7 +474,15 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'isActive': user.get('isActive', True),
                     'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                     'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
-                    'financialGoals': user.get('financialGoals', [])
+                    'financialGoals': user.get('financialGoals', []),
+                    # Add subscription information for premium users page
+                    'isSubscribed': is_subscribed,
+                    'subscriptionStatus': subscription_status,
+                    'subscriptionType': user.get('subscriptionType'),
+                    'subscriptionPlan': user.get('subscriptionPlan'),
+                    'subscriptionStartDate': user.get('subscriptionStartDate').isoformat() + 'Z' if user.get('subscriptionStartDate') else None,
+                    'subscriptionEndDate': subscription_end_date.isoformat() + 'Z' if subscription_end_date else None,
+                    'autoRenew': user.get('autoRenew', False)
                 }
                 user_data.append(user_info)
 
