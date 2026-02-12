@@ -716,31 +716,36 @@
 
         // Update dashboard with data
         function updateDashboard() {
-            const { overview, providers, transactionTypes, recentTransactions } = treasuryData;
+            const { overview, revenueBreakdown, providerStats, transactionTypeStats, recentTransactions } = treasuryData;
             
-            // Update stats cards
+            // Update stats cards with correct backend properties
             document.getElementById('totalRevenue').textContent = `₦${overview.totalRevenue.toLocaleString()}`;
-            document.getElementById('monnifyCommission').textContent = `₦${overview.monnifyCommission.toLocaleString()}`;
-            document.getElementById('totalMargin').textContent = `₦${overview.totalMargin.toLocaleString()}`;
+            // Use VAS commissions from monnify as the commission display
+            document.getElementById('monnifyCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.monnify || 0).toLocaleString()}`;
+            // Use netProfit as the margin
+            document.getElementById('totalMargin').textContent = `₦${overview.netProfit.toLocaleString()}`;
             document.getElementById('totalTransactions').textContent = overview.totalTransactions.toLocaleString();
             
-            // Update provider breakdown
-            updateProviderBreakdown(providers);
+            // Update provider breakdown (use providerStats from backend)
+            updateProviderBreakdown(providerStats || []);
             
-            // Update transaction types
-            updateTransactionTypes(transactionTypes);
+            // Update transaction types (use transactionTypeStats from backend)
+            updateTransactionTypes(transactionTypeStats || []);
             
             // Update transactions table
-            updateTransactionsTable(recentTransactions);
+            updateTransactionsTable(recentTransactions || []);
         }
 
         // Update provider breakdown
         function updateProviderBreakdown(providers) {
             const container = document.getElementById('providerBreakdown');
             
+            if (!providers || providers.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No provider data available</div>';
+                return;
+            }
+            
             container.innerHTML = providers.map(provider => {
-                const commission = provider.name === 'monnify' ? provider.amount * 0.03 : 0;
-                
                 return `
                     <div class="provider-item">
                         <div class="provider-info">
@@ -753,8 +758,8 @@
                             </div>
                         </div>
                         <div class="provider-stats">
-                            <div class="provider-amount">₦${provider.amount.toLocaleString()}</div>
-                            ${commission > 0 ? `<div class="provider-commission">+₦${commission.toLocaleString()} commission</div>` : ''}
+                            <div class="provider-amount">₦${provider.volume.toLocaleString()}</div>
+                            ${provider.commission > 0 ? `<div class="provider-commission">+₦${provider.commission.toLocaleString()} commission (${provider.commissionRate})</div>` : ''}
                         </div>
                     </div>
                 `;
@@ -764,6 +769,11 @@
         // Update transaction types
         function updateTransactionTypes(transactionTypes) {
             const container = document.getElementById('transactionTypes');
+            
+            if (!transactionTypes || transactionTypes.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No transaction type data available</div>';
+                return;
+            }
             
             container.innerHTML = transactionTypes.map(type => `
                 <div class="provider-item">
@@ -777,7 +787,8 @@
                         </div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${type.amount.toLocaleString()}</div>
+                        <div class="provider-amount">₦${type.volume.toLocaleString()}</div>
+                        ${type.commission > 0 ? `<div class="provider-commission">+₦${type.commission.toLocaleString()} commission</div>` : ''}
                     </div>
                 </div>
             `).join('');
