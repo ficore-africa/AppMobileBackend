@@ -1334,6 +1334,24 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             'emergency': True
         }), 200
     
+    # ==================== DEBUG LOGS ENDPOINT (TEMPORARY) ====================
+    
+    @vas_purchase_bp.route('/debug_logs/<filename>', methods=['GET'])
+    def get_debug_log(filename):
+        """Temporary endpoint to fetch debug log JSON files"""
+        try:
+            import os
+            file_path = os.path.join('debug_logs', filename)
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'File not found', 'path': file_path}), 404
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            return jsonify(data), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
     # ==================== DATA PLANS ENDPOINT ====================
     
     @vas_purchase_bp.route('/data-plans/<network>', methods=['GET'])
