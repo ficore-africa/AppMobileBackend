@@ -1060,6 +1060,17 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     access_token=access_token
                 )
                 
+                # 🔍 DEBUG: Log complete Monnify airtime networks response
+                print('═══════════════════════════════════════════════════')
+                print('🔍 MONNIFY AIRTIME NETWORKS DEBUG')
+                print('═══════════════════════════════════════════════════')
+                print(f'Timestamp: {datetime.now().isoformat()}')
+                print(f'Total Billers: {len(billers_response["responseBody"]["content"])}')
+                print('\n📋 COMPLETE BILLER LIST:')
+                import json
+                print(json.dumps(billers_response['responseBody']['content'], indent=2))
+                print('═══════════════════════════════════════════════════\n')
+                
                 # Transform Monnify billers to our format
                 networks = []
                 for biller in billers_response['responseBody']['content']:
@@ -1434,6 +1445,20 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         access_token=access_token
                     )
                     
+                    # 🔍 DEBUG: Log complete Monnify response
+                    print('═══════════════════════════════════════════════════')
+                    print(f'🔍 MONNIFY DATA PLANS DEBUG - {network.upper()}')
+                    print('═══════════════════════════════════════════════════')
+                    print(f'Timestamp: {datetime.now().isoformat()}')
+                    print(f'Network: {network}')
+                    print(f'Monnify Network: {monnify_network}')
+                    print(f'Biller Code: {target_biller["code"]}')
+                    print(f'Total Products: {len(products_response["responseBody"]["content"])}')
+                    print('\n📋 COMPLETE PRODUCT LIST:')
+                    import json
+                    print(json.dumps(products_response['responseBody']['content'], indent=2))
+                    print('═══════════════════════════════════════════════════\n')
+                    
                     # Transform Monnify products to our format
                     plans = []
                     all_products = products_response['responseBody']['content']
@@ -1563,6 +1588,22 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     response = requests.get(url, headers=headers, timeout=10)
                     # print(f'INFO: Peyflex plans response status: {response.status_code}')
                     # print(f'INFO: Response preview: {response.text[:500]}')
+                    
+                    # 🔍 DEBUG: Log complete Peyflex response
+                    print('═══════════════════════════════════════════════════')
+                    print(f'🔍 PEYFLEX DATA PLANS DEBUG - {network.upper()} ({full_network_id})')
+                    print('═══════════════════════════════════════════════════')
+                    print(f'Timestamp: {datetime.now().isoformat()}')
+                    print(f'Network: {network}')
+                    print(f'Peyflex Network ID: {full_network_id}')
+                    print(f'Response Status: {response.status_code}')
+                    print('\n📋 COMPLETE RESPONSE:')
+                    import json
+                    try:
+                        print(json.dumps(response.json(), indent=2))
+                    except:
+                        print(response.text)
+                    print('═══════════════════════════════════════════════════\n')
                     
                     if response.status_code == 200:
                         try:
