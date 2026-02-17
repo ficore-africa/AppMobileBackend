@@ -3796,15 +3796,14 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'filename': filename,
                     'size': stat.st_size,
                     'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    'download_url': f'/api/vas/purchase/debug/download/{filename}'
+                    'view_url': f'/api/vas/purchase/debug/view/{filename}'
                 })
         
         return jsonify({'files': files, 'count': len(files)}), 200
     
-    @vas_purchase_bp.route('/debug/download/<filename>', methods=['GET'])
-    def download_debug_file(filename):
-        """Download a specific debug log file"""
-        from flask import send_file
+    @vas_purchase_bp.route('/debug/view/<filename>', methods=['GET'])
+    def view_debug_file(filename):
+        """View debug log file content as JSON"""
         import os
         
         # Security: Only allow JSON files
@@ -3814,9 +3813,14 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
         filepath = os.path.join('debug_logs', filename)
         
         if not os.path.exists(filepath):
-            return jsonify({'error': 'File not found'}), 404
+            return jsonify({'error': 'File not found', 'filepath': filepath}), 404
         
-        return send_file(filepath, as_attachment=True, download_name=filename)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return jsonify(data), 200
+        except Exception as e:
+            return jsonify({'error': f'Failed to read file: {str(e)}'}), 500
     
     return vas_purchase_bp
 
