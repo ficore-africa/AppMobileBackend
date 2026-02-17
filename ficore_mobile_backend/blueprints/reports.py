@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.pdf_generator import PDFGenerator
 from utils.parallel_query_helper import fetch_collections_parallel
 from utils.pdf_cache_helper import get_pdf_cache
+from utils.background_report_generator import get_background_generator, ReportJobStatus
 
 # ============================================================================
 # QUERY PROJECTIONS FOR PDF EXPORT OPTIMIZATION
@@ -396,6 +397,16 @@ def init_reports_blueprint(mongo, token_required):
             
             incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1))
             
+            # Check data size - recommend background generation for large reports
+            if len(incomes) > 100:
+                return jsonify({
+                    'success': False,
+                    'message': 'This report is too large to generate instantly. Please use the background generation option.',
+                    'recommendation': 'Use background generation for better performance with large reports',
+                    'recordCount': len(incomes),
+                    'backgroundEndpoint': '/api/reports/income-pdf-async'
+                }), 413  # Payload Too Large
+            
             if not incomes:
                 return jsonify({
                     'success': False,
@@ -408,7 +419,8 @@ def init_reports_blueprint(mongo, token_required):
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
-                'businessName': user.get('businessName', '') if user else ''
+                'businessName': user.get('businessName', '') if user else '',
+            'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
             # Prepare export data
@@ -472,6 +484,153 @@ def init_reports_blueprint(mongo, token_required):
             return jsonify({
                 'success': False,
                 'message': f'Failed to generate income PDF: {str(e)}'
+            }), 500
+    
+    @reports_bp.route('/income-pdf-async', methods=['POST'])
+    @token_required
+    def export_income_pdf_async(current_user):
+        """
+        Generate PDF report in the background.
+        Returns immediately with a job ID that can be used to check progress.
+        """
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'income_pdf'
+            
+            # CRITICAL: Get tag filter from request
+            tag_filter = request_data.get('tagFilter', 'all').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
+            # Check user access (fast)
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            # Parse parameters
+            start_date, end_date = parse_date_range(request_data)
+            
+            # Create background job (fast - just inserts to MongoDB)
+            bg_generator = get_background_generator(mongo.db)
+            job_id = bg_generator.create_job(
+                user_id=current_user['_id'],
+                report_type=report_type,
+                report_format='pdf',
+                params={
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
+                    'tag_filter': tag_filter
+                }
+            )
+            
+            # Define the generation function (this will run in background)
+            def generate_income_pdf():
+                # Build query
+                query = {
+                    'userId': current_user['_id'],
+                    'status': 'active',
+                    'isDeleted': False
+                }
+                
+                # Apply tag filtering
+                if tag_filter == 'business':
+                    query['tags'] = 'Business'
+                elif tag_filter == 'personal':
+                    query['tags'] = 'Personal'
+                elif tag_filter == 'untagged':
+                    query['$or'] = [
+                        {'tags': {'$exists': False}},
+                        {'tags': {'$size': 0}},
+                        {'tags': None}
+                    ]
+                
+                if start_date or end_date:
+                    query['dateReceived'] = {}
+                    if start_date:
+                        query['dateReceived']['$gte'] = start_date
+                    if end_date:
+                        query['dateReceived']['$lte'] = end_date
+                
+                # Fetch data
+                incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1))
+                
+                # Prepare user data
+                user = mongo.db.users.find_one({'_id': current_user['_id']})
+                user_data = {
+                    'firstName': current_user.get('firstName', ''),
+                    'lastName': current_user.get('lastName', ''),
+                    'email': current_user.get('email', ''),
+                    'businessName': user.get('businessName', '') if user else '',
+                    'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
+                }
+                
+                # Prepare export data
+                export_data = {'incomes': []}
+                for income in incomes:
+                    export_data['incomes'].append({
+                        'source': income.get('source', ''),
+                        'amount': income.get('amount', 0),
+                        'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    })
+                
+                # Generate PDF
+                pdf_generator = PDFGenerator()
+                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'incomes')
+                
+                # Track export for audit
+                try:
+                    from utils.immutable_ledger_helper import track_export
+                    entry_ids = [str(income['_id']) for income in incomes]
+                    report_id = f"income_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{current_user['_id']}"
+                    report_name = f"Income Report - {datetime.utcnow().strftime('%Y-%m-%d')}"
+                    track_export(
+                        db=mongo.db,
+                        collection_name='incomes',
+                        entry_ids=entry_ids,
+                        report_id=report_id,
+                        report_name=report_name,
+                        export_type='income_report'
+                    )
+                except Exception as e:
+                    print(f"⚠️ Export tracking failed (non-critical): {e}")
+                
+                return pdf_buffer
+            
+            # Start background generation (non-blocking)
+            bg_generator.start_generation(job_id, generate_income_pdf)
+            
+            # Deduct credits immediately (user committed to export)
+            if not is_premium and credit_cost > 0:
+                deduct_credits(current_user, credit_cost, report_type)
+            
+            # Log export event
+            log_export_event(current_user, report_type, 'pdf', success=True)
+            
+            # Return job_id immediately (user doesn't wait!)
+            return jsonify({
+                'success': True,
+                'message': 'Your report is being prepared. We\'ll have it ready in a few minutes.',
+                'jobId': job_id,
+                'statusUrl': f'/api/reports/job-status/{job_id}',
+                'estimatedTime': '2-5 minutes'
+            }), 202  # 202 Accepted
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Unable to start preparing your report: {str(e)}'
             }), 500
     
     @reports_bp.route('/income-csv', methods=['POST'])
@@ -688,7 +847,8 @@ def init_reports_blueprint(mongo, token_required):
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
-                'businessName': user.get('businessName', '') if user else ''
+                'businessName': user.get('businessName', '') if user else '',
+            'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
             # Prepare export data
@@ -971,7 +1131,8 @@ def init_reports_blueprint(mongo, token_required):
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
-                'businessName': user.get('businessName', '') if user else ''
+                'businessName': user.get('businessName', '') if user else '',
+            'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
             # Prepare export data
@@ -1133,7 +1294,8 @@ def init_reports_blueprint(mongo, token_required):
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
-                'businessName': user.get('businessName', '') if user else ''
+                'businessName': user.get('businessName', '') if user else '',
+            'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
             # Prepare transaction data
@@ -1336,7 +1498,8 @@ def init_reports_blueprint(mongo, token_required):
                 'firstName': current_user.get('firstName', ''),
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
-                'businessName': user.get('businessName', '') if user else ''
+                'businessName': user.get('businessName', '') if user else '',
+            'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
             # Prepare comprehensive tax data
@@ -3659,9 +3822,12 @@ def init_reports_blueprint(mongo, token_required):
             
             current_val = asset.get('currentValue', cost)
             
+            # Get asset name - check both 'assetName' and 'name' fields
+            asset_name = asset.get('assetName', asset.get('name', 'Unknown Asset'))
+            
             data.append({
                 'id': str(asset['_id']),
-                'name': asset.get('name', ''),
+                'name': asset_name,  # Use the resolved name
                 'category': asset.get('category', ''),
                 'purchasePrice': cost,  # Use calculated cost, not raw field
                 'currentValue': current_val,
@@ -4579,6 +4745,135 @@ def init_reports_blueprint(mongo, token_required):
             return jsonify({
                 'success': False,
                 'message': f'Failed to generate Full Wallet CSV: {str(e)}'
+            }), 500
+    
+    # ============================================================================
+    # BACKGROUND REPORT GENERATION ENDPOINTS (Feb 2026)
+    # ============================================================================
+    
+    @reports_bp.route('/job-status/<job_id>', methods=['GET'])
+    @token_required
+    def get_report_job_status(current_user, job_id):
+        """
+        Get status of a background report generation job.
+        
+        Returns:
+        {
+            "found": true,
+            "jobId": "...",
+            "status": "pending|processing|completed|failed",
+            "progress": 0-100,
+            "message": "...",
+            "downloadUrl": "/api/reports/download/{job_id}" (if completed)
+        }
+        """
+        try:
+            bg_generator = get_background_generator(mongo.db)
+            status = bg_generator.get_job_status(job_id)
+            
+            if not status['found']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Job not found'
+                }), 404
+            
+            # Verify job belongs to current user
+            job = mongo.db.report_jobs.find_one({'jobId': job_id})
+            if job and str(job['userId']) != str(current_user['_id']):
+                return jsonify({
+                    'success': False,
+                    'message': 'Unauthorized access to job'
+                }), 403
+            
+            return jsonify({
+                'success': True,
+                'job': status
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to get job status: {str(e)}'
+            }), 500
+    
+    @reports_bp.route('/download/<job_id>', methods=['GET'])
+    @token_required
+    def download_report(current_user, job_id):
+        """
+        Download a completed report file.
+        
+        This endpoint is called when the job status is 'completed'.
+        """
+        try:
+            # Verify job belongs to current user
+            job = mongo.db.report_jobs.find_one({'jobId': job_id})
+            
+            if not job:
+                return jsonify({
+                    'success': False,
+                    'message': 'Job not found'
+                }), 404
+            
+            if str(job['userId']) != str(current_user['_id']):
+                return jsonify({
+                    'success': False,
+                    'message': 'Unauthorized access to job'
+                }), 403
+            
+            if job['status'] != ReportJobStatus.COMPLETED:
+                return jsonify({
+                    'success': False,
+                    'message': f'Report is not ready yet. Status: {job["status"]}'
+                }), 400
+            
+            # Get file from GridFS
+            bg_generator = get_background_generator(mongo.db)
+            file_buffer, filename, mimetype = bg_generator.get_file(job_id)
+            
+            if file_buffer is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Report file not found'
+                }), 404
+            
+            return send_file(
+                file_buffer,
+                mimetype=mimetype,
+                as_attachment=True,
+                download_name=filename
+            )
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to download report: {str(e)}'
+            }), 500
+    
+    @reports_bp.route('/my-jobs', methods=['GET'])
+    @token_required
+    def get_my_report_jobs(current_user):
+        """
+        Get list of recent report jobs for current user.
+        
+        Query params:
+        - limit: Number of jobs to return (default: 10, max: 50)
+        """
+        try:
+            limit = min(int(request.args.get('limit', 10)), 50)
+            
+            bg_generator = get_background_generator(mongo.db)
+            jobs = bg_generator.get_user_jobs(current_user['_id'], limit=limit)
+            
+            return jsonify({
+                'success': True,
+                'jobs': jobs,
+                'count': len(jobs)
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to get jobs: {str(e)}'
             }), 500
     
     return reports_bp

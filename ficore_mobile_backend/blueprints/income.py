@@ -262,6 +262,18 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
             entry_type = data.get('entryType')  # 'business', 'personal', or None
+            
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            # This prevents premium entries from counting against free tier limit after subscription expires
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_premium_entry = False
+            if user:
+                is_admin = user.get('isAdmin', False)
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end = user.get('subscriptionEndDate')
+                # Entry is premium if user is admin OR has active subscription
+                if is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow()):
+                    is_premium_entry = True
 
             income_data = {
                 'userId': current_user['_id'],
@@ -279,6 +291,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'entryType': entry_type,  # QUICK TAG: Save tag during creation
                 'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
                 'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()

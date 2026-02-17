@@ -172,6 +172,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     }), 402  # Payment Required
             
             # STEP 5: Create expense document
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            is_premium_entry = is_premium  # Already calculated above
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -185,6 +188,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'notes': data.get('notes', ''),
                 'status': 'active',  # CRITICAL: Required for immutability system
                 'isDeleted': False,  # CRITICAL: Required for immutability system
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),
                 # Track FC charge status
@@ -525,6 +529,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     }), 402  # Payment Required
             
             # STEP 5: Create income document
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            is_premium_entry = is_premium  # Already calculated above
+            
             income_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -537,6 +544,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'nextRecurringDate': datetime.fromisoformat(data['nextRecurringDate'].replace('Z', '')) if data.get('nextRecurringDate') else None,
                 'status': 'active',  # CRITICAL: Required for immutability system
                 'isDeleted': False,  # CRITICAL: Required for immutability system
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),

@@ -210,6 +210,18 @@ def create_expense():
             entry_type = data.get('entryType')  # 'business', 'personal', or None
             print(f"Entry type: {entry_type}")
             
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            # This prevents premium entries from counting against free tier limit after subscription expires
+            user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
+            is_premium_entry = False
+            if user:
+                is_admin = user.get('isAdmin', False)
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end = user.get('subscriptionEndDate')
+                # Entry is premium if user is admin OR has active subscription
+                if is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow()):
+                    is_premium_entry = True
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -226,6 +238,7 @@ def create_expense():
                 'entryType': entry_type,  # QUICK TAG: Save tag during creation
                 'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
                 'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
