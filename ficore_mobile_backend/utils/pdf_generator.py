@@ -6,7 +6,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, LongTable
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from datetime import datetime, timezone, timedelta
 import io
@@ -15,6 +15,33 @@ import io
 def get_nigerian_time():
     """Get current time in Nigerian timezone (WAT - UTC+1)"""
     return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=1)))
+
+
+def create_table(data, col_widths, use_long_table_threshold=50):
+    """
+    Create a Table or LongTable based on data size for optimal performance.
+    
+    LongTable is optimized for:
+    - Multi-page tables
+    - Large datasets (50+ rows)
+    - Better memory management
+    - Streaming data
+    
+    Args:
+        data: List of lists containing table data
+        col_widths: List of column widths
+        use_long_table_threshold: Number of rows above which to use LongTable (default: 50)
+    
+    Returns:
+        Table or LongTable instance
+    """
+    row_count = len(data)
+    
+    # Use LongTable for large datasets (better memory management and performance)
+    if row_count > use_long_table_threshold:
+        return LongTable(data, colWidths=col_widths, repeatRows=1)  # repeatRows=1 repeats header on each page
+    else:
+        return Table(data, colWidths=col_widths)
 
 
 def parse_date_safe(date_value):
@@ -154,7 +181,7 @@ class PDFGenerator:
             expense_data.append(['', '', 'Total:', f"₦{total_expenses:,.2f}"])
             
             # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
-            expense_table = Table(expense_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
+            expense_table = create_table(expense_data, col_widths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             expense_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), ReportColors.EXPENSE_RED),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -205,7 +232,7 @@ class PDFGenerator:
             income_data.append(['', '', 'Total:', f"₦{total_income:,.2f}"])
             
             # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
-            income_table = Table(income_data, colWidths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
+            income_table = create_table(income_data, col_widths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
             income_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INCOME_BLUE),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -242,7 +269,7 @@ class PDFGenerator:
                     f"{transaction.get('amount', 0):,.2f}"
                 ])
             
-            credit_table = Table(credit_data, colWidths=[1.5*inch, 1.5*inch, 2.5*inch, 1*inch])
+            credit_table = create_table(credit_data, col_widths=[1.5*inch, 1.5*inch, 2.5*inch, 1*inch])
             credit_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#fbbc04')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -286,7 +313,7 @@ class PDFGenerator:
                 ['Net Profit / (Loss)', f"₦{net_profit_loss:,.2f}"]
             ]
             
-            summary_table = Table(summary_data, colWidths=[4*inch, 2*inch])
+            summary_table = create_table(summary_data, col_widths=[4*inch, 2*inch])
             
             # Determine color based on profit or loss
             result_bg_color = colors.HexColor('#e8f5e9') if net_profit_loss >= 0 else colors.HexColor('#fce8e6')
@@ -362,7 +389,7 @@ class PDFGenerator:
             ['Taxable Income', f"₦{tax_calculation.get('taxable_income', 0):,.2f}"]
         ]
         
-        income_table = Table(income_data, colWidths=[4*inch, 2*inch])
+        income_table = create_table(income_data, col_widths=[4*inch, 2*inch])
         income_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -394,7 +421,7 @@ class PDFGenerator:
             f"₦{tax_calculation.get('total_tax', 0):,.2f}"
         ])
         
-        tax_table = Table(tax_breakdown_data, colWidths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
+        tax_table = create_table(tax_breakdown_data, col_widths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
         tax_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -474,7 +501,7 @@ class PDFGenerator:
             ['Net Cash from Operations', f"₦{net_operating:,.2f}"]
         ]
         
-        operating_table = Table(operating_data, colWidths=[4*inch, 2*inch])
+        operating_table = create_table(operating_data, col_widths=[4*inch, 2*inch])
         operating_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -589,7 +616,7 @@ class PDFGenerator:
         net_income = total_income - deductible_expenses
         income_data.append(['Taxable Income', f"₦{net_income:,.2f}"])
         
-        income_table = Table(income_data, colWidths=[4*inch, 2*inch])
+        income_table = create_table(income_data, col_widths=[4*inch, 2*inch])
         income_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -629,7 +656,7 @@ class PDFGenerator:
             if qualifies_for_exemption:
                 cit_data.append(['Small Company Exemption', 'MAY APPLY*'])
             
-            cit_table = Table(cit_data, colWidths=[4*inch, 2*inch])
+            cit_table = create_table(cit_data, col_widths=[4*inch, 2*inch])
             cit_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -671,7 +698,7 @@ class PDFGenerator:
                 ['Net Business Assets', f"₦{net_assets:,.2f}"]
             ]
             
-            assets_table = Table(assets_breakdown_data, colWidths=[4*inch, 2*inch])
+            assets_table = create_table(assets_breakdown_data, col_widths=[4*inch, 2*inch])
             assets_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -770,7 +797,7 @@ class PDFGenerator:
             
             tax_breakdown_data.append(['', '', 'Total Tax:', f"₦{total_tax:,.2f}"])
             
-            tax_table = Table(tax_breakdown_data, colWidths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
+            tax_table = create_table(tax_breakdown_data, col_widths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
             tax_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -880,7 +907,7 @@ class PDFGenerator:
             
             debtor_data.append(['', '', 'Total Outstanding:', f"₦{total_outstanding:,.2f}", ''])
             
-            debtor_table = Table(debtor_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
+            debtor_table = create_table(debtor_data, col_widths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
             debtor_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#fbbc04')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -981,7 +1008,7 @@ class PDFGenerator:
             
             creditor_data.append(['', '', 'Total Outstanding:', f"₦{total_outstanding:,.2f}", ''])
             
-            creditor_table = Table(creditor_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
+            creditor_table = create_table(creditor_data, col_widths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
             creditor_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ea4335')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1087,7 +1114,7 @@ class PDFGenerator:
                 
                 asset_data.append(['', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
                 
-                asset_table = Table(asset_data, colWidths=[1.8*inch, 1.5*inch, 1.8*inch, 1.9*inch])
+                asset_table = create_table(asset_data, col_widths=[1.8*inch, 1.5*inch, 1.8*inch, 1.9*inch])
             else:
                 # Some assets have names - keep column but use professional dash
                 asset_data = [['Asset Name', 'Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
@@ -1122,7 +1149,7 @@ class PDFGenerator:
                 
                 asset_data.append(['', '', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
                 
-                asset_table = Table(asset_data, colWidths=[1.8*inch, 1.3*inch, 1.2*inch, 1.3*inch, 1.4*inch])
+                asset_table = create_table(asset_data, col_widths=[1.8*inch, 1.3*inch, 1.2*inch, 1.3*inch, 1.4*inch])
             
             # Apply table styling
             asset_table.setStyle(TableStyle([
@@ -1270,7 +1297,7 @@ class PDFGenerator:
                 f"₦{total_book_value:,.2f}"
             ])
             
-            depreciation_table = Table(depreciation_data, colWidths=[1.5*inch, 1*inch, 0.9*inch, 1*inch, 1.1*inch, 1*inch])
+            depreciation_table = create_table(depreciation_data, col_widths=[1.5*inch, 1*inch, 0.9*inch, 1*inch, 1.1*inch, 1*inch])
             depreciation_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1375,7 +1402,7 @@ class PDFGenerator:
             
             inventory_data.append(['', 'Totals:', str(total_quantity), '', f"₦{total_value:,.2f}", ''])
             
-            inventory_table = Table(inventory_data, colWidths=[1.5*inch, 1*inch, 0.8*inch, 1.2*inch, 1.2*inch, 1*inch])
+            inventory_table = create_table(inventory_data, col_widths=[1.5*inch, 1*inch, 0.8*inch, 1.2*inch, 1.2*inch, 1*inch])
             inventory_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#fbbc04')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1477,7 +1504,7 @@ class PDFGenerator:
             if breakdown.get('other', 0) > 0:
                 summary_data.append(['  • Other', f"+{breakdown['other']:.2f} FC"])
         
-        summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+        summary_table = create_table(summary_data, col_widths=[3*inch, 2*inch])
         summary_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f0f0f0')),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -1522,7 +1549,7 @@ class PDFGenerator:
                     f"{balance_after:.2f}"
                 ])
             
-            transaction_table = Table(transaction_data, colWidths=[1*inch, 1*inch, 2.5*inch, 1*inch, 1*inch])
+            transaction_table = create_table(transaction_data, col_widths=[1*inch, 1*inch, 2.5*inch, 1*inch, 1*inch])
             transaction_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1719,7 +1746,7 @@ class PDFGenerator:
         ])
         
         # Create table
-        ledger_table = Table(ledger_data, colWidths=[0.9*inch, 0.8*inch, 1.8*inch, 0.9*inch, 0.9*inch, 1*inch, 0.7*inch])
+        ledger_table = create_table(ledger_data, col_widths=[0.9*inch, 0.8*inch, 1.8*inch, 0.9*inch, 0.9*inch, 1*inch, 0.7*inch])
         ledger_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1767,7 +1794,7 @@ class PDFGenerator:
             ['Reversal Entries', str(reversal_count)],
         ]
         
-        summary_table = Table(summary_data, colWidths=[4*inch, 2*inch])
+        summary_table = create_table(summary_data, col_widths=[4*inch, 2*inch])
         summary_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34a853')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1892,7 +1919,7 @@ class PDFGenerator:
         # Add totals row
         table_data.append(['', 'Totals:', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
         
-        table = Table(table_data, colWidths=[1.5*inch, 2*inch, 1.2*inch, 1.2*inch, 1*inch])
+        table = create_table(table_data, col_widths=[1.5*inch, 2*inch, 1.2*inch, 1.2*inch, 1*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1979,7 +2006,7 @@ class PDFGenerator:
         # Add totals row
         table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
         
-        table = Table(table_data, colWidths=[1.3*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1*inch, 0.8*inch])
+        table = create_table(table_data, col_widths=[1.3*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1*inch, 0.8*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -2066,7 +2093,7 @@ class PDFGenerator:
         # Add totals row
         table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
         
-        table = Table(table_data, colWidths=[1.3*inch, 1.5*inch, 1.3*inch, 1.2*inch, 1*inch, 0.7*inch])
+        table = create_table(table_data, col_widths=[1.3*inch, 1.5*inch, 1.3*inch, 1.2*inch, 1*inch, 0.7*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -2154,7 +2181,7 @@ class PDFGenerator:
         # Add totals row
         table_data.append(['', 'Totals:', '', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
         
-        table = Table(table_data, colWidths=[1*inch, 1.2*inch, 0.9*inch, 1.5*inch, 1*inch, 0.8*inch, 0.6*inch])
+        table = create_table(table_data, col_widths=[1*inch, 1.2*inch, 0.9*inch, 1.5*inch, 1*inch, 0.8*inch, 0.6*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
