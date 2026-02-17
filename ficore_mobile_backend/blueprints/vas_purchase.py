@@ -1445,19 +1445,28 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         access_token=access_token
                     )
                     
-                    # 🔍 DEBUG: Log complete Monnify response
-                    print('═══════════════════════════════════════════════════')
-                    print(f'🔍 MONNIFY DATA PLANS DEBUG - {network.upper()}')
-                    print('═══════════════════════════════════════════════════')
-                    print(f'Timestamp: {datetime.now().isoformat()}')
-                    print(f'Network: {network}')
-                    print(f'Monnify Network: {monnify_network}')
-                    print(f'Biller Code: {target_biller["code"]}')
-                    print(f'Total Products: {len(products_response["responseBody"]["content"])}')
-                    print('\n📋 COMPLETE PRODUCT LIST:')
+                    # 🔍 DEBUG: Write complete Monnify response to file
                     import json
-                    print(json.dumps(products_response['responseBody']['content'], indent=2))
-                    print('═══════════════════════════════════════════════════\n')
+                    import os
+                    
+                    debug_dir = 'debug_logs'
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    debug_data = {
+                        'timestamp': datetime.now().isoformat(),
+                        'network': network,
+                        'monnify_network': monnify_network,
+                        'biller_code': target_biller["code"],
+                        'total_products': len(products_response["responseBody"]["content"]),
+                        'products': products_response['responseBody']['content']
+                    }
+                    
+                    filename = f'{debug_dir}/monnify_{network.lower()}_plans.json'
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+                    
+                    print(f'✅ DEBUG: Saved {len(debug_data["products"])} products to {filename}')
+                    vas_log(f'DEBUG: Saved Monnify {network.upper()} plans to {filename}')
                     
                     # Transform Monnify products to our format
                     plans = []
@@ -1589,21 +1598,32 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     # print(f'INFO: Peyflex plans response status: {response.status_code}')
                     # print(f'INFO: Response preview: {response.text[:500]}')
                     
-                    # 🔍 DEBUG: Log complete Peyflex response
-                    print('═══════════════════════════════════════════════════')
-                    print(f'🔍 PEYFLEX DATA PLANS DEBUG - {network.upper()} ({full_network_id})')
-                    print('═══════════════════════════════════════════════════')
-                    print(f'Timestamp: {datetime.now().isoformat()}')
-                    print(f'Network: {network}')
-                    print(f'Peyflex Network ID: {full_network_id}')
-                    print(f'Response Status: {response.status_code}')
-                    print('\n📋 COMPLETE RESPONSE:')
+                    # 🔍 DEBUG: Write complete Peyflex response to file
                     import json
+                    import os
+                    
+                    debug_dir = 'debug_logs'
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    debug_data = {
+                        'timestamp': datetime.now().isoformat(),
+                        'network': network,
+                        'peyflex_network_id': full_network_id,
+                        'response_status': response.status_code,
+                        'response_data': None
+                    }
+                    
                     try:
-                        print(json.dumps(response.json(), indent=2))
+                        debug_data['response_data'] = response.json()
                     except:
-                        print(response.text)
-                    print('═══════════════════════════════════════════════════\n')
+                        debug_data['response_data'] = response.text
+                    
+                    filename = f'{debug_dir}/peyflex_{network.lower()}_plans.json'
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+                    
+                    print(f'✅ DEBUG: Saved Peyflex response to {filename}')
+                    vas_log(f'DEBUG: Saved Peyflex {network.upper()} plans to {filename}')
                     
                     if response.status_code == 200:
                         try:
@@ -3755,6 +3775,48 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'message': 'Failed to purchase data',
                 'errors': {'general': [str(e)]}
             }), 500
+    
+    # ==================== DEBUG ENDPOINTS ====================
+    
+    @vas_purchase_bp.route('/debug/files', methods=['GET'])
+    def list_debug_files():
+        """List all debug log files"""
+        import os
+        debug_dir = 'debug_logs'
+        
+        if not os.path.exists(debug_dir):
+            return jsonify({'files': [], 'message': 'No debug files yet'}), 200
+        
+        files = []
+        for filename in os.listdir(debug_dir):
+            if filename.endswith('.json'):
+                filepath = os.path.join(debug_dir, filename)
+                stat = os.stat(filepath)
+                files.append({
+                    'filename': filename,
+                    'size': stat.st_size,
+                    'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    'download_url': f'/api/vas/purchase/debug/download/{filename}'
+                })
+        
+        return jsonify({'files': files, 'count': len(files)}), 200
+    
+    @vas_purchase_bp.route('/debug/download/<filename>', methods=['GET'])
+    def download_debug_file(filename):
+        """Download a specific debug log file"""
+        from flask import send_file
+        import os
+        
+        # Security: Only allow JSON files
+        if not filename.endswith('.json'):
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        filepath = os.path.join('debug_logs', filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+        
+        return send_file(filepath, as_attachment=True, download_name=filename)
     
     return vas_purchase_bp
 
