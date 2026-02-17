@@ -57,6 +57,27 @@ def parse_date_safe(date_value):
         return datetime.now(timezone.utc)
 
 
+def apply_one_naira_minimum_rule(current_value, status='active'):
+    """
+    Apply ₦1 minimum rule for fully depreciated assets
+    
+    PROFESSIONAL ACCOUNTING STANDARD:
+    Active assets that are fully depreciated should maintain ₦1.00 notional value.
+    This prevents them from "disappearing" from the asset register.
+    Disposed assets can show ₦0.00.
+    
+    Args:
+        current_value: Calculated current value of the asset
+        status: Asset status ('active', 'disposed', 'under_maintenance')
+    
+    Returns:
+        Adjusted value (minimum ₦1.00 for active assets)
+    """
+    if status == 'active' and current_value <= 0:
+        return 1.0
+    return max(0, current_value)
+
+
 class ReportColors:
     """
     Unified color scheme matching mobile app UI
@@ -142,10 +163,12 @@ class PDFGenerator:
         nigerian_time = get_nigerian_time()
         business_name = user_data.get('businessName', '')
         business_line = f"<b>Business:</b> {business_name}<br/>" if business_name else ""
+        tin = user_data.get('tin', 'Not Provided')
+        tin_line = f"<b>TIN:</b> {tin}<br/>"
         
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        {business_line}<b>Email:</b> {user_data.get('email', '')}<br/>
+        {business_line}{tin_line}<b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}<br/>
         <b>Report Type:</b> {data_type.upper()}
         """
@@ -369,6 +392,7 @@ class PDFGenerator:
         nigerian_time = get_nigerian_time()
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Tax Year:</b> {tax_calculation.get('tax_year', nigerian_time.year)}<br/>
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
@@ -480,6 +504,7 @@ class PDFGenerator:
         
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         {period_text}
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
@@ -1103,6 +1128,10 @@ class PDFGenerator:
                     
                     current_value = asset.get('currentValue', cost)
                     
+                    # PROFESSIONAL STANDARD: Apply ₦1 minimum rule for active assets
+                    asset_status = asset.get('status', 'active')
+                    current_value = apply_one_naira_minimum_rule(current_value, asset_status)
+                    
                     asset_data.append([
                         asset.get('category', '—'),
                         purchase_date.strftime('%Y-%m-%d'),
@@ -1132,6 +1161,10 @@ class PDFGenerator:
                         cost = asset.get('currentValue', 0)
                     
                     current_value = asset.get('currentValue', cost)
+                    
+                    # PROFESSIONAL STANDARD: Apply ₦1 minimum rule for active assets
+                    asset_status = asset.get('status', 'active')
+                    current_value = apply_one_naira_minimum_rule(current_value, asset_status)
                     
                     # Use professional em dash instead of 'N/A'
                     name = (asset.get('name') or asset.get('assetName', '')).strip()
@@ -1461,6 +1494,7 @@ class PDFGenerator:
         nigerian_time = get_nigerian_time()
         user_info = f"""
         <b>Name:</b> {user_data.get('name', 'N/A')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', 'N/A')}<br/>
         <b>Account Type:</b> {'Premium' if user_data.get('isSubscribed', False) else 'Free'}<br/>
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
@@ -1883,6 +1917,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -1969,6 +2004,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -2056,6 +2092,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -2143,6 +2180,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}

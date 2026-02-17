@@ -25,6 +25,10 @@ class MonthlyEntryTracker:
     def get_user_monthly_count(self, user_id: ObjectId) -> Dict[str, Any]:
         """
         Get user's current monthly Income & Expense entry count
+        
+        ✅ CRITICAL FIX: Only count entries made while user was on FREE tier
+        Entries made during premium subscription should NOT count against free limit
+        
         Returns: {
             'count': int,
             'month_key': str,
@@ -54,6 +58,10 @@ class MonthlyEntryTracker:
         month_start = self._get_month_start()
         month_end = self._get_month_end()
         
+        # ✅ CRITICAL FIX: Only count entries that were made while user was FREE
+        # Entries with wasPremiumEntry=True should NOT count against free limit
+        # This prevents premium entries from consuming free tier quota after subscription expires
+        
         # CRITICAL FIX: Use correct date fields with comprehensive fallback
         # Strategy 1: Try primary date field (dateReceived for income, date for expense)
         income_count = self.mongo.db.incomes.count_documents({
@@ -61,7 +69,12 @@ class MonthlyEntryTracker:
             'dateReceived': {
                 '$gte': month_start,
                 '$lt': month_end
-            }
+            },
+            # ✅ Only count entries that were NOT made during premium period
+            '$or': [
+                {'wasPremiumEntry': {'$exists': False}},  # Old entries without flag
+                {'wasPremiumEntry': False}  # Explicitly marked as free tier entry
+            ]
         })
         
         expense_count = self.mongo.db.expenses.count_documents({
@@ -69,7 +82,12 @@ class MonthlyEntryTracker:
             'date': {
                 '$gte': month_start,
                 '$lt': month_end
-            }
+            },
+            # ✅ Only count entries that were NOT made during premium period
+            '$or': [
+                {'wasPremiumEntry': {'$exists': False}},  # Old entries without flag
+                {'wasPremiumEntry': False}  # Explicitly marked as free tier entry
+            ]
         })
         
         # Strategy 2: If count is 0, try with createdAt as fallback
@@ -79,7 +97,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         if expense_count == 0:
@@ -88,7 +110,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         # Strategy 3: If still 0, try with string userId and primary date field
@@ -98,7 +124,11 @@ class MonthlyEntryTracker:
                 'dateReceived': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         if expense_count == 0:
@@ -107,7 +137,11 @@ class MonthlyEntryTracker:
                 'date': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         # Strategy 4: If still 0, try with string userId and createdAt
@@ -117,7 +151,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         if expense_count == 0:
@@ -126,7 +164,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         # Strategy 3: If still 0, check if entries exist at all for this user
