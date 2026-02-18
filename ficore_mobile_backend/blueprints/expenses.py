@@ -210,6 +210,28 @@ def create_expense():
             entry_type = data.get('entryType')  # 'business', 'personal', or None
             print(f"Entry type: {entry_type}")
             
+            # Validate entryType if provided (voice-entry-tagging feature - Feb 18, 2026)
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
+            # SOURCE TRACKING STANDARDIZATION (Feb 18, 2026): Determine entry source
+            # Source values: 'manual', 'voice', 'wallet_auto'
+            # Default to 'manual' if not specified
+            entry_source = data.get('source_type', 'manual')
+            print(f"Entry source: {entry_source}")
+            
+            # Validate source if provided
+            if entry_source not in ['manual', 'voice', 'wallet_auto']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid source. Must be "manual", "voice", or "wallet_auto"',
+                    'errors': {'source': ['Invalid value']}
+                }), 400
+            
             # ✅ CRITICAL FIX: Mark if entry was created during premium period
             # This prevents premium entries from counting against free tier limit after subscription expires
             user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
@@ -238,6 +260,7 @@ def create_expense():
                 'entryType': entry_type,  # QUICK TAG: Save tag during creation
                 'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
                 'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
+                'sourceType': entry_source,  # SOURCE TRACKING: 'manual', 'voice', or 'wallet_auto'
                 'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
@@ -418,6 +441,26 @@ def update_expense(expense_id):
             if not data:
                 return jsonify({'success': False, 'message': 'No data provided'}), 400
             
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_expense:
+                return jsonify({
+                    'success': False,
+                    'message': 'Expense record not found'
+                }), 404
+            
+            # Block edits on wallet-auto transactions (system-generated)
+            if existing_expense.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot edit wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be edited. Use void/reversal instead.']}
+                }), 403
+            
             # Validation
             errors = {}
             if 'amount' in data and (not data.get('amount') or data.get('amount', 0) <= 0):
@@ -519,6 +562,47 @@ def delete_expense(expense_id):
         try:
             if not ObjectId.is_valid(expense_id):
                 return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_expense:
+                return jsonify({
+                    'success': False,
+                    'message': 'Expense record not found'
+                }), 404
+            
+            # Block deletion on wallet-auto transactions (system-generated)
+            if existing_expense.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be deleted. Use void/reversal instead.']}
+                }), 403
+            
+            # 🛡️ INTEGRATED RECORD PROTECTION: Block deletion of creditor payment expenses
+            # Check description/title for creditor payment markers
+            description = existing_expense.get('description', '').lower()
+            title = existing_expense.get('title', '').lower()
+            
+            if 'creditor payment' in description or 'creditor payment' in title:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete expense from vendor payments. Reverse the payment in the Creditors module instead.',
+                    'errors': {'metadata': ['Creditor payment expense cannot be deleted directly. Use the Creditors module to reverse the payment.']}
+                }), 403
+            
+            # Future: Add metadata check when backend adds metadata field to expenses
+            # metadata = existing_expense.get('metadata', {})
+            # if metadata.get('diice_type') == 'creditor_payment':
+            #     return jsonify({
+            #         'success': False,
+            #         'message': 'Cannot delete expense from vendor payments. Reverse the payment in the Creditors module instead.',
+            #         'errors': {'metadata': ['Creditor payment expense cannot be deleted directly.']}
+            #     }), 403
             
             # Use the immutable ledger helper
             from utils.immutable_ledger_helper import soft_delete_transaction

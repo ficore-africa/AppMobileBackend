@@ -1,3 +1,5 @@
+# ====================This endpoint is not currently used by the app, but adding for future-proofing====================
+
 from flask import Blueprint, request, jsonify, current_app
 from bson import ObjectId
 from datetime import datetime, timedelta
@@ -545,6 +547,17 @@ def init_voice_reporting_blueprint(mongo, token_required, serialize_doc):
         transcription = body.get('transcription', '')
         if not transcription:
             return jsonify({'success': False, 'message': 'Missing transcription'}), 400
+
+        # NEW: Accept entryType parameter from frontend (voice-entry-tagging feature - Feb 18, 2026)
+        # NOTE: This endpoint is not currently used by the app, but adding for future-proofing
+        entry_type = body.get('entryType')  # 'business', 'personal', or None
+        
+        # Validate entryType if provided
+        if entry_type and entry_type not in ['business', 'personal']:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid entryType. Must be "business" or "personal"'
+            }), 400
 
         # Build request hash for idempotency
         try:

@@ -108,6 +108,12 @@ class DatabaseSchema:
             'referralCodeGeneratedAt': Optional[datetime],  # When code was generated
             'referredAt': Optional[datetime],  # When they were referred
             
+            # Equity Tracking Fields (NEW - Feb 18, 2026 - for Statement of Affairs)
+            'openingEquity': Optional[float],  # Owner's capital at start of period, default: 0.0
+            'drawings': Optional[float],  # Owner withdrawals during period, default: 0.0
+            'taxPaid': Optional[float],  # Tax payments made during period, default: 0.0
+            'lastEquityUpdate': Optional[datetime],  # Last time equity fields were updated
+            
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled

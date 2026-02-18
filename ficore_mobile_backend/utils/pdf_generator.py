@@ -26,6 +26,7 @@ def create_table(data, col_widths, use_long_table_threshold=50):
     - Large datasets (50+ rows)
     - Better memory management
     - Streaming data
+    - TIMEOUT PROTECTION: splitByRow=True prevents hanging on massive tables
     
     Args:
         data: List of lists containing table data
@@ -33,13 +34,15 @@ def create_table(data, col_widths, use_long_table_threshold=50):
         use_long_table_threshold: Number of rows above which to use LongTable (default: 50)
     
     Returns:
-        Table or LongTable instance
+        Table or LongTable instance with timeout protection
     """
     row_count = len(data)
     
     # Use LongTable for large datasets (better memory management and performance)
     if row_count > use_long_table_threshold:
-        return LongTable(data, colWidths=col_widths, repeatRows=1)  # repeatRows=1 repeats header on each page
+        # splitByRow=True: CRITICAL for timeout protection on large tables
+        # Allows table to split across pages without loading entire table in memory
+        return LongTable(data, colWidths=col_widths, repeatRows=1, splitByRow=True)
     else:
         return Table(data, colWidths=col_widths)
 
@@ -315,11 +318,22 @@ class PDFGenerator:
             if 'incomes' in export_data and export_data['incomes']:
                 total_income = sum(income.get('amount', 0) for income in export_data['incomes'])
             
-            total_expenses = 0
+            # COGS SEPARATION (Phase 2.1): Separate COGS from Operating Expenses
+            cogs_expenses = []
+            operating_expenses = []
             if 'expenses' in export_data and export_data['expenses']:
-                total_expenses = sum(expense.get('amount', 0) for expense in export_data['expenses'])
+                for expense in export_data['expenses']:
+                    if expense.get('category') == 'Cost of Goods Sold':
+                        cogs_expenses.append(expense)
+                    else:
+                        operating_expenses.append(expense)
             
-            net_profit_loss = total_income - total_expenses
+            total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+            total_operating_expenses = sum(exp.get('amount', 0) for exp in operating_expenses)
+            total_expenses = total_cogs + total_operating_expenses
+            
+            gross_profit = total_income - total_cogs
+            net_profit_loss = gross_profit - total_operating_expenses
             
             # DEBUG: Log that we're adding the summary
             # DISABLED FOR VAS FOCUS
@@ -331,8 +345,10 @@ class PDFGenerator:
             
             summary_data = [
                 ['Description', 'Amount (₦)'],
-                ['Total Income', f"₦{total_income:,.2f}"],
-                ['Total Expenses', f"₦{total_expenses:,.2f}"],
+                ['Total Revenue', f"₦{total_income:,.2f}"],
+                ['Less: Cost of Goods Sold', f"₦{total_cogs:,.2f}"],
+                ['Gross Profit', f"₦{gross_profit:,.2f}"],
+                ['Less: Operating Expenses', f"₦{total_operating_expenses:,.2f}"],
                 ['Net Profit / (Loss)', f"₦{net_profit_loss:,.2f}"]
             ]
             
@@ -351,11 +367,15 @@ class PDFGenerator:
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('BACKGROUND', (0, 1), (-1, 2), colors.beige),
+                ('BACKGROUND', (0, 3), (0, 3), colors.HexColor('#e8f5e9')),  # Gross Profit row
+                ('FONTNAME', (0, 3), (-1, 3), 'Helvetica-Bold'),  # Gross Profit bold
+                ('BACKGROUND', (0, 4), (-1, 4), colors.beige),
                 ('BACKGROUND', (0, -1), (-1, -1), result_bg_color),
                 ('TEXTCOLOR', (0, -1), (-1, -1), result_text_color),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, -1), (-1, -1), 14),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('LINEABOVE', (0, 3), (-1, 3), 1.5, colors.black),  # Line above Gross Profit
                 ('LINEABOVE', (0, -1), (-1, -1), 2, colors.black),
             ]))
             
@@ -1991,7 +2011,14 @@ class PDFGenerator:
         return buffer
 
     def generate_bill_payments_report(self, user_data, export_data, start_date=None, end_date=None):
-        """Generate Bill Payments Report PDF"""
+        """
+        Generate Bill Payments Report PDF with granular VAS breakdown
+        
+        MODERNIZATION (Feb 18, 2026):
+        - Shows breakdown by service type (electricity, cable_tv, internet, water, transportation)
+        - Displays category-specific totals
+        - Enhanced summary section
+        """
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
         story = []
@@ -2015,34 +2042,76 @@ class PDFGenerator:
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
         
+        # Summary by Category (if available)
+        summary = export_data.get('summary', {})
+        if summary and summary.get('total', 0) > 0:
+            story.append(Paragraph("Summary by Service Type", self.styles['SectionHeader']))
+            story.append(Spacer(1, 12))
+            
+            summary_data = [['Service Type', 'Amount (₦)', 'Percentage']]
+            total = summary.get('total', 0)
+            
+            if summary.get('electricity', 0) > 0:
+                pct = (summary['electricity'] / total * 100) if total > 0 else 0
+                summary_data.append(['Electricity', f"₦{summary['electricity']:,.2f}", f"{pct:.1f}%"])
+            if summary.get('cable_tv', 0) > 0:
+                pct = (summary['cable_tv'] / total * 100) if total > 0 else 0
+                summary_data.append(['Cable TV', f"₦{summary['cable_tv']:,.2f}", f"{pct:.1f}%"])
+            if summary.get('internet', 0) > 0:
+                pct = (summary['internet'] / total * 100) if total > 0 else 0
+                summary_data.append(['Internet', f"₦{summary['internet']:,.2f}", f"{pct:.1f}%"])
+            if summary.get('water', 0) > 0:
+                pct = (summary['water'] / total * 100) if total > 0 else 0
+                summary_data.append(['Water', f"₦{summary['water']:,.2f}", f"{pct:.1f}%"])
+            if summary.get('transportation', 0) > 0:
+                pct = (summary['transportation'] / total * 100) if total > 0 else 0
+                summary_data.append(['Transportation', f"₦{summary['transportation']:,.2f}", f"{pct:.1f}%"])
+            if summary.get('other', 0) > 0:
+                pct = (summary['other'] / total * 100) if total > 0 else 0
+                summary_data.append(['Other Services', f"₦{summary['other']:,.2f}", f"{pct:.1f}%"])
+            
+            summary_data.append(['', '', ''])
+            summary_data.append(['TOTAL', f"₦{total:,.2f}", '100%'])
+            
+            summary_table = create_table(summary_data, col_widths=[2.5*inch, 2*inch, 1.5*inch])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9C27B0')),  # Purple
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E1BEE7')),  # Light purple
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(summary_table)
+            story.append(Spacer(1, 20))
+        
         # Transactions Table
-        story.append(Paragraph("Bill Payment Transactions", self.styles['SectionHeader']))
+        story.append(Paragraph("All Bill Payment Transactions", self.styles['SectionHeader']))
         story.append(Spacer(1, 12))
         
-        table_data = [['Date', 'Reference', 'Category', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        table_data = [['Date', 'Reference', 'Category', 'Amount (₦)', 'Status']]
         total_amount = 0
-        total_fees = 0
         
         for txn in export_data.get('transactions', []):
             date_str = txn['date'].strftime('%Y-%m-%d %H:%M')
             amount = txn.get('amount', 0)
-            fee = txn.get('fee', 0)
             
             table_data.append([
                 date_str,
-                txn.get('reference', 'N/A'),
+                txn.get('reference', 'N/A')[:15],
                 txn.get('category', 'N/A'),
                 f'₦{amount:,.2f}',
-                f'₦{fee:,.2f}',
-                txn.get('status', 'UNKNOWN')
+                txn.get('status', 'COMPLETED')
             ])
             total_amount += amount
-            total_fees += fee
         
         # Add totals row
-        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', ''])
         
-        table = create_table(table_data, col_widths=[1.3*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1*inch, 0.8*inch])
+        table = create_table(table_data, col_widths=[1.5*inch, 1.5*inch, 1.5*inch, 1.3*inch, 1.2*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -2063,8 +2132,10 @@ class PDFGenerator:
         summary_text = f"""
         <b>Summary:</b><br/>
         Total Spent: ₦{total_amount:,.2f}<br/>
-        Total Fees: ₦{total_fees:,.2f}<br/>
-        Number of Transactions: {len(export_data.get('transactions', []))}
+        Number of Transactions: {len(export_data.get('transactions', []))}<br/>
+        <br/>
+        <i>Note: This report shows bills paid through FiCore's Value Added Services (VAS) platform.
+        Transactions are automatically categorized by service type for better expense tracking.</i>
         """
         story.append(Paragraph(summary_text, self.styles['InfoText']))
         
@@ -2079,7 +2150,14 @@ class PDFGenerator:
         return buffer
 
     def generate_airtime_purchases_report(self, user_data, export_data, start_date=None, end_date=None):
-        """Generate Airtime Purchases Report PDF"""
+        """
+        Generate Airtime Purchases Report PDF with network grouping
+        
+        MODERNIZATION (Feb 18, 2026):
+        - Shows breakdown by network (MTN, Airtel, Glo, 9mobile)
+        - Displays network-specific totals
+        - Enhanced summary section
+        """
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
         story = []
@@ -2103,43 +2181,75 @@ class PDFGenerator:
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
         
+        # Summary by Network (if available)
+        network_summary = export_data.get('network_summary', {})
+        if network_summary:
+            story.append(Paragraph("Summary by Network", self.styles['SectionHeader']))
+            story.append(Spacer(1, 12))
+            
+            summary_data = [['Network', 'Transactions', 'Amount (₦)', 'Percentage']]
+            total = sum(data['total'] for data in network_summary.values())
+            
+            # Sort networks by total amount (descending)
+            sorted_networks = sorted(network_summary.items(), key=lambda x: x[1]['total'], reverse=True)
+            
+            for network, data in sorted_networks:
+                count = data['count']
+                amount = data['total']
+                pct = (amount / total * 100) if total > 0 else 0
+                summary_data.append([network, str(count), f"₦{amount:,.2f}", f"{pct:.1f}%"])
+            
+            summary_data.append(['', '', '', ''])
+            summary_data.append(['TOTAL', str(sum(d['count'] for d in network_summary.values())), f"₦{total:,.2f}", '100%'])
+            
+            summary_table = create_table(summary_data, col_widths=[1.5*inch, 1.5*inch, 2*inch, 1*inch])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FF9800')),  # Orange for airtime
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FFE0B2')),  # Light orange
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(summary_table)
+            story.append(Spacer(1, 20))
+        
         # Transactions Table
-        story.append(Paragraph("Airtime Purchase Transactions", self.styles['SectionHeader']))
+        story.append(Paragraph("All Airtime Purchase Transactions", self.styles['SectionHeader']))
         story.append(Spacer(1, 12))
         
-        table_data = [['Date', 'Reference', 'Phone Number', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        table_data = [['Date', 'Network', 'Phone Number', 'Amount (₦)', 'Status']]
         total_amount = 0
-        total_fees = 0
         
         for txn in export_data.get('transactions', []):
             date_str = txn['date'].strftime('%Y-%m-%d %H:%M')
             amount = txn.get('amount', 0)
-            fee = txn.get('fee', 0)
             
             table_data.append([
                 date_str,
-                txn.get('reference', 'N/A'),
+                txn.get('network', 'Unknown'),
                 txn.get('phone', 'N/A'),
                 f'₦{amount:,.2f}',
-                f'₦{fee:,.2f}',
-                txn.get('status', 'UNKNOWN')
+                txn.get('status', 'COMPLETED')
             ])
             total_amount += amount
-            total_fees += fee
         
         # Add totals row
-        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', ''])
         
-        table = create_table(table_data, col_widths=[1.3*inch, 1.5*inch, 1.3*inch, 1.2*inch, 1*inch, 0.7*inch])
+        table = create_table(table_data, col_widths=[1.5*inch, 1.3*inch, 1.5*inch, 1.3*inch, 1.4*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.WALLET_PURPLE),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FF9800')),  # Orange
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 9),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.WALLET_LIGHT),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FFE0B2')),  # Light orange
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
@@ -2151,8 +2261,10 @@ class PDFGenerator:
         summary_text = f"""
         <b>Summary:</b><br/>
         Total Spent: ₦{total_amount:,.2f}<br/>
-        Total Fees: ₦{total_fees:,.2f}<br/>
-        Number of Transactions: {len(export_data.get('transactions', []))}
+        Number of Transactions: {len(export_data.get('transactions', []))}<br/>
+        <br/>
+        <i>Note: This report shows airtime purchases made through FiCore's Value Added Services (VAS) platform.
+        Transactions are automatically grouped by network for better expense tracking.</i>
         """
         story.append(Paragraph(summary_text, self.styles['InfoText']))
         
@@ -2255,3 +2367,574 @@ class PDFGenerator:
         doc.build(story)
         buffer.seek(0)
         return buffer
+
+    def generate_statement_of_affairs(self, user_data, financial_data, tax_data, assets_data, 
+                                      start_date=None, end_date=None, tax_type='PIT'):
+        """
+        Generate comprehensive Statement of Affairs PDF
+        
+        CRITICAL: This report calculates asset values (NBV) as of the endDate parameter.
+        If endDate is provided, depreciation is calculated only up to that date.
+        This ensures historical accuracy for mid-period reports.
+        
+        Combines:
+        - Cover page with business summary
+        - Executive summary (Financial, Assets, Current Assets/Liabilities, Tax)
+        - Profit & Loss statement
+        - Balance Sheet (Assets, Liabilities, Equity)
+        - Asset register summary
+        - Tax summary
+        - Documentation notes
+        
+        Args:
+            user_data: User/business information
+            financial_data: Dict with 'incomes' and 'expenses' lists
+            tax_data: Tax calculation data including inventory, debtors, creditors, cash
+            assets_data: List of assets with CURRENT depreciation (should be pre-calculated as of endDate)
+            start_date: Report start date
+            end_date: Report end date (CRITICAL for depreciation calculation)
+            tax_type: 'PIT' or 'CIT'
+        
+        Note: The endpoint should calculate asset NBV as of endDate before passing to this method.
+        """
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        story = []
+        nigerian_time = get_nigerian_time()
+        
+        # Calculate key metrics
+        incomes = financial_data.get('incomes', [])
+        expenses = financial_data.get('expenses', [])
+        
+        # MODERNIZATION (Feb 18, 2026): Use enhanced 3-Step P&L from tax_data
+        # Revenue Breakdown
+        sales_revenue = tax_data.get('sales_revenue', 0)
+        other_income = tax_data.get('other_income', 0)
+        total_income = tax_data.get('total_income', sales_revenue + other_income)
+        
+        # COGS
+        total_cogs = tax_data.get('cost_of_goods_sold', 0)
+        
+        # Gross Profit (Step 1)
+        gross_profit = tax_data.get('gross_profit', sales_revenue - total_cogs)
+        gross_margin = tax_data.get('gross_margin_percentage', 0)
+        
+        # Operating Expenses
+        total_operating_expenses = tax_data.get('operating_expenses', 0)
+        
+        # Operating Profit (Step 2)
+        operating_profit = tax_data.get('operating_profit', gross_profit - total_operating_expenses)
+        
+        # Net Profit (Step 3)
+        net_profit = tax_data.get('net_income', operating_profit)
+        
+        total_expenses = total_cogs + total_operating_expenses
+        profit_margin = (net_profit / total_income * 100) if total_income > 0 else 0
+        
+        # VAS Breakdown (Granular Utility Reporting)
+        vas_breakdown = tax_data.get('vas_breakdown', {})
+        
+        # Asset metrics
+        total_assets_cost = sum(asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0) for asset in assets_data)
+        total_assets_nbv = sum(asset.get('currentValue', 0) for asset in assets_data)
+        total_depreciation = total_assets_cost - total_assets_nbv
+        asset_count = len(assets_data)
+        
+        # Current assets and liabilities
+        inventory_value = tax_data.get('inventory_value', 0)
+        debtors_value = tax_data.get('debtors_value', 0)
+        creditors_value = tax_data.get('creditors_value', 0)
+        inventory_count = tax_data.get('inventory_count', 0)
+        debtors_count = tax_data.get('debtors_count', 0)
+        creditors_count = tax_data.get('creditors_count', 0)
+        
+        # Cash/Bank balance (from wallet or user data)
+        cash_balance = tax_data.get('cash_balance', 0)
+        
+        # Opening equity and drawings
+        opening_equity = tax_data.get('opening_equity', 0)
+        drawings = tax_data.get('drawings', 0)
+        
+        # Total assets including current assets
+        total_current_assets = inventory_value + debtors_value + cash_balance
+        total_all_assets = total_assets_nbv + total_current_assets
+        
+        # Total liabilities including tax liability
+        total_current_liabilities = creditors_value
+        
+        # Calculate closing equity: Opening Equity + Net Profit - Drawings
+        closing_equity = opening_equity + net_profit - drawings
+        
+        # Net assets (for verification: Assets - Liabilities should equal Equity)
+        net_assets = total_all_assets - total_current_liabilities
+        
+        # Tax calculation
+        if tax_type == 'CIT':
+            # CIT exemption: BOTH conditions must be met
+            qualifies_for_exemption = (total_income <= 100000000) and (total_assets_nbv <= 250000000)
+            if qualifies_for_exemption:
+                estimated_tax = 0
+                tax_rate_display = "0% (Exempt - Revenue ≤₦100M AND Assets ≤₦250M)"
+            else:
+                estimated_tax = net_profit * 0.30 if net_profit > 0 else 0
+                tax_rate_display = "30% (CIT)"
+        else:
+            # PIT: First ₦800,000 is exempt, then progressive
+            if net_profit <= 800000:
+                estimated_tax = 0
+            else:
+                taxable = net_profit - 800000
+                estimated_tax = taxable * 0.15  # Simplified progressive
+            tax_rate_display = "Progressive (PIT)"
+        
+        effective_rate = (estimated_tax / net_profit * 100) if net_profit > 0 else 0
+        
+        # Add estimated tax to current liabilities (unpaid tax obligation)
+        tax_liability = tax_data.get('tax_paid', 0)  # If user has paid some tax
+        unpaid_tax = max(0, estimated_tax - tax_liability)
+        total_current_liabilities = creditors_value + unpaid_tax
+        
+        # Period text
+        period_text = f"{start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}" if start_date and end_date else "All Time"
+        
+        # === COVER PAGE ===
+        title = Paragraph("STATEMENT OF AFFAIRS", ParagraphStyle(
+            'CoverTitle',
+            parent=self.styles['CustomTitle'],
+            fontSize=28,
+            textColor=ReportColors.FINANCIAL_GOLDEN,
+            alignment=TA_CENTER
+        ))
+        story.append(title)
+        story.append(Spacer(1, 20))
+        
+        # Business/User Info
+        business_name = user_data.get('businessName', '')
+        cover_info = f"""
+<b>Business Name:</b> {business_name}<br/>
+<b>Prepared For:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+<b>Email:</b> {user_data.get('email', '')}<br/>
+<b>Reporting Period:</b> {period_text}<br/>
+<b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}<br/>
+<b>Tax Type:</b> {tax_type}
+"""
+        story.append(Paragraph(cover_info, self.styles['InfoText']))
+        story.append(Spacer(1, 30))
+        
+        # Business Summary Dashboard
+        story.append(Paragraph("Business Summary", self.styles['SectionHeader']))
+        
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Financial Period', period_text],
+            ['Total Revenue', f'₦{total_income:,.2f}'],
+            ['Cost of Goods Sold', f'₦{total_cogs:,.2f}'],
+            ['Gross Profit', f'₦{gross_profit:,.2f}'],
+            ['Gross Margin %', f'{gross_margin:.1f}%'],
+            ['Operating Expenses', f'₦{total_operating_expenses:,.2f}'],
+            ['Net Profit/(Loss)', f'₦{net_profit:,.2f}'],
+            ['Total Assets (NBV)', f'₦{total_assets_nbv:,.2f}'],
+            ['Current Assets', f'₦{total_current_assets:,.2f}'],
+            ['Asset Count', f'{asset_count} assets'],
+            ['Tax Type', tax_type],
+        ]
+        
+        summary_table = create_table(summary_data, col_widths=[3*inch, 3*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige)
+        ]))
+        
+        story.append(summary_table)
+        story.append(PageBreak())
+        
+        # === EXECUTIVE SUMMARY ===
+        story.append(Paragraph("Executive Summary", self.styles['CustomTitle']))
+        story.append(Spacer(1, 12))
+        
+        # Financial Overview
+        story.append(Paragraph("Financial Overview", self.styles['SectionHeader']))
+        
+        financial_overview = [
+            ['Metric', 'Amount (₦)', 'Notes'],
+            ['REVENUE', '', ''],
+            ['Sales Revenue', f"₦{sales_revenue:,.2f}", 'Product sales'],
+            ['Other Income', f"₦{other_income:,.2f}", 'Services, grants, interest'],
+            ['Total Revenue', f"₦{total_income:,.2f}", f'{len(incomes)} transactions'],
+            ['', '', ''],
+            ['Less: Cost of Goods Sold (COGS)', f"₦{total_cogs:,.2f}", 'Direct product costs'],
+            ['GROSS PROFIT', f"₦{gross_profit:,.2f}", f'{gross_margin:.1f}% margin'],
+            ['', '', ''],
+            ['Less: Operating Expenses', f"₦{total_operating_expenses:,.2f}", 'Rent, salaries, utilities'],
+            ['OPERATING PROFIT', f"₦{operating_profit:,.2f}", 'Before tax'],
+            ['', '', ''],
+            ['NET PROFIT/(LOSS)', f"₦{net_profit:,.2f}", f'{profit_margin:.1f}% margin'],
+        ]
+        
+        financial_table = create_table(financial_overview, col_widths=[2*inch, 2*inch, 2*inch])
+        financial_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # REVENUE
+            ('FONTNAME', (0, 7), (-1, 7), 'Helvetica-Bold'),  # GROSS PROFIT
+            ('BACKGROUND', (0, 7), (-1, 7), colors.HexColor('#FFF9C4')),  # Light yellow
+            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # OPERATING PROFIT
+            ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#FFE082')),  # Medium yellow
+            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # NET PROFIT
+            ('BACKGROUND', (0, 12), (-1, 12), ReportColors.FINANCIAL_GOLDEN),  # Golden
+            ('TEXTCOLOR', (0, 12), (-1, 12), colors.whitesmoke),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(financial_table)
+        story.append(Spacer(1, 12))
+        
+        # Add helpful note about Gross Margin
+        if total_cogs == 0 and sales_revenue > 0:
+            margin_note = """
+<i><b>Note:</b> Your Gross Margin is 100% because you have no Cost of Goods Sold (COGS).
+This is typical for service-based businesses that don't sell physical products.</i>
+"""
+            story.append(Paragraph(margin_note, self.styles['InfoText']))
+        elif sales_revenue == 0:
+            margin_note = """
+<i><b>Note:</b> Gross Margin is not applicable because there are no product sales recorded.
+If you sell products, ensure they are categorized as "Sales Revenue" for accurate margin calculation.</i>
+"""
+            story.append(Paragraph(margin_note, self.styles['InfoText']))
+        
+        story.append(Spacer(1, 20))
+        
+        # Asset Overview
+        story.append(Paragraph("Fixed Assets Overview", self.styles['SectionHeader']))
+        
+        asset_overview = [
+            ['Metric', 'Amount (₦)', 'Notes'],
+            ['Total Assets (Original)', f"₦{total_assets_cost:,.2f}", f'{asset_count} assets'],
+            ['Total Assets (NBV)', f"₦{total_assets_nbv:,.2f}", 'After depreciation'],
+            ['Total Depreciation', f"₦{total_depreciation:,.2f}", 'Accumulated'],
+        ]
+        
+        asset_table = create_table(asset_overview, col_widths=[2*inch, 2*inch, 2*inch])
+        asset_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(asset_table)
+        story.append(Spacer(1, 20))
+        
+        # Current Assets & Liabilities Overview
+        story.append(Paragraph("Current Assets & Liabilities", self.styles['SectionHeader']))
+        
+        # Display helpers for zero values
+        inventory_display = f"₦{inventory_value:,.2f}" if inventory_count > 0 else "₦0.00 (Not tracked)"
+        debtors_display = f"₦{debtors_value:,.2f}" if debtors_count > 0 else "₦0.00 (Not tracked)"
+        creditors_display = f"₦{creditors_value:,.2f}" if creditors_count > 0 else "₦0.00 (Not tracked)"
+        
+        # Display helper for cash
+        cash_display = f"₦{cash_balance:,.2f}" if cash_balance > 0 else "₦0.00 (Not tracked)"
+        
+        current_assets_liabilities = [
+            ['Item', 'Amount (₦)', 'Notes'],
+            ['CURRENT ASSETS', '', ''],
+            ['Cash & Bank', cash_display, 'Liquid funds'],
+            ['Inventory (Stock)', inventory_display, f'{inventory_count} items' if inventory_count > 0 else ''],
+            ['Accounts Receivable (Debtors)', debtors_display, f'{debtors_count} customers' if debtors_count > 0 else ''],
+            ['Total Current Assets', f"₦{total_current_assets:,.2f}", ''],
+            ['', '', ''],
+            ['CURRENT LIABILITIES', '', ''],
+            ['Accounts Payable (Creditors)', creditors_display, f'{creditors_count} vendors' if creditors_count > 0 else ''],
+            ['Estimated Tax Payable', f"₦{unpaid_tax:,.2f}", 'Unpaid tax obligation'],
+            ['Total Current Liabilities', f"₦{total_current_liabilities:,.2f}", ''],
+            ['', '', ''],
+            ['NET CURRENT ASSETS', f"₦{total_current_assets - total_current_liabilities:,.2f}", 'Working Capital'],
+        ]
+        
+        current_table = create_table(current_assets_liabilities, col_widths=[2.5*inch, 2*inch, 1.5*inch])
+        current_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INVENTORY_GREEN),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT ASSETS
+            ('FONTNAME', (0, 6), (0, 6), 'Helvetica-Bold'),  # CURRENT LIABILITIES
+            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # NET CURRENT ASSETS
+            ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#E8F5E9')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(current_table)
+        story.append(Spacer(1, 20))
+        
+        # VAS Breakdown Section (Granular Utility Reporting)
+        if vas_breakdown and vas_breakdown.get('total', 0) > 0:
+            story.append(Paragraph("Value Added Services (VAS) Breakdown", self.styles['SectionHeader']))
+            
+            vas_data = [
+                ['Service Type', 'Amount (₦)', 'Notes'],
+            ]
+            
+            if vas_breakdown.get('airtime', 0) > 0:
+                vas_data.append(['Airtime', f"₦{vas_breakdown['airtime']:,.2f}", 'Mobile airtime purchases'])
+            if vas_breakdown.get('data', 0) > 0:
+                vas_data.append(['Data', f"₦{vas_breakdown['data']:,.2f}", 'Mobile data bundles'])
+            if vas_breakdown.get('electricity', 0) > 0:
+                vas_data.append(['Electricity', f"₦{vas_breakdown['electricity']:,.2f}", 'Power/utility bills'])
+            if vas_breakdown.get('cable_tv', 0) > 0:
+                vas_data.append(['Cable TV', f"₦{vas_breakdown['cable_tv']:,.2f}", 'TV subscriptions'])
+            if vas_breakdown.get('internet', 0) > 0:
+                vas_data.append(['Internet', f"₦{vas_breakdown['internet']:,.2f}", 'Internet services'])
+            if vas_breakdown.get('water', 0) > 0:
+                vas_data.append(['Water', f"₦{vas_breakdown['water']:,.2f}", 'Water bills'])
+            if vas_breakdown.get('transportation', 0) > 0:
+                vas_data.append(['Transportation', f"₦{vas_breakdown['transportation']:,.2f}", 'Transport services'])
+            if vas_breakdown.get('other', 0) > 0:
+                vas_data.append(['Other VAS', f"₦{vas_breakdown['other']:,.2f}", 'Other services'])
+            
+            vas_data.append(['', '', ''])
+            vas_data.append(['Total VAS Expenses', f"₦{vas_breakdown['total']:,.2f}", 'All digital services'])
+            
+            vas_table = create_table(vas_data, col_widths=[2*inch, 2*inch, 2*inch])
+            vas_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9C27B0')),  # Purple for VAS
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Total row
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E1BEE7')),  # Light purple
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(vas_table)
+            story.append(Spacer(1, 20))
+        
+        # Tax Overview
+        story.append(Paragraph("Tax Overview", self.styles['SectionHeader']))
+        
+        tax_overview = [
+            ['Metric', 'Amount (₦)', 'Notes'],
+            ['Taxable Income', f"₦{net_profit:,.2f}", 'After deductions'],
+            ['Estimated Tax', f"₦{estimated_tax:,.2f}", tax_rate_display],
+            ['Effective Rate', f"{effective_rate:.2f}%", ''],
+        ]
+        
+        # Add CIT exemption context
+        if tax_type == 'CIT':
+            tax_overview.append(['Revenue Status', f"₦{total_income:,.2f}", '≤₦100M for exemption'])
+            tax_overview.append(['Assets NBV Status', f"₦{total_assets_nbv:,.2f}", '≤₦250M for exemption'])
+        
+        tax_table = create_table(tax_overview, col_widths=[2*inch, 2*inch, 2*inch])
+        tax_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(tax_table)
+        story.append(PageBreak())
+        
+        # === BALANCE SHEET ===
+        story.append(Paragraph("Balance Sheet", self.styles['CustomTitle']))
+        story.append(Spacer(1, 12))
+        
+        # ASSETS Section
+        story.append(Paragraph("ASSETS", self.styles['SectionHeader']))
+        
+        assets_section = [
+            ['Asset Category', 'Amount (₦)'],
+            ['NON-CURRENT ASSETS', ''],
+            ['Fixed Assets (Net Book Value)', f"₦{total_assets_nbv:,.2f}"],
+            ['', ''],
+            ['CURRENT ASSETS', ''],
+            ['Cash & Bank', cash_display],
+            ['Inventory', inventory_display],
+            ['Accounts Receivable (Debtors)', debtors_display],
+            ['Total Current Assets', f"₦{total_current_assets:,.2f}"],
+            ['', ''],
+            ['TOTAL ASSETS', f"₦{total_all_assets:,.2f}"],
+        ]
+        
+        assets_bs_table = create_table(assets_section, col_widths=[3*inch, 3*inch])
+        assets_bs_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # NON-CURRENT ASSETS
+            ('FONTNAME', (0, 4), (0, 4), 'Helvetica-Bold'),  # CURRENT ASSETS
+            ('FONTNAME', (0, 9), (-1, 9), 'Helvetica-Bold'),  # TOTAL ASSETS
+            ('BACKGROUND', (0, 9), (-1, 9), colors.HexColor('#E3F2FD')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(assets_bs_table)
+        story.append(Spacer(1, 20))
+        
+        # LIABILITIES & EQUITY Section
+        story.append(Paragraph("LIABILITIES & EQUITY", self.styles['SectionHeader']))
+        
+        liabilities_section = [
+            ['Category', 'Amount (₦)'],
+            ['CURRENT LIABILITIES', ''],
+            ['Accounts Payable (Creditors)', creditors_display],
+            ['Estimated Tax Payable', f"₦{unpaid_tax:,.2f}"],
+            ['Total Current Liabilities', f"₦{total_current_liabilities:,.2f}"],
+            ['', ''],
+            ['OWNER\'S EQUITY', ''],
+            ['Opening Equity', f"₦{opening_equity:,.2f}"],
+            ['Add: Net Profit/(Loss) for Period', f"₦{net_profit:,.2f}"],
+            ['Less: Drawings/Withdrawals', f"₦{drawings:,.2f}"],
+            ['Closing Equity', f"₦{closing_equity:,.2f}"],
+            ['', ''],
+            ['TOTAL LIABILITIES & EQUITY', f"₦{total_current_liabilities + closing_equity:,.2f}"],
+        ]
+        
+        liabilities_bs_table = create_table(liabilities_section, col_widths=[3*inch, 3*inch])
+        liabilities_bs_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), ReportColors.EXPENSE_RED),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT LIABILITIES
+            ('FONTNAME', (0, 6), (0, 6), 'Helvetica-Bold'),  # OWNER'S EQUITY
+            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # Closing Equity
+            ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#E8F5E9')),  # Light green
+            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # TOTAL
+            ('BACKGROUND', (0, 12), (-1, 12), colors.HexColor('#FFEBEE')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(liabilities_bs_table)
+        
+        # Accounting equation verification
+        accounting_balance = total_all_assets - (total_current_liabilities + closing_equity)
+        balance_status = "✓ Balanced" if abs(accounting_balance) < 0.01 else f"⚠ Difference: ₦{accounting_balance:,.2f}"
+        
+        # Note about tracking, accounting equation, and Drawings education
+        note_text = f"""
+<i><b>Note:</b> Items marked as "Not tracked" indicate that no data has been recorded for these categories.
+Most SMEs focus on income and expenses tracking. Inventory, Debtors, Creditors, and Cash tracking is optional
+but recommended for a complete financial picture.<br/>
+<br/>
+<b>Understanding Drawings:</b> Drawings represent money withdrawn by the owner for personal use. 
+These are NOT business expenses and do NOT reduce profit. Instead, they reduce Owner's Equity.
+Example: If you take ₦50,000 from the business for personal shopping, this is a Drawing, not an expense.<br/>
+<br/>
+<b>Accounting Equation Check:</b> Assets (₦{total_all_assets:,.2f}) = Liabilities (₦{total_current_liabilities:,.2f}) + Equity (₦{closing_equity:,.2f}) [{balance_status}]<br/>
+<br/>
+<b>Important:</b> This Statement of Affairs is calculated as of {end_date.strftime('%B %d, %Y') if end_date else 'the current date'}.
+Asset depreciation and all values reflect the position at that specific date.</i>
+"""
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(note_text, self.styles['InfoText']))
+        story.append(PageBreak())
+        
+        # === DOCUMENTATION NOTES ===
+        story.append(Paragraph("Documentation Notes & Best Practices", self.styles['CustomTitle']))
+        story.append(Spacer(1, 12))
+        
+        # Tax Filing Requirements
+        story.append(Paragraph("Tax Filing Requirements", self.styles['SectionHeader']))
+        
+        if tax_type == 'CIT':
+            tax_requirements = f"""
+<b>Corporate Income Tax (CIT) Filing Requirements:</b><br/>
+<br/>
+1. <b>Annual Returns:</b> File within 6 months of financial year-end<br/>
+2. <b>Tax Rate:</b> 30% flat rate on taxable profits<br/>
+3. <b>Small Company Exemption (0% CIT):</b><br/>
+   • BOTH conditions must be met:<br/>
+   • Annual revenue ≤ ₦100,000,000 AND<br/>
+   • Fixed assets NBV ≤ ₦250,000,000<br/>
+<br/>
+<b>Your Business Status:</b><br/>
+• Revenue: ₦{total_income:,.2f} ({('≤' if total_income <= 100000000 else '>')} ₦100M)<br/>
+• Assets NBV: ₦{total_assets_nbv:,.2f} ({('≤' if total_assets_nbv <= 250000000 else '>')} ₦250M)<br/>
+• Estimated Tax: ₦{estimated_tax:,.2f}
+"""
+        else:
+            tax_requirements = f"""
+<b>Personal Income Tax (PIT) Filing Requirements:</b><br/>
+<br/>
+1. <b>Annual Returns:</b> File by March 31st of following year<br/>
+2. <b>Tax-Free Threshold:</b> First ₦800,000 is tax-exempt<br/>
+3. <b>Progressive Rates:</b> 0% to 25% based on income bands<br/>
+<br/>
+<b>Your Estimated Tax:</b> ₦{estimated_tax:,.2f}
+"""
+        
+        story.append(Paragraph(tax_requirements, self.styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Record Keeping Recommendations
+        story.append(Paragraph("Record Keeping Recommendations", self.styles['SectionHeader']))
+        
+        # Add specific recommendations based on what's missing
+        recommendations_list = [
+            "• Keep all receipts and invoices for at least 6 years",
+            "• Maintain separate records for business and personal transactions",
+            "• Update asset register regularly with new purchases",
+            "• Review and reconcile accounts monthly",
+            "• Back up financial records digitally"
+        ]
+        
+        if cash_balance == 0:
+            recommendations_list.append("• <b>Consider tracking Cash/Bank balances</b> for accurate financial position")
+        if inventory_count == 0:
+            recommendations_list.append("• Consider tracking Inventory if you sell physical products")
+        if debtors_count == 0:
+            recommendations_list.append("• Consider tracking Debtors if you offer credit sales")
+        if creditors_count == 0:
+            recommendations_list.append("• Consider tracking Creditors if you purchase on credit")
+        if opening_equity == 0:
+            recommendations_list.append("• <b>Set Opening Equity</b> to reflect capital contributions and prior period profits")
+        
+        recommendations = "<br/>".join(recommendations_list)
+        
+        story.append(Paragraph(recommendations, self.styles['Normal']))
+        story.append(Spacer(1, 30))
+        
+        # Footer
+        report_id = f"SOA-{nigerian_time.strftime('%Y%m%d%H%M%S')}"
+        footer_text = f"""
+<i><b>DISCLAIMER:</b><br/>
+This Statement of Affairs is generated from your FiCore Mobile App data for informational purposes only.<br/>
+It does not constitute professional tax or financial advice.<br/>
+<br/>
+For official tax filing and compliance, please consult with:<br/>
+• A certified tax professional<br/>
+• A chartered accountant<br/>
+• The Federal Inland Revenue Service (FIRS)<br/>
+<br/>
+Generated by FiCore Mobile App | team@ficoreafrica.com<br/>
+Report ID: {report_id} | Generated: {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}</i>
+"""
+        
+        story.append(Paragraph(footer_text, self.styles['InfoText']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+

@@ -4757,7 +4757,14 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 
                 recent_transactions.append(serialized_txn)
             
-            # ===== 9. FORMAT RESPONSE =====
+            # ===== 9. REVENUE WEIGHTING: SUBSCRIPTION VS TRANSACTIONAL =====
+            subscription_revenue_total = net_subscription_revenue + net_credits_revenue
+            transactional_revenue_total = total_vas_commissions + net_deposit_fees
+            
+            subscription_percentage = (subscription_revenue_total / total_revenue * 100) if total_revenue > 0 else 0
+            transactional_percentage = (transactional_revenue_total / total_revenue * 100) if total_revenue > 0 else 0
+            
+            # ===== 10. FORMAT RESPONSE =====
             return jsonify({
                 'success': True,
                 'data': {
@@ -4767,6 +4774,24 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                         'netProfit': round(net_profit, 2),
                         'profitMargin': round(profit_margin, 2),
                         'totalTransactions': len(vas_transactions)
+                    },
+                    'revenueWeighting': {
+                        'subscriptionRevenue': {
+                            'amount': round(subscription_revenue_total, 2),
+                            'percentage': round(subscription_percentage, 2),
+                            'breakdown': {
+                                'activeSubscriptions': round(net_subscription_revenue, 2),
+                                'fcCreditsPurchased': round(net_credits_revenue, 2)
+                            }
+                        },
+                        'transactionalRevenue': {
+                            'amount': round(transactional_revenue_total, 2),
+                            'percentage': round(transactional_percentage, 2),
+                            'breakdown': {
+                                'vasCommissions': round(total_vas_commissions, 2),
+                                'depositFees': round(net_deposit_fees, 2)
+                            }
+                        }
                     },
                     'revenueBreakdown': {
                         'vasCommissions': {
@@ -5282,6 +5307,390 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to get referral metrics',
                 'error': str(e)
             }), 500
+
+    # ===== INTERNAL ECONOMY METRICS ENDPOINT =====
+
+    @admin_bp.route('/treasury/internal-economy', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_internal_economy_metrics(current_user):
+        """
+        💰 Internal Economy Metrics: FC Credits & Wallet Float
+        Track the "gas" in your system - prepaid credits and wallet balances
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # Get time period filter
+            period = request.args.get('period', 'all')
+
+            # Calculate date filter
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+
+            # ===== 1. FC CREDITS OUTSTANDING =====
+            # Total FC balance across all users (deferred revenue)
+            fc_pipeline = [
+                {'$group': {
+                    '_id': None,
+                    'totalFCBalance': {'$sum': '$ficoreCreditBalance'},
+                    'userCount': {'$sum': 1}
+                }}
+            ]
+            fc_result = list(mongo.db.users.aggregate(fc_pipeline))
+            total_fc_outstanding = fc_result[0]['totalFCBalance'] if fc_result else 0.0
+            users_with_fc = mongo.db.users.count_documents({'ficoreCreditBalance': {'$gt': 0}})
+
+            # ===== 2. WALLET FLOAT =====
+            # Total wallet balance across all users
+            wallet_pipeline = [
+                {'$group': {
+                    '_id': None,
+                    'totalWalletBalance': {'$sum': '$balance'},
+                    'walletCount': {'$sum': 1}
+                }}
+            ]
+            wallet_result = list(mongo.db.vas_wallets.aggregate(wallet_pipeline))
+            total_wallet_float = wallet_result[0]['totalWalletBalance'] if wallet_result else 0.0
+            wallets_with_balance = mongo.db.vas_wallets.count_documents({'balance': {'$gt': 0}})
+
+            # ===== 3. FC CREDITS PURCHASED (THIS PERIOD) =====
+            credits_purchased_query = {'type': 'CREDITS_PURCHASE'}
+            credits_purchased_query.update(date_filter)
+            credits_purchased = list(mongo.db.corporate_revenue.find(credits_purchased_query))
+
+            fc_purchased_amount = sum(c['amount'] for c in credits_purchased)
+            fc_purchased_count = len(credits_purchased)
+
+            # ===== 4. FC CREDITS CONSUMED (THIS PERIOD) =====
+            credits_consumed_query = {'type': 'debit', 'status': 'completed'}
+            credits_consumed_query.update(date_filter)
+            credits_consumed = list(mongo.db.credit_transactions.find(credits_consumed_query))
+
+            fc_consumed_amount = sum(c['amount'] for c in credits_consumed)
+            fc_consumed_count = len(credits_consumed)
+
+            # ===== 5. NET FC POSITION =====
+            net_fc_position = fc_purchased_amount - fc_consumed_amount
+
+            # ===== 6. WALLET DEPOSITS (THIS PERIOD) =====
+            deposits_query = {'type': 'WALLET_FUNDING', 'status': 'SUCCESS'}
+            deposits_query.update(date_filter)
+            deposits = list(mongo.db.vas_transactions.find(deposits_query))
+
+            total_deposits_amount = sum(d.get('amountPaid', 0) for d in deposits)
+            total_deposits_count = len(deposits)
+
+            # ===== 7. WALLET SPEND (THIS PERIOD) =====
+            spend_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA', 'ELECTRICITY', 'CABLE_TV']}}
+            spend_query.update(date_filter)
+            spend_txns = list(mongo.db.vas_transactions.find(spend_query))
+
+            total_spend_amount = sum(t.get('amount', 0) for t in spend_txns)
+            total_spend_count = len(spend_txns)
+
+            # ===== 8. NET WALLET POSITION =====
+            net_wallet_position = total_deposits_amount - total_spend_amount
+
+            # ===== 9. AVERAGE BALANCES =====
+            avg_fc_balance = total_fc_outstanding / users_with_fc if users_with_fc > 0 else 0
+            avg_wallet_balance = total_wallet_float / wallets_with_balance if wallets_with_balance > 0 else 0
+
+            # ===== 10. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'fcCredits': {
+                        'totalOutstanding': round(total_fc_outstanding, 2),
+                        'usersWithBalance': users_with_fc,
+                        'averageBalance': round(avg_fc_balance, 2),
+                        'purchasedThisPeriod': {
+                            'amount': round(fc_purchased_amount, 2),
+                            'count': fc_purchased_count
+                        },
+                        'consumedThisPeriod': {
+                            'amount': round(fc_consumed_amount, 2),
+                            'count': fc_consumed_count
+                        },
+                        'netPosition': round(net_fc_position, 2)
+                    },
+                    'walletFloat': {
+                        'totalOutstanding': round(total_wallet_float, 2),
+                        'walletsWithBalance': wallets_with_balance,
+                        'averageBalance': round(avg_wallet_balance, 2),
+                        'depositsThisPeriod': {
+                            'amount': round(total_deposits_amount, 2),
+                            'count': total_deposits_count
+                        },
+                        'spendThisPeriod': {
+                            'amount': round(total_spend_amount, 2),
+                            'count': total_spend_count
+                        },
+                        'netPosition': round(net_wallet_position, 2)
+                    },
+                    'totalInternalEconomy': round(total_fc_outstanding + total_wallet_float, 2),
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': 'Internal economy metrics retrieved successfully'
+            })
+
+        except Exception as e:
+            print(f"Error getting internal economy metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get internal economy metrics',
+                'error': str(e)
+            }), 500
+
+    # ===== EXPIRED USER ACTIVITY TRACKING ENDPOINT =====
+
+    @admin_bp.route('/treasury/expired-user-activity', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_expired_user_activity(current_user):
+        """
+        📊 Expired User Activity: Track VAS usage after subscription expiry
+        Validates the "freemium" model - users avoid monthly fees but still transact
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # Get time period filter (how far back to look for expired users)
+            days_back = int(request.args.get('days', 90))
+            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+
+            # ===== 1. FIND EXPIRED USERS =====
+            # Users who were premium but subscription has expired
+            expired_users = list(mongo.db.users.find({
+                'wasPremium': True,
+                'isSubscribed': False,
+                'subscriptionEndDate': {'$gte': cutoff_date, '$lt': datetime.utcnow()}
+            }))
+
+            # ===== 2. ANALYZE EACH EXPIRED USER =====
+            expired_user_analysis = []
+
+            for user in expired_users:
+                user_id = user['_id']
+                email = user.get('email', 'N/A')
+                display_name = user.get('displayName', 'Unknown')
+                expiry_date = user.get('subscriptionEndDate')
+
+                if not expiry_date:
+                    continue
+
+                days_since_expiry = (datetime.utcnow() - expiry_date).days
+
+                # Get VAS transactions AFTER expiry
+                post_expiry_txns = list(mongo.db.vas_transactions.find({
+                    'userId': user_id,
+                    'status': 'SUCCESS',
+                    'type': {'$in': ['AIRTIME', 'DATA']},
+                    'createdAt': {'$gte': expiry_date}
+                }))
+
+                # Calculate metrics
+                txn_count = len(post_expiry_txns)
+                total_volume = sum(t.get('amount', 0) for t in post_expiry_txns)
+                total_commission = sum(t.get('providerCommission', 0) for t in post_expiry_txns)
+
+                # Determine status
+                if txn_count > 0:
+                    status = 'Active Freemium'
+                elif days_since_expiry <= 30:
+                    status = 'Recently Expired'
+                else:
+                    status = 'Inactive'
+
+                expired_user_analysis.append({
+                    'userId': str(user_id),
+                    'email': email,
+                    'displayName': display_name,
+                    'subscriptionExpired': expiry_date.isoformat() if expiry_date else None,
+                    'daysSinceExpiry': days_since_expiry,
+                    'postExpiryActivity': {
+                        'transactionCount': txn_count,
+                        'totalVolume': round(total_volume, 2),
+                        'totalCommission': round(total_commission, 2)
+                    },
+                    'status': status
+                })
+
+            # ===== 3. AGGREGATE STATISTICS =====
+            total_expired = len(expired_user_analysis)
+            active_freemium = len([u for u in expired_user_analysis if u['status'] == 'Active Freemium'])
+            inactive = len([u for u in expired_user_analysis if u['status'] == 'Inactive'])
+
+            total_freemium_volume = sum(u['postExpiryActivity']['totalVolume'] for u in expired_user_analysis)
+            total_freemium_commission = sum(u['postExpiryActivity']['totalCommission'] for u in expired_user_analysis)
+
+            # ===== 4. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'summary': {
+                        'totalExpiredUsers': total_expired,
+                        'activeFreemiumUsers': active_freemium,
+                        'inactiveUsers': inactive,
+                        'freemiumConversionRate': round((active_freemium / total_expired * 100) if total_expired > 0 else 0, 2),
+                        'totalFreemiumVolume': round(total_freemium_volume, 2),
+                        'totalFreemiumCommission': round(total_freemium_commission, 2)
+                    },
+                    'expiredUsers': sorted(expired_user_analysis, key=lambda x: x['postExpiryActivity']['totalCommission'], reverse=True),
+                    'daysBack': days_back
+                },
+                'message': f'Expired user activity retrieved successfully (last {days_back} days)'
+            })
+
+        except Exception as e:
+            print(f"Error getting expired user activity: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get expired user activity',
+                'error': str(e)
+            }), 500
+
+    # ===== FREEMIUM USER ENGAGEMENT METRICS ENDPOINT =====
+
+    @admin_bp.route('/treasury/freemium-engagement', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_freemium_engagement(current_user):
+        """
+        📈 Freemium User Engagement: Track non-subscribed VAS users
+        Shows that 96%+ of users are "pay-as-you-go" - validates Nigerian market behavior
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # Get time period filter
+            period = request.args.get('period', 'all')
+
+            # Calculate date filter
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+
+            # ===== 1. GET ALL ACTIVE VAS USERS (THIS PERIOD) =====
+            vas_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA']}}
+            vas_query.update(date_filter)
+
+            # Get unique user IDs with VAS transactions
+            active_user_ids = mongo.db.vas_transactions.distinct('userId', vas_query)
+            total_active_users = len(active_user_ids)
+
+            # ===== 2. SEPARATE PREMIUM VS FREEMIUM =====
+            premium_user_ids = []
+            freemium_user_ids = []
+
+            for user_id in active_user_ids:
+                user = mongo.db.users.find_one({'_id': user_id}, {'isSubscribed': 1})
+                if user:
+                    if user.get('isSubscribed', False):
+                        premium_user_ids.append(user_id)
+                    else:
+                        freemium_user_ids.append(user_id)
+
+            premium_count = len(premium_user_ids)
+            freemium_count = len(freemium_user_ids)
+
+            # ===== 3. CALCULATE PREMIUM USER METRICS =====
+            premium_txns = list(mongo.db.vas_transactions.find({
+                **vas_query,
+                'userId': {'$in': premium_user_ids}
+            }))
+
+            premium_volume = sum(t.get('amount', 0) for t in premium_txns)
+            premium_commission = sum(t.get('providerCommission', 0) for t in premium_txns)
+            premium_txn_count = len(premium_txns)
+
+            # ===== 4. CALCULATE FREEMIUM USER METRICS =====
+            freemium_txns = list(mongo.db.vas_transactions.find({
+                **vas_query,
+                'userId': {'$in': freemium_user_ids}
+            }))
+
+            freemium_volume = sum(t.get('amount', 0) for t in freemium_txns)
+            freemium_commission = sum(t.get('providerCommission', 0) for t in freemium_txns)
+            freemium_txn_count = len(freemium_txns)
+
+            # ===== 5. CALCULATE PERCENTAGES =====
+            premium_percentage = (premium_count / total_active_users * 100) if total_active_users > 0 else 0
+            freemium_percentage = (freemium_count / total_active_users * 100) if total_active_users > 0 else 0
+
+            freemium_commission_percentage = (freemium_commission / (premium_commission + freemium_commission) * 100) if (premium_commission + freemium_commission) > 0 else 0
+
+            # ===== 6. AVERAGE METRICS =====
+            avg_premium_volume = premium_volume / premium_count if premium_count > 0 else 0
+            avg_freemium_volume = freemium_volume / freemium_count if freemium_count > 0 else 0
+
+            # ===== 7. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'overview': {
+                        'totalActiveUsers': total_active_users,
+                        'premiumUsers': {
+                            'count': premium_count,
+                            'percentage': round(premium_percentage, 2)
+                        },
+                        'freemiumUsers': {
+                            'count': freemium_count,
+                            'percentage': round(freemium_percentage, 2)
+                        }
+                    },
+                    'premiumMetrics': {
+                        'transactionCount': premium_txn_count,
+                        'totalVolume': round(premium_volume, 2),
+                        'totalCommission': round(premium_commission, 2),
+                        'averageVolumePerUser': round(avg_premium_volume, 2)
+                    },
+                    'freemiumMetrics': {
+                        'transactionCount': freemium_txn_count,
+                        'totalVolume': round(freemium_volume, 2),
+                        'totalCommission': round(freemium_commission, 2),
+                        'averageVolumePerUser': round(avg_freemium_volume, 2),
+                        'commissionPercentage': round(freemium_commission_percentage, 2)
+                    },
+                    'insights': {
+                        'freemiumDominance': freemium_percentage > 90,
+                        'freemiumRevenueShare': freemium_commission_percentage,
+                        'message': f'{freemium_percentage:.1f}% of active users are freemium, generating {freemium_commission_percentage:.1f}% of VAS commission revenue'
+                    },
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': 'Freemium engagement metrics retrieved successfully'
+            })
+
+        except Exception as e:
+            print(f"Error getting freemium engagement: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get freemium engagement',
+                'error': str(e)
+            }), 500
+
     
     # ===== WITHDRAWAL MANAGEMENT ENDPOINTS =====
     
@@ -6639,6 +7048,69 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Calculate new balance
             current_balance = wallet.get('balance', 0.0)
             new_balance = current_balance + amount
+            
+            # 🔍 CRITICAL FIX (Feb 18, 2026): Check for linked drawings and expenses
+            # If this refund is for a failed Personal wallet spend, we need to:
+            # 1. Void the drawing entry (so Equity calculation is correct)
+            # 2. Void the expense entry (so books balance)
+            voided_drawing = None
+            voided_expense = None
+            
+            if reference_transaction_id:
+                try:
+                    # Find the original failed transaction
+                    original_txn = mongo.db.vas_transactions.find_one({
+                        '_id': ObjectId(reference_transaction_id)
+                    })
+                    
+                    if original_txn:
+                        # Find linked expense entry (created by auto-bookkeeping)
+                        linked_expense = mongo.db.expenses.find_one({
+                            'metadata.vasTransactionId': str(original_txn['_id']),
+                            'status': 'active',
+                            'isDeleted': False
+                        })
+                        
+                        if linked_expense:
+                            # Check if this was a Personal expense (has drawing)
+                            if linked_expense.get('entryType') == 'personal':
+                                # Find and void the drawing entry
+                                drawing = mongo.db.drawings.find_one({
+                                    'linkedExpenseId': linked_expense['_id'],
+                                    'status': 'active',
+                                    'isDeleted': False
+                                })
+                                
+                                if drawing:
+                                    from blueprints.drawings_auto import void_drawing_entry
+                                    success = void_drawing_entry(mongo, drawing['_id'])
+                                    if success:
+                                        voided_drawing = {
+                                            'id': str(drawing['_id']),
+                                            'amount': drawing['amount']
+                                        }
+                                        print(f"✅ REFUND: Voided drawing entry ₦{drawing['amount']:,.2f} for failed transaction")
+                            
+                            # Void the expense entry (soft delete with reversal)
+                            from utils.immutable_ledger_helper import soft_delete_transaction
+                            result = soft_delete_transaction(
+                                db=mongo.db,
+                                collection_name='expenses',
+                                transaction_id=str(linked_expense['_id']),
+                                user_id=linked_expense['userId']
+                            )
+                            
+                            if result['success']:
+                                voided_expense = {
+                                    'id': str(linked_expense['_id']),
+                                    'amount': linked_expense['amount'],
+                                    'reversalId': result.get('reversal_id')
+                                }
+                                print(f"✅ REFUND: Voided expense entry ₦{linked_expense['amount']:,.2f} for failed transaction")
+                        
+                except Exception as void_error:
+                    print(f"WARNING: Failed to void linked entries during refund: {str(void_error)}")
+                    # Don't fail the refund if voiding fails - log and continue
 
             # CRITICAL FIX: Update BOTH balances simultaneously for instant sync
             # Update VAS wallet balance
@@ -6691,7 +7163,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'adminEmail': current_user.get('email', ''),
                     'reason': reason,
                     'referenceTransactionId': reference_transaction_id,
-                    'processedAt': datetime.utcnow().isoformat() + 'Z'
+                    'processedAt': datetime.utcnow().isoformat() + 'Z',
+                    'voidedDrawing': voided_drawing,  # Track if drawing was voided
+                    'voidedExpense': voided_expense   # Track if expense was voided
                 }
             }
             
@@ -6716,7 +7190,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'wallet_balance_before': current_balance,
                     'wallet_balance_after': new_balance,
                     'transaction_id': str(refund_transaction['_id']),
-                    'reference_transaction': reference_transaction_id
+                    'reference_transaction': reference_transaction_id,
+                    'voided_drawing': voided_drawing,
+                    'voided_expense': voided_expense
                 }
             }
             

@@ -263,6 +263,27 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
             entry_type = data.get('entryType')  # 'business', 'personal', or None
             
+            # Validate entryType if provided (voice-entry-tagging feature - Feb 18, 2026)
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
+            # SOURCE TRACKING STANDARDIZATION (Feb 18, 2026): Determine entry source
+            # Source values: 'manual', 'voice', 'wallet_auto'
+            # Default to 'manual' if not specified
+            entry_source = data.get('source_type', 'manual')  # Use source_type to avoid conflict with income.source field
+            
+            # Validate source if provided
+            if entry_source not in ['manual', 'voice', 'wallet_auto']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid source. Must be "manual", "voice", or "wallet_auto"',
+                    'errors': {'source': ['Invalid value']}
+                }), 400
+            
             # ✅ CRITICAL FIX: Mark if entry was created during premium period
             # This prevents premium entries from counting against free tier limit after subscription expires
             user = mongo.db.users.find_one({'_id': current_user['_id']})
@@ -291,6 +312,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'entryType': entry_type,  # QUICK TAG: Save tag during creation
                 'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
                 'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
+                'sourceType': entry_source,  # SOURCE TRACKING: 'manual', 'voice', or 'wallet_auto'
                 'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
@@ -844,6 +866,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if not data:
                 return jsonify({'success': False, 'message': 'No data provided'}), 400
 
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_income:
+                return jsonify({
+                    'success': False,
+                    'message': 'Income record not found'
+                }), 404
+            
+            # Block edits on wallet-auto transactions (system-generated)
+            if existing_income.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot edit wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be edited. Use void/reversal instead.']}
+                }), 403
+
             # Validation
             errors = {}
             if 'amount' in data and (not data.get('amount') or data.get('amount', 0) <= 0):
@@ -951,6 +993,43 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
         try:
             if not ObjectId.is_valid(income_id):
                 return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_income:
+                return jsonify({
+                    'success': False,
+                    'message': 'Income record not found'
+                }), 404
+            
+            # Block deletion on wallet-auto transactions (system-generated)
+            if existing_income.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be deleted. Use void/reversal instead.']}
+                }), 403
+            
+            # 🛡️ INTEGRATED RECORD PROTECTION: Block deletion of inventory sale income
+            metadata = existing_income.get('metadata', {})
+            if metadata.get('inventorySale') == True:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete income from inventory sales. Delete the original sale transaction instead.',
+                    'errors': {'metadata': ['Inventory sale income cannot be deleted directly. Use the Inventory module to reverse the sale.']}
+                }), 403
+            
+            # 🛡️ INTEGRATED RECORD PROTECTION: Block deletion of debtor payment income
+            if metadata.get('diice_type') == 'debtor_payment':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete income from customer payments. Reverse the payment in the Debtors module instead.',
+                    'errors': {'metadata': ['Debtor payment income cannot be deleted directly. Use the Debtors module to reverse the payment.']}
+                }), 403
             
             # Use the immutable ledger helper
             from utils.immutable_ledger_helper import soft_delete_transaction

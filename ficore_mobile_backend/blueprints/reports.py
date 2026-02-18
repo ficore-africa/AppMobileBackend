@@ -139,6 +139,10 @@ def init_reports_blueprint(mongo, token_required):
         'wallet_bills_pdf': 3,
         'wallet_full_csv': 3,
         'wallet_full_pdf': 4,
+        
+        # Premium Comprehensive Reports (8 FC)
+        'statement_of_affairs_pdf': 8,
+        'statement_of_affairs_csv': 5,
     }    
     # Initialize PDF cache (singleton)
     pdf_cache = get_pdf_cache()
@@ -704,7 +708,7 @@ def init_reports_blueprint(mongo, token_required):
             writer = csv.writer(output)
             
             # Write header
-            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)', 'Description'])
+            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)', 'Description', 'Source Type', 'Entry Type', 'Verified'])
             
             # Write data
             total_amount = 0
@@ -714,8 +718,11 @@ def init_reports_blueprint(mongo, token_required):
                 category = income.get('category', {}).get('name', 'Other')
                 amount = income.get('amount', 0)
                 description = income.get('description', '')
+                source_type = income.get('sourceType', 'manual')
+                entry_type = income.get('entryType', 'untagged')
+                verified = 'Yes' if source_type != 'manual' else 'No'
                 
-                writer.writerow([date_str, source, category, f'{amount:,.2f}', description])
+                writer.writerow([date_str, source, category, f'{amount:,.2f}', description, source_type, entry_type, verified])
                 total_amount += amount
             
             # Write total
@@ -988,7 +995,7 @@ def init_reports_blueprint(mongo, token_required):
             writer = csv.writer(output)
             
             # Write header
-            writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Description'])
+            writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Description', 'Source Type', 'Entry Type', 'Verified'])
             
             # Write data
             total_amount = 0
@@ -998,8 +1005,11 @@ def init_reports_blueprint(mongo, token_required):
                 category = expense.get('category', 'Other')
                 amount = expense.get('amount', 0)
                 description = expense.get('description', '')
+                source_type = expense.get('sourceType', 'manual')
+                entry_type = expense.get('entryType', 'untagged')
+                verified = 'Yes' if source_type != 'manual' else 'No'
                 
-                writer.writerow([date_str, title, category, f'{amount:,.2f}', description])
+                writer.writerow([date_str, title, category, f'{amount:,.2f}', description, source_type, entry_type, verified])
                 total_amount += amount
             
             # Write total
@@ -1067,24 +1077,46 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # Fetch income and expense data with tag filtering
+            # MODERNIZATION (Feb 18, 2026): Exclude personal expenses
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
-                'isDeleted': False
+                'isDeleted': False,
+                '$or': [
+                    {'entryType': {'$ne': 'personal'}},  # Exclude personal
+                    {'entryType': {'$exists': False}},   # Include untagged (legacy)
+                    {'entryType': None}                   # Include null
+                ]
             }
             expense_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
-                'isDeleted': False
+                'isDeleted': False,
+                '$or': [
+                    {'entryType': {'$ne': 'personal'}},  # Exclude personal
+                    {'entryType': {'$exists': False}},   # Include untagged (legacy)
+                    {'entryType': None}                   # Include null
+                ]
             }
             
-            # Apply tag filtering
+            # Apply legacy tag filtering (for backward compatibility)
             if tag_filter == 'business':
                 income_query['tags'] = 'Business'
                 expense_query['tags'] = 'Business'
             elif tag_filter == 'personal':
-                income_query['tags'] = 'Personal'
-                expense_query['tags'] = 'Personal'
+                # Override: If user explicitly requests personal, show personal
+                income_query = {
+                    'userId': current_user['_id'],
+                    'status': 'active',
+                    'isDeleted': False,
+                    'tags': 'Personal'
+                }
+                expense_query = {
+                    'userId': current_user['_id'],
+                    'status': 'active',
+                    'isDeleted': False,
+                    'tags': 'Personal'
+                }
             elif tag_filter == 'untagged':
                 income_query['$or'] = [
                     {'tags': {'$exists': False}},
@@ -2293,9 +2325,27 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch income and expense data
-            income_query = {'userId': current_user['_id']}
-            expense_query = {'userId': current_user['_id']}
+            # MODERNIZATION (Feb 18, 2026): Exclude personal expenses (Default Business Assumption)
+            income_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'entryType': {'$ne': 'personal'}},
+                    {'entryType': {'$exists': False}},
+                    {'entryType': None}
+                ]
+            }
+            expense_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'entryType': {'$ne': 'personal'}},
+                    {'entryType': {'$exists': False}},
+                    {'entryType': None}
+                ]
+            }
             
             if start_date or end_date:
                 if start_date:
@@ -2306,74 +2356,132 @@ def init_reports_blueprint(mongo, token_required):
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
-
-            
             results = fetch_collections_parallel({
-
-            
                 'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
-
-            
                 'expenses': lambda: list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
-
-            
             }, max_workers=2)
-
-            
             incomes = results['incomes']
-
-            
             expenses = results['expenses']
+            
+            # Separate Sales Revenue from Other Income
+            sales_revenue_items = [inc for inc in incomes if inc.get('category') == 'salesRevenue']
+            other_income_items = [inc for inc in incomes if inc.get('category') != 'salesRevenue']
+            
+            sales_revenue = sum(inc.get('amount', 0) for inc in sales_revenue_items)
+            other_income = sum(inc.get('amount', 0) for inc in other_income_items)
+            total_revenue = sales_revenue + other_income
+            
+            # Separate COGS from Operating Expenses
+            cogs_items = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
+            operating_items = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+            
+            total_cogs = sum(exp.get('amount', 0) for exp in cogs_items)
+            total_operating = sum(exp.get('amount', 0) for exp in operating_items)
+            
+            # Calculate 3-Step P&L
+            gross_profit = sales_revenue - total_cogs
+            gross_margin_pct = (gross_profit / sales_revenue * 100) if sales_revenue > 0 else 0
+            operating_profit = gross_profit - total_operating
+            net_profit = operating_profit
             
             # Generate CSV
             output = io.StringIO()
             writer = csv.writer(output)
             
             # Header
-            writer.writerow(['FiCore Africa - Profit & Loss Statement'])
+            writer.writerow(['FiCore Africa - Profit & Loss Statement (3-Step Professional)'])
             writer.writerow(['Generated:', datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')])
             if start_date and end_date:
                 writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+            writer.writerow(['Note:', 'Personal expenses excluded from business P&L'])
             writer.writerow([])
             
-            # Income Section
-            writer.writerow(['INCOME'])
-            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)'])
-            total_income = 0
-            for income in incomes:
-                date_str = income.get('dateReceived', datetime.utcnow()).strftime('%Y-%m-%d')
-                writer.writerow([
-                    date_str,
-                    income.get('source', 'N/A'),
-                    income.get('category', {}).get('name', 'Other'),
-                    f'{income.get("amount", 0):,.2f}'
-                ])
-                total_income += income.get('amount', 0)
-            writer.writerow(['', '', 'Total Income:', f'{total_income:,.2f}'])
+            # REVENUE SECTION
+            writer.writerow(['REVENUE'])
+            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)', 'Source Type'])
+            
+            # Sales Revenue
+            if sales_revenue_items:
+                writer.writerow(['--- Sales Revenue ---'])
+                for income in sales_revenue_items:
+                    date_str = income.get('dateReceived', datetime.utcnow()).strftime('%Y-%m-%d')
+                    writer.writerow([
+                        date_str,
+                        income.get('source', 'N/A'),
+                        'Sales Revenue',
+                        f'{income.get("amount", 0):,.2f}',
+                        income.get('sourceType', 'manual')
+                    ])
+                writer.writerow(['', '', 'Sales Revenue Total:', f'{sales_revenue:,.2f}', ''])
+                writer.writerow([])
+            
+            # Other Income
+            if other_income_items:
+                writer.writerow(['--- Other Income ---'])
+                for income in other_income_items:
+                    date_str = income.get('dateReceived', datetime.utcnow()).strftime('%Y-%m-%d')
+                    writer.writerow([
+                        date_str,
+                        income.get('source', 'N/A'),
+                        income.get('category', 'Other'),
+                        f'{income.get("amount", 0):,.2f}',
+                        income.get('sourceType', 'manual')
+                    ])
+                writer.writerow(['', '', 'Other Income Total:', f'{other_income:,.2f}', ''])
+                writer.writerow([])
+            
+            writer.writerow(['', '', 'TOTAL REVENUE:', f'{total_revenue:,.2f}', ''])
             writer.writerow([])
             
-            # Expenses Section
-            writer.writerow(['EXPENSES'])
-            writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)'])
-            total_expenses = 0
-            for expense in expenses:
-                date_str = expense.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
-                writer.writerow([
-                    date_str,
-                    expense.get('title', 'N/A'),
-                    expense.get('category', 'Other'),
-                    f'{expense.get("amount", 0):,.2f}'
-                ])
-                total_expenses += expense.get('amount', 0)
-            writer.writerow(['', '', 'Total Expenses:', f'{total_expenses:,.2f}'])
+            # COGS SECTION
+            if cogs_items:
+                writer.writerow(['COST OF GOODS SOLD (COGS)'])
+                writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Source Type'])
+                for expense in cogs_items:
+                    date_str = expense.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
+                    writer.writerow([
+                        date_str,
+                        expense.get('title', 'N/A'),
+                        expense.get('category', 'COGS'),
+                        f'{expense.get("amount", 0):,.2f}',
+                        expense.get('sourceType', 'manual')
+                    ])
+                writer.writerow(['', '', 'Total COGS:', f'{total_cogs:,.2f}', ''])
+                writer.writerow([])
+            
+            # GROSS PROFIT
+            writer.writerow(['GROSS PROFIT'])
+            writer.writerow(['Sales Revenue', f'{sales_revenue:,.2f}'])
+            writer.writerow(['Less: COGS', f'{total_cogs:,.2f}'])
+            writer.writerow(['Gross Profit', f'{gross_profit:,.2f}'])
+            writer.writerow(['Gross Margin %', f'{gross_margin_pct:.2f}%'])
             writer.writerow([])
             
-            # Summary
-            net_profit = total_income - total_expenses
-            writer.writerow(['SUMMARY'])
-            writer.writerow(['Total Income', f'{total_income:,.2f}'])
-            writer.writerow(['Total Expenses', f'{total_expenses:,.2f}'])
-            writer.writerow(['Net Profit/Loss', f'{net_profit:,.2f}'])
+            # OPERATING EXPENSES SECTION
+            if operating_items:
+                writer.writerow(['OPERATING EXPENSES'])
+                writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Source Type'])
+                for expense in operating_items:
+                    date_str = expense.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
+                    writer.writerow([
+                        date_str,
+                        expense.get('title', 'N/A'),
+                        expense.get('category', 'Other'),
+                        f'{expense.get("amount", 0):,.2f}',
+                        expense.get('sourceType', 'manual')
+                    ])
+                writer.writerow(['', '', 'Total Operating Expenses:', f'{total_operating:,.2f}', ''])
+                writer.writerow([])
+            
+            # FINAL SUMMARY
+            writer.writerow(['PROFIT & LOSS SUMMARY'])
+            writer.writerow(['Total Revenue', f'{total_revenue:,.2f}'])
+            writer.writerow(['Less: COGS', f'{total_cogs:,.2f}'])
+            writer.writerow(['Gross Profit', f'{gross_profit:,.2f}'])
+            writer.writerow(['Gross Margin %', f'{gross_margin_pct:.2f}%'])
+            writer.writerow(['Less: Operating Expenses', f'{total_operating:,.2f}'])
+            writer.writerow(['Operating Profit', f'{operating_profit:,.2f}'])
+            writer.writerow(['NET PROFIT/LOSS', f'{net_profit:,.2f}'])
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -3594,10 +3702,40 @@ def init_reports_blueprint(mongo, token_required):
         })
     
     def _preview_profit_loss(current_user, start_date, end_date, limit):
-        """Preview profit & loss data"""
-        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
-        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        """
+        Preview profit & loss data with 3-Step Professional P&L Calculation
         
+        MODERNIZATION (Feb 18, 2026):
+        - Excludes personal expenses (entryType: 'personal')
+        - Separates COGS from Operating Expenses
+        - Calculates Gross Profit, Operating Profit, Net Profit
+        - Calculates Gross Margin % (the "CFO in your pocket" metric)
+        """
+        # BASE QUERIES: Exclude personal expenses (Default Business Assumption)
+        # Rationale: In a business wallet, assume transactions are business unless explicitly personal
+        income_query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            '$or': [
+                {'entryType': {'$ne': 'personal'}},  # Exclude personal
+                {'entryType': {'$exists': False}},   # Include untagged (legacy data)
+                {'entryType': None}                   # Include null
+            ]
+        }
+        
+        expense_query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            '$or': [
+                {'entryType': {'$ne': 'personal'}},  # Exclude personal
+                {'entryType': {'$exists': False}},   # Include untagged (legacy data)
+                {'entryType': None}                   # Include null
+            ]
+        }
+        
+        # Apply date filters
         if start_date or end_date:
             if start_date:
                 income_query['dateReceived'] = {'$gte': start_date}
@@ -3606,13 +3744,42 @@ def init_reports_blueprint(mongo, token_required):
                 income_query.setdefault('dateReceived', {})['$lte'] = end_date
                 expense_query.setdefault('date', {})['$lte'] = end_date
         
-        # Get all for summary
+        # STEP 1: Get all business incomes
         all_incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
-        all_expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
         
-        total_income = sum(inc.get('amount', 0) for inc in all_incomes)
-        total_expenses = sum(exp.get('amount', 0) for exp in all_expenses)
-        net_profit = total_income - total_expenses
+        # Separate Sales Revenue from Other Income
+        sales_revenue = 0
+        other_income = 0
+        for inc in all_incomes:
+            amount = inc.get('amount', 0)
+            category = inc.get('category', '')
+            if category == 'salesRevenue':
+                sales_revenue += amount
+            else:
+                other_income += amount
+        
+        total_revenue = sales_revenue + other_income
+        
+        # STEP 2: Get COGS (Cost of Goods Sold)
+        cogs_query = {**expense_query, 'category': 'Cost of Goods Sold'}
+        cogs_expenses = list(mongo.db.expenses.find(cogs_query, PDF_PROJECTIONS['expenses']))
+        total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+        
+        # STEP 3: Get Operating Expenses (exclude COGS)
+        operating_query = {**expense_query, 'category': {'$ne': 'Cost of Goods Sold'}}
+        operating_expenses = list(mongo.db.expenses.find(operating_query, PDF_PROJECTIONS['expenses']))
+        total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
+        
+        # CALCULATE 3-STEP P&L
+        # Step 1: Gross Profit = Sales Revenue - COGS
+        gross_profit = sales_revenue - total_cogs
+        gross_margin_pct = (gross_profit / sales_revenue * 100) if sales_revenue > 0 else 0
+        
+        # Step 2: Operating Profit = Gross Profit - Operating Expenses
+        operating_profit = gross_profit - total_operating
+        
+        # Step 3: Net Profit = Operating Profit (taxes/fees already in operating expenses)
+        net_profit = operating_profit
         
         # Get limited data for preview
         incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
@@ -3628,7 +3795,10 @@ def init_reports_blueprint(mongo, token_required):
             data['incomes'].append({
                 'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
-                'amount': income.get('amount', 0)
+                'category': income.get('category', 'other'),
+                'amount': income.get('amount', 0),
+                'sourceType': income.get('sourceType', 'manual'),  # NEW: Show origin
+                'entryType': income.get('entryType')  # NEW: Show classification
             })
         
         for expense in expenses:
@@ -3636,7 +3806,161 @@ def init_reports_blueprint(mongo, token_required):
                 'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'title': expense.get('title', ''),
                 'category': expense.get('category', 'Other'),
-                'amount': expense.get('amount', 0)
+                'amount': expense.get('amount', 0),
+                'sourceType': expense.get('sourceType', 'manual'),  # NEW: Show origin
+                'entryType': expense.get('entryType')  # NEW: Show classification
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': len(all_incomes) + len(cogs_expenses) + len(operating_expenses),
+            'showing_count': len(incomes) + len(expenses),
+            'data': data,
+            'summary': {
+                # Revenue Breakdown
+                'sales_revenue': sales_revenue,
+                'other_income': other_income,
+                'total_revenue': total_revenue,
+                
+                # COGS
+                'cost_of_goods_sold': total_cogs,
+                
+                # Gross Profit (The "Aha!" Moment)
+                'gross_profit': gross_profit,
+                'gross_margin_percentage': round(gross_margin_pct, 2),
+                
+                # Operating Expenses
+                'operating_expenses': total_operating,
+                
+                # Operating Profit
+                'operating_profit': operating_profit,
+                
+                # Net Profit
+                'net_profit': net_profit,
+                
+                # Legacy fields (for backward compatibility)
+                'total_income': total_revenue,
+                'total_expenses': total_cogs + total_operating
+            },
+            'metadata': {
+                'calculation_method': '3_step_professional_pl',
+                'excludes_personal_expenses': True,
+                'gross_margin_note': 'Gross Margin % = (Gross Profit / Sales Revenue) × 100'
+            }
+        })
+
+    
+    def _preview_cash_flow(current_user, start_date, end_date, limit):
+        """
+        Preview cash flow data with Operating, Investing, and Financing Activities
+        
+        MODERNIZATION (Feb 18, 2026):
+        - Excludes personal expenses (entryType: 'personal')
+        - Categorizes cash flows into Operating, Investing, and Financing
+        - Shows net cash flow from each activity
+        """
+        # BASE QUERIES: Exclude personal expenses (Default Business Assumption)
+        income_query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            '$or': [
+                {'entryType': {'$ne': 'personal'}},
+                {'entryType': {'$exists': False}},
+                {'entryType': None}
+            ]
+        }
+        
+        expense_query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            '$or': [
+                {'entryType': {'$ne': 'personal'}},
+                {'entryType': {'$exists': False}},
+                {'entryType': None}
+            ]
+        }
+        
+        # Apply date filters
+        if start_date or end_date:
+            if start_date:
+                income_query['dateReceived'] = {'$gte': start_date}
+                expense_query['date'] = {'$gte': start_date}
+            if end_date:
+                income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                expense_query.setdefault('date', {})['$lte'] = end_date
+        
+        # Get all business incomes and expenses
+        all_incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
+        all_expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
+        
+        # OPERATING ACTIVITIES
+        # Cash from sales (all income)
+        cash_from_sales = sum(inc.get('amount', 0) for inc in all_incomes)
+        
+        # Cash paid for COGS
+        cogs_expenses = [exp for exp in all_expenses if exp.get('category') == 'Cost of Goods Sold']
+        cash_paid_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+        
+        # Cash paid for operating expenses (exclude COGS and asset purchases)
+        operating_expenses = [exp for exp in all_expenses 
+                            if exp.get('category') not in ['Cost of Goods Sold', 'Asset Purchase']]
+        cash_paid_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
+        
+        net_cash_operating = cash_from_sales - cash_paid_cogs - cash_paid_operating
+        
+        # INVESTING ACTIVITIES
+        # Asset purchases (negative cash flow)
+        asset_purchases = [exp for exp in all_expenses if exp.get('category') == 'Asset Purchase']
+        cash_paid_assets = sum(exp.get('amount', 0) for exp in asset_purchases)
+        
+        # Asset sales (positive cash flow) - from income with category 'assetSale'
+        asset_sales = [inc for inc in all_incomes if inc.get('category') == 'assetSale']
+        cash_from_asset_sales = sum(inc.get('amount', 0) for inc in asset_sales)
+        
+        net_cash_investing = cash_from_asset_sales - cash_paid_assets
+        
+        # FINANCING ACTIVITIES
+        # Get user data for drawings and contributions
+        user = mongo.db.users.find_one({'_id': current_user['_id']})
+        drawings = user.get('drawings', 0) if user else 0
+        owner_contributions = user.get('ownerContributions', 0) if user else 0
+        
+        net_cash_financing = owner_contributions - drawings
+        
+        # TOTAL NET CASH FLOW
+        net_cash_flow = net_cash_operating + net_cash_investing + net_cash_financing
+        
+        # Get limited transactions for preview
+        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
+        expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit // 2))
+        
+        # Format data
+        data = {
+            'incomes': [],
+            'expenses': []
+        }
+        
+        for income in incomes:
+            data['incomes'].append({
+                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'source': income.get('source', ''),
+                'category': income.get('category', 'other'),
+                'amount': income.get('amount', 0),
+                'sourceType': income.get('sourceType', 'manual'),
+                'entryType': income.get('entryType')
+            })
+        
+        for expense in expenses:
+            data['expenses'].append({
+                'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                'title': expense.get('title', ''),
+                'category': expense.get('category', 'Other'),
+                'amount': expense.get('amount', 0),
+                'sourceType': expense.get('sourceType', 'manual'),
+                'entryType': expense.get('entryType')
             })
         
         return jsonify({
@@ -3646,23 +3970,72 @@ def init_reports_blueprint(mongo, token_required):
             'showing_count': len(incomes) + len(expenses),
             'data': data,
             'summary': {
-                'total_income': total_income,
-                'total_expenses': total_expenses,
-                'net_profit': net_profit
+                # Operating Activities
+                'operating_activities': {
+                    'cash_from_sales': cash_from_sales,
+                    'cash_paid_for_cogs': -cash_paid_cogs,
+                    'cash_paid_for_operating': -cash_paid_operating,
+                    'net_cash_from_operations': net_cash_operating
+                },
+                # Investing Activities
+                'investing_activities': {
+                    'cash_from_asset_sales': cash_from_asset_sales,
+                    'cash_paid_for_assets': -cash_paid_assets,
+                    'net_cash_from_investing': net_cash_investing
+                },
+                # Financing Activities
+                'financing_activities': {
+                    'owner_contributions': owner_contributions,
+                    'owner_drawings': -drawings,
+                    'net_cash_from_financing': net_cash_financing
+                },
+                # Total
+                'net_cash_flow': net_cash_flow,
+                
+                # Legacy fields (for backward compatibility)
+                'total_income': cash_from_sales,
+                'total_expenses': cash_paid_cogs + cash_paid_operating + cash_paid_assets
+            },
+            'metadata': {
+                'calculation_method': 'cash_flow_statement',
+                'excludes_personal_expenses': True,
+                'categories': ['Operating', 'Investing', 'Financing']
             }
         })
     
-    def _preview_cash_flow(current_user, start_date, end_date, limit):
-        """Preview cash flow data"""
-        # Same as profit_loss but with different presentation
-        return _preview_profit_loss(current_user, start_date, end_date, limit)
-    
     def _preview_tax_summary(current_user, start_date, end_date, limit):
-        """Preview tax summary data"""
-        # Get income and expense data
-        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
-        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+        """
+        Preview tax summary data with business-only filtering
         
+        MODERNIZATION (Feb 18, 2026):
+        - Only includes business income (taxable)
+        - Only includes business expenses (tax-deductible)
+        - Excludes personal transactions from tax calculations
+        """
+        # BUSINESS-ONLY QUERIES: Only business transactions are taxable/deductible
+        income_query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            '$or': [
+                {'entryType': {'$ne': 'personal'}},
+                {'entryType': {'$exists': False}},
+                {'entryType': None}
+            ]
+        }
+        
+        expense_query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            '$or': [
+                {'entryType': {'$ne': 'personal'}},
+                {'entryType': {'$exists': False}},
+                {'entryType': None}
+            ]
+        }
+        
+        # Apply date filters
         if start_date or end_date:
             if start_date:
                 income_query['dateReceived'] = {'$gte': start_date}
@@ -3671,9 +4044,11 @@ def init_reports_blueprint(mongo, token_required):
                 income_query.setdefault('dateReceived', {})['$lte'] = end_date
                 expense_query.setdefault('date', {})['$lte'] = end_date
         
+        # Get all business incomes and expenses
         all_incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
         all_expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
         
+        # Calculate totals
         total_income = sum(inc.get('amount', 0) for inc in all_incomes)
         total_expenses = sum(exp.get('amount', 0) for exp in all_expenses)
         taxable_income = total_income - total_expenses
@@ -3681,21 +4056,61 @@ def init_reports_blueprint(mongo, token_required):
         # Get user's tax profile
         user = mongo.db.users.find_one({'_id': current_user['_id']})
         tax_profile = user.get('taxProfile', {})
+        tax_type = tax_profile.get('taxType', 'PIT')  # PIT or CIT
         
-        # Calculate estimated tax (simplified)
+        # Calculate estimated tax based on tax type
         estimated_tax = 0
-        if taxable_income > 0:
-            # Use 7% flat rate for simplicity (actual calculation is more complex)
-            estimated_tax = taxable_income * 0.07
+        tax_rate_display = ''
         
-        # Get limited transactions
+        if taxable_income > 0:
+            if tax_type == 'CIT':
+                # Corporate Income Tax: 30% flat rate
+                # Small company exemption: Revenue ≤₦100M AND Assets ≤₦250M
+                estimated_tax = taxable_income * 0.30
+                tax_rate_display = '30% (CIT)'
+            else:
+                # Personal Income Tax: Progressive rates
+                # First ₦800,000 is tax-exempt
+                if taxable_income <= 800000:
+                    estimated_tax = 0
+                    tax_rate_display = '0% (Below threshold)'
+                else:
+                    # Simplified progressive calculation
+                    taxable = taxable_income - 800000
+                    estimated_tax = taxable * 0.15  # Simplified rate
+                    tax_rate_display = 'Progressive (PIT)'
+        
+        effective_rate = (estimated_tax / taxable_income * 100) if taxable_income > 0 else 0
+        
+        # Get limited transactions for preview
         incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
         expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit // 2))
         
+        # Format data
         data = {
-            'incomes': [{'date': inc.get('dateReceived', datetime.utcnow()).isoformat() + 'Z', 'source': inc.get('source', ''), 'amount': inc.get('amount', 0)} for inc in incomes],
-            'expenses': [{'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z', 'title': exp.get('title', ''), 'amount': exp.get('amount', 0)} for exp in expenses]
+            'incomes': [],
+            'expenses': []
         }
+        
+        for income in incomes:
+            data['incomes'].append({
+                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'source': income.get('source', ''),
+                'category': income.get('category', 'other'),
+                'amount': income.get('amount', 0),
+                'sourceType': income.get('sourceType', 'manual'),
+                'entryType': income.get('entryType')
+            })
+        
+        for expense in expenses:
+            data['expenses'].append({
+                'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                'title': expense.get('title', ''),
+                'category': expense.get('category', 'Other'),
+                'amount': expense.get('amount', 0),
+                'sourceType': expense.get('sourceType', 'manual'),
+                'entryType': expense.get('entryType')
+            })
         
         return jsonify({
             'success': True,
@@ -3707,7 +4122,15 @@ def init_reports_blueprint(mongo, token_required):
                 'total_income': total_income,
                 'total_expenses': total_expenses,
                 'taxable_income': taxable_income,
-                'estimated_tax': estimated_tax
+                'estimated_tax': estimated_tax,
+                'effective_rate': round(effective_rate, 2),
+                'tax_type': tax_type,
+                'tax_rate_display': tax_rate_display
+            },
+            'metadata': {
+                'calculation_method': 'business_only_tax',
+                'excludes_personal_transactions': True,
+                'note': 'Only business income is taxable and only business expenses are deductible'
             }
         })
     
@@ -4193,7 +4616,14 @@ def init_reports_blueprint(mongo, token_required):
     @reports_bp.route('/bill-payments-pdf', methods=['POST'])
     @token_required
     def export_bill_payments_pdf(current_user):
-        """Export Bill Payments transactions as PDF"""
+        """
+        Export Bill Payments transactions as PDF with granular VAS breakdown
+        
+        MODERNIZATION (Feb 18, 2026):
+        - Groups bills by VAS type (electricity, cable_tv, internet, water, transportation)
+        - Shows granular breakdown instead of generic "Bill Payment"
+        - Uses sourceType from expenses for accurate categorization
+        """
         try:
             request_data = request.get_json() or {}
             report_type = 'bill_payments_pdf'
@@ -4213,19 +4643,53 @@ def init_reports_blueprint(mongo, token_required):
             
             start_date, end_date = parse_date_range(request_data)
             
-            query = {
-                'userId': ObjectId(str(current_user['_id'])),
-                'type': 'BILL_PAYMENT'
+            # MODERNIZATION: Query expenses with VAS sourceType for granular breakdown
+            expense_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                'sourceType': {'$regex': '^vas_(?!airtime|data)'}  # VAS bills (exclude airtime/data)
             }
             
             if start_date or end_date:
-                query['createdAt'] = {}
                 if start_date:
-                    query['createdAt']['$gte'] = start_date
+                    expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    query['createdAt']['$lte'] = end_date
+                    expense_query.setdefault('date', {})['$lte'] = end_date
             
-            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            # Get all VAS bill expenses
+            expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1))
+            
+            # Group by VAS type
+            bill_payments = {
+                'electricity': [],
+                'cable_tv': [],
+                'internet': [],
+                'water': [],
+                'transportation': [],
+                'other': []
+            }
+            
+            for exp in expenses:
+                source_type = exp.get('sourceType', '')
+                if source_type.startswith('vas_'):
+                    bill_type = source_type.replace('vas_', '')
+                    if bill_type in bill_payments:
+                        bill_payments[bill_type].append(exp)
+                    else:
+                        bill_payments['other'].append(exp)
+            
+            # Calculate totals
+            summary = {
+                'electricity': sum(e.get('amount', 0) for e in bill_payments['electricity']),
+                'cable_tv': sum(e.get('amount', 0) for e in bill_payments['cable_tv']),
+                'internet': sum(e.get('amount', 0) for e in bill_payments['internet']),
+                'water': sum(e.get('amount', 0) for e in bill_payments['water']),
+                'transportation': sum(e.get('amount', 0) for e in bill_payments['transportation']),
+                'other': sum(e.get('amount', 0) for e in bill_payments['other']),
+                'total': sum(e.get('amount', 0) for e in expenses),
+                'count': len(expenses)
+            }
             
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             user_data = {
@@ -4235,17 +4699,26 @@ def init_reports_blueprint(mongo, token_required):
                 'businessName': user.get('businessName', '')
             }
             
-            export_data = {'transactions': []}
+            export_data = {
+                'transactions': [],
+                'bill_payments': bill_payments,
+                'summary': summary
+            }
             
-            for txn in transactions:
+            # Format all transactions for PDF
+            for exp in expenses:
+                source_type = exp.get('sourceType', 'vas_other')
+                bill_type = source_type.replace('vas_', '').replace('_', ' ').title()
+                
                 export_data['transactions'].append({
-                    'date': txn.get('createdAt', datetime.utcnow()),
-                    'reference': txn.get('reference', txn.get('transactionReference', 'N/A')),
-                    'amount': txn.get('amount', 0),
-                    'fee': txn.get('fee', 0),
-                    'status': txn.get('status', 'UNKNOWN'),
-                    'category': txn.get('category', 'N/A'),
-                    'description': txn.get('description', f"Bill Payment - {txn.get('category', 'N/A')}")
+                    'date': exp.get('date', datetime.utcnow()),
+                    'reference': exp.get('referenceTransactionId', 'N/A'),
+                    'amount': exp.get('amount', 0),
+                    'fee': 0,  # Fees are included in amount for VAS
+                    'status': 'COMPLETED',
+                    'category': bill_type,
+                    'description': exp.get('title', f"{bill_type} Payment"),
+                    'sourceType': source_type
                 })
             
             pdf_generator = PDFGenerator()
@@ -4270,7 +4743,6 @@ def init_reports_blueprint(mongo, token_required):
                 'success': False,
                 'message': f'Failed to generate Bill Payments PDF: {str(e)}'
             }), 500
-    
     # Bill Payments Report - CSV
     @reports_bp.route('/bill-payments-csv', methods=['POST'])
     @token_required
@@ -4371,7 +4843,14 @@ def init_reports_blueprint(mongo, token_required):
     @reports_bp.route('/airtime-purchases-pdf', methods=['POST'])
     @token_required
     def export_airtime_purchases_pdf(current_user):
-        """Export Airtime Purchases transactions as PDF"""
+        """
+        Export Airtime Purchases transactions as PDF with network grouping
+        
+        MODERNIZATION (Feb 18, 2026):
+        - Groups airtime by network (MTN, Airtel, Glo, 9mobile)
+        - Uses sourceType 'vas_airtime' for accurate filtering
+        - Shows network-specific breakdown
+        """
         try:
             request_data = request.get_json() or {}
             report_type = 'airtime_purchases_pdf'
@@ -4391,19 +4870,39 @@ def init_reports_blueprint(mongo, token_required):
             
             start_date, end_date = parse_date_range(request_data)
             
-            query = {
-                'userId': ObjectId(str(current_user['_id'])),
-                'type': 'AIRTIME_PURCHASE'
+            # MODERNIZATION: Query expenses with sourceType 'vas_airtime'
+            expense_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                'sourceType': 'vas_airtime'
             }
             
             if start_date or end_date:
-                query['createdAt'] = {}
                 if start_date:
-                    query['createdAt']['$gte'] = start_date
+                    expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    query['createdAt']['$lte'] = end_date
+                    expense_query.setdefault('date', {})['$lte'] = end_date
             
-            transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1))
+            # Get all airtime expenses
+            expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1))
+            
+            # Group by network (from metadata)
+            by_network = {}
+            for exp in expenses:
+                metadata = exp.get('metadata', {})
+                network = metadata.get('network', 'Unknown')
+                if network not in by_network:
+                    by_network[network] = []
+                by_network[network].append(exp)
+            
+            # Calculate totals by network
+            network_summary = {}
+            for network, txns in by_network.items():
+                network_summary[network] = {
+                    'count': len(txns),
+                    'total': sum(e.get('amount', 0) for e in txns)
+                }
             
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             user_data = {
@@ -4413,17 +4912,28 @@ def init_reports_blueprint(mongo, token_required):
                 'businessName': user.get('businessName', '')
             }
             
-            export_data = {'transactions': []}
+            export_data = {
+                'transactions': [],
+                'by_network': by_network,
+                'network_summary': network_summary
+            }
             
-            for txn in transactions:
+            # Format all transactions for PDF
+            for exp in expenses:
+                metadata = exp.get('metadata', {})
+                network = metadata.get('network', 'Unknown')
+                phone = metadata.get('phoneNumber', 'N/A')
+                
                 export_data['transactions'].append({
-                    'date': txn.get('createdAt', datetime.utcnow()),
-                    'reference': txn.get('reference', txn.get('transactionReference', 'N/A')),
-                    'amount': txn.get('amount', 0),
-                    'fee': txn.get('fee', 0),
-                    'status': txn.get('status', 'UNKNOWN'),
-                    'phone': txn.get('phoneNumber', 'N/A'),
-                    'description': f"Airtime - {txn.get('phoneNumber', 'N/A')}"
+                    'date': exp.get('date', datetime.utcnow()),
+                    'reference': exp.get('referenceTransactionId', 'N/A'),
+                    'amount': exp.get('amount', 0),
+                    'fee': 0,  # Fees included in amount
+                    'status': 'COMPLETED',
+                    'phone': phone,
+                    'network': network,
+                    'description': f"Airtime - {network} - {phone}",
+                    'sourceType': 'vas_airtime'
                 })
             
             pdf_generator = PDFGenerator()
@@ -4874,6 +5384,361 @@ def init_reports_blueprint(mongo, token_required):
             return jsonify({
                 'success': False,
                 'message': f'Failed to get jobs: {str(e)}'
+            }), 500
+    
+
+    # ============================================================================
+    # STATEMENT OF AFFAIRS REPORT - COMPREHENSIVE BUSINESS REPORT
+    # ============================================================================
+    
+    @reports_bp.route('/statement-of-affairs-pdf', methods=['POST'])
+    @token_required
+    def export_statement_of_affairs_pdf(current_user):
+        """Export comprehensive Statement of Affairs as PDF"""
+        try:
+            request_data = request.get_json() or {}
+            report_type = 'statement_of_affairs_pdf'
+            
+            # Get tax type from request (default to PIT)
+            tax_type = request_data.get('taxType', 'PIT').upper()
+            if tax_type not in ['PIT', 'CIT']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tax type. Must be either PIT or CIT'
+                }), 400
+            
+            # Get tag filter (default to 'business' for compliance reports)
+            tag_filter = request_data.get('tagFilter', 'business').lower()
+            if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid tag filter. Must be one of: business, personal, all, untagged'
+                }), 400
+            
+            # Check user access
+            has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            
+            if not has_access:
+                return jsonify({
+                    'success': False,
+                    'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
+                    'data': {
+                        'required': credit_cost,
+                        'current': current_balance,
+                        'shortfall': credit_cost - current_balance
+                    }
+                }), 402
+            
+            # Parse date range
+            start_date, end_date = parse_date_range(request_data)
+            
+            # Build queries with tag filtering
+            # MODERNIZATION (Feb 18, 2026): Exclude personal expenses (Default Business Assumption)
+            income_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'entryType': {'$ne': 'personal'}},
+                    {'entryType': {'$exists': False}},
+                    {'entryType': None}
+                ]
+            }
+            expense_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'entryType': {'$ne': 'personal'}},
+                    {'entryType': {'$exists': False}},
+                    {'entryType': None}
+                ]
+            }
+            asset_query = {
+                'userId': current_user['_id'],
+                'status': 'active'
+            }
+            debtors_query = {
+                'userId': current_user['_id'],
+                'status': {'$ne': 'paid'}
+            }
+            creditors_query = {
+                'userId': current_user['_id'],
+                'status': {'$ne': 'paid'}
+            }
+            inventory_query = {
+                'userId': current_user['_id']
+            }
+            
+            # Apply legacy tag filtering (for backward compatibility)
+            if tag_filter == 'business':
+                income_query['tags'] = 'Business'
+                expense_query['tags'] = 'Business'
+            elif tag_filter == 'personal':
+                # Override: If user explicitly requests personal, show personal
+                income_query = {
+                    'userId': current_user['_id'],
+                    'status': 'active',
+                    'isDeleted': False,
+                    'tags': 'Personal'
+                }
+                expense_query = {
+                    'userId': current_user['_id'],
+                    'status': 'active',
+                    'isDeleted': False,
+                    'tags': 'Personal'
+                }
+            elif tag_filter == 'untagged':
+                income_query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
+                expense_query['$or'] = [
+                    {'tags': {'$exists': False}},
+                    {'tags': {'$size': 0}},
+                    {'tags': None}
+                ]
+            
+            # Apply date filtering
+            if start_date or end_date:
+                if start_date:
+                    income_query['dateReceived'] = {'$gte': start_date}
+                    expense_query['date'] = {'$gte': start_date}
+                    asset_query['purchaseDate'] = {'$gte': start_date}
+                if end_date:
+                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    expense_query.setdefault('date', {})['$lte'] = end_date
+                    asset_query.setdefault('purchaseDate', {})['$lte'] = end_date
+            
+            # Fetch all data in parallel (6 collections)
+            results = fetch_collections_parallel({
+                'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
+                'expenses': lambda: list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses'])),
+                'assets': lambda: list(mongo.db.assets.find(asset_query, PDF_PROJECTIONS['assets'])),
+                'debtors': lambda: list(mongo.db.debtors.find(debtors_query, PDF_PROJECTIONS['debtors'])),
+                'creditors': lambda: list(mongo.db.creditors.find(creditors_query, PDF_PROJECTIONS['creditors'])),
+                'inventory': lambda: list(mongo.db.inventory.find(inventory_query, PDF_PROJECTIONS['inventory']))
+            }, max_workers=6)
+            
+            incomes = results['incomes']
+            expenses = results['expenses']
+            assets = results['assets']
+            debtors = results['debtors']
+            creditors = results['creditors']
+            inventory = results['inventory']
+            
+            # Prepare user data
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_data = {
+                'firstName': current_user.get('firstName', ''),
+                'lastName': current_user.get('lastName', ''),
+                'email': current_user.get('email', ''),
+                'businessName': user.get('businessName', '') if user else '',
+                'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
+            }
+            
+            # Prepare financial data
+            financial_data = {
+                'incomes': incomes,
+                'expenses': expenses
+            }
+            
+            # MODERNIZATION (Feb 18, 2026): Calculate 3-Step P&L
+            # Separate Sales Revenue from Other Income
+            sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
+            other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+            total_income = sales_revenue + other_income
+            
+            # Separate COGS from Operating Expenses
+            cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
+            operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+            
+            total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+            total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
+            total_expenses = total_cogs + total_operating
+            
+            # Calculate 3-Step P&L
+            gross_profit = sales_revenue - total_cogs
+            gross_margin_pct = (gross_profit / sales_revenue * 100) if sales_revenue > 0 else 0
+            operating_profit = gross_profit - total_operating
+            net_income = operating_profit  # Net Profit
+            
+            # Group VAS expenses by type for granular breakdown
+            vas_expenses = {
+                'airtime': [],
+                'data': [],
+                'electricity': [],
+                'cable_tv': [],
+                'internet': [],
+                'water': [],
+                'transportation': [],
+                'other': []
+            }
+            
+            for exp in expenses:
+                source_type = exp.get('sourceType', '')
+                if source_type.startswith('vas_'):
+                    vas_type = source_type.replace('vas_', '')
+                    if vas_type in vas_expenses:
+                        vas_expenses[vas_type].append(exp)
+                    else:
+                        vas_expenses['other'].append(exp)
+            
+            # Calculate VAS totals
+            vas_totals = {
+                'airtime': sum(e.get('amount', 0) for e in vas_expenses['airtime']),
+                'data': sum(e.get('amount', 0) for e in vas_expenses['data']),
+                'electricity': sum(e.get('amount', 0) for e in vas_expenses['electricity']),
+                'cable_tv': sum(e.get('amount', 0) for e in vas_expenses['cable_tv']),
+                'internet': sum(e.get('amount', 0) for e in vas_expenses['internet']),
+                'water': sum(e.get('amount', 0) for e in vas_expenses['water']),
+                'transportation': sum(e.get('amount', 0) for e in vas_expenses['transportation']),
+                'other': sum(e.get('amount', 0) for e in vas_expenses['other']),
+                'total': sum(sum(e.get('amount', 0) for e in vas_expenses[k]) for k in vas_expenses)
+            }
+            
+            # Calculate current assets and liabilities
+            debtors_value = sum(d.get('amount', 0) for d in debtors)
+            creditors_value = sum(c.get('amount', 0) for c in creditors)
+            inventory_value = sum(i.get('quantity', 0) * i.get('unitCost', 0) for i in inventory)
+            
+            # Get cash balance from user's wallet (if available)
+            cash_balance = user.get('ficoreWalletBalance', 0) if user else 0
+            
+            # Get opening equity and drawings (if tracked)
+            opening_equity = user.get('openingEquity', 0) if user else 0
+            drawings = user.get('drawings', 0) if user else 0
+            
+            # Get tax paid (if tracked)
+            tax_paid = user.get('taxPaid', 0) if user else 0
+            
+            # Prepare tax data with current assets/liabilities and 3-Step P&L
+            tax_data = {
+                # Revenue Breakdown
+                'sales_revenue': sales_revenue,
+                'other_income': other_income,
+                'total_income': total_income,
+                
+                # COGS
+                'cost_of_goods_sold': total_cogs,
+                
+                # Gross Profit
+                'gross_profit': gross_profit,
+                'gross_margin_percentage': gross_margin_pct,
+                
+                # Operating Expenses
+                'operating_expenses': total_operating,
+                
+                # Operating Profit
+                'operating_profit': operating_profit,
+                
+                # Net Income (for equity calculation)
+                'net_income': net_income,
+                
+                # Legacy fields (for backward compatibility)
+                'deductible_expenses': total_expenses,
+                
+                # Tax info
+                'tax_type': tax_type,
+                'tax_paid': tax_paid,
+                
+                # Current Assets
+                'inventory_value': inventory_value,
+                'debtors_value': debtors_value,
+                'cash_balance': cash_balance,
+                
+                # Current Liabilities
+                'creditors_value': creditors_value,
+                
+                # Counts
+                'inventory_count': len(inventory),
+                'debtors_count': len(debtors),
+                'creditors_count': len(creditors),
+                
+                # Equity Components
+                'opening_equity': opening_equity,
+                'drawings': drawings,
+                
+                # VAS Breakdown (Granular Utility Reporting)
+                'vas_breakdown': vas_totals,
+                'vas_expenses': vas_expenses  # Detailed items for each category
+            }
+            
+            # CRITICAL: Calculate asset NBV as of endDate (not current date)
+            # This ensures historical accuracy for mid-period reports
+            from datetime import datetime, timezone, timedelta
+            
+            # Determine the "as of" date for depreciation calculation
+            calculation_date = end_date if end_date else datetime.now(timezone.utc)
+            
+            # Recalculate NBV for each asset as of the calculation_date
+            assets_data = []
+            for asset in assets:
+                # Get original values
+                original_cost = asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)
+                purchase_date_raw = asset.get('purchaseDate')
+                useful_life_years = asset.get('usefulLifeYears', 5)
+                
+                # Parse purchase date
+                if isinstance(purchase_date_raw, str):
+                    try:
+                        purchase_date = datetime.fromisoformat(purchase_date_raw.replace('Z', ''))
+                    except:
+                        purchase_date = datetime.now(timezone.utc)
+                elif isinstance(purchase_date_raw, datetime):
+                    purchase_date = purchase_date_raw
+                else:
+                    purchase_date = datetime.now(timezone.utc)
+                
+                # Calculate years elapsed as of calculation_date
+                years_elapsed = (calculation_date - purchase_date).days / 365.25
+                
+                # Calculate depreciation (straight-line method)
+                annual_depreciation = original_cost / useful_life_years if useful_life_years > 0 else 0
+                accumulated_depreciation = min(annual_depreciation * years_elapsed, original_cost)
+                
+                # Calculate NBV as of calculation_date
+                nbv_as_of_date = max(original_cost - accumulated_depreciation, 1.0 if asset.get('status') == 'active' else 0)
+                
+                # Create asset dict with recalculated NBV
+                asset_data = dict(asset)
+                asset_data['currentValue'] = nbv_as_of_date
+                asset_data['accumulatedDepreciation'] = accumulated_depreciation
+                assets_data.append(asset_data)
+            
+            # Generate PDF
+            pdf_generator = PDFGenerator()
+            pdf_buffer = pdf_generator.generate_statement_of_affairs(
+                user_data=user_data,
+                financial_data=financial_data,
+                tax_data=tax_data,
+                assets_data=assets_data,
+                start_date=start_date,
+                end_date=end_date,
+                tax_type=tax_type
+            )
+            
+            # Deduct credits if not premium
+            if not is_premium and credit_cost > 0:
+                new_balance = deduct_credits(current_user, credit_cost, report_type)
+            
+            # Log export event
+            log_export_event(current_user, report_type, 'pdf', success=True)
+            
+            # Return PDF file
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'ficore_statement_of_affairs_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
+            )
+            
+        except Exception as e:
+            log_export_event(current_user, 'statement_of_affairs_pdf', 'pdf', success=False, error=str(e))
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Statement of Affairs PDF: {str(e)}'
             }), 500
     
     return reports_bp

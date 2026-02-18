@@ -2920,6 +2920,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Airtime', network],
                 'vasTransactionId': transaction_id,
+                'sourceType': 'vas_airtime',  # Granular source type for VAS airtime purchases
                 'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'metadata': {
@@ -2945,6 +2946,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             expense_entry = auto_populate_expense_fields(expense_entry)
             
             mongo.db.expenses.insert_one(expense_entry)
+            
+            # AUTOMATIC DRAWINGS (Phase 2.2): Check if this should create a drawing entry
+            from blueprints.drawings_auto import check_and_create_drawing
+            check_and_create_drawing(mongo, expense_entry, ObjectId(user_id))
             
             print(f'SUCCESS: Airtime purchase complete: User {user_id}, Face Value: ₦ {amount}, Charged: ₦ {selling_price}, Margin: ₦ {margin}, Provider: {provider}')
             
@@ -3713,6 +3718,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Data', network],
                 'vasTransactionId': transaction_id,
+                'sourceType': 'vas_data',  # Granular source type for VAS data purchases
                 'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'metadata': {
@@ -3735,6 +3741,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             expense_entry = auto_populate_expense_fields(expense_entry)
             
             mongo.db.expenses.insert_one(expense_entry)
+            
+            # AUTOMATIC DRAWINGS (Phase 2.2): Check if this should create a drawing entry
+            from blueprints.drawings_auto import check_and_create_drawing
+            check_and_create_drawing(mongo, expense_entry, ObjectId(user_id))
             
             # RETENTION DATA for Frontend Trust Building
             retention_data = {

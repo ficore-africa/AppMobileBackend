@@ -32,6 +32,7 @@ from blueprints.creditors import init_creditors_blueprint
 from blueprints.inventory import init_inventory_blueprint
 from blueprints.assets import init_assets_blueprint
 from blueprints.dashboard import init_dashboard_blueprint
+from blueprints.drawings_routes import init_drawings_blueprint  # Phase 2.2: Automatic Drawings
 from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
@@ -381,6 +382,7 @@ creditors_blueprint = init_creditors_blueprint(mongo, token_required, serialize_
 inventory_blueprint = init_inventory_blueprint(mongo, token_required, serialize_doc)
 assets_blueprint = init_assets_blueprint(mongo, token_required, serialize_doc)
 dashboard_blueprint = init_dashboard_blueprint(mongo, token_required, serialize_doc)
+drawings_blueprint = init_drawings_blueprint(mongo, token_required, serialize_doc)  # Phase 2.2
 rewards_blueprint = init_rewards_blueprint(mongo, token_required, serialize_doc)
 subscription_blueprint = init_subscription_blueprint(mongo, token_required, serialize_doc)
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
@@ -440,6 +442,8 @@ app.register_blueprint(creditors_blueprint)
 app.register_blueprint(inventory_blueprint)
 app.register_blueprint(assets_blueprint)
 app.register_blueprint(dashboard_blueprint)
+app.register_blueprint(drawings_blueprint)  # Phase 2.2: Automatic Drawings
+print("✓ Drawings blueprint registered at /api/drawings")
 app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)

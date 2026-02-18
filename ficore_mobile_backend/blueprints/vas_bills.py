@@ -856,6 +856,7 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                         'description': retention_description,
                         'isPending': False,
                         'isRecurring': False,
+                        'sourceType': f'vas_{category}',  # Granular source type for VAS bill payments (e.g., 'vas_electricity', 'vas_cable_tv')
                         'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
                         'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                         'metadata': {

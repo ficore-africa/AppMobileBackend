@@ -61,7 +61,18 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
             return False
 
     def create_cogs_expense(item_id, quantity_sold, user_id):
-        """Create COGS expense when inventory is sold"""
+        """
+        Create COGS expense when inventory is sold
+        
+        IMPORTANT (Phase 2.1 - COGS Separation):
+        This should ONLY be called for actual SALES, not for:
+        - Damage/spoilage
+        - Theft/loss
+        - Internal usage
+        - Stock adjustments
+        
+        Only sales generate revenue, so only sales should generate COGS.
+        """
         try:
             # Get item details
             item = mongo.db.inventory_items.find_one({'_id': item_id})
@@ -958,8 +969,9 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
             # Update item stock
             update_item_stock(item_object_id, current_user['_id'])
             
-            # Create COGS expense for out movements
-            if movement_type == 'out':
+            # COGS FIX (Phase 2.1): Only create COGS expense for SALES, not all out movements
+            # Other out movements (damage, theft, adjustment) should NOT create COGS
+            if movement_type == 'out' and data.get('reason') == 'sale':
                 create_cogs_expense(item_object_id, abs(quantity), current_user['_id'])
             
             # Get created movement
@@ -1398,8 +1410,11 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
             # Update item stock using helper function
             update_item_stock(item_object_id, current_user['_id'])
             
-            # Create COGS expense
-            create_cogs_expense(item_object_id, quantity, current_user['_id'])
+            # COGS FIX (Phase 2.1): Only create COGS expense if this is a SALE
+            # Check if sellingPrice is provided (indicates a sale)
+            # Otherwise, this might be usage/damage/waste which should NOT create COGS
+            if data.get('sellingPrice') is not None:
+                create_cogs_expense(item_object_id, quantity, current_user['_id'])
             
             # Get created movement
             created_movement = mongo.db.inventory_movements.find_one({'_id': result.inserted_id})
@@ -1968,5 +1983,198 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ==================== SHRINKAGE MANAGEMENT (Light Approach) ====================
+    
+    @inventory_bp.route('/mark-shrinkage', methods=['POST'])
+    @token_required
+    def mark_shrinkage(current_user):
+        """
+        Mark inventory items as damaged/lost/stolen (Shrinkage)
+        
+        The "Light" Approach:
+        1. Reduce Inventory Asset value
+        2. Create Shrinkage Expense (Operating Expense)
+        3. Balance Sheet stays balanced
+        4. Profit & Loss accurately reflects the loss
+        
+        This is NOT a sale, so NO COGS is created.
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate required fields
+            required_fields = ['itemId', 'quantity', 'reason']
+            for field in required_fields:
+                if not data.get(field):
+                    return jsonify({
+                        'success': False,
+                        'message': f'{field} is required',
+                        'errors': {field: [f'{field} is required']}
+                    }), 400
+            
+            # Validate item ID
+            if not ObjectId.is_valid(data['itemId']):
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid item ID'
+                }), 400
+            
+            item_object_id = ObjectId(data['itemId'])
+            
+            # Check if item exists
+            item = mongo.db.inventory_items.find_one({
+                '_id': item_object_id,
+                'userId': current_user['_id']
+            })
+            
+            if not item:
+                return jsonify({
+                    'success': False,
+                    'message': 'Item not found'
+                }), 404
+            
+            # Validate quantity
+            try:
+                quantity = int(data['quantity'])
+                if quantity <= 0:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Quantity must be greater than 0',
+                        'errors': {'quantity': ['Quantity must be greater than 0']}
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid quantity format',
+                    'errors': {'quantity': ['Quantity must be a valid number']}
+                }), 400
+            
+            # Check if sufficient stock
+            current_stock = item['currentStock']
+            if quantity > current_stock:
+                return jsonify({
+                    'success': False,
+                    'message': 'Insufficient stock',
+                    'errors': {'quantity': [f'Cannot mark {quantity} units as shrinkage. Only {current_stock} units available.']},
+                    'data': {'currentStock': current_stock, 'requestedQuantity': quantity}
+                }), 400
+            
+            # Validate reason
+            valid_reasons = ['damaged', 'lost', 'stolen', 'expired', 'spoiled', 'other']
+            reason = data['reason'].lower()
+            if reason not in valid_reasons:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid shrinkage reason',
+                    'errors': {'reason': [f'Reason must be one of: {", ".join(valid_reasons)}']}
+                }), 400
+            
+            # Calculate shrinkage value
+            shrinkage_value = item['costPrice'] * quantity
+            
+            # Create inventory movement record (out movement for shrinkage)
+            movement_data = {
+                '_id': ObjectId(),
+                'userId': current_user['_id'],
+                'itemId': item_object_id,
+                'movementType': 'out',
+                'quantity': quantity,
+                'unitCost': item['costPrice'],
+                'totalCost': shrinkage_value,
+                'reason': f'shrinkage_{reason}',
+                'reference': data.get('reference', '').strip() or f"SHRINKAGE-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                'stockBefore': current_stock,
+                'stockAfter': current_stock - quantity,
+                'movementDate': datetime.utcnow(),
+                'notes': data.get('notes', '').strip() or f"Inventory shrinkage: {reason}",
+                'shrinkageType': reason,  # Track shrinkage type
+                'createdAt': datetime.utcnow()
+            }
+            
+            # Insert movement
+            movement_result = mongo.db.inventory_movements.insert_one(movement_data)
+            
+            # Update item stock using helper function
+            update_item_stock(item_object_id, current_user['_id'])
+            
+            # 💰 SHRINKAGE EXPENSE: Create Operating Expense (NOT COGS)
+            # This reduces Inventory Asset and increases Shrinkage Expense
+            # Balance Sheet stays balanced, P&L shows the loss
+            shrinkage_expense = {
+                '_id': ObjectId(),
+                'userId': current_user['_id'],
+                'amount': shrinkage_value,
+                'title': f"Inventory Shrinkage - {item['itemName']}",
+                'description': f"Shrinkage ({reason}): {quantity} units of {item['itemName']}",
+                'category': 'Shrinkage',  # Operating Expense category
+                'date': datetime.utcnow(),
+                'tags': ['Shrinkage', 'Inventory', 'Operating Expense', 'Auto-generated'],
+                'paymentMethod': 'inventory',
+                'notes': f"Auto-generated shrinkage expense. Item: {item['itemName']}, Quantity: {quantity}, Unit Cost: ₦{item['costPrice']:,.2f}, Reason: {reason}",
+                'status': 'active',
+                'isDeleted': False,
+                'metadata': {
+                    'source': 'inventory_shrinkage',
+                    'itemId': str(item_object_id),
+                    'itemName': item['itemName'],
+                    'movementId': str(movement_result.inserted_id),
+                    'shrinkageType': reason,
+                    'quantity': quantity,
+                    'unitCost': item['costPrice'],
+                    'automated': True
+                },
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()
+            }
+            
+            expense_result = mongo.db.expenses.insert_one(shrinkage_expense)
+            
+            print(f"✅ SHRINKAGE RECORDED:")
+            print(f"   Item: {item['itemName']}")
+            print(f"   Quantity: {quantity} units")
+            print(f"   Value: ₦{shrinkage_value:,.2f}")
+            print(f"   Reason: {reason}")
+            print(f"   Inventory Asset: -₦{shrinkage_value:,.2f}")
+            print(f"   Shrinkage Expense: +₦{shrinkage_value:,.2f}")
+            print(f"   Balance Sheet: Balanced ✅")
+            
+            # Get created movement for response
+            created_movement = mongo.db.inventory_movements.find_one({'_id': movement_result.inserted_id})
+            movement_response = serialize_doc(created_movement.copy())
+            
+            # Format dates
+            movement_response['movementDate'] = safe_date_format(movement_response.get('movementDate'), default_to_now=True)
+            movement_response['createdAt'] = safe_date_format(movement_response.get('createdAt'), default_to_now=True)
+            
+            # Add item info
+            movement_response['itemName'] = item['itemName']
+            movement_response['itemCode'] = item.get('itemCode')
+            movement_response['unit'] = item['unit']
+            movement_response['shrinkageValue'] = shrinkage_value
+            movement_response['expenseId'] = str(expense_result.inserted_id)
+            
+            return jsonify({
+                'success': True,
+                'data': movement_response,
+                'message': f'Shrinkage recorded successfully. {quantity} units of {item["itemName"]} marked as {reason}.',
+                'accounting': {
+                    'inventoryReduction': shrinkage_value,
+                    'shrinkageExpense': shrinkage_value,
+                    'balanceSheetImpact': 'Balanced',
+                    'profitLossImpact': f'-₦{shrinkage_value:,.2f}'
+                }
+            }), 201
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to record shrinkage',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ==================== COGS SEPARATION (Phase 2.1) ====================
+    # Import and add purchase/sell endpoints for COGS separation
+    from .inventory_cogs import add_cogs_routes
+    add_cogs_routes(inventory_bp, mongo, token_required)
 
     return inventory_bp
