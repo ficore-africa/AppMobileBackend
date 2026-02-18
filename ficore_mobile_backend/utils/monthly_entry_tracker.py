@@ -470,6 +470,7 @@ class MonthlyEntryTracker:
     def get_monthly_stats(self, user_id: ObjectId) -> Dict[str, Any]:
         """
         Get comprehensive monthly statistics for user
+        CRITICAL FIX: Properly validate subscription status against end date
         """
         monthly_data = self.get_user_monthly_count(user_id)
         
@@ -483,13 +484,21 @@ class MonthlyEntryTracker:
             # Check admin status
             is_admin = user.get('isAdmin', False)
             
-            # Check subscription status
-            is_subscribed = user.get('isSubscribed', False)
+            # CRITICAL FIX: Check subscription status by validating BOTH flag AND end date
+            # Don't trust isSubscribed flag alone - it may be stale
             subscription_end = user.get('subscriptionEndDate')
-            if is_subscribed and subscription_end and subscription_end > datetime.utcnow():
+            
+            # User is ONLY considered subscribed if:
+            # 1. isSubscribed flag is True AND
+            # 2. subscriptionEndDate exists AND
+            # 3. subscriptionEndDate is in the future
+            if user.get('isSubscribed', False) and subscription_end and subscription_end > datetime.utcnow():
+                is_subscribed = True
                 subscription_type = user.get('subscriptionType')
             else:
+                # Subscription expired or invalid - treat as free user
                 is_subscribed = False
+                subscription_type = None
         
         # Determine tier (Admin > Premium > Free)
         if is_admin:
