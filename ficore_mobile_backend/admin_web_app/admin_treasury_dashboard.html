@@ -451,6 +451,31 @@
             <div class="provider-comparison" id="transactionStats"></div>
         </div>
 
+        <!-- Revenue Weighting Section -->
+        <div class="section" id="revenueWeightingSection" style="display: none;">
+            <h2 class="section-title">⚖️ Revenue Weighting: Subscription vs Transactional</h2>
+            <div class="provider-comparison" id="revenueWeighting"></div>
+        </div>
+
+        <!-- Internal Economy Section -->
+        <div class="section" id="internalEconomySection" style="display: none;">
+            <h2 class="section-title">💰 Internal Economy (FiCore Credits & Wallet Float)</h2>
+            <div class="breakdown-grid" id="internalEconomy"></div>
+        </div>
+
+        <!-- Freemium Engagement Section -->
+        <div class="section" id="freemiumSection" style="display: none;">
+            <h2 class="section-title">📈 Freemium User Engagement</h2>
+            <div class="provider-comparison" id="freemiumEngagement"></div>
+        </div>
+
+        <!-- Expired User Activity Section -->
+        <div class="section" id="expiredUserSection" style="display: none;">
+            <h2 class="section-title">🔄 Expired User Activity (Freemium Conversion)</h2>
+            <div class="breakdown-grid" id="expiredUserActivity"></div>
+            <div class="provider-comparison" id="expiredUsersList" style="margin-top: 20px;"></div>
+        </div>
+
         <!-- User Profitability Search -->
         <div class="section">
             <h2 class="section-title">🔍 User Profitability Search</h2>
@@ -542,6 +567,11 @@
                 if (data.success) {
                     currentAnalytics = data.data;
                     displayAnalytics(data.data);
+                    
+                    // Load additional metrics
+                    loadInternalEconomy(period);
+                    loadFreemiumEngagement(period);
+                    loadExpiredUserActivity();
                 } else {
                     showError(data.message || 'Failed to load analytics');
                 }
@@ -599,6 +629,12 @@
             document.getElementById('costSection').style.display = 'block';
             document.getElementById('providerSection').style.display = 'block';
             document.getElementById('transactionSection').style.display = 'block';
+            document.getElementById('revenueWeightingSection').style.display = 'block';
+            
+            // Display revenue weighting if available
+            if (data.revenueWeighting) {
+                displayRevenueWeighting(data.revenueWeighting);
+            }
         }
 
         // Display revenue breakdown
@@ -881,6 +917,344 @@
                     </div>
                 </div>
             `;
+        }
+
+        // Display revenue weighting
+        function displayRevenueWeighting(weighting) {
+            const container = document.getElementById('revenueWeighting');
+            
+            container.innerHTML = `
+                <div class="provider-card">
+                    <div class="provider-name">💳 Subscription Revenue</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat">
+                            <span class="stat-label">Total Amount</span>
+                            <span class="stat-value">${formatCurrency(weighting.subscriptionRevenue.amount)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Percentage of Total</span>
+                            <span class="stat-value">${formatPercentage(weighting.subscriptionRevenue.percentage)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Active Subscriptions</span>
+                            <span class="stat-value">${formatCurrency(weighting.subscriptionRevenue.breakdown.activeSubscriptions)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">FC Credits Purchased</span>
+                            <span class="stat-value">${formatCurrency(weighting.subscriptionRevenue.breakdown.fcCreditsPurchased)}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="provider-card">
+                    <div class="provider-name">💸 Transactional Revenue</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat">
+                            <span class="stat-label">Total Amount</span>
+                            <span class="stat-value">${formatCurrency(weighting.transactionalRevenue.amount)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Percentage of Total</span>
+                            <span class="stat-value">${formatPercentage(weighting.transactionalRevenue.percentage)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">VAS Commissions</span>
+                            <span class="stat-value">${formatCurrency(weighting.transactionalRevenue.breakdown.vasCommissions)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Deposit Fees</span>
+                            <span class="stat-value">${formatCurrency(weighting.transactionalRevenue.breakdown.depositFees)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Load internal economy metrics
+        async function loadInternalEconomy(period) {
+            const token = getAdminToken();
+            if (!token) return;
+
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/internal-economy?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/internal-economy`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayInternalEconomy(data.data);
+                        document.getElementById('internalEconomySection').style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load internal economy:', error);
+            }
+        }
+
+        // Display internal economy
+        function displayInternalEconomy(data) {
+            const container = document.getElementById('internalEconomy');
+            
+            container.innerHTML = `
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total FC Credits Outstanding</div>
+                    <div class="breakdown-value">${formatCurrency(data.fcCredits.totalOutstanding)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Users with FC Balance</div>
+                    <div class="breakdown-value">${data.fcCredits.usersWithBalance}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Avg FC Balance per User</div>
+                    <div class="breakdown-value">${formatCurrency(data.fcCredits.averageBalance)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">FC Purchased (Period)</div>
+                    <div class="breakdown-value">${formatCurrency(data.fcCredits.purchasedThisPeriod.amount)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">FC Consumed (Period)</div>
+                    <div class="breakdown-value">${formatCurrency(data.fcCredits.consumedThisPeriod.amount)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Net FC Position</div>
+                    <div class="breakdown-value">${formatCurrency(data.fcCredits.netPosition)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total Wallet Float</div>
+                    <div class="breakdown-value">${formatCurrency(data.walletFloat.totalOutstanding)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Wallets with Balance</div>
+                    <div class="breakdown-value">${data.walletFloat.walletsWithBalance}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Avg Wallet Balance</div>
+                    <div class="breakdown-value">${formatCurrency(data.walletFloat.averageBalance)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Deposits (Period)</div>
+                    <div class="breakdown-value">${formatCurrency(data.walletFloat.depositsThisPeriod.amount)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Spend (Period)</div>
+                    <div class="breakdown-value">${formatCurrency(data.walletFloat.spendThisPeriod.amount)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total Internal Economy</div>
+                    <div class="breakdown-value" style="color: #FFD700; font-size: 24px;">${formatCurrency(data.totalInternalEconomy)}</div>
+                </div>
+            `;
+        }
+
+        // Load freemium engagement
+        async function loadFreemiumEngagement(period) {
+            const token = getAdminToken();
+            if (!token) return;
+
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/freemium-engagement?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/freemium-engagement`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayFreemiumEngagement(data.data);
+                        document.getElementById('freemiumSection').style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load freemium engagement:', error);
+            }
+        }
+
+        // Display freemium engagement
+        function displayFreemiumEngagement(data) {
+            const container = document.getElementById('freemiumEngagement');
+            
+            container.innerHTML = `
+                <div class="provider-card">
+                    <div class="provider-name">👑 Premium Users</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat">
+                            <span class="stat-label">Count</span>
+                            <span class="stat-value">${data.overview.premiumUsers.count} (${data.overview.premiumUsers.percentage}%)</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Transactions</span>
+                            <span class="stat-value">${data.premiumMetrics.transactionCount}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Total Volume</span>
+                            <span class="stat-value">${formatCurrency(data.premiumMetrics.totalVolume)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Commission Earned</span>
+                            <span class="stat-value">${formatCurrency(data.premiumMetrics.totalCommission)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Avg Volume/User</span>
+                            <span class="stat-value">${formatCurrency(data.premiumMetrics.averageVolumePerUser)}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="provider-card">
+                    <div class="provider-name">🆓 Freemium Users</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat">
+                            <span class="stat-label">Count</span>
+                            <span class="stat-value">${data.overview.freemiumUsers.count} (${data.overview.freemiumUsers.percentage}%)</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Transactions</span>
+                            <span class="stat-value">${data.freemiumMetrics.transactionCount}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Total Volume</span>
+                            <span class="stat-value">${formatCurrency(data.freemiumMetrics.totalVolume)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Commission Earned</span>
+                            <span class="stat-value">${formatCurrency(data.freemiumMetrics.totalCommission)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Commission Share</span>
+                            <span class="stat-value">${formatPercentage(data.freemiumMetrics.commissionPercentage)}</span>
+                        </div>
+                        <div class="provider-stat">
+                            <span class="stat-label">Avg Volume/User</span>
+                            <span class="stat-value">${formatCurrency(data.freemiumMetrics.averageVolumePerUser)}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="provider-card" style="grid-column: 1 / -1; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700;">
+                    <div class="provider-name">💡 Key Insight</div>
+                    <div class="provider-stats">
+                        <div class="provider-stat" style="border: none;">
+                            <span style="color: #e0e0e0; font-size: 16px;">${data.insights.message}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Load expired user activity
+        async function loadExpiredUserActivity() {
+            const token = getAdminToken();
+            if (!token) return;
+
+            const url = `${API_BASE_URL}/admin/treasury/expired-user-activity?days=90`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayExpiredUserActivity(data.data);
+                        document.getElementById('expiredUserSection').style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load expired user activity:', error);
+            }
+        }
+
+        // Display expired user activity
+        function displayExpiredUserActivity(data) {
+            const summaryContainer = document.getElementById('expiredUserActivity');
+            const listContainer = document.getElementById('expiredUsersList');
+            
+            // Summary stats
+            summaryContainer.innerHTML = `
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total Expired Users</div>
+                    <div class="breakdown-value">${data.summary.totalExpiredUsers}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Active Freemium Users</div>
+                    <div class="breakdown-value">${data.summary.activeFreemiumUsers}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Inactive Users</div>
+                    <div class="breakdown-value">${data.summary.inactiveUsers}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Freemium Conversion Rate</div>
+                    <div class="breakdown-value">${formatPercentage(data.summary.freemiumConversionRate)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total Freemium Volume</div>
+                    <div class="breakdown-value">${formatCurrency(data.summary.totalFreemiumVolume)}</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-label">Total Freemium Commission</div>
+                    <div class="breakdown-value">${formatCurrency(data.summary.totalFreemiumCommission)}</div>
+                </div>
+            `;
+            
+            // Top expired users list
+            if (data.expiredUsers && data.expiredUsers.length > 0) {
+                const topUsers = data.expiredUsers.slice(0, 10); // Show top 10
+                listContainer.innerHTML = topUsers.map(user => {
+                    const statusClass = user.status === 'Active Freemium' ? 'badge-profitable' : 
+                                       user.status === 'Recently Expired' ? 'badge-at-risk' : 'badge-unprofitable';
+                    
+                    return `
+                        <div class="provider-card">
+                            <div class="provider-name">${user.displayName}</div>
+                            <div class="provider-stats">
+                                <div class="provider-stat">
+                                    <span class="stat-label">Email</span>
+                                    <span class="stat-value" style="font-size: 12px;">${user.email}</span>
+                                </div>
+                                <div class="provider-stat">
+                                    <span class="stat-label">Days Since Expiry</span>
+                                    <span class="stat-value">${user.daysSinceExpiry} days</span>
+                                </div>
+                                <div class="provider-stat">
+                                    <span class="stat-label">Post-Expiry Transactions</span>
+                                    <span class="stat-value">${user.postExpiryActivity.transactionCount}</span>
+                                </div>
+                                <div class="provider-stat">
+                                    <span class="stat-label">Post-Expiry Volume</span>
+                                    <span class="stat-value">${formatCurrency(user.postExpiryActivity.totalVolume)}</span>
+                                </div>
+                                <div class="provider-stat">
+                                    <span class="stat-label">Commission Earned</span>
+                                    <span class="stat-value">${formatCurrency(user.postExpiryActivity.totalCommission)}</span>
+                                </div>
+                                <div class="provider-stat">
+                                    <span class="stat-label">Status</span>
+                                    <span class="badge ${statusClass}">${user.status}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listContainer.innerHTML = '<p style="color: #b0b0b0;">No expired users found in the last 90 days</p>';
+            }
         }
 
         // Export data to CSV
