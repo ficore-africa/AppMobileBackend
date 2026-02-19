@@ -499,6 +499,20 @@ class MonthlyEntryTracker:
                 # Subscription expired or invalid - treat as free user
                 is_subscribed = False
                 subscription_type = None
+                
+                # ✅ CRITICAL FIX (Feb 19, 2026): Clean up stale subscription data in database
+                # This prevents frontend from showing "MONTHLY" status for expired subscriptions
+                if user.get('isSubscribed', False) or user.get('subscriptionType'):
+                    self.mongo.db.users.update_one(
+                        {'_id': user_id},
+                        {
+                            '$set': {
+                                'isSubscribed': False,
+                                'subscriptionType': None
+                            }
+                        }
+                    )
+                    print(f"✅ Cleaned up stale subscription data for user {user_id}")
         
         # Determine tier (Admin > Premium > Free)
         if is_admin:
