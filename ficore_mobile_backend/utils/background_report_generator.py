@@ -147,8 +147,11 @@ class BackgroundReportGenerator:
         
         This is where the actual PDF generation happens.
         """
+        print(f"🔄 [WORKER START] Job {job_id} - Thread started")
+        
         try:
             # Update status to processing
+            print(f"📊 [WORKER] Job {job_id} - Updating status to PROCESSING")
             self._update_job(job_id, {
                 'status': ReportJobStatus.PROCESSING,
                 'progress': 10,
@@ -156,7 +159,9 @@ class BackgroundReportGenerator:
             })
             
             # Call the generation function (this is the slow part)
+            print(f"📄 [WORKER] Job {job_id} - Calling generation function...")
             pdf_buffer = generation_function(*args, **kwargs)
+            print(f"✅ [WORKER] Job {job_id} - PDF generated successfully ({pdf_buffer.getbuffer().nbytes} bytes)")
             
             # Update progress
             self._update_job(job_id, {
@@ -165,6 +170,7 @@ class BackgroundReportGenerator:
             })
             
             # Save PDF to GridFS (MongoDB's file storage)
+            print(f"💾 [WORKER] Job {job_id} - Saving to GridFS...")
             from gridfs import GridFS
             fs = GridFS(self.db)
             
@@ -190,8 +196,10 @@ class BackgroundReportGenerator:
             )
             
             file_size = pdf_buffer.getbuffer().nbytes
+            print(f"✅ [WORKER] Job {job_id} - Saved to GridFS with file_id: {file_id}")
             
             # Update job as completed
+            print(f"🎉 [WORKER] Job {job_id} - Updating status to COMPLETED")
             self._update_job(job_id, {
                 'status': ReportJobStatus.COMPLETED,
                 'progress': 100,
@@ -202,12 +210,16 @@ class BackgroundReportGenerator:
                 'fileSize': file_size
             })
             
-            print(f"✅ Report job {job_id} completed successfully")
+            print(f"✅ [WORKER COMPLETE] Job {job_id} completed successfully")
             
         except Exception as e:
             # Update job as failed
             error_msg = str(e)
             error_trace = traceback.format_exc()
+            
+            print(f"❌ [WORKER FAILED] Job {job_id} - Error: {error_msg}")
+            print(f"📋 [WORKER FAILED] Job {job_id} - Stack trace:")
+            print(error_trace)
             
             self._update_job(job_id, {
                 'status': ReportJobStatus.FAILED,

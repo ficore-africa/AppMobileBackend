@@ -4557,7 +4557,7 @@ def init_reports_blueprint(mongo, token_required):
                             'source': inc.get('source', ''),
                             'amount': inc.get('amount', 0),
                             'dateReceived': inc.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
-                            'category': inc.get('category', {}).get('name', 'Other')
+                            'category': inc.get('category', 'Other')  # ✅ Always string now
                         }
                         for inc in preview_incomes
                     ],
@@ -4567,7 +4567,7 @@ def init_reports_blueprint(mongo, token_required):
                             'title': exp.get('title', ''),
                             'amount': exp.get('amount', 0),
                             'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z',
-                            'category': exp.get('category', {}).get('name', 'Other')
+                            'category': exp.get('category', 'Other')  # ✅ Always string now
                         }
                         for exp in preview_expenses
                     ],

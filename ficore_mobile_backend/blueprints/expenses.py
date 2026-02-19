@@ -244,11 +244,20 @@ def create_expense():
                 if is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow()):
                     is_premium_entry = True
             
+            # Normalize category to always be a string (not dict)
+            # Frontend sometimes sends {"name": "Food", "icon": "..."} and sometimes just "Food"
+            # We standardize to always store as string for consistency
+            category_value = data['category']
+            if isinstance(category_value, dict):
+                category_value = category_value.get('name', 'Other')
+            elif not isinstance(category_value, str):
+                category_value = str(category_value)
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
                 'description': data['description'],
-                'category': data['category'],
+                'category': category_value,  # ✅ ALWAYS STRING - normalized above
                 'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
                 'budgetId': data.get('budgetId'),
                 'tags': data.get('tags', []),
