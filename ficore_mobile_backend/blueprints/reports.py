@@ -3678,7 +3678,19 @@ def init_reports_blueprint(mongo, token_required):
         })
     
     def _preview_expenses(current_user, start_date, end_date, limit):
-        """Preview expense records"""
+        """
+        Preview expense records
+        
+        CRITICAL FIX (Feb 19, 2026):
+        - Normalize category format (handle dict vs string)
+        """
+        
+        def normalize_category(category):
+            """Normalize category to string (handle dict format)"""
+            if isinstance(category, dict):
+                return category.get('name', 'Other')
+            return category or 'Other'
+        
         query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
         if start_date or end_date:
             query['date'] = {}
@@ -3697,11 +3709,13 @@ def init_reports_blueprint(mongo, token_required):
         # Format data
         data = []
         for expense in expenses:
+            category_raw = expense.get('category', 'Other')
+            category = normalize_category(category_raw)  # ✅ Normalize here
             data.append({
                 'id': str(expense['_id']),
                 'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'title': expense.get('title', ''),
-                'category': expense.get('category', 'Other'),
+                'category': category,  # ✅ Always string now
                 'amount': expense.get('amount', 0),
                 'description': expense.get('description', '')
             })
@@ -3728,7 +3742,18 @@ def init_reports_blueprint(mongo, token_required):
         - Separates COGS from Operating Expenses
         - Calculates Gross Profit, Operating Profit, Net Profit
         - Calculates Gross Margin % (the "CFO in your pocket" metric)
+        
+        CRITICAL FIX (Feb 19, 2026):
+        - Normalize category format (handle dict vs string)
+        - Prevents category comparison failures that break calculations
         """
+        
+        def normalize_category(category):
+            """Normalize category to string (handle dict format)"""
+            if isinstance(category, dict):
+                return category.get('name', 'Other')
+            return category or 'Other'
+        
         # BASE QUERIES: Exclude personal expenses (Default Business Assumption)
         # Rationale: In a business wallet, assume transactions are business unless explicitly personal
         income_query = {
@@ -3766,11 +3791,13 @@ def init_reports_blueprint(mongo, token_required):
         all_incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
         
         # Separate Sales Revenue from Other Income
+        # ✅ CRITICAL FIX: Normalize category before comparison
         sales_revenue = 0
         other_income = 0
         for inc in all_incomes:
             amount = inc.get('amount', 0)
-            category = inc.get('category', '')
+            category_raw = inc.get('category', '')
+            category = normalize_category(category_raw)  # ✅ Normalize here
             if category == 'salesRevenue':
                 sales_revenue += amount
             else:
@@ -3779,13 +3806,23 @@ def init_reports_blueprint(mongo, token_required):
         total_revenue = sales_revenue + other_income
         
         # STEP 2: Get COGS (Cost of Goods Sold)
-        cogs_query = {**expense_query, 'category': 'Cost of Goods Sold'}
-        cogs_expenses = list(mongo.db.expenses.find(cogs_query, PDF_PROJECTIONS['expenses']))
+        # Note: MongoDB query still uses raw format, normalization happens in Python
+        all_expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
+        
+        # ✅ CRITICAL FIX: Normalize category before filtering
+        cogs_expenses = []
+        operating_expenses = []
+        for exp in all_expenses:
+            category_raw = exp.get('category', '')
+            category = normalize_category(category_raw)  # ✅ Normalize here
+            if category == 'Cost of Goods Sold':
+                cogs_expenses.append(exp)
+            else:
+                operating_expenses.append(exp)
+        
         total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
         
-        # STEP 3: Get Operating Expenses (exclude COGS)
-        operating_query = {**expense_query, 'category': {'$ne': 'Cost of Goods Sold'}}
-        operating_expenses = list(mongo.db.expenses.find(operating_query, PDF_PROJECTIONS['expenses']))
+        # STEP 3: Calculate Operating Expenses total
         total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
         
         # CALCULATE 3-STEP P&L
@@ -3801,7 +3838,7 @@ def init_reports_blueprint(mongo, token_required):
         
         # Get limited data for preview
         incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
-        expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit // 2))
+        expenses_preview = (cogs_expenses + operating_expenses)[:limit // 2]
         
         # Format data
         data = {
@@ -3810,20 +3847,24 @@ def init_reports_blueprint(mongo, token_required):
         }
         
         for income in incomes:
+            category_raw = income.get('category', '')
+            category = normalize_category(category_raw)  # ✅ Normalize for display
             data['incomes'].append({
                 'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
-                'category': income.get('category', 'other'),
+                'category': category,  # ✅ Always string now
                 'amount': income.get('amount', 0),
                 'sourceType': income.get('sourceType', 'manual'),  # NEW: Show origin
                 'entryType': income.get('entryType')  # NEW: Show classification
             })
         
-        for expense in expenses:
+        for expense in expenses_preview:
+            category_raw = expense.get('category', '')
+            category = normalize_category(category_raw)  # ✅ Normalize for display
             data['expenses'].append({
                 'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'title': expense.get('title', ''),
-                'category': expense.get('category', 'Other'),
+                'category': category,  # ✅ Always string now
                 'amount': expense.get('amount', 0),
                 'sourceType': expense.get('sourceType', 'manual'),  # NEW: Show origin
                 'entryType': expense.get('entryType')  # NEW: Show classification
@@ -3833,7 +3874,7 @@ def init_reports_blueprint(mongo, token_required):
             'success': True,
             'preview': True,
             'total_count': len(all_incomes) + len(cogs_expenses) + len(operating_expenses),
-            'showing_count': len(incomes) + len(expenses),
+            'showing_count': len(incomes) + len(expenses_preview),
             'data': data,
             'summary': {
                 # Revenue Breakdown
@@ -3864,7 +3905,8 @@ def init_reports_blueprint(mongo, token_required):
             'metadata': {
                 'calculation_method': '3_step_professional_pl',
                 'excludes_personal_expenses': True,
-                'gross_margin_note': 'Gross Margin % = (Gross Profit / Sales Revenue) × 100'
+                'gross_margin_note': 'Gross Margin % = (Gross Profit / Sales Revenue) × 100',
+                'category_normalization': 'Applied (Feb 19, 2026)'  # ✅ Track fix
             }
         })
 
@@ -4454,8 +4496,18 @@ def init_reports_blueprint(mongo, token_required):
         """
         Preview Statement of Affairs - Comprehensive financial overview
         Combines Balance Sheet, P&L, Tax Summary, and Assets
+        
+        CRITICAL FIX (Feb 19, 2026):
+        - Normalize category format (handle dict vs string)
+        - Prevents "'str' object has no attribute 'get'" crash
         """
         try:
+            def normalize_category(category):
+                """Normalize category to string (handle dict format)"""
+                if isinstance(category, dict):
+                    return category.get('name', 'Other')
+                return category or 'Other'
+            
             # Get tax type from request (default to PIT)
             request_data = request.get_json() or {}
             tax_type = request_data.get('taxType', 'PIT').upper()
@@ -4557,7 +4609,7 @@ def init_reports_blueprint(mongo, token_required):
                             'source': inc.get('source', ''),
                             'amount': inc.get('amount', 0),
                             'dateReceived': inc.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
-                            'category': inc.get('category', 'Other')  # ✅ Always string now
+                            'category': normalize_category(inc.get('category', 'Other'))  # ✅ Normalize here
                         }
                         for inc in preview_incomes
                     ],
@@ -4567,7 +4619,7 @@ def init_reports_blueprint(mongo, token_required):
                             'title': exp.get('title', ''),
                             'amount': exp.get('amount', 0),
                             'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z',
-                            'category': exp.get('category', 'Other')  # ✅ Always string now
+                            'category': normalize_category(exp.get('category', 'Other'))  # ✅ Normalize here
                         }
                         for exp in preview_expenses
                     ],
@@ -4575,7 +4627,7 @@ def init_reports_blueprint(mongo, token_required):
                         {
                             'id': str(asset['_id']),
                             'name': asset.get('name', '') or asset.get('assetName', ''),
-                            'category': asset.get('category', ''),
+                            'category': normalize_category(asset.get('category', ''))  # ✅ Normalize here,
                             'currentValue': asset.get('currentValue', 0) or asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)
                         }
                         for asset in preview_assets
