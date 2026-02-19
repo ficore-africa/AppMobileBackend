@@ -3120,29 +3120,19 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             print(f'   No Margin Added: ₦{margin}')
             print(f'   Policy: Sell data at face value')
             
-            # CRITICAL: Plan validation to prevent mismatches
-            print(f'💰 DATA PRICING (NO MARGIN POLICY):')
-            print(f'   Plan Amount: ₦{amount}')
-            print(f'   User Pays: ₦{selling_price} (EXACT MATCH)')
-            print(f'   No Margin Added: ₦{margin}')
-            print(f'   Policy: Sell data at face value')
-            
-            # CRITICAL: Validate plan exists in provider systems
-            plan_validation_result = validate_data_plan_exists(network, data_plan_id, amount)
-            if not plan_validation_result['valid']:
-                print(f'❌ PLAN VALIDATION FAILED: {plan_validation_result["error"]}')
-                return jsonify({
-                    'success': False,
-                    'message': f'Data plan validation failed: {plan_validation_result["error"]}',
-                    'errors': {'general': [f'Plan {data_plan_id} not available for {network}']},
-                    'user_message': {
-                        'title': '⚠️ Plan Not Available',
-                        'message': f'The selected {network} data plan is currently unavailable. Please try a different plan or network.',
-                        'type': 'plan_unavailable',
-                        'support_message': 'This plan may have been discontinued or is temporarily unavailable.',
-                        'retry_after': '5 minutes',
-                    }
-                }), 400
+            # 🎯 CRITICAL FIX: Skip plan validation - it was checking wrong provider
+            # The validation function checks BOTH Monnify and Peyflex, but:
+            # - MTN Share plans (M1GBS, etc.) only exist in Peyflex
+            # - Monnify plans only exist in Monnify
+            # This caused false "PLAN VALIDATION FAILED" errors
+            # 
+            # SOLUTION: Let the provider routing logic handle validation
+            # Each provider's API will validate the plan when we call it
+            # If plan doesn't exist, the API call will fail with clear error
+            #
+            # This aligns with Golden Rule #33: "NO AUTOMATIC FALLBACKS"
+            # User chose a provider via plan type - we trust that choice
+            print(f'✅ SKIPPING PRE-VALIDATION: Provider will validate plan during purchase')
             
             # EMERGENCY PRICING DETECTION
             emergency_multiplier = 2.0

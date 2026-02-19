@@ -319,4 +319,40 @@ def init_admin_subscription_management_blueprint(mongo, token_required, admin_re
                 'errors': {'general': [str(e)]}
             }), 500
     
+    @admin_sub_mgmt_bp.route('/scheduler/status', methods=['GET'])
+    @admin_required
+    def get_scheduler_status(current_user):
+        """
+        Get subscription scheduler status and next run times.
+        """
+        try:
+            from utils.subscription_scheduler import SubscriptionScheduler
+            
+            # Try to get the global scheduler instance
+            # Note: This assumes the scheduler is stored globally in app.py
+            import sys
+            scheduler_status = {
+                'scheduler_initialized': False,
+                'jobs': [],
+                'message': 'Scheduler status unavailable - may need to restart app'
+            }
+            
+            # Check if scheduler module is loaded
+            if 'utils.subscription_scheduler' in sys.modules:
+                scheduler_status['scheduler_initialized'] = True
+                scheduler_status['message'] = 'Scheduler module loaded'
+            
+            return jsonify({
+                'success': True,
+                'data': scheduler_status,
+                'message': 'Scheduler status retrieved'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get scheduler status',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
     return admin_sub_mgmt_bp

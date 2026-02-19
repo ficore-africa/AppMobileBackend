@@ -154,13 +154,18 @@ def init_reports_blueprint(mongo, token_required):
         Returns: (has_access: bool, is_premium: bool, current_balance: float, credit_cost: int)
         """
         user = mongo.db.users.find_one({'_id': current_user['_id']})
-        is_premium = user.get('isSubscribed', False)
         is_admin = user.get('role') == 'admin'
+        
+        # ✅ CRITICAL FIX: Validate subscription end date, not just flag
+        is_subscribed = user.get('isSubscribed', False)
+        subscription_end = user.get('subscriptionEndDate')
+        is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
+        
         current_balance = user.get('ficoreCreditBalance', 0.0)
         credit_cost = REPORT_CREDIT_COSTS.get(report_type, 2)
         
         # Premium users and admins have unlimited access
-        if is_premium or is_admin:
+        if is_premium:
             return True, True, current_balance, 0
         
         # Free users need sufficient credits
@@ -3603,6 +3608,19 @@ def init_reports_blueprint(mongo, token_required):
                 return _preview_inventory(current_user, start_date, end_date, PREVIEW_LIMIT)
             elif report_type == 'credits':
                 return _preview_credits(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'statement_of_affairs':
+                # Statement of Affairs is a comprehensive report combining multiple sections
+                # For preview, show summary of each section
+                return _preview_statement_of_affairs(current_user, start_date, end_date, PREVIEW_LIMIT)
+            # Wallet reports (Feb 19, 2026)
+            elif report_type == 'wallet_funding':
+                return _preview_wallet_funding(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'bill_payments':
+                return _preview_bill_payments(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'airtime_purchases':
+                return _preview_airtime_purchases(current_user, start_date, end_date, PREVIEW_LIMIT)
+            elif report_type == 'full_wallet':
+                return _preview_full_wallet(current_user, start_date, end_date, PREVIEW_LIMIT)
             else:
                 return jsonify({
                     'success': False,
@@ -4429,6 +4447,429 @@ def init_reports_blueprint(mongo, token_required):
                     'tax_education': tax_education,
                     'other': other
                 }
+            }
+        })
+    
+    def _preview_statement_of_affairs(current_user, start_date, end_date, limit):
+        """
+        Preview Statement of Affairs - Comprehensive financial overview
+        Combines Balance Sheet, P&L, Tax Summary, and Assets
+        """
+        try:
+            # Get tax type from request (default to PIT)
+            request_data = request.get_json() or {}
+            tax_type = request_data.get('taxType', 'PIT').upper()
+            
+            # 1. Balance Sheet Summary
+            # Assets
+            assets_query = {'userId': current_user['_id']}
+            assets = list(mongo.db.assets.find(assets_query, PDF_PROJECTIONS['assets']))
+            total_assets = sum(
+                asset.get('currentValue', 0) or asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)
+                for asset in assets
+            )
+            
+            # Inventory
+            inventory_query = {'userId': current_user['_id']}
+            inventory = list(mongo.db.inventory.find(inventory_query, PDF_PROJECTIONS['inventory']))
+            total_inventory = sum(
+                item.get('quantity', 0) * item.get('unitCost', 0)
+                for item in inventory
+            )
+            
+            # Debtors (Accounts Receivable)
+            debtors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
+            debtors = list(mongo.db.debtors.find(debtors_query, PDF_PROJECTIONS['debtors']))
+            total_debtors = sum(debtor.get('amount', 0) for debtor in debtors)
+            
+            # Creditors (Accounts Payable)
+            creditors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
+            creditors = list(mongo.db.creditors.find(creditors_query, PDF_PROJECTIONS['creditors']))
+            total_creditors = sum(creditor.get('amount', 0) for creditor in creditors)
+            
+            # 2. P&L Summary
+            income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+            expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+            
+            if start_date or end_date:
+                income_query['dateReceived'] = {}
+                expense_query['date'] = {}
+                if start_date:
+                    income_query['dateReceived']['$gte'] = start_date
+                    expense_query['date']['$gte'] = start_date
+                if end_date:
+                    income_query['dateReceived']['$lte'] = end_date
+                    expense_query['date']['$lte'] = end_date
+            
+            incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
+            expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
+            
+            total_income = sum(inc.get('amount', 0) for inc in incomes)
+            total_expenses = sum(exp.get('amount', 0) for exp in expenses)
+            net_profit = total_income - total_expenses
+            
+            # 3. Tax Summary
+            # Business-only filtering for tax compliance
+            business_incomes = [inc for inc in incomes if 'Business' in inc.get('tags', [])]
+            business_expenses = [exp for exp in expenses if 'Business' in exp.get('tags', [])]
+            
+            taxable_income = sum(inc.get('amount', 0) for inc in business_incomes)
+            deductible_expenses = sum(exp.get('amount', 0) for exp in business_expenses)
+            taxable_profit = taxable_income - deductible_expenses
+            
+            # Calculate tax based on type
+            if tax_type == 'PIT':
+                # Personal Income Tax (Progressive bands)
+                if taxable_profit <= 300000:
+                    tax_due = taxable_profit * 0.07
+                elif taxable_profit <= 600000:
+                    tax_due = 21000 + (taxable_profit - 300000) * 0.11
+                elif taxable_profit <= 1100000:
+                    tax_due = 54000 + (taxable_profit - 600000) * 0.15
+                elif taxable_profit <= 1600000:
+                    tax_due = 129000 + (taxable_profit - 1100000) * 0.19
+                elif taxable_profit <= 3200000:
+                    tax_due = 224000 + (taxable_profit - 1600000) * 0.21
+                else:
+                    tax_due = 560000 + (taxable_profit - 3200000) * 0.24
+            else:
+                # Corporate Income Tax (CIT)
+                # Check if exempt (Revenue < ₦100M AND Assets < ₦250M)
+                is_exempt = taxable_income < 100000000 and total_assets < 250000000
+                tax_due = 0 if is_exempt else taxable_profit * 0.30
+            
+            # 4. Format preview data (first 10 entries from each section)
+            preview_incomes = incomes[:10]
+            preview_expenses = expenses[:10]
+            preview_assets = assets[:10]
+            preview_debtors = debtors[:10]
+            preview_creditors = creditors[:10]
+            
+            return jsonify({
+                'success': True,
+                'preview': True,
+                'total_count': len(incomes) + len(expenses) + len(assets) + len(debtors) + len(creditors),
+                'showing_count': len(preview_incomes) + len(preview_expenses) + len(preview_assets) + len(preview_debtors) + len(preview_creditors),
+                'data': {
+                    'incomes': [
+                        {
+                            'id': str(inc['_id']),
+                            'source': inc.get('source', ''),
+                            'amount': inc.get('amount', 0),
+                            'dateReceived': inc.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                            'category': inc.get('category', {}).get('name', 'Other')
+                        }
+                        for inc in preview_incomes
+                    ],
+                    'expenses': [
+                        {
+                            'id': str(exp['_id']),
+                            'title': exp.get('title', ''),
+                            'amount': exp.get('amount', 0),
+                            'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z',
+                            'category': exp.get('category', {}).get('name', 'Other')
+                        }
+                        for exp in preview_expenses
+                    ],
+                    'assets': [
+                        {
+                            'id': str(asset['_id']),
+                            'name': asset.get('name', '') or asset.get('assetName', ''),
+                            'category': asset.get('category', ''),
+                            'currentValue': asset.get('currentValue', 0) or asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)
+                        }
+                        for asset in preview_assets
+                    ],
+                    'debtors': [
+                        {
+                            'id': str(debtor['_id']),
+                            'name': debtor.get('name', '') or debtor.get('customerName', ''),
+                            'amount': debtor.get('amount', 0),
+                            'dueDate': debtor.get('dueDate', datetime.utcnow()).isoformat() + 'Z'
+                        }
+                        for debtor in preview_debtors
+                    ],
+                    'creditors': [
+                        {
+                            'id': str(creditor['_id']),
+                            'name': creditor.get('name', '') or creditor.get('vendorName', ''),
+                            'amount': creditor.get('amount', 0),
+                            'dueDate': creditor.get('dueDate', datetime.utcnow()).isoformat() + 'Z'
+                        }
+                        for creditor in preview_creditors
+                    ]
+                },
+                'summary': {
+                    'balance_sheet': {
+                        'total_assets': total_assets,
+                        'total_inventory': total_inventory,
+                        'total_debtors': total_debtors,
+                        'total_creditors': total_creditors,
+                        'net_assets': total_assets + total_inventory + total_debtors - total_creditors
+                    },
+                    'profit_loss': {
+                        'total_income': total_income,
+                        'total_expenses': total_expenses,
+                        'net_profit': net_profit,
+                        'income_count': len(incomes),
+                        'expense_count': len(expenses)
+                    },
+                    'tax_summary': {
+                        'tax_type': tax_type,
+                        'taxable_income': taxable_income,
+                        'deductible_expenses': deductible_expenses,
+                        'taxable_profit': taxable_profit,
+                        'tax_due': tax_due,
+                        'is_exempt': tax_type == 'CIT' and taxable_income < 100000000 and total_assets < 250000000
+                    },
+                    'assets_summary': {
+                        'total_assets': total_assets,
+                        'total_inventory': total_inventory,
+                        'asset_count': len(assets),
+                        'inventory_count': len(inventory)
+                    }
+                }
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to generate Statement of Affairs preview: {str(e)}'
+            }), 500
+    
+    def _preview_wallet_funding(current_user, start_date, end_date, limit):
+        """Preview Wallet Funding transactions"""
+        query = {
+            'userId': ObjectId(str(current_user['_id'])),
+            'type': 'WALLET_FUNDING'
+        }
+        if start_date or end_date:
+            query['createdAt'] = {}
+            if start_date:
+                query['createdAt']['$gte'] = start_date
+            if end_date:
+                query['createdAt']['$lte'] = end_date
+        
+        total_count = mongo.db.vas_transactions.count_documents(query)
+        transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1).limit(limit))
+        
+        # Calculate summary
+        all_transactions = list(mongo.db.vas_transactions.find(query))
+        total_amount = sum(txn.get('amount', 0) for txn in all_transactions)
+        
+        data = []
+        for txn in transactions:
+            data.append({
+                'id': str(txn['_id']),
+                'amount': txn.get('amount', 0),
+                'description': txn.get('description', 'Wallet Funding'),
+                'createdAt': txn.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                'status': txn.get('status', 'PENDING')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_amount': total_amount,
+                'count': total_count
+            }
+        })
+    
+    def _preview_bill_payments(current_user, start_date, end_date, limit):
+        """Preview Bill Payments transactions with VAS breakdown"""
+        query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            'sourceType': {'$in': ['vas_electricity', 'vas_cable_tv', 'vas_internet', 'vas_water', 'vas_transportation']}
+        }
+        if start_date or end_date:
+            query['date'] = {}
+            if start_date:
+                query['date']['$gte'] = start_date
+            if end_date:
+                query['date']['$lte'] = end_date
+        
+        total_count = mongo.db.expenses.count_documents(query)
+        expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit))
+        
+        # Calculate summary with VAS breakdown
+        all_expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']))
+        bill_payments = {
+            'electricity': [],
+            'cable_tv': [],
+            'internet': [],
+            'water': [],
+            'transportation': [],
+            'other': []
+        }
+        
+        for exp in all_expenses:
+            source_type = exp.get('sourceType', '')
+            if source_type.startswith('vas_'):
+                bill_type = source_type.replace('vas_', '')
+                if bill_type in bill_payments:
+                    bill_payments[bill_type].append(exp)
+                else:
+                    bill_payments['other'].append(exp)
+        
+        summary = {
+            'electricity': sum(e.get('amount', 0) for e in bill_payments['electricity']),
+            'cable_tv': sum(e.get('amount', 0) for e in bill_payments['cable_tv']),
+            'internet': sum(e.get('amount', 0) for e in bill_payments['internet']),
+            'water': sum(e.get('amount', 0) for e in bill_payments['water']),
+            'transportation': sum(e.get('amount', 0) for e in bill_payments['transportation']),
+            'other': sum(e.get('amount', 0) for e in bill_payments['other']),
+            'total': sum(e.get('amount', 0) for e in all_expenses),
+            'count': total_count
+        }
+        
+        data = []
+        for exp in expenses:
+            data.append({
+                'id': str(exp['_id']),
+                'title': exp.get('title', ''),
+                'amount': exp.get('amount', 0),
+                'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z',
+                'sourceType': exp.get('sourceType', ''),
+                'category': exp.get('category', {}).get('name', 'Bills')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': summary
+        })
+    
+    def _preview_airtime_purchases(current_user, start_date, end_date, limit):
+        """Preview Airtime Purchases transactions with network grouping"""
+        query = {
+            'userId': current_user['_id'],
+            'status': 'active',
+            'isDeleted': False,
+            'sourceType': 'vas_airtime'
+        }
+        if start_date or end_date:
+            query['date'] = {}
+            if start_date:
+                query['date']['$gte'] = start_date
+            if end_date:
+                query['date']['$lte'] = end_date
+        
+        total_count = mongo.db.expenses.count_documents(query)
+        expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit))
+        
+        # Calculate summary with network grouping
+        all_expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']))
+        networks = {'MTN': [], 'Airtel': [], 'Glo': [], '9mobile': [], 'Other': []}
+        
+        for exp in all_expenses:
+            description = exp.get('description', '').upper()
+            if 'MTN' in description:
+                networks['MTN'].append(exp)
+            elif 'AIRTEL' in description:
+                networks['Airtel'].append(exp)
+            elif 'GLO' in description:
+                networks['Glo'].append(exp)
+            elif '9MOBILE' in description or 'ETISALAT' in description:
+                networks['9mobile'].append(exp)
+            else:
+                networks['Other'].append(exp)
+        
+        summary = {
+            'mtn': sum(e.get('amount', 0) for e in networks['MTN']),
+            'airtel': sum(e.get('amount', 0) for e in networks['Airtel']),
+            'glo': sum(e.get('amount', 0) for e in networks['Glo']),
+            '9mobile': sum(e.get('amount', 0) for e in networks['9mobile']),
+            'other': sum(e.get('amount', 0) for e in networks['Other']),
+            'total': sum(e.get('amount', 0) for e in all_expenses),
+            'count': total_count
+        }
+        
+        data = []
+        for exp in expenses:
+            data.append({
+                'id': str(exp['_id']),
+                'title': exp.get('title', ''),
+                'amount': exp.get('amount', 0),
+                'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z',
+                'description': exp.get('description', ''),
+                'category': exp.get('category', {}).get('name', 'Airtime')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': summary
+        })
+    
+    def _preview_full_wallet(current_user, start_date, end_date, limit):
+        """Preview Full Wallet transactions (all types)"""
+        query = {'userId': ObjectId(str(current_user['_id']))}
+        if start_date or end_date:
+            query['createdAt'] = {}
+            if start_date:
+                query['createdAt']['$gte'] = start_date
+            if end_date:
+                query['createdAt']['$lte'] = end_date
+        
+        total_count = mongo.db.vas_transactions.count_documents(query)
+        transactions = list(mongo.db.vas_transactions.find(query).sort('createdAt', -1).limit(limit))
+        
+        # Calculate summary with type breakdown
+        all_transactions = list(mongo.db.vas_transactions.find(query))
+        type_breakdown = {}
+        for txn in all_transactions:
+            txn_type = txn.get('type', 'OTHER')
+            if txn_type not in type_breakdown:
+                type_breakdown[txn_type] = {'count': 0, 'amount': 0}
+            type_breakdown[txn_type]['count'] += 1
+            type_breakdown[txn_type]['amount'] += txn.get('amount', 0)
+        
+        total_amount = sum(txn.get('amount', 0) for txn in all_transactions)
+        
+        data = []
+        for txn in transactions:
+            txn_type = txn.get('type', 'OTHER')
+            description = txn.get('description', '')
+            
+            if not description:
+                if txn_type == 'WALLET_FUNDING':
+                    description = f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
+                elif txn_type == 'BILL_PAYMENT':
+                    description = f"Bill Payment - ₦{txn.get('amount', 0):,.2f}"
+                else:
+                    description = f"{txn_type} - ₦{txn.get('amount', 0):,.2f}"
+            
+            data.append({
+                'id': str(txn['_id']),
+                'type': txn_type,
+                'amount': txn.get('amount', 0),
+                'description': description,
+                'createdAt': txn.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
+                'status': txn.get('status', 'PENDING')
+            })
+        
+        return jsonify({
+            'success': True,
+            'preview': True,
+            'total_count': total_count,
+            'showing_count': len(data),
+            'data': data,
+            'summary': {
+                'total_amount': total_amount,
+                'count': total_count,
+                'type_breakdown': type_breakdown
             }
         })
     

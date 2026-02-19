@@ -208,11 +208,15 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
 
             # Check if user is premium subscriber or admin (they get unlimited access)
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            is_subscribed = user.get('isSubscribed', False)
             is_admin = user.get('isAdmin', False)
             
+            # ✅ CRITICAL FIX: Validate subscription end date, not just flag
+            is_subscribed = user.get('isSubscribed', False)
+            subscription_end = user.get('subscriptionEndDate')
+            is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
+            
             # FC Cost: 2 FCs for creating an asset (premium users bypass this)
-            if not is_subscribed and not is_admin:
+            if not is_premium:
                 fc_cost = 2.0
                 current_balance = user.get('ficoreCreditBalance', 0.0)
                 
@@ -450,11 +454,15 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
 
             # Check if user is premium subscriber or admin (they get unlimited access)
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            is_subscribed = user.get('isSubscribed', False)
             is_admin = user.get('isAdmin', False)
             
+            # ✅ CRITICAL FIX: Validate subscription end date, not just flag
+            is_subscribed = user.get('isSubscribed', False)
+            subscription_end = user.get('subscriptionEndDate')
+            is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
+            
             # FC Cost: 2 FCs for deleting an asset (premium users bypass this)
-            if not is_subscribed and not is_admin:
+            if not is_premium:
                 fc_cost = 2.0
                 current_balance = user.get('ficoreCreditBalance', 0.0)
                 

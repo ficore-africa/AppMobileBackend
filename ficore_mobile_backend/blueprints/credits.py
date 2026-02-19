@@ -83,7 +83,12 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
         try:
             # Check if user is a premium subscriber
             user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_admin = user.get('isAdmin', False)
+            
+            # ✅ CRITICAL FIX: Validate subscription end date, not just flag
             is_subscribed = user.get('isSubscribed', False)
+            subscription_end = user.get('subscriptionEndDate')
+            is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
             
             options = []
             for package in CREDIT_PACKAGES:
