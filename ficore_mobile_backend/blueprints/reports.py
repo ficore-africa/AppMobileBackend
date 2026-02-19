@@ -4627,7 +4627,7 @@ def init_reports_blueprint(mongo, token_required):
                         {
                             'id': str(asset['_id']),
                             'name': asset.get('name', '') or asset.get('assetName', ''),
-                            'category': normalize_category(asset.get('category', ''))  # ✅ Normalize here,
+                            'category': normalize_category(asset.get('category', '')),  # ✅ Normalize here
                             'currentValue': asset.get('currentValue', 0) or asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)
                         }
                         for asset in preview_assets
