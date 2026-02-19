@@ -245,6 +245,64 @@ def init_reports_blueprint(mongo, token_required):
         
         return start_date, end_date
     
+    def calculate_cash_bank_balance(user_id):
+        """
+        Calculate current cash/bank balance using virtual double-entry system
+        Formula: Opening Balance + Total Income - Total Expenses - Total Drawings + Total Capital
+        
+        This integrates with the Cash/Bank Management System to provide accurate
+        balance for Balance Sheet and other financial reports.
+        
+        Returns: float - Current cash/bank balance
+        """
+        try:
+            # Get user's opening balance
+            user = mongo.db.users.find_one({'_id': user_id})
+            opening_balance = user.get('openingCashBalance', 0.0) if user else 0.0
+            
+            # Get total income (active entries only)
+            total_income = 0.0
+            income_cursor = mongo.db.incomes.find({
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            })
+            for income in income_cursor:
+                total_income += income.get('amount', 0.0)
+            
+            # Get total expenses (active entries only)
+            total_expenses = 0.0
+            expense_cursor = mongo.db.expenses.find({
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            })
+            for expense in expense_cursor:
+                total_expenses += expense.get('amount', 0.0)
+            
+            # Get total drawings and capital deposits (active entries only)
+            total_drawings = 0.0
+            total_capital = 0.0
+            adjustment_cursor = mongo.db.cash_adjustments.find({
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            })
+            for adjustment in adjustment_cursor:
+                if adjustment.get('type') == 'drawing':
+                    total_drawings += adjustment.get('amount', 0.0)
+                elif adjustment.get('type') == 'capital':
+                    total_capital += adjustment.get('amount', 0.0)
+            
+            # Calculate current balance
+            current_balance = opening_balance + total_income - total_expenses - total_drawings + total_capital
+            
+            return current_balance
+            
+        except Exception as e:
+            print(f'Error calculating cash/bank balance: {str(e)}')
+            return 0.0
+    
     def get_last_transaction_timestamp(user_id):
         """
         Get the most recent transaction timestamp for cache invalidation.
@@ -3826,9 +3884,10 @@ def init_reports_blueprint(mongo, token_required):
         total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
         
         # CALCULATE 3-STEP P&L
-        # Step 1: Gross Profit = Sales Revenue - COGS
-        gross_profit = sales_revenue - total_cogs
-        gross_margin_pct = (gross_profit / sales_revenue * 100) if sales_revenue > 0 else 0
+        # Step 1: Gross Profit = (Sales Revenue + Other Operating Income) - COGS
+        # CRITICAL FIX (Feb 19, 2026): Include Other Income in Gross Profit calculation
+        gross_profit = (sales_revenue + other_income) - total_cogs
+        gross_margin_pct = (gross_profit / (sales_revenue + other_income) * 100) if (sales_revenue + other_income) > 0 else 0
         
         # Step 2: Operating Profit = Gross Profit - Operating Expenses
         operating_profit = gross_profit - total_operating
@@ -6052,8 +6111,9 @@ def init_reports_blueprint(mongo, token_required):
             total_expenses = total_cogs + total_operating
             
             # Calculate 3-Step P&L
-            gross_profit = sales_revenue - total_cogs
-            gross_margin_pct = (gross_profit / sales_revenue * 100) if sales_revenue > 0 else 0
+            # CRITICAL FIX (Feb 19, 2026): Include Other Income in Gross Profit calculation
+            gross_profit = (sales_revenue + other_income) - total_cogs
+            gross_margin_pct = (gross_profit / (sales_revenue + other_income) * 100) if (sales_revenue + other_income) > 0 else 0
             operating_profit = gross_profit - total_operating
             net_income = operating_profit  # Net Profit
             
@@ -6096,11 +6156,28 @@ def init_reports_blueprint(mongo, token_required):
             creditors_value = sum(c.get('amount', 0) for c in creditors)
             inventory_value = sum(i.get('quantity', 0) * i.get('unitCost', 0) for i in inventory)
             
-            # Get cash balance from user's wallet (if available)
-            cash_balance = user.get('ficoreWalletBalance', 0) if user else 0
+            # CRITICAL FIX (Feb 19, 2026): Use calculated Cash/Bank balance from Cash/Bank Management System
+            # This replaces the old ficoreWalletBalance which was just the VAS wallet
+            # New system uses: Opening Balance + Income - Expenses - Drawings + Capital
+            cash_balance = calculate_cash_bank_balance(current_user['_id'])
             
             # Get opening equity and drawings (if tracked)
-            opening_equity = user.get('openingEquity', 0) if user else 0
+            # CRITICAL FIX (Feb 19, 2026): Calculate opening equity from assets if not set
+            # Opening Equity = Total Assets (Original Cost) - Liabilities
+            # This prevents "assets born out of thin air" accounting error
+            opening_equity_stored = user.get('openingEquity', 0) if user else 0
+            if opening_equity_stored == 0 and len(assets) > 0:
+                # Calculate opening equity from fixed assets (capital injected to buy assets)
+                total_assets_original_cost = sum(
+                    asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0) 
+                    for asset in assets
+                )
+                # Opening Equity = Assets - Liabilities (at start of period)
+                # Assuming no opening liabilities for simplicity
+                opening_equity = total_assets_original_cost
+            else:
+                opening_equity = opening_equity_stored
+            
             drawings = user.get('drawings', 0) if user else 0
             
             # Get tax paid (if tracked)

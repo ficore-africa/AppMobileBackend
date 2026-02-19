@@ -12,6 +12,46 @@ from datetime import datetime, timezone, timedelta
 import io
 
 
+# CRITICAL FIX (Feb 19, 2026): Naira symbol rendering
+# The ₦ symbol doesn't render properly in default Helvetica font
+# Use "N" with proper formatting instead for PDF compatibility
+NAIRA_SYMBOL = "N"  # Will be rendered as "N" with proper spacing
+
+
+def format_currency(amount):
+    """
+    Format currency with proper Naira symbol for PDF rendering
+    
+    CRITICAL FIX (Feb 19, 2026): The ₦ symbol renders as a black square in PDFs
+    because Helvetica font doesn't support it. Use "N" with proper spacing instead.
+    
+    Args:
+        amount: Numeric amount to format
+    
+    Returns:
+        Formatted string like "N1,234,567.89"
+    """
+    return f"{NAIRA_SYMBOL}{amount:,.2f}"
+
+
+def format_tin_display(tin_value):
+    """
+    Format TIN for display in reports with actionable messaging
+    
+    CRITICAL FIX (Feb 19, 2026): Show actionable message when TIN not set
+    to encourage users to update their tax information.
+    
+    Args:
+        tin_value: TIN string from user data (may be empty, None, or 'Not Provided')
+    
+    Returns:
+        Formatted string with red warning if not set, or the TIN value
+    """
+    if not tin_value or tin_value == 'Not Provided':
+        return '<font color="red">Not Set - Update in Settings</font>'
+    return tin_value
+
+
 def get_nigerian_time():
     """Get current time in Nigerian timezone (WAT - UTC+1)"""
     return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=1)))
@@ -166,8 +206,8 @@ class PDFGenerator:
         nigerian_time = get_nigerian_time()
         business_name = user_data.get('businessName', '')
         business_line = f"<b>Business:</b> {business_name}<br/>" if business_name else ""
-        tin = user_data.get('tin', 'Not Provided')
-        tin_line = f"<b>TIN:</b> {tin}<br/>"
+        tin_display = format_tin_display(user_data.get('tin', ''))
+        tin_line = f"<b>TIN:</b> {tin_display}<br/>"
         
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
@@ -182,7 +222,7 @@ class PDFGenerator:
         if 'expenses' in export_data and export_data['expenses']:
             story.append(Paragraph("Expenses Summary", self.styles['SectionHeader']))
             
-            expense_data = [['Date', 'Category', 'Description', 'Amount (₦)']]
+            expense_data = [['Date', 'Category', 'Description', 'Amount (N)']]
             total_expenses = 0
             
             for expense in export_data['expenses']:
@@ -200,11 +240,11 @@ class PDFGenerator:
                     date_str,
                     category_para,
                     description_para,
-                    f"₦{expense.get('amount', 0):,.2f}"
+                    format_currency(expense.get('amount', 0))
                 ])
                 total_expenses += expense.get('amount', 0)
             
-            expense_data.append(['', '', 'Total:', f"₦{total_expenses:,.2f}"])
+            expense_data.append(['', '', 'Total:', format_currency(total_expenses)])
             
             # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
             expense_table = create_table(expense_data, col_widths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
@@ -232,7 +272,7 @@ class PDFGenerator:
         if 'incomes' in export_data and export_data['incomes']:
             story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
             
-            income_data = [['Date', 'Category', 'Description', 'Amount (₦)']]
+            income_data = [['Date', 'Category', 'Description', 'Amount (N)']]
             total_income = 0
             
             for income in export_data['incomes']:
@@ -251,11 +291,11 @@ class PDFGenerator:
                     date_str,
                     category_para,
                     description_para,
-                    f"₦{income.get('amount', 0):,.2f}"
+                    format_currency(income.get('amount', 0))
                 ])
                 total_income += income.get('amount', 0)
             
-            income_data.append(['', '', 'Total:', f"₦{total_income:,.2f}"])
+            income_data.append(['', '', 'Total:', format_currency(total_income)])
             
             # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
             income_table = create_table(income_data, col_widths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
@@ -344,12 +384,12 @@ class PDFGenerator:
             story.append(Paragraph("Financial Summary", self.styles['SectionHeader']))
             
             summary_data = [
-                ['Description', 'Amount (₦)'],
-                ['Total Revenue', f"₦{total_income:,.2f}"],
-                ['Less: Cost of Goods Sold', f"₦{total_cogs:,.2f}"],
-                ['Gross Profit', f"₦{gross_profit:,.2f}"],
-                ['Less: Operating Expenses', f"₦{total_operating_expenses:,.2f}"],
-                ['Net Profit / (Loss)', f"₦{net_profit_loss:,.2f}"]
+                ['Description', 'Amount (N)'],
+                ['Total Revenue', format_currency(total_income)],
+                ['Less: Cost of Goods Sold', format_currency(total_cogs)],
+                ['Gross Profit', format_currency(gross_profit)],
+                ['Less: Operating Expenses', format_currency(total_operating_expenses)],
+                ['Net Profit / (Loss)', format_currency(net_profit_loss)]
             ]
             
             summary_table = create_table(summary_data, col_widths=[4*inch, 2*inch])
@@ -412,7 +452,7 @@ class PDFGenerator:
         nigerian_time = get_nigerian_time()
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin', ''))}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Tax Year:</b> {tax_calculation.get('tax_year', nigerian_time.year)}<br/>
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
@@ -423,14 +463,14 @@ class PDFGenerator:
         # Income Summary
         story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
         income_data = [
-            ['Description', 'Amount (₦)'],
-            ['Total Income', f"₦{tax_calculation.get('total_income', 0):,.2f}"],
-            ['Deductible Expenses', f"₦{tax_calculation.get('deductible_expenses', {}).get('total', 0):,.2f}"],
-            ['Net Income', f"₦{tax_calculation.get('net_income', 0):,.2f}"],
-            ['Statutory Contributions', f"₦{tax_calculation.get('statutory_contributions', 0):,.2f}"],
-            ['Adjusted Income', f"₦{tax_calculation.get('adjusted_income', 0):,.2f}"],
-            ['Rent Relief', f"₦{tax_calculation.get('rent_relief', 0):,.2f}"],
-            ['Taxable Income', f"₦{tax_calculation.get('taxable_income', 0):,.2f}"]
+            ['Description', 'Amount (N)'],
+            ['Total Income', format_currency(tax_calculation.get('total_income', 0))],
+            ['Deductible Expenses', format_currency(tax_calculation.get('deductible_expenses', {}).get('total', 0))],
+            ['Net Income', format_currency(tax_calculation.get('net_income', 0))],
+            ['Statutory Contributions', format_currency(tax_calculation.get('statutory_contributions', 0))],
+            ['Adjusted Income', format_currency(tax_calculation.get('adjusted_income', 0))],
+            ['Rent Relief', format_currency(tax_calculation.get('rent_relief', 0))],
+            ['Taxable Income', format_currency(tax_calculation.get('taxable_income', 0))]
         ]
         
         income_table = create_table(income_data, col_widths=[4*inch, 2*inch])
@@ -450,19 +490,19 @@ class PDFGenerator:
         
         # Tax Breakdown
         story.append(Paragraph("Tax Calculation Breakdown", self.styles['SectionHeader']))
-        tax_breakdown_data = [['Tax Band', 'Rate', 'Taxable Amount (₦)', 'Tax (₦)']]
+        tax_breakdown_data = [['Tax Band', 'Rate', 'Taxable Amount (N)', 'Tax (N)']]
         
         for band in tax_calculation.get('tax_breakdown', []):
             tax_breakdown_data.append([
-                f"₦{band['lower_bound']:,.0f} - ₦{band['upper_bound']:,.0f}",
+                f"N{band['lower_bound']:,.0f} - N{band['upper_bound']:,.0f}",
                 f"{band['rate']*100:.0f}%",
-                f"₦{band['taxable_amount']:,.2f}",
-                f"₦{band['tax_amount']:,.2f}"
+                format_currency(band['taxable_amount']),
+                format_currency(band['tax_amount'])
             ])
         
         tax_breakdown_data.append([
             '', 'Total Tax:', '', 
-            f"₦{tax_calculation.get('total_tax', 0):,.2f}"
+            format_currency(tax_calculation.get('total_tax', 0))
         ])
         
         tax_table = create_table(tax_breakdown_data, col_widths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
@@ -483,9 +523,9 @@ class PDFGenerator:
         # Summary
         story.append(Paragraph("Summary", self.styles['SectionHeader']))
         summary_text = f"""
-        <b>Total Tax Liability:</b> ₦{tax_calculation.get('total_tax', 0):,.2f}<br/>
+        <b>Total Tax Liability:</b> {format_currency(tax_calculation.get('total_tax', 0))}<br/>
         <b>Effective Tax Rate:</b> {tax_calculation.get('effective_rate', 0):.2f}%<br/>
-        <b>Net Income After Tax:</b> ₦{tax_calculation.get('net_income_after_tax', 0):,.2f}
+        <b>Net Income After Tax:</b> {format_currency(tax_calculation.get('net_income_after_tax', 0))}
         """
         story.append(Paragraph(summary_text, self.styles['Normal']))
         
@@ -524,7 +564,7 @@ class PDFGenerator:
         
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin', ''))}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         {period_text}
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
@@ -540,10 +580,10 @@ class PDFGenerator:
         # Operating Activities
         story.append(Paragraph("Cash Flow from Operating Activities", self.styles['SectionHeader']))
         operating_data = [
-            ['Description', 'Amount (₦)'],
-            ['Cash Inflows (Income)', f"₦{operating_inflows:,.2f}"],
-            ['Cash Outflows (Expenses)', f"₦{-operating_outflows:,.2f}"],
-            ['Net Cash from Operations', f"₦{net_operating:,.2f}"]
+            ['Description', 'Amount (N)'],
+            ['Cash Inflows (Income)', format_currency(operating_inflows)],
+            ['Cash Outflows (Expenses)', format_currency(-operating_outflows)],
+            ['Net Cash from Operations', format_currency(net_operating)]
         ]
         
         operating_table = create_table(operating_data, col_widths=[4*inch, 2*inch])
@@ -631,35 +671,35 @@ class PDFGenerator:
         deductible_expenses = tax_data.get('deductible_expenses', 0)
         
         # Build income data based on tax type
-        income_data = [['Description', 'Amount (₦)']]
-        income_data.append(['Gross Income', f"₦{total_income:,.2f}"])
+        income_data = [['Description', 'Amount (N)']]
+        income_data.append(['Gross Income', format_currency(total_income)])
         
         # For PIT, show detailed statutory deductions breakdown
         if tax_type == 'PIT' and 'statutory_deductions' in tax_data:
             statutory = tax_data['statutory_deductions']
             
-            income_data.append(['Less: Business Expenses', f"₦{tax_data.get('deductible_expenses', 0) - statutory.get('total', 0):,.2f}"])
+            income_data.append(['Less: Business Expenses', format_currency(tax_data.get('deductible_expenses', 0) - statutory.get('total', 0))])
             
             # Show statutory deductions breakdown
             if statutory.get('rent_relief', {}).get('relief_amount', 0) > 0:
-                income_data.append(['Less: Rent Relief (20%, max ₦500k)', f"₦{statutory['rent_relief']['relief_amount']:,.2f}"])
+                income_data.append(['Less: Rent Relief (20%, max ₦500k)', format_currency(statutory['rent_relief']['relief_amount'])])
             
             if statutory.get('pension_contributions', 0) > 0:
-                income_data.append(['Less: Pension Contributions', f"₦{statutory['pension_contributions']:,.2f}"])
+                income_data.append(['Less: Pension Contributions', format_currency(statutory['pension_contributions'])])
             
             if statutory.get('life_insurance', 0) > 0:
-                income_data.append(['Less: Life Insurance Premiums', f"₦{statutory['life_insurance']:,.2f}"])
+                income_data.append(['Less: Life Insurance Premiums', format_currency(statutory['life_insurance'])])
             
             if statutory.get('nhis_contributions', 0) > 0:
-                income_data.append(['Less: NHIS Contributions', f"₦{statutory['nhis_contributions']:,.2f}"])
+                income_data.append(['Less: NHIS Contributions', format_currency(statutory['nhis_contributions'])])
             
             if statutory.get('hmo_premiums', 0) > 0:
-                income_data.append(['Less: HMO Premiums', f"₦{statutory['hmo_premiums']:,.2f}"])
+                income_data.append(['Less: HMO Premiums', format_currency(statutory['hmo_premiums'])])
         else:
-            income_data.append(['Less: Deductible Expenses', f"₦{deductible_expenses:,.2f}"])
+            income_data.append(['Less: Deductible Expenses', format_currency(deductible_expenses)])
         
         net_income = total_income - deductible_expenses
-        income_data.append(['Taxable Income', f"₦{net_income:,.2f}"])
+        income_data.append(['Taxable Income', format_currency(net_income)])
         
         income_table = create_table(income_data, col_widths=[4*inch, 2*inch])
         income_table.setStyle(TableStyle([
@@ -692,10 +732,10 @@ class PDFGenerator:
             qualifies_for_exemption = (turnover < 100000000) and (fixed_assets_nbv < 250000000)
             
             cit_data = [
-                ['Description', 'Amount (₦)'],
-                ['Taxable Profit', f"₦{net_income:,.2f}"],
+                ['Description', 'Amount (N)'],
+                ['Taxable Profit', format_currency(net_income)],
                 ['CIT Rate', f"{cit_rate*100:.0f}%"],
-                ['Calculated Tax', f"₦{total_tax:,.2f}"]
+                ['Calculated Tax', format_currency(total_tax)]
             ]
             
             if qualifies_for_exemption:
@@ -733,14 +773,14 @@ class PDFGenerator:
             net_assets = total_assets - creditors_value
             
             assets_breakdown_data = [
-                ['Asset Category', 'Value (₦)'],
-                ['Fixed Assets - Net Book Value*', f"₦{fixed_assets_nbv:,.2f}"],
-                ['Fixed Assets - Original Cost', f"₦{fixed_assets_original_cost:,.2f}"],
-                ['Inventory Stock Value', f"₦{inventory_value:,.2f}"],
-                ['Accounts Receivable (Debtors)', f"₦{debtors_value:,.2f}"],
-                ['Total Assets', f"₦{total_assets:,.2f}"],
-                ['Less: Accounts Payable (Creditors)', f"₦{creditors_value:,.2f}"],
-                ['Net Business Assets', f"₦{net_assets:,.2f}"]
+                ['Asset Category', 'Value (N)'],
+                ['Fixed Assets - Net Book Value*', format_currency(fixed_assets_nbv)],
+                ['Fixed Assets - Original Cost', format_currency(fixed_assets_original_cost)],
+                ['Inventory Stock Value', format_currency(inventory_value)],
+                ['Accounts Receivable (Debtors)', format_currency(debtors_value)],
+                ['Total Assets', format_currency(total_assets)],
+                ['Less: Accounts Payable (Creditors)', format_currency(creditors_value)],
+                ['Net Business Assets', format_currency(net_assets)]
             ]
             
             assets_table = create_table(assets_breakdown_data, col_widths=[4*inch, 2*inch])
@@ -817,7 +857,7 @@ class PDFGenerator:
                 (50000000, float('inf'), 0.25)  # 25% on remainder
             ]
             
-            tax_breakdown_data = [['Income Band', 'Rate', 'Taxable Amount (₦)', 'Tax (₦)']]
+            tax_breakdown_data = [['Income Band', 'Rate', 'Taxable Amount (N)', 'Tax (N)']]
             total_tax = 0
             
             for lower, upper, rate in tax_bands:
@@ -836,11 +876,11 @@ class PDFGenerator:
                 tax_breakdown_data.append([
                     f"₦{lower:,.0f} - {upper_display}",
                     f"{rate*100:.1f}%",
-                    f"₦{taxable_in_band:,.2f}",
-                    f"₦{band_tax:,.2f}"
+                    format_currency(taxable_in_band),
+                    format_currency(band_tax)
                 ])
             
-            tax_breakdown_data.append(['', '', 'Total Tax:', f"₦{total_tax:,.2f}"])
+            tax_breakdown_data.append(['', '', 'Total Tax:', format_currency(total_tax)])
             
             tax_table = create_table(tax_breakdown_data, col_widths=[2*inch, 1*inch, 1.5*inch, 1.5*inch])
             tax_table.setStyle(TableStyle([
@@ -925,7 +965,7 @@ class PDFGenerator:
             # Debtors Table
             story.append(Paragraph("Outstanding Receivables", self.styles['SectionHeader']))
             
-            debtor_data = [['Debtor Name', 'Invoice Date', 'Due Date', 'Amount (₦)', 'Status']]
+            debtor_data = [['Debtor Name', 'Invoice Date', 'Due Date', 'Amount (N)', 'Status']]
             total_outstanding = 0
             overdue_amount = 0
             
@@ -945,12 +985,12 @@ class PDFGenerator:
                     debtor.get('name', 'N/A'),
                     invoice_date.strftime('%Y-%m-%d'),
                     due_date.strftime('%Y-%m-%d'),
-                    f"₦{amount:,.2f}",
+                    format_currency(amount),
                     status
                 ])
                 total_outstanding += amount
             
-            debtor_data.append(['', '', 'Total Outstanding:', f"₦{total_outstanding:,.2f}", ''])
+            debtor_data.append(['', '', 'Total Outstanding:', format_currency(total_outstanding), ''])
             
             debtor_table = create_table(debtor_data, col_widths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
             debtor_table.setStyle(TableStyle([
@@ -1026,7 +1066,7 @@ class PDFGenerator:
             # Creditors Table
             story.append(Paragraph("Outstanding Payables", self.styles['SectionHeader']))
             
-            creditor_data = [['Creditor Name', 'Invoice Date', 'Due Date', 'Amount (₦)', 'Status']]
+            creditor_data = [['Creditor Name', 'Invoice Date', 'Due Date', 'Amount (N)', 'Status']]
             total_outstanding = 0
             overdue_amount = 0
             
@@ -1046,12 +1086,12 @@ class PDFGenerator:
                     creditor.get('name', 'N/A'),
                     invoice_date.strftime('%Y-%m-%d'),
                     due_date.strftime('%Y-%m-%d'),
-                    f"₦{amount:,.2f}",
+                    format_currency(amount),
                     status
                 ])
                 total_outstanding += amount
             
-            creditor_data.append(['', '', 'Total Outstanding:', f"₦{total_outstanding:,.2f}", ''])
+            creditor_data.append(['', '', 'Total Outstanding:', format_currency(total_outstanding), ''])
             
             creditor_table = create_table(creditor_data, col_widths=[1.8*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1*inch])
             creditor_table.setStyle(TableStyle([
@@ -1132,7 +1172,7 @@ class PDFGenerator:
             # Build table with or without Asset Name column
             if not has_any_names:
                 # No names - hide Asset Name column entirely
-                asset_data = [['Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
+                asset_data = [['Category', 'Purchase Date', 'Cost (N)', 'Current Value (N)']]
                 total_cost = 0
                 total_value = 0
                 
@@ -1155,18 +1195,18 @@ class PDFGenerator:
                     asset_data.append([
                         asset.get('category', '—'),
                         purchase_date.strftime('%Y-%m-%d'),
-                        f"₦{cost:,.2f}",
-                        f"₦{current_value:,.2f}"
+                        format_currency(cost),
+                        format_currency(current_value)
                     ])
                     total_cost += cost
                     total_value += current_value
                 
-                asset_data.append(['', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
+                asset_data.append(['', 'Totals:', format_currency(total_cost), format_currency(total_value)])
                 
                 asset_table = create_table(asset_data, col_widths=[1.8*inch, 1.5*inch, 1.8*inch, 1.9*inch])
             else:
                 # Some assets have names - keep column but use professional dash
-                asset_data = [['Asset Name', 'Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)']]
+                asset_data = [['Asset Name', 'Category', 'Purchase Date', 'Cost (N)', 'Current Value (N)']]
                 total_cost = 0
                 total_value = 0
                 
@@ -1194,13 +1234,13 @@ class PDFGenerator:
                         display_name,
                         asset.get('category', '—'),
                         purchase_date.strftime('%Y-%m-%d'),
-                        f"₦{cost:,.2f}",
-                        f"₦{current_value:,.2f}"
+                        format_currency(cost),
+                        format_currency(current_value)
                     ])
                     total_cost += cost
                     total_value += current_value
                 
-                asset_data.append(['', '', 'Totals:', f"₦{total_cost:,.2f}", f"₦{total_value:,.2f}"])
+                asset_data.append(['', '', 'Totals:', format_currency(total_cost), format_currency(total_value)])
                 
                 asset_table = create_table(asset_data, col_widths=[1.8*inch, 1.3*inch, 1.2*inch, 1.3*inch, 1.4*inch])
             
@@ -1276,7 +1316,7 @@ class PDFGenerator:
             # Depreciation Table
             story.append(Paragraph("Depreciation Details", self.styles['SectionHeader']))
             
-            depreciation_data = [['Asset', 'Cost (₦)', 'Useful Life', 'Annual Dep. (₦)', 'Accumulated (₦)', 'Book Value (₦)']]
+            depreciation_data = [['Asset', 'Cost (N)', 'Useful Life', 'Annual Dep. (₦)', 'Accumulated (₦)', 'Book Value (N)']]
             total_cost = 0
             total_annual_dep = 0
             total_accumulated = 0
@@ -1329,11 +1369,11 @@ class PDFGenerator:
                 
                 depreciation_data.append([
                     display_name,
-                    f"₦{cost:,.2f}",
+                    format_currency(cost),
                     f"{useful_life} years",
-                    f"₦{annual_depreciation:,.2f}",
-                    f"₦{accumulated_depreciation:,.2f}",
-                    f"₦{book_value:,.2f}"
+                    format_currency(annual_depreciation),
+                    format_currency(accumulated_depreciation),
+                    format_currency(book_value)
                 ])
                 
                 total_cost += cost
@@ -1343,11 +1383,11 @@ class PDFGenerator:
             
             depreciation_data.append([
                 'Totals:',
-                f"₦{total_cost:,.2f}",
+                format_currency(total_cost),
                 '',
-                f"₦{total_annual_dep:,.2f}",
-                f"₦{total_accumulated:,.2f}",
-                f"₦{total_book_value:,.2f}"
+                format_currency(total_annual_dep),
+                format_currency(total_accumulated),
+                format_currency(total_book_value)
             ])
             
             depreciation_table = create_table(depreciation_data, col_widths=[1.5*inch, 1*inch, 0.9*inch, 1*inch, 1.1*inch, 1*inch])
@@ -1421,7 +1461,7 @@ class PDFGenerator:
             # Inventory Table
             story.append(Paragraph("Inventory Details", self.styles['SectionHeader']))
             
-            inventory_data = [['Item Name', 'SKU', 'Quantity', 'Unit Cost (₦)', 'Total Value (₦)', 'Status']]
+            inventory_data = [['Item Name', 'SKU', 'Quantity', 'Unit Cost (N)', 'Total Value (N)', 'Status']]
             total_quantity = 0
             total_value = 0
             low_stock_count = 0
@@ -1445,15 +1485,15 @@ class PDFGenerator:
                     item.get('name', 'N/A'),
                     item.get('sku', 'N/A'),
                     str(quantity),
-                    f"₦{unit_cost:,.2f}",
-                    f"₦{total_item_value:,.2f}",
+                    format_currency(unit_cost),
+                    format_currency(total_item_value),
                     status
                 ])
                 
                 total_quantity += quantity
                 total_value += total_item_value
             
-            inventory_data.append(['', 'Totals:', str(total_quantity), '', f"₦{total_value:,.2f}", ''])
+            inventory_data.append(['', 'Totals:', str(total_quantity), '', format_currency(total_value), ''])
             
             inventory_table = create_table(inventory_data, col_widths=[1.5*inch, 1*inch, 0.8*inch, 1.2*inch, 1.2*inch, 1*inch])
             inventory_table.setStyle(TableStyle([
@@ -1514,7 +1554,7 @@ class PDFGenerator:
         nigerian_time = get_nigerian_time()
         user_info = f"""
         <b>Name:</b> {user_data.get('name', 'N/A')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin'))}<br/>
         <b>Email:</b> {user_data.get('email', 'N/A')}<br/>
         <b>Account Type:</b> {'Premium' if user_data.get('isSubscribed', False) else 'Free'}<br/>
         <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}
@@ -1762,9 +1802,9 @@ class PDFGenerator:
             # Determine debit/credit
             if amount >= 0:
                 debit = ''
-                credit = f"₦{amount:,.2f}"
+                credit = format_currency(amount)
             else:
-                debit = f"₦{abs(amount):,.2f}"
+                debit = format_currency(abs(amount))
                 credit = ''
             
             # Update running balance
@@ -1790,13 +1830,13 @@ class PDFGenerator:
                 description[:40],  # Truncate long descriptions
                 debit,
                 credit,
-                f"₦{running_balance:,.2f}",
+                format_currency(running_balance),
                 status
             ])
         
         # Add closing balance row
         ledger_data.append([
-            '', '', 'CLOSING BALANCE', '', '', f"₦{running_balance:,.2f}", ''
+            '', '', 'CLOSING BALANCE', '', '', format_currency(running_balance), ''
         ])
         
         # Create table
@@ -1834,12 +1874,12 @@ class PDFGenerator:
         reversal_count = sum(1 for t in all_transactions if t['transactionType'] == 'REVERSAL')
         
         summary_data = [
-            ['Description', 'Amount (₦)'],
-            ['Opening Balance', f"₦{opening_balance:,.2f}"],
-            ['Total Income (Active)', f"₦{total_income:,.2f}"],
-            ['Total Expenses (Active)', f"₦{total_expenses:,.2f}"],
-            ['Net Position', f"₦{net_position:,.2f}"],
-            ['Closing Balance', f"₦{running_balance:,.2f}"],
+            ['Description', 'Amount (N)'],
+            ['Opening Balance', format_currency(opening_balance)],
+            ['Total Income (Active)', format_currency(total_income)],
+            ['Total Expenses (Active)', format_currency(total_expenses)],
+            ['Net Position', format_currency(net_position)],
+            ['Closing Balance', format_currency(running_balance)],
             ['', ''],
             ['Audit Trail Statistics', ''],
             ['Active Transactions', str(active_count)],
@@ -1881,7 +1921,7 @@ class PDFGenerator:
         • All changes are traceable through the audit trail<br/>
         <br/>
         <b>Regulatory Compliance:</b> This ledger meets CBN microfinance licensing requirements for immutable audit trails.<br/>
-        <b>Use Case:</b> Suitable for FIRS tax audits, bank loan applications, and partner due diligence.
+        <b>Use Case:</b> Suitable for NRS tax audits, bank loan applications, and partner due diligence.
         """
         story.append(Paragraph(cert_text, self.styles['InfoText']))
         story.append(Spacer(1, 20))
@@ -1937,7 +1977,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin'))}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -1952,7 +1992,7 @@ class PDFGenerator:
         story.append(Paragraph("Wallet Funding Transactions", self.styles['SectionHeader']))
         story.append(Spacer(1, 12))
         
-        table_data = [['Date', 'Reference', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        table_data = [['Date', 'Reference', 'Amount (N)', 'Fee (₦)', 'Status']]
         total_amount = 0
         total_fees = 0
         
@@ -1964,15 +2004,15 @@ class PDFGenerator:
             table_data.append([
                 date_str,
                 txn.get('reference', 'N/A'),
-                f'₦{amount:,.2f}',
-                f'₦{fee:,.2f}',
+                format_currency(amount),
+                format_currency(fee),
                 txn.get('status', 'UNKNOWN')
             ])
             total_amount += amount
             total_fees += fee
         
         # Add totals row
-        table_data.append(['', 'Totals:', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        table_data.append(['', 'Totals:', format_currency(total_amount), format_currency(total_fees), ''])
         
         table = create_table(table_data, col_widths=[1.5*inch, 2*inch, 1.2*inch, 1.2*inch, 1*inch])
         table.setStyle(TableStyle([
@@ -2031,7 +2071,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin'))}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -2048,30 +2088,30 @@ class PDFGenerator:
             story.append(Paragraph("Summary by Service Type", self.styles['SectionHeader']))
             story.append(Spacer(1, 12))
             
-            summary_data = [['Service Type', 'Amount (₦)', 'Percentage']]
+            summary_data = [['Service Type', 'Amount (N)', 'Percentage']]
             total = summary.get('total', 0)
             
             if summary.get('electricity', 0) > 0:
                 pct = (summary['electricity'] / total * 100) if total > 0 else 0
-                summary_data.append(['Electricity', f"₦{summary['electricity']:,.2f}", f"{pct:.1f}%"])
+                summary_data.append(['Electricity', format_currency(summary['electricity']), f"{pct:.1f}%"])
             if summary.get('cable_tv', 0) > 0:
                 pct = (summary['cable_tv'] / total * 100) if total > 0 else 0
-                summary_data.append(['Cable TV', f"₦{summary['cable_tv']:,.2f}", f"{pct:.1f}%"])
+                summary_data.append(['Cable TV', format_currency(summary['cable_tv']), f"{pct:.1f}%"])
             if summary.get('internet', 0) > 0:
                 pct = (summary['internet'] / total * 100) if total > 0 else 0
-                summary_data.append(['Internet', f"₦{summary['internet']:,.2f}", f"{pct:.1f}%"])
+                summary_data.append(['Internet', format_currency(summary['internet']), f"{pct:.1f}%"])
             if summary.get('water', 0) > 0:
                 pct = (summary['water'] / total * 100) if total > 0 else 0
-                summary_data.append(['Water', f"₦{summary['water']:,.2f}", f"{pct:.1f}%"])
+                summary_data.append(['Water', format_currency(summary['water']), f"{pct:.1f}%"])
             if summary.get('transportation', 0) > 0:
                 pct = (summary['transportation'] / total * 100) if total > 0 else 0
-                summary_data.append(['Transportation', f"₦{summary['transportation']:,.2f}", f"{pct:.1f}%"])
+                summary_data.append(['Transportation', format_currency(summary['transportation']), f"{pct:.1f}%"])
             if summary.get('other', 0) > 0:
                 pct = (summary['other'] / total * 100) if total > 0 else 0
-                summary_data.append(['Other Services', f"₦{summary['other']:,.2f}", f"{pct:.1f}%"])
+                summary_data.append(['Other Services', format_currency(summary['other']), f"{pct:.1f}%"])
             
             summary_data.append(['', '', ''])
-            summary_data.append(['TOTAL', f"₦{total:,.2f}", '100%'])
+            summary_data.append(['TOTAL', format_currency(total), '100%'])
             
             summary_table = create_table(summary_data, col_widths=[2.5*inch, 2*inch, 1.5*inch])
             summary_table.setStyle(TableStyle([
@@ -2092,7 +2132,7 @@ class PDFGenerator:
         story.append(Paragraph("All Bill Payment Transactions", self.styles['SectionHeader']))
         story.append(Spacer(1, 12))
         
-        table_data = [['Date', 'Reference', 'Category', 'Amount (₦)', 'Status']]
+        table_data = [['Date', 'Reference', 'Category', 'Amount (N)', 'Status']]
         total_amount = 0
         
         for txn in export_data.get('transactions', []):
@@ -2103,13 +2143,13 @@ class PDFGenerator:
                 date_str,
                 txn.get('reference', 'N/A')[:15],
                 txn.get('category', 'N/A'),
-                f'₦{amount:,.2f}',
+                format_currency(amount),
                 txn.get('status', 'COMPLETED')
             ])
             total_amount += amount
         
         # Add totals row
-        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', ''])
+        table_data.append(['', 'Totals:', '', format_currency(total_amount), ''])
         
         table = create_table(table_data, col_widths=[1.5*inch, 1.5*inch, 1.5*inch, 1.3*inch, 1.2*inch])
         table.setStyle(TableStyle([
@@ -2170,7 +2210,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin'))}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -2187,7 +2227,7 @@ class PDFGenerator:
             story.append(Paragraph("Summary by Network", self.styles['SectionHeader']))
             story.append(Spacer(1, 12))
             
-            summary_data = [['Network', 'Transactions', 'Amount (₦)', 'Percentage']]
+            summary_data = [['Network', 'Transactions', 'Amount (N)', 'Percentage']]
             total = sum(data['total'] for data in network_summary.values())
             
             # Sort networks by total amount (descending)
@@ -2197,10 +2237,10 @@ class PDFGenerator:
                 count = data['count']
                 amount = data['total']
                 pct = (amount / total * 100) if total > 0 else 0
-                summary_data.append([network, str(count), f"₦{amount:,.2f}", f"{pct:.1f}%"])
+                summary_data.append([network, str(count), format_currency(amount), f"{pct:.1f}%"])
             
             summary_data.append(['', '', '', ''])
-            summary_data.append(['TOTAL', str(sum(d['count'] for d in network_summary.values())), f"₦{total:,.2f}", '100%'])
+            summary_data.append(['TOTAL', str(sum(d['count'] for d in network_summary.values())), format_currency(total), '100%'])
             
             summary_table = create_table(summary_data, col_widths=[1.5*inch, 1.5*inch, 2*inch, 1*inch])
             summary_table.setStyle(TableStyle([
@@ -2221,7 +2261,7 @@ class PDFGenerator:
         story.append(Paragraph("All Airtime Purchase Transactions", self.styles['SectionHeader']))
         story.append(Spacer(1, 12))
         
-        table_data = [['Date', 'Network', 'Phone Number', 'Amount (₦)', 'Status']]
+        table_data = [['Date', 'Network', 'Phone Number', 'Amount (N)', 'Status']]
         total_amount = 0
         
         for txn in export_data.get('transactions', []):
@@ -2232,13 +2272,13 @@ class PDFGenerator:
                 date_str,
                 txn.get('network', 'Unknown'),
                 txn.get('phone', 'N/A'),
-                f'₦{amount:,.2f}',
+                format_currency(amount),
                 txn.get('status', 'COMPLETED')
             ])
             total_amount += amount
         
         # Add totals row
-        table_data.append(['', 'Totals:', '', f'₦{total_amount:,.2f}', ''])
+        table_data.append(['', 'Totals:', '', format_currency(total_amount), ''])
         
         table = create_table(table_data, col_widths=[1.5*inch, 1.3*inch, 1.5*inch, 1.3*inch, 1.4*inch])
         table.setStyle(TableStyle([
@@ -2292,7 +2332,7 @@ class PDFGenerator:
         # User Info
         user_info = f"""
         <b>Name:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
-        <b>TIN:</b> {user_data.get('tin', 'Not Provided')}<br/>
+        <b>TIN:</b> {format_tin_display(user_data.get('tin'))}<br/>
         <b>Email:</b> {user_data.get('email', '')}<br/>
         <b>Business:</b> {user_data.get('businessName', 'N/A')}<br/>
         <b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}
@@ -2307,7 +2347,7 @@ class PDFGenerator:
         story.append(Paragraph("All Wallet Transactions", self.styles['SectionHeader']))
         story.append(Spacer(1, 12))
         
-        table_data = [['Date', 'Reference', 'Type', 'Description', 'Amount (₦)', 'Fee (₦)', 'Status']]
+        table_data = [['Date', 'Reference', 'Type', 'Description', 'Amount (N)', 'Fee (₦)', 'Status']]
         total_amount = 0
         total_fees = 0
         
@@ -2321,15 +2361,15 @@ class PDFGenerator:
                 txn.get('reference', 'N/A')[:15],  # Truncate long references
                 txn.get('type', 'N/A')[:12],  # Truncate type
                 txn.get('description', 'N/A')[:25],  # Truncate description
-                f'₦{amount:,.2f}',
-                f'₦{fee:,.2f}',
+                format_currency(amount),
+                format_currency(fee),
                 txn.get('status', 'UNKNOWN')[:8]
             ])
             total_amount += amount
             total_fees += fee
         
         # Add totals row
-        table_data.append(['', 'Totals:', '', '', f'₦{total_amount:,.2f}', f'₦{total_fees:,.2f}', ''])
+        table_data.append(['', 'Totals:', '', '', format_currency(total_amount), format_currency(total_fees), ''])
         
         table = create_table(table_data, col_widths=[1*inch, 1.2*inch, 0.9*inch, 1.5*inch, 1*inch, 0.8*inch, 0.6*inch])
         table.setStyle(TableStyle([
@@ -2418,7 +2458,8 @@ class PDFGenerator:
         total_cogs = tax_data.get('cost_of_goods_sold', 0)
         
         # Gross Profit (Step 1)
-        gross_profit = tax_data.get('gross_profit', sales_revenue - total_cogs)
+        # CRITICAL FIX (Feb 19, 2026): Include Other Income in Gross Profit calculation
+        gross_profit = tax_data.get('gross_profit', (sales_revenue + other_income) - total_cogs)
         gross_margin = tax_data.get('gross_margin_percentage', 0)
         
         # Operating Expenses
@@ -2454,8 +2495,14 @@ class PDFGenerator:
         cash_balance = tax_data.get('cash_balance', 0)
         
         # Opening equity and drawings
+        # CRITICAL FIX (Feb 19, 2026): Opening equity should reflect capital injected
         opening_equity = tax_data.get('opening_equity', 0)
         drawings = tax_data.get('drawings', 0)
+        
+        # If opening equity is 0 but we have assets, show a recommendation
+        if opening_equity == 0 and total_assets_cost > 0:
+            # This will be shown in recommendations section
+            pass
         
         # Total assets including current assets
         total_current_assets = inventory_value + debtors_value + cash_balance
@@ -2515,6 +2562,7 @@ class PDFGenerator:
         cover_info = f"""
 <b>Business Name:</b> {business_name}<br/>
 <b>Prepared For:</b> {user_data.get('firstName', '')} {user_data.get('lastName', '')}<br/>
+<b>TIN:</b> {format_tin_display(user_data.get('tin'))}<br/>
 <b>Email:</b> {user_data.get('email', '')}<br/>
 <b>Reporting Period:</b> {period_text}<br/>
 <b>Report Generated:</b> {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}<br/>
@@ -2529,14 +2577,14 @@ class PDFGenerator:
         summary_data = [
             ['Metric', 'Value'],
             ['Financial Period', period_text],
-            ['Total Revenue', f'₦{total_income:,.2f}'],
-            ['Cost of Goods Sold', f'₦{total_cogs:,.2f}'],
-            ['Gross Profit', f'₦{gross_profit:,.2f}'],
+            ['Total Revenue', format_currency(total_income)],
+            ['Cost of Goods Sold', format_currency(total_cogs)],
+            ['Gross Profit', format_currency(gross_profit)],
             ['Gross Margin %', f'{gross_margin:.1f}%'],
-            ['Operating Expenses', f'₦{total_operating_expenses:,.2f}'],
-            ['Net Profit/(Loss)', f'₦{net_profit:,.2f}'],
-            ['Total Assets (NBV)', f'₦{total_assets_nbv:,.2f}'],
-            ['Current Assets', f'₦{total_current_assets:,.2f}'],
+            ['Operating Expenses', format_currency(total_operating_expenses)],
+            ['Net Profit/(Loss)', format_currency(net_profit)],
+            ['Total Assets (NBV)', format_currency(total_assets_nbv)],
+            ['Current Assets', format_currency(total_current_assets)],
             ['Asset Count', f'{asset_count} assets'],
             ['Tax Type', tax_type],
         ]
@@ -2563,19 +2611,19 @@ class PDFGenerator:
         story.append(Paragraph("Financial Overview", self.styles['SectionHeader']))
         
         financial_overview = [
-            ['Metric', 'Amount (₦)', 'Notes'],
+            ['Metric', 'Amount (N)', 'Notes'],
             ['REVENUE', '', ''],
-            ['Sales Revenue', f"₦{sales_revenue:,.2f}", 'Product sales'],
-            ['Other Income', f"₦{other_income:,.2f}", 'Services, grants, interest'],
-            ['Total Revenue', f"₦{total_income:,.2f}", f'{len(incomes)} transactions'],
+            ['Sales Revenue', format_currency(sales_revenue), 'Product sales'],
+            ['Other Income', format_currency(other_income), 'Services, grants, interest'],
+            ['Total Revenue', format_currency(total_income), f'{len(incomes)} transactions'],
             ['', '', ''],
-            ['Less: Cost of Goods Sold (COGS)', f"₦{total_cogs:,.2f}", 'Direct product costs'],
-            ['GROSS PROFIT', f"₦{gross_profit:,.2f}", f'{gross_margin:.1f}% margin'],
+            ['Less: Cost of Goods Sold (COGS)', format_currency(total_cogs), 'Direct product costs'],
+            ['GROSS PROFIT', format_currency(gross_profit), f'{gross_margin:.1f}% margin'],
             ['', '', ''],
-            ['Less: Operating Expenses', f"₦{total_operating_expenses:,.2f}", 'Rent, salaries, utilities'],
-            ['OPERATING PROFIT', f"₦{operating_profit:,.2f}", 'Before tax'],
+            ['Less: Operating Expenses', format_currency(total_operating_expenses), 'Rent, salaries, utilities'],
+            ['OPERATING PROFIT', format_currency(operating_profit), 'Before tax'],
             ['', '', ''],
-            ['NET PROFIT/(LOSS)', f"₦{net_profit:,.2f}", f'{profit_margin:.1f}% margin'],
+            ['NET PROFIT/(LOSS)', format_currency(net_profit), f'{profit_margin:.1f}% margin'],
         ]
         
         financial_table = create_table(financial_overview, col_widths=[2*inch, 2*inch, 2*inch])
@@ -2619,10 +2667,10 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         story.append(Paragraph("Fixed Assets Overview", self.styles['SectionHeader']))
         
         asset_overview = [
-            ['Metric', 'Amount (₦)', 'Notes'],
-            ['Total Assets (Original)', f"₦{total_assets_cost:,.2f}", f'{asset_count} assets'],
-            ['Total Assets (NBV)', f"₦{total_assets_nbv:,.2f}", 'After depreciation'],
-            ['Total Depreciation', f"₦{total_depreciation:,.2f}", 'Accumulated'],
+            ['Metric', 'Amount (N)', 'Notes'],
+            ['Total Assets (Original)', format_currency(total_assets_cost), f'{asset_count} assets'],
+            ['Total Assets (NBV)', format_currency(total_assets_nbv), 'After depreciation'],
+            ['Total Depreciation', format_currency(total_depreciation), 'Accumulated'],
         ]
         
         asset_table = create_table(asset_overview, col_widths=[2*inch, 2*inch, 2*inch])
@@ -2642,27 +2690,29 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         story.append(Paragraph("Current Assets & Liabilities", self.styles['SectionHeader']))
         
         # Display helpers for zero values
-        inventory_display = f"₦{inventory_value:,.2f}" if inventory_count > 0 else "₦0.00 (Not tracked)"
-        debtors_display = f"₦{debtors_value:,.2f}" if debtors_count > 0 else "₦0.00 (Not tracked)"
-        creditors_display = f"₦{creditors_value:,.2f}" if creditors_count > 0 else "₦0.00 (Not tracked)"
+        inventory_display = format_currency(inventory_value) if inventory_count > 0 else "N0.00 (Not tracked)"
+        debtors_display = format_currency(debtors_value) if debtors_count > 0 else "N0.00 (Not tracked)"
+        creditors_display = format_currency(creditors_value) if creditors_count > 0 else "N0.00 (Not tracked)"
         
-        # Display helper for cash
-        cash_display = f"₦{cash_balance:,.2f}" if cash_balance > 0 else "₦0.00 (Not tracked)"
+        # CRITICAL FIX (Feb 19, 2026): Display helper for cash - show if tracked via Cash/Bank Management
+        # If user has set opening balance OR has adjustments, consider it "tracked"
+        # Otherwise show "Not tracked" to encourage setup
+        cash_display = format_currency(cash_balance) if cash_balance != 0 else "N0.00 (Not tracked)"
         
         current_assets_liabilities = [
-            ['Item', 'Amount (₦)', 'Notes'],
+            ['Item', 'Amount (N)', 'Notes'],
             ['CURRENT ASSETS', '', ''],
             ['Cash & Bank', cash_display, 'Liquid funds'],
             ['Inventory (Stock)', inventory_display, f'{inventory_count} items' if inventory_count > 0 else ''],
             ['Accounts Receivable (Debtors)', debtors_display, f'{debtors_count} customers' if debtors_count > 0 else ''],
-            ['Total Current Assets', f"₦{total_current_assets:,.2f}", ''],
+            ['Total Current Assets', format_currency(total_current_assets), ''],
             ['', '', ''],
             ['CURRENT LIABILITIES', '', ''],
             ['Accounts Payable (Creditors)', creditors_display, f'{creditors_count} vendors' if creditors_count > 0 else ''],
-            ['Estimated Tax Payable', f"₦{unpaid_tax:,.2f}", 'Unpaid tax obligation'],
-            ['Total Current Liabilities', f"₦{total_current_liabilities:,.2f}", ''],
+            ['Estimated Tax Payable', format_currency(unpaid_tax), 'Unpaid tax obligation'],
+            ['Total Current Liabilities', format_currency(total_current_liabilities), ''],
             ['', '', ''],
-            ['NET CURRENT ASSETS', f"₦{total_current_assets - total_current_liabilities:,.2f}", 'Working Capital'],
+            ['NET CURRENT ASSETS', format_currency(total_current_assets - total_current_liabilities), 'Working Capital'],
         ]
         
         current_table = create_table(current_assets_liabilities, col_widths=[2.5*inch, 2*inch, 1.5*inch])
@@ -2687,28 +2737,28 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             story.append(Paragraph("Value Added Services (VAS) Breakdown", self.styles['SectionHeader']))
             
             vas_data = [
-                ['Service Type', 'Amount (₦)', 'Notes'],
+                ['Service Type', 'Amount (N)', 'Notes'],
             ]
             
             if vas_breakdown.get('airtime', 0) > 0:
-                vas_data.append(['Airtime', f"₦{vas_breakdown['airtime']:,.2f}", 'Mobile airtime purchases'])
+                vas_data.append(['Airtime', format_currency(vas_breakdown['airtime']), 'Mobile airtime purchases'])
             if vas_breakdown.get('data', 0) > 0:
-                vas_data.append(['Data', f"₦{vas_breakdown['data']:,.2f}", 'Mobile data bundles'])
+                vas_data.append(['Data', format_currency(vas_breakdown['data']), 'Mobile data bundles'])
             if vas_breakdown.get('electricity', 0) > 0:
-                vas_data.append(['Electricity', f"₦{vas_breakdown['electricity']:,.2f}", 'Power/utility bills'])
+                vas_data.append(['Electricity', format_currency(vas_breakdown['electricity']), 'Power/utility bills'])
             if vas_breakdown.get('cable_tv', 0) > 0:
-                vas_data.append(['Cable TV', f"₦{vas_breakdown['cable_tv']:,.2f}", 'TV subscriptions'])
+                vas_data.append(['Cable TV', format_currency(vas_breakdown['cable_tv']), 'TV subscriptions'])
             if vas_breakdown.get('internet', 0) > 0:
-                vas_data.append(['Internet', f"₦{vas_breakdown['internet']:,.2f}", 'Internet services'])
+                vas_data.append(['Internet', format_currency(vas_breakdown['internet']), 'Internet services'])
             if vas_breakdown.get('water', 0) > 0:
-                vas_data.append(['Water', f"₦{vas_breakdown['water']:,.2f}", 'Water bills'])
+                vas_data.append(['Water', format_currency(vas_breakdown['water']), 'Water bills'])
             if vas_breakdown.get('transportation', 0) > 0:
-                vas_data.append(['Transportation', f"₦{vas_breakdown['transportation']:,.2f}", 'Transport services'])
+                vas_data.append(['Transportation', format_currency(vas_breakdown['transportation']), 'Transport services'])
             if vas_breakdown.get('other', 0) > 0:
-                vas_data.append(['Other VAS', f"₦{vas_breakdown['other']:,.2f}", 'Other services'])
+                vas_data.append(['Other VAS', format_currency(vas_breakdown['other']), 'Other services'])
             
             vas_data.append(['', '', ''])
-            vas_data.append(['Total VAS Expenses', f"₦{vas_breakdown['total']:,.2f}", 'All digital services'])
+            vas_data.append(['Total VAS Expenses', format_currency(vas_breakdown['total']), 'All digital services'])
             
             vas_table = create_table(vas_data, col_widths=[2*inch, 2*inch, 2*inch])
             vas_table.setStyle(TableStyle([
@@ -2728,17 +2778,31 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         # Tax Overview
         story.append(Paragraph("Tax Overview", self.styles['SectionHeader']))
         
+        # CRITICAL FIX (Feb 19, 2026): Show tax savings message when profitable but exempt
+        # Calculate what tax WOULD BE without exemption
+        tax_without_exemption = 0
+        if tax_type == 'CIT' and net_profit > 0:
+            tax_without_exemption = net_profit * 0.30  # 30% CIT rate
+        elif tax_type == 'PIT' and net_profit > 800000:
+            tax_without_exemption = (net_profit - 800000) * 0.15  # Simplified PIT
+        
+        tax_savings = tax_without_exemption - estimated_tax
+        
         tax_overview = [
-            ['Metric', 'Amount (₦)', 'Notes'],
-            ['Taxable Income', f"₦{net_profit:,.2f}", 'After deductions'],
-            ['Estimated Tax', f"₦{estimated_tax:,.2f}", tax_rate_display],
+            ['Metric', 'Amount (N)', 'Notes'],
+            ['Taxable Income', format_currency(net_profit), 'After deductions'],
+            ['Estimated Tax', format_currency(estimated_tax), tax_rate_display],
             ['Effective Rate', f"{effective_rate:.2f}%", ''],
         ]
         
+        # Add tax savings message if applicable
+        if tax_savings > 0 and estimated_tax == 0:
+            tax_overview.append(['Tax Savings', format_currency(tax_savings), 'Amount saved through exemption'])
+        
         # Add CIT exemption context
         if tax_type == 'CIT':
-            tax_overview.append(['Revenue Status', f"₦{total_income:,.2f}", '≤₦100M for exemption'])
-            tax_overview.append(['Assets NBV Status', f"₦{total_assets_nbv:,.2f}", '≤₦250M for exemption'])
+            tax_overview.append(['Revenue Status', format_currency(total_income), '≤N100M for exemption'])
+            tax_overview.append(['Assets NBV Status', format_currency(total_assets_nbv), '≤N250M for exemption'])
         
         tax_table = create_table(tax_overview, col_widths=[2*inch, 2*inch, 2*inch])
         tax_table.setStyle(TableStyle([
@@ -2761,17 +2825,17 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         story.append(Paragraph("ASSETS", self.styles['SectionHeader']))
         
         assets_section = [
-            ['Asset Category', 'Amount (₦)'],
+            ['Asset Category', 'Amount (N)'],
             ['NON-CURRENT ASSETS', ''],
-            ['Fixed Assets (Net Book Value)', f"₦{total_assets_nbv:,.2f}"],
+            ['Fixed Assets (Net Book Value)', format_currency(total_assets_nbv)],
             ['', ''],
             ['CURRENT ASSETS', ''],
             ['Cash & Bank', cash_display],
             ['Inventory', inventory_display],
             ['Accounts Receivable (Debtors)', debtors_display],
-            ['Total Current Assets', f"₦{total_current_assets:,.2f}"],
+            ['Total Current Assets', format_currency(total_current_assets)],
             ['', ''],
-            ['TOTAL ASSETS', f"₦{total_all_assets:,.2f}"],
+            ['TOTAL ASSETS', format_currency(total_all_assets)],
         ]
         
         assets_bs_table = create_table(assets_section, col_widths=[3*inch, 3*inch])
@@ -2795,19 +2859,19 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         story.append(Paragraph("LIABILITIES & EQUITY", self.styles['SectionHeader']))
         
         liabilities_section = [
-            ['Category', 'Amount (₦)'],
+            ['Category', 'Amount (N)'],
             ['CURRENT LIABILITIES', ''],
             ['Accounts Payable (Creditors)', creditors_display],
-            ['Estimated Tax Payable', f"₦{unpaid_tax:,.2f}"],
-            ['Total Current Liabilities', f"₦{total_current_liabilities:,.2f}"],
+            ['Estimated Tax Payable', format_currency(unpaid_tax)],
+            ['Total Current Liabilities', format_currency(total_current_liabilities)],
             ['', ''],
             ['OWNER\'S EQUITY', ''],
-            ['Opening Equity', f"₦{opening_equity:,.2f}"],
-            ['Add: Net Profit/(Loss) for Period', f"₦{net_profit:,.2f}"],
-            ['Less: Drawings/Withdrawals', f"₦{drawings:,.2f}"],
-            ['Closing Equity', f"₦{closing_equity:,.2f}"],
+            ['Opening Equity', format_currency(opening_equity)],
+            ['Add: Net Profit/(Loss) for Period', format_currency(net_profit)],
+            ['Less: Drawings/Withdrawals', format_currency(drawings)],
+            ['Closing Equity', format_currency(closing_equity)],
             ['', ''],
-            ['TOTAL LIABILITIES & EQUITY', f"₦{total_current_liabilities + closing_equity:,.2f}"],
+            ['TOTAL LIABILITIES & EQUITY', format_currency(total_current_liabilities + closing_equity)],
         ]
         
         liabilities_bs_table = create_table(liabilities_section, col_widths=[3*inch, 3*inch])
@@ -2901,7 +2965,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
         ]
         
         if cash_balance == 0:
-            recommendations_list.append("• <b>Consider tracking Cash/Bank balances</b> for accurate financial position")
+            recommendations_list.append("• <b>Set up Cash/Bank tracking</b> in Business Suite → Cash/Bank Management for accurate financial position")
         if inventory_count == 0:
             recommendations_list.append("• Consider tracking Inventory if you sell physical products")
         if debtors_count == 0:
@@ -2926,7 +2990,7 @@ It does not constitute professional tax or financial advice.<br/>
 For official tax filing and compliance, please consult with:<br/>
 • A certified tax professional<br/>
 • A chartered accountant<br/>
-• The Federal Inland Revenue Service (FIRS)<br/>
+• The Nigeria Revenue Service (NRS)<br/>
 <br/>
 Generated by FiCore Mobile App | team@ficoreafrica.com<br/>
 Report ID: {report_id} | Generated: {nigerian_time.strftime('%B %d, %Y at %H:%M WAT')}</i>

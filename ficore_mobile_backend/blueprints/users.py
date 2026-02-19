@@ -1301,11 +1301,11 @@ def save_tax_profile():
             
             # Validate business structure
             business_structure = data.get('businessStructure')
-            if not business_structure or business_structure not in ['personal_income', 'llc']:
+            if not business_structure or business_structure not in ['personal_income', 'llc', 'professional_services']:
                 return jsonify({
                     'success': False,
                     'message': 'Invalid business structure',
-                    'errors': {'businessStructure': ['Must be "personal_income" or "llc"']}
+                    'errors': {'businessStructure': ['Must be "personal_income", "llc", or "professional_services"']}
                 }), 400
             
             # Get income/turnover based on structure
@@ -1675,6 +1675,18 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
             'exemptionEligible': exemption_eligible,
             'filingDeadline': 'June 30th',
             'description': '0% CIT if qualified (Turnover < ₦100M AND Fixed Assets NBV < ₦250M), otherwise 30% CIT.'
+        }
+    
+    elif business_structure == 'professional_services':
+        # Professional services are EXPLICITLY EXCLUDED from small company exemption
+        # Law, accounting, consulting, engineering, architecture, medical practices
+        return {
+            'businessStructure': 'professional_services',
+            'taxAuthority': 'nrs',
+            'taxRate': '30% CIT (Standard Rate)',
+            'exemptionEligible': False,
+            'filingDeadline': 'June 30th',
+            'description': '⚠️ Professional services firms (law, accounting, consulting, engineering, architecture, medical) are EXCLUDED from the 0% CIT exemption under Nigeria Tax Act 2025. You pay the standard 30% CIT rate regardless of turnover or asset size. This applies to LLP, Ltd, BN, and Partnership structures.'
         }
     
     return None
