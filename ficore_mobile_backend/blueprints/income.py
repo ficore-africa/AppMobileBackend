@@ -1273,6 +1273,18 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             clean_id = entry_id.replace('income_', '').replace('expense_', '')
             print(f"Cleaned ID: {clean_id}")
             
+            # CRITICAL FIX (Feb 20, 2026): Validate that cleaned ID is a valid MongoDB ObjectId
+            # Frontend sometimes sends Isar local IDs (e.g., "283") instead of MongoDB ObjectIds
+            # Golden Rule #46: ID Format Consistency - reject invalid IDs early
+            if not ObjectId.is_valid(clean_id):
+                print(f"❌ Invalid ObjectId format: {clean_id}")
+                print(f"   Expected: 24-character hex string (MongoDB ObjectId)")
+                print(f"   Received: {len(clean_id)}-character string")
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry ID format. Please refresh and try again.'
+                }), 400
+            
             # Check if income exists first
             income = mongo.db.incomes.find_one({
                 '_id': ObjectId(clean_id),
