@@ -299,6 +299,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 print(f"Analytics tracking failed (non-critical): {analytics_error}")
             
             # STEP 9: Create notification to remind user to attach supporting documents
+            notification_data = None  # FIX 3.1: Capture notification for response
             try:
                 from blueprints.notifications import create_user_notification
                 
@@ -323,6 +324,59 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 
                 if notification_id:
                     print(f"✓ Notification created: {notification_id} (relatedId: {formatted_related_id})")
+                    
+                    # FIX 3: Send FCM push notification
+                    try:
+                        from services.firebase_service import firebase_service
+                        
+                        # Get user's FCM token
+                        user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
+                        fcm_token = user.get('fcmToken')
+                        
+                        if fcm_token:
+                            # Send push notification
+                            push_sent = firebase_service.send_push_notification(
+                                fcm_token=fcm_token,
+                                title='Don\'t forget to attach supporting documents',
+                                body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} expense entry to keep better records.',
+                                data={
+                                    'notificationId': notification_id,
+                                    'category': 'missingReceipt',
+                                    'relatedId': formatted_related_id,
+                                    'transactionType': 'expense',
+                                    'amount': str(data['amount']),
+                                    'click_action': 'FLUTTER_NOTIFICATION_CLICK'
+                                }
+                            )
+                            
+                            if push_sent:
+                                print(f"✓ FCM push sent successfully for notification {notification_id}")
+                            else:
+                                print(f"⚠ FCM push failed for notification {notification_id} (non-critical)")
+                        else:
+                            print(f"⚠ No FCM token for user {current_user['email']}, skipping push")
+                            
+                    except Exception as push_error:
+                        print(f"⚠ FCM push failed (non-critical): {push_error}")
+                    
+                    # FIX 3.1: Prepare notification data for response (eliminates race condition)
+                    notification_data = {
+                        'id': notification_id,
+                        'category': 'missingReceipt',
+                        'title': 'Don\'t forget to attach supporting documents',
+                        'body': f'You can add receipts or documents to your ₦{data["amount"]:,.2f} expense entry to keep better records.',
+                        'relatedId': formatted_related_id,
+                        'priority': 'normal',
+                        'timestamp': datetime.utcnow().isoformat() + 'Z',
+                        'isRead': False,
+                        'isArchived': False,
+                        'metadata': {
+                            'transactionType': 'expense',
+                            'amount': float(data['amount']),
+                            'category': data['category'],
+                            'description': data['description']
+                        }
+                    }
                 else:
                     print(f"⚠ Notification creation returned None (non-critical)")
                     
@@ -353,6 +407,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             else:
                 message = f"Expense created successfully. {monthly_data['remaining'] - 1} free entries remaining this month."
             
+            # FIX 3.1: Include notification in response (eliminates race condition)
             return jsonify({
                 'success': True,
                 'data': {
@@ -363,7 +418,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                         'count': monthly_data['count'] + 1,
                         'limit': monthly_data['limit'] if not is_premium else None,
                         'remaining': max(0, monthly_data['remaining'] - 1) if not is_premium else None
-                    }
+                    },
+                    'notification': notification_data  # FIX 3.1: Include notification in response
                 },
                 'message': message
             }), 201
@@ -660,6 +716,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 print(f"Analytics tracking failed (non-critical): {analytics_error}")
             
             # STEP 9: Create notification to remind user to attach supporting documents
+            notification_data = None  # FIX 3.1: Capture notification for response
             try:
                 from blueprints.notifications import create_user_notification
                 
@@ -684,6 +741,59 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 
                 if notification_id:
                     print(f"✓ Notification created: {notification_id} (relatedId: {formatted_related_id})")
+                    
+                    # FIX 3: Send FCM push notification
+                    try:
+                        from services.firebase_service import firebase_service
+                        
+                        # Get user's FCM token
+                        user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
+                        fcm_token = user.get('fcmToken')
+                        
+                        if fcm_token:
+                            # Send push notification
+                            push_sent = firebase_service.send_push_notification(
+                                fcm_token=fcm_token,
+                                title='Don\'t forget to attach supporting documents',
+                                body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} income entry to keep better records.',
+                                data={
+                                    'notificationId': notification_id,
+                                    'category': 'missingReceipt',
+                                    'relatedId': formatted_related_id,
+                                    'transactionType': 'income',
+                                    'amount': str(data['amount']),
+                                    'click_action': 'FLUTTER_NOTIFICATION_CLICK'
+                                }
+                            )
+                            
+                            if push_sent:
+                                print(f"✓ FCM push sent successfully for notification {notification_id}")
+                            else:
+                                print(f"⚠ FCM push failed for notification {notification_id} (non-critical)")
+                        else:
+                            print(f"⚠ No FCM token for user {current_user['email']}, skipping push")
+                            
+                    except Exception as push_error:
+                        print(f"⚠ FCM push failed (non-critical): {push_error}")
+                    
+                    # FIX 3.1: Prepare notification data for response (eliminates race condition)
+                    notification_data = {
+                        'id': notification_id,
+                        'category': 'missingReceipt',
+                        'title': 'Don\'t forget to attach supporting documents',
+                        'body': f'You can add receipts or documents to your ₦{data["amount"]:,.2f} income entry to keep better records.',
+                        'relatedId': formatted_related_id,
+                        'priority': 'normal',
+                        'timestamp': datetime.utcnow().isoformat() + 'Z',
+                        'isRead': False,
+                        'isArchived': False,
+                        'metadata': {
+                            'transactionType': 'income',
+                            'amount': float(data['amount']),
+                            'category': data['category'],
+                            'source': data['source']
+                        }
+                    }
                 else:
                     print(f"⚠ Notification creation returned None (non-critical)")
                     
@@ -713,6 +823,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             else:
                 message = f"Income created successfully. {monthly_data['remaining'] - 1} free entries remaining this month."
             
+            # FIX 3.1: Include notification in response (eliminates race condition)
             return jsonify({
                 'success': True,
                 'data': {
@@ -723,7 +834,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                         'count': monthly_data['count'] + 1,
                         'limit': monthly_data['limit'] if not is_premium else None,
                         'remaining': max(0, monthly_data['remaining'] - 1) if not is_premium else None
-                    }
+                    },
+                    'notification': notification_data  # FIX 3.1: Include notification in response
                 },
                 'message': message
             }), 201

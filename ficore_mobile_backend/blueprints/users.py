@@ -994,6 +994,108 @@ def get_support_info():
     
     return _get_support_info()
 
+# ==================== FCM TOKEN MANAGEMENT ====================
+# Added: Feb 20, 2026 - FCM Production Readiness (Fix 2)
+
+@users_bp.route('/fcm-token', methods=['POST'])
+def update_fcm_token():
+    """
+    Update user's FCM token for push notifications
+    
+    Request Body:
+    {
+        "fcmToken": "string"
+    }
+    
+    Returns:
+        - 200: Token updated successfully
+        - 400: Invalid request (missing token)
+        - 500: Server error
+    """
+    @users_bp.token_required
+    def _update_fcm_token(current_user):
+        try:
+            data = request.get_json()
+            fcm_token = data.get('fcmToken')
+            
+            if not fcm_token:
+                return jsonify({
+                    'success': False,
+                    'message': 'FCM token is required'
+                }), 400
+            
+            # Update user's FCM token
+            users_bp.mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {
+                    '$set': {
+                        'fcmToken': fcm_token,
+                        'fcmTokenUpdatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f"✓ FCM token updated for user {current_user['email']}: {fcm_token[:20]}...")
+            
+            return jsonify({
+                'success': True,
+                'message': 'FCM token updated successfully',
+                'data': {
+                    'tokenUpdatedAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"✗ Error updating FCM token: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Failed to update FCM token: {str(e)}'
+            }), 500
+    
+    return _update_fcm_token()
+
+
+@users_bp.route('/fcm-token', methods=['DELETE'])
+def delete_fcm_token():
+    """
+    Delete user's FCM token (called on logout)
+    
+    Returns:
+        - 200: Token deleted successfully
+        - 500: Server error
+    """
+    @users_bp.token_required
+    def _delete_fcm_token(current_user):
+        try:
+            # Remove FCM token from user
+            users_bp.mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {
+                    '$unset': {
+                        'fcmToken': '',
+                        'fcmTokenUpdatedAt': ''
+                    }
+                }
+            )
+            
+            print(f"✓ FCM token deleted for user {current_user['email']}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'FCM token deleted successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"✗ Error deleting FCM token: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Failed to delete FCM token: {str(e)}'
+            }), 500
+    
+    return _delete_fcm_token()
+
+# ==================== END FCM TOKEN MANAGEMENT ====================
+
 @users_bp.route('/financial-goals', methods=['GET'])
 def get_financial_goals():
     @users_bp.token_required
