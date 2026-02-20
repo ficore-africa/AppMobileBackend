@@ -811,7 +811,8 @@
             const tbody = document.getElementById('transactionsTableBody');
             
             tbody.innerHTML = transactions.map(txn => {
-                const commission = txn.provider === 'monnify' ? txn.amount * 0.03 : 0;
+                // Use actual providerCommission from backend (supports both Monnify and Peyflex)
+                const commission = txn.providerCommission || 0;
                 const date = new Date(txn.createdAt).toLocaleDateString();
                 
                 return `
@@ -839,7 +840,8 @@
             const headers = ['Date', 'Type', 'Provider', 'Amount', 'Commission', 'User Email', 'Transaction ID'];
             
             const csvData = treasuryData.recentTransactions.map(txn => {
-                const commission = txn.provider === 'monnify' ? txn.amount * 0.03 : 0;
+                // Use actual providerCommission from backend (supports both Monnify and Peyflex)
+                const commission = txn.providerCommission || 0;
                 const date = new Date(txn.createdAt).toLocaleDateString();
                 
                 return [

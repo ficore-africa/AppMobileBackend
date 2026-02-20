@@ -22,7 +22,18 @@ def init_cash_bank_blueprint(mongo, token_required):
         """Get user's opening cash/bank balance"""
         try:
             user = mongo.db.users.find_one({'_id': current_user['_id']})
+            
+            if not user:
+                print(f'Error: User not found with ID: {current_user["_id"]}')
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Default to 0.0 if field doesn't exist
             opening_balance = user.get('openingCashBalance', 0.0)
+            
+            print(f'✓ Opening balance fetched for user {current_user["_id"]}: ₦{opening_balance}')
             
             return jsonify({
                 'success': True,
@@ -30,7 +41,9 @@ def init_cash_bank_blueprint(mongo, token_required):
             }), 200
             
         except Exception as e:
-            print(f'Error fetching opening balance: {str(e)}')
+            print(f'❌ Error fetching opening balance: {str(e)}')
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to fetch opening balance'
