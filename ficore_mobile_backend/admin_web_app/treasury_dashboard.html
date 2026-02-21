@@ -616,11 +616,29 @@
                 <div class="label">Corporate Revenue</div>
                 <div class="sublabel">Total earnings (commissions + fees)</div>
             </div>
+            <div class="stat-card" style="--card-color: #e67e22;">
+                <div class="icon"><i class="fas fa-hand-holding-usd"></i></div>
+                <div class="number" id="depositFees">₦0</div>
+                <div class="label">Deposit Fees</div>
+                <div class="sublabel">₦30 from free users</div>
+            </div>
             <div class="stat-card transactions">
                 <div class="icon"><i class="fas fa-exchange-alt"></i></div>
                 <div class="number" id="totalTransactions">0</div>
                 <div class="label">Successful Transactions</div>
                 <div class="sublabel">All VAS purchases</div>
+            </div>
+            <div class="stat-card" style="--card-color: #9b59b6;">
+                <div class="icon"><i class="fas fa-coins"></i></div>
+                <div class="number" id="totalFcCredits">0 FCs</div>
+                <div class="label">Total FC Credits Outstanding</div>
+                <div class="sublabel" id="fcCreditsValue">≈ ₦0 value</div>
+            </div>
+            <div class="stat-card" style="--card-color: #3498db;">
+                <div class="icon"><i class="fas fa-wallet"></i></div>
+                <div class="number" id="totalWalletFloat">₦0</div>
+                <div class="label">Total Wallet Float</div>
+                <div class="sublabel">Total liability in real time</div>
             </div>
         </div>
 
@@ -653,6 +671,48 @@
                 <div class="number" id="pendingReferralPayouts">₦0</div>
                 <div class="label">Pending Payouts</div>
                 <div class="sublabel">In vesting period</div>
+            </div>
+        </div>
+
+        <!-- Top Users Section -->
+        <div class="charts-section" style="padding: 30px; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);">
+            <div style="text-align: center; color: white; margin-bottom: 25px;">
+                <h2 style="margin: 0; font-size: 1.8rem;"><i class="fas fa-trophy"></i> Top Balance Holders</h2>
+                <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 1.1rem;">Highest wallet and FC credit balances for incentives & rewards</p>
+            </div>
+            
+            <div class="charts-grid">
+                <!-- Top 3 Wallet Balances -->
+                <div class="chart-card" style="background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="color: #2c3e50; margin: 0;"><i class="fas fa-wallet"></i> Top 3 Wallet Balances</h3>
+                        <button class="btn btn-export" style="padding: 8px 16px; font-size: 0.9rem;" onclick="exportWalletBalances()">
+                            <i class="fas fa-download"></i> Export All
+                        </button>
+                    </div>
+                    <div id="topWalletUsers" class="provider-breakdown">
+                        <div class="loading" style="padding: 30px;">
+                            <i class="fas fa-spinner"></i>
+                            <p style="margin-top: 10px;">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top 3 FC Credit Balances -->
+                <div class="chart-card" style="background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="color: #2c3e50; margin: 0;"><i class="fas fa-coins"></i> Top 3 FC Credit Balances</h3>
+                        <button class="btn btn-export" style="padding: 8px 16px; font-size: 0.9rem;" onclick="exportFcBalances()">
+                            <i class="fas fa-download"></i> Export All
+                        </button>
+                    </div>
+                    <div id="topFcUsers" class="provider-breakdown">
+                        <div class="loading" style="padding: 30px;">
+                            <i class="fas fa-spinner"></i>
+                            <p style="margin-top: 10px;">Loading...</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -708,7 +768,7 @@
             <!-- Freemium Engagement Section -->
             <div class="charts-grid" id="freemiumSection" style="display: none; margin-top: 30px;">
                 <div class="chart-card" style="grid-column: 1 / -1;">
-                    <h3><i class="fas fa-users"></i> Freemium User Engagement</h3>
+                    <h3><i class="fas fa-users"></i>User Engagement</h3>
                     <div class="charts-grid" id="freemiumEngagement" style="margin-top: 20px;">
                         <!-- Freemium engagement will be populated here -->
                     </div>
@@ -959,6 +1019,8 @@
             document.getElementById('peyflexCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.peyflex || 0).toLocaleString()}`;
             // Show Corporate Revenue (total earnings)
             document.getElementById('corporateRevenue').textContent = `₦${(overview.totalRevenue || 0).toLocaleString()}`;
+            // Show Deposit Fees (₦30 from free users)
+            document.getElementById('depositFees').textContent = `₦${(revenueBreakdown?.depositFees?.net || 0).toLocaleString()}`;
             document.getElementById('totalTransactions').textContent = overview.totalTransactions.toLocaleString();
             
             // Update provider breakdown (use providerStats from backend)
@@ -1191,6 +1253,19 @@
         
         // Display internal economy
         function displayInternalEconomy(data) {
+            // Update main stat cards
+            document.getElementById('totalFcCredits').textContent = `${data.fcCredits.totalOutstanding.toLocaleString()} FCs`;
+            document.getElementById('fcCreditsValue').textContent = `≈ ₦${(data.fcCredits.totalOutstanding * 30).toLocaleString()} value`;
+            document.getElementById('totalWalletFloat').textContent = `₦${data.walletFloat.totalOutstanding.toLocaleString()}`;
+            
+            // Display top balance holders (NEW - Feb 21, 2026)
+            if (data.topWalletBalances || data.topFcBalances) {
+                displayTopBalanceHolders({
+                    topWalletBalances: data.topWalletBalances || [],
+                    topFcBalances: data.topFcBalances || []
+                });
+            }
+            
             const container = document.getElementById('internalEconomy');
             
             container.innerHTML = `
@@ -1758,6 +1833,125 @@
         
 
         // ===== END MERGED FUNCTIONS =====
+
+        // Display top balance holders (called from displayInternalEconomy)
+        function displayTopBalanceHolders(data) {
+            // Display top wallet users
+            const walletContainer = document.getElementById('topWalletUsers');
+            if (data.topWalletBalances && data.topWalletBalances.length > 0) {
+                walletContainer.innerHTML = data.topWalletBalances.map((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : 'bronze';
+                    
+                    return `
+                        <div class="provider-item" style="border-left: 4px solid ${index === 0 ? '#f39c12' : index === 1 ? '#95a5a6' : '#cd7f32'};">
+                            <div class="provider-info">
+                                <div style="font-size: 2rem; margin-right: 15px;">${medal}</div>
+                                <div>
+                                    <div style="font-weight: 600; color: #2c3e50;">${user.displayName || 'Unknown User'}</div>
+                                    <div style="font-size: 0.9rem; color: #666;">${user.email}</div>
+                                    <div style="font-size: 0.85rem; color: #999; margin-top: 3px;">ID: ${user.userId}</div>
+                                </div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount" style="color: #27ae60;">₦${user.balance.toLocaleString()}</div>
+                                <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">Wallet Balance</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                walletContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No wallet balances found</div>';
+            }
+
+            // Display top FC credit users
+            const fcContainer = document.getElementById('topFcUsers');
+            if (data.topFcBalances && data.topFcBalances.length > 0) {
+                fcContainer.innerHTML = data.topFcBalances.map((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : 'bronze';
+                    
+                    return `
+                        <div class="provider-item" style="border-left: 4px solid ${index === 0 ? '#f39c12' : index === 1 ? '#95a5a6' : '#cd7f32'};">
+                            <div class="provider-info">
+                                <div style="font-size: 2rem; margin-right: 15px;">${medal}</div>
+                                <div>
+                                    <div style="font-weight: 600; color: #2c3e50;">${user.displayName || 'Unknown User'}</div>
+                                    <div style="font-size: 0.9rem; color: #666;">${user.email}</div>
+                                    <div style="font-size: 0.85rem; color: #999; margin-top: 3px;">ID: ${user.userId}</div>
+                                </div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount" style="color: #9b59b6;">${user.balance.toLocaleString()} FCs</div>
+                                <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${(user.balance * 30).toLocaleString()} value</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                fcContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No FC credit balances found</div>';
+            }
+        }
+
+        // Export wallet balances
+        async function exportWalletBalances() {
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/export-wallet-balances`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `wallet_balances_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showNotification('Wallet balances exported successfully!');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                showNotification('Failed to export wallet balances: ' + error.message, 'error');
+            }
+        }
+
+        // Export FC balances
+        async function exportFcBalances() {
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/export-fc-balances`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `fc_balances_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showNotification('FC balances exported successfully!');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                showNotification('Failed to export FC balances: ' + error.message, 'error');
+            }
+        }
     </script>
 </body>
 </html>
