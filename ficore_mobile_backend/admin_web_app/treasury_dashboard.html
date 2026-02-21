@@ -1098,7 +1098,8 @@
                         <div style="font-weight: 600; color: #2c3e50;">Total FC Credits Outstanding</div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${data.fcCredits.totalOutstanding.toLocaleString()}</div>
+                        <div class="provider-amount">${data.fcCredits.totalOutstanding.toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${(data.fcCredits.totalOutstanding * 30).toLocaleString()} value</div>
                     </div>
                 </div>
                 <div class="provider-item">
@@ -1114,7 +1115,8 @@
                         <div style="font-weight: 600; color: #2c3e50;">Avg FC Balance per User</div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${data.fcCredits.averageBalance.toLocaleString()}</div>
+                        <div class="provider-amount">${data.fcCredits.averageBalance.toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${(data.fcCredits.averageBalance * 30).toLocaleString()} value</div>
                     </div>
                 </div>
                 <div class="provider-item">
@@ -1122,7 +1124,8 @@
                         <div style="font-weight: 600; color: #2c3e50;">FC Purchased (Period)</div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${data.fcCredits.purchasedThisPeriod.amount.toLocaleString()}</div>
+                        <div class="provider-amount">${data.fcCredits.purchasedThisPeriod.amount.toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${(data.fcCredits.purchasedThisPeriod.amount * 30).toLocaleString()} value</div>
                     </div>
                 </div>
                 <div class="provider-item">
@@ -1130,7 +1133,8 @@
                         <div style="font-weight: 600; color: #2c3e50;">FC Consumed (Period)</div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${data.fcCredits.consumedThisPeriod.amount.toLocaleString()}</div>
+                        <div class="provider-amount">${data.fcCredits.consumedThisPeriod.amount.toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${(data.fcCredits.consumedThisPeriod.amount * 30).toLocaleString()} value</div>
                     </div>
                 </div>
                 <div class="provider-item">
@@ -1138,7 +1142,8 @@
                         <div style="font-weight: 600; color: #2c3e50;">Net FC Position</div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${data.fcCredits.netPosition.toLocaleString()}</div>
+                        <div class="provider-amount">${data.fcCredits.netPosition.toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${(data.fcCredits.netPosition * 30).toLocaleString()} value</div>
                     </div>
                 </div>
                 <div class="provider-item">
