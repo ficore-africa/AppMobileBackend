@@ -598,17 +598,17 @@
                 <div class="label">Total VAS Sales</div>
                 <div class="sublabel">All-time user spending</div>
             </div>
-            <div class="stat-card commission">
+            <div class="stat-card commission" style="--card-color: #27ae60;">
                 <div class="icon"><i class="fas fa-percentage"></i></div>
                 <div class="number" id="monnifyCommission">₦0</div>
-                <div class="label">Monnify 3% Commission</div>
-                <div class="sublabel">Your earnings from Monnify</div>
+                <div class="label">Monnify Commission (3%)</div>
+                <div class="sublabel">Earnings from Monnify</div>
             </div>
-            <div class="stat-card margin">
+            <div class="stat-card commission" style="--card-color: #f39c12;">
                 <div class="icon"><i class="fas fa-coins"></i></div>
-                <div class="number" id="totalMargin">₦0</div>
-                <div class="label">Total Profit Margin</div>
-                <div class="sublabel">Revenue minus costs</div>
+                <div class="number" id="peyflexCommission">₦0</div>
+                <div class="label">Peyflex Commission (1-5%)</div>
+                <div class="sublabel">Earnings from Peyflex</div>
             </div>
             <div class="stat-card transactions">
                 <div class="icon"><i class="fas fa-exchange-alt"></i></div>
@@ -689,16 +689,6 @@
                 </div>
             </div>
 
-            <!-- Revenue Weighting Section -->
-            <div class="charts-grid" id="revenueWeightingSection" style="display: none; margin-top: 30px;">
-                <div class="chart-card" style="grid-column: 1 / -1;">
-                    <h3><i class="fas fa-balance-scale"></i> Revenue Weighting: Subscription vs Transactional</h3>
-                    <div class="charts-grid" id="revenueWeighting" style="margin-top: 20px;">
-                        <!-- Revenue weighting will be populated here -->
-                    </div>
-                </div>
-            </div>
-
             <!-- Internal Economy Section -->
             <div class="charts-grid" id="internalEconomySection" style="display: none; margin-top: 30px;">
                 <div class="chart-card" style="grid-column: 1 / -1;">
@@ -715,19 +705,6 @@
                     <h3><i class="fas fa-users"></i> Freemium User Engagement</h3>
                     <div class="charts-grid" id="freemiumEngagement" style="margin-top: 20px;">
                         <!-- Freemium engagement will be populated here -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- Expired User Activity Section -->
-            <div class="charts-grid" id="expiredUserSection" style="display: none; margin-top: 30px;">
-                <div class="chart-card" style="grid-column: 1 / -1;">
-                    <h3><i class="fas fa-user-clock"></i> Expired User Activity (Freemium Conversion)</h3>
-                    <div class="provider-breakdown" id="expiredUserActivity" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-                        <!-- Expired user activity summary will be populated here -->
-                    </div>
-                    <div class="charts-grid" id="expiredUsersList" style="margin-top: 20px;">
-                        <!-- Top expired users list will be populated here -->
                     </div>
                 </div>
             </div>
@@ -970,10 +947,9 @@
             
             // Update stats cards with correct backend properties
             document.getElementById('totalRevenue').textContent = `₦${overview.totalRevenue.toLocaleString()}`;
-            // Use VAS commissions from monnify as the commission display
+            // Show BOTH Monnify and Peyflex commissions
             document.getElementById('monnifyCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.monnify || 0).toLocaleString()}`;
-            // Use netProfit as the margin
-            document.getElementById('totalMargin').textContent = `₦${overview.netProfit.toLocaleString()}`;
+            document.getElementById('peyflexCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.peyflex || 0).toLocaleString()}`;
             document.getElementById('totalTransactions').textContent = overview.totalTransactions.toLocaleString();
             
             // Update provider breakdown (use providerStats from backend)
@@ -985,17 +961,11 @@
             // Update transactions table
             updateTransactionsTable(recentTransactions || []);
             
-            // Update revenue weighting if available
-            if (revenueWeighting) {
-                displayRevenueWeighting(revenueWeighting);
-                document.getElementById('revenueWeightingSection').style.display = 'grid';
-            }
-            
             // Load additional metrics
             const timePeriod = document.getElementById('timePeriod').value;
             loadInternalEconomy(timePeriod);
             loadFreemiumEngagement(timePeriod);
-            loadExpiredUserActivity();
+            loadLeaderboard(timePeriod);
         }
 
         // Update provider breakdown
@@ -1181,74 +1151,6 @@
 
         // ===== MERGED FUNCTIONS FROM ADMIN_TREASURY_DASHBOARD =====
 
-        // Display revenue weighting
-        function displayRevenueWeighting(weighting) {
-            const container = document.getElementById('revenueWeighting');
-            
-            container.innerHTML = `
-                <div class="chart-card">
-                    <h4 style="color: #27ae60; margin-bottom: 15px;"><i class="fas fa-credit-card"></i> Subscription Revenue</h4>
-                    <div class="provider-breakdown" style="gap: 10px;">
-                        <div class="provider-item">
-                            <div class="provider-info">
-                                <div style="font-weight: 600;">Total Amount</div>
-                            </div>
-                            <div class="provider-stats">
-                                <div class="provider-amount">₦${weighting.subscriptionRevenue.amount.toLocaleString()}</div>
-                                <div style="font-size: 0.9rem; color: #666;">${weighting.subscriptionRevenue.percentage.toFixed(2)}% of total</div>
-                            </div>
-                        </div>
-                        <div class="provider-item">
-                            <div class="provider-info">
-                                <div style="font-weight: 600;">Active Subscriptions</div>
-                            </div>
-                            <div class="provider-stats">
-                                <div class="provider-amount">₦${weighting.subscriptionRevenue.breakdown.activeSubscriptions.toLocaleString()}</div>
-                            </div>
-                        </div>
-                        <div class="provider-item">
-                            <div class="provider-info">
-                                <div style="font-weight: 600;">FC Credits Purchased</div>
-                            </div>
-                            <div class="provider-stats">
-                                <div class="provider-amount">₦${weighting.subscriptionRevenue.breakdown.fcCreditsPurchased.toLocaleString()}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-card">
-                    <h4 style="color: #3498db; margin-bottom: 15px;"><i class="fas fa-exchange-alt"></i> Transactional Revenue</h4>
-                    <div class="provider-breakdown" style="gap: 10px;">
-                        <div class="provider-item">
-                            <div class="provider-info">
-                                <div style="font-weight: 600;">Total Amount</div>
-                            </div>
-                            <div class="provider-stats">
-                                <div class="provider-amount">₦${weighting.transactionalRevenue.amount.toLocaleString()}</div>
-                                <div style="font-size: 0.9rem; color: #666;">${weighting.transactionalRevenue.percentage.toFixed(2)}% of total</div>
-                            </div>
-                        </div>
-                        <div class="provider-item">
-                            <div class="provider-info">
-                                <div style="font-weight: 600;">VAS Commissions</div>
-                            </div>
-                            <div class="provider-stats">
-                                <div class="provider-amount">₦${weighting.transactionalRevenue.breakdown.vasCommissions.toLocaleString()}</div>
-                            </div>
-                        </div>
-                        <div class="provider-item">
-                            <div class="provider-info">
-                                <div style="font-weight: 600;">Deposit Fees</div>
-                            </div>
-                            <div class="provider-stats">
-                                <div class="provider-amount">₦${weighting.transactionalRevenue.breakdown.depositFees.toLocaleString()}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-        
         // Load internal economy metrics
         async function loadInternalEconomy(period) {
             const token = getAdminToken();
@@ -1526,158 +1428,6 @@
                     <p style="color: #2c3e50; font-size: 1rem; margin: 0;">${data.insights.message}</p>
                 </div>
             `;
-        }
-        
-        // Load expired user activity
-        async function loadExpiredUserActivity() {
-            const token = getAdminToken();
-            if (!token) return;
-        
-            const url = `${API_BASE_URL}/admin/treasury/expired-user-activity?days=90`;
-        
-            try {
-                const response = await fetch(url, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-        
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.success) {
-                        displayExpiredUserActivity(data.data);
-                        document.getElementById('expiredUserSection').style.display = 'grid';
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load expired user activity:', error);
-            }
-        }
-        
-        // Display expired user activity
-        function displayExpiredUserActivity(data) {
-            const summaryContainer = document.getElementById('expiredUserActivity');
-            const listContainer = document.getElementById('expiredUsersList');
-            
-            // Summary stats
-            summaryContainer.innerHTML = `
-                <div class="provider-item">
-                    <div class="provider-info">
-                        <div style="font-weight: 600; color: #2c3e50;">Total Expired Users</div>
-                    </div>
-                    <div class="provider-stats">
-                        <div class="provider-amount">${data.summary.totalExpiredUsers.toLocaleString()}</div>
-                    </div>
-                </div>
-                <div class="provider-item">
-                    <div class="provider-info">
-                        <div style="font-weight: 600; color: #2c3e50;">Active Freemium Users</div>
-                    </div>
-                    <div class="provider-stats">
-                        <div class="provider-amount">${data.summary.activeFreemiumUsers.toLocaleString()}</div>
-                    </div>
-                </div>
-                <div class="provider-item">
-                    <div class="provider-info">
-                        <div style="font-weight: 600; color: #2c3e50;">Inactive Users</div>
-                    </div>
-                    <div class="provider-stats">
-                        <div class="provider-amount">${data.summary.inactiveUsers.toLocaleString()}</div>
-                    </div>
-                </div>
-                <div class="provider-item">
-                    <div class="provider-info">
-                        <div style="font-weight: 600; color: #2c3e50;">Freemium Conversion Rate</div>
-                    </div>
-                    <div class="provider-stats">
-                        <div class="provider-amount">${data.summary.freemiumConversionRate.toFixed(2)}%</div>
-                    </div>
-                </div>
-                <div class="provider-item">
-                    <div class="provider-info">
-                        <div style="font-weight: 600; color: #2c3e50;">Total Freemium Volume</div>
-                    </div>
-                    <div class="provider-stats">
-                        <div class="provider-amount">₦${data.summary.totalFreemiumVolume.toLocaleString()}</div>
-                    </div>
-                </div>
-                <div class="provider-item">
-                    <div class="provider-info">
-                        <div style="font-weight: 600; color: #2c3e50;">Total Freemium Commission</div>
-                    </div>
-                    <div class="provider-stats">
-                        <div class="provider-amount">₦${data.summary.totalFreemiumCommission.toLocaleString()}</div>
-                    </div>
-                </div>
-            `;
-            
-            // Top expired users list
-            if (data.expiredUsers && data.expiredUsers.length > 0) {
-                const topUsers = data.expiredUsers.slice(0, 10); // Show top 10
-                listContainer.innerHTML = topUsers.map(user => {
-                    const statusBadge = user.status === 'Active Freemium' ? 'monnify' : 
-                                       user.status === 'Recently Expired' ? 'peyflex' : '';
-                    
-                    return `
-                        <div class="chart-card">
-                            <h4 style="color: #2c3e50; margin-bottom: 15px;">${user.displayName}</h4>
-                            <div class="provider-breakdown" style="gap: 10px;">
-                                <div class="provider-item">
-                                    <div class="provider-info">
-                                        <div style="font-weight: 600;">Email</div>
-                                    </div>
-                                    <div class="provider-stats">
-                                        <div style="font-size: 0.9rem; color: #666;">${user.email}</div>
-                                    </div>
-                                </div>
-                                <div class="provider-item">
-                                    <div class="provider-info">
-                                        <div style="font-weight: 600;">Days Since Expiry</div>
-                                    </div>
-                                    <div class="provider-stats">
-                                        <div class="provider-amount">${user.daysSinceExpiry} days</div>
-                                    </div>
-                                </div>
-                                <div class="provider-item">
-                                    <div class="provider-info">
-                                        <div style="font-weight: 600;">Post-Expiry Transactions</div>
-                                    </div>
-                                    <div class="provider-stats">
-                                        <div class="provider-amount">${user.postExpiryActivity.transactionCount.toLocaleString()}</div>
-                                    </div>
-                                </div>
-                                <div class="provider-item">
-                                    <div class="provider-info">
-                                        <div style="font-weight: 600;">Post-Expiry Volume</div>
-                                    </div>
-                                    <div class="provider-stats">
-                                        <div class="provider-amount">₦${user.postExpiryActivity.totalVolume.toLocaleString()}</div>
-                                    </div>
-                                </div>
-                                <div class="provider-item">
-                                    <div class="provider-info">
-                                        <div style="font-weight: 600;">Commission Earned</div>
-                                    </div>
-                                    <div class="provider-stats">
-                                        <div class="provider-amount">₦${user.postExpiryActivity.totalCommission.toLocaleString()}</div>
-                                    </div>
-                                </div>
-                                <div class="provider-item">
-                                    <div class="provider-info">
-                                        <div style="font-weight: 600;">Status</div>
-                                    </div>
-                                    <div class="provider-stats">
-                                        <span class="provider-badge ${statusBadge}">${user.status}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No expired users found in the last 90 days</div>';
-            }
         }
         
         // Leaderboard Functions
