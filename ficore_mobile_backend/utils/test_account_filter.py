@@ -108,7 +108,8 @@ TEST_ACCOUNT_USER_IDS = [
     ObjectId('68eabba4f9ffbc1fe57302e2'),  # test@gmail.com
     ObjectId('68e6b390ff54aa11da63548c'),  # test@test.com
     ObjectId('6962a732da4d4eb555861166'),  # testuser1@gmail.com
-    ObjectId('68e11e3bd594fe6a85546181'),  # warpiiv@gmail.com (1,450 FCs, ₦11,059.05)
+    # warpiiv@gmail.com - EXCLUDED FROM TEST LIST (real user, founder using own app with real money)
+    # ObjectId('68e11e3bd594fe6a85546181'),  # ❌ DO NOT INCLUDE - Real user with ₦3,000 real spending
     # Additional test accounts from domain/pattern matching
     ObjectId('68dfde612af1af8d274c5d23'),  # premiumtester@ficoreafrica.com
     ObjectId('68dfe1d12af1af8d274c5d26'),  # newuser@test.com
