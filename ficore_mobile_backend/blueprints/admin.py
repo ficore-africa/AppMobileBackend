@@ -5638,7 +5638,41 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             avg_fc_balance = total_fc_outstanding / users_with_fc if users_with_fc > 0 else 0
             avg_wallet_balance = total_wallet_float / wallets_with_balance if wallets_with_balance > 0 else 0
 
-            # ===== 10. FORMAT RESPONSE =====
+            # ===== 10. TOP 3 BALANCE HOLDERS (NEW - Feb 21, 2026) =====
+            # Top 3 Wallet Balances
+            top_wallet_users = list(mongo.db.vas_wallets.aggregate([
+                {'$match': {'balance': {'$gt': 0}, 'userId': {'$nin': test_user_ids}}},
+                {'$sort': {'balance': -1}},
+                {'$limit': 3},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'userId',
+                    'foreignField': '_id',
+                    'as': 'user'
+                }},
+                {'$unwind': '$user'},
+                {'$project': {
+                    'userId': {'$toString': '$userId'},
+                    'balance': 1,
+                    'displayName': '$user.displayName',
+                    'email': '$user.email'
+                }}
+            ]))
+
+            # Top 3 FC Credit Balances
+            top_fc_users = list(mongo.db.users.aggregate([
+                {'$match': {'ficoreCreditBalance': {'$gt': 0}, '_id': {'$nin': test_user_ids}}},
+                {'$sort': {'ficoreCreditBalance': -1}},
+                {'$limit': 3},
+                {'$project': {
+                    'userId': {'$toString': '$_id'},
+                    'balance': '$ficoreCreditBalance',
+                    'displayName': 1,
+                    'email': 1
+                }}
+            ]))
+
+            # ===== 11. FORMAT RESPONSE =====
             return jsonify({
                 'success': True,
                 'data': {
@@ -5675,6 +5709,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     # Total Internal Economy = (FC Credits × ₦30) + Wallet Float
                     'totalInternalEconomy': round((total_fc_outstanding * 30) + total_wallet_float, 2),
                     'fcCreditsNairaValue': round(total_fc_outstanding * 30, 2),  # For reference
+                    # NEW (Feb 21, 2026): Top balance holders for incentives/rewards
+                    'topWalletBalances': top_wallet_users,
+                    'topFcBalances': top_fc_users,
                     'period': period,
                     'dateRange': {
                         'start': start_date.isoformat() if start_date else None,
@@ -5691,6 +5728,157 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to get internal economy metrics',
+                'error': str(e)
+            }), 500
+
+    # ===== EXPORT BALANCE HOLDERS ENDPOINTS (NEW - Feb 21, 2026) =====
+    
+    @admin_bp.route('/treasury/export-wallet-balances', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_wallet_balances(current_user):
+        """
+        Export all users with wallet balances sorted highest to lowest (CSV)
+        For incentives and rewards selection
+        """
+        try:
+            from utils.test_account_filter import get_test_account_user_ids
+            import csv
+            from io import StringIO
+            from flask import make_response
+            
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+            
+            # Get all wallets with balance > 0, sorted by balance descending
+            wallets = list(mongo.db.vas_wallets.aggregate([
+                {'$match': {'balance': {'$gt': 0}, 'userId': {'$nin': test_user_ids}}},
+                {'$sort': {'balance': -1}},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'userId',
+                    'foreignField': '_id',
+                    'as': 'user'
+                }},
+                {'$unwind': '$user'},
+                {'$project': {
+                    'userId': {'$toString': '$userId'},
+                    'displayName': '$user.displayName',
+                    'email': '$user.email',
+                    'balance': 1,
+                    'isPremium': '$user.isSubscribed',
+                    'createdAt': 1
+                }}
+            ]))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow(['Rank', 'User ID', 'Name', 'Email', 'Wallet Balance (₦)', 'Premium Status', 'Wallet Created'])
+            
+            # Write data
+            for idx, wallet in enumerate(wallets, 1):
+                writer.writerow([
+                    idx,
+                    wallet['userId'],
+                    wallet.get('displayName', 'Unknown'),
+                    wallet.get('email', 'N/A'),
+                    f"{wallet['balance']:.2f}",
+                    'Premium' if wallet.get('isPremium', False) else 'Free',
+                    wallet.get('createdAt', '').strftime('%Y-%m-%d') if wallet.get('createdAt') else 'N/A'
+                ])
+            
+            # Create response
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=wallet_balances_{datetime.utcnow().strftime("%Y%m%d")}.csv'
+            
+            print(f"✅ Admin {current_user.get('email')} exported {len(wallets)} wallet balances")
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting wallet balances: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export wallet balances',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/treasury/export-fc-balances', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_fc_balances(current_user):
+        """
+        Export all users with FC credit balances sorted highest to lowest (CSV)
+        For incentives and rewards selection
+        """
+        try:
+            from utils.test_account_filter import get_test_account_user_ids
+            import csv
+            from io import StringIO
+            from flask import make_response
+            
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+            
+            # Get all users with FC balance > 0, sorted by balance descending
+            users = list(mongo.db.users.aggregate([
+                {'$match': {'ficoreCreditBalance': {'$gt': 0}, '_id': {'$nin': test_user_ids}}},
+                {'$sort': {'ficoreCreditBalance': -1}},
+                {'$project': {
+                    'userId': {'$toString': '$_id'},
+                    'displayName': 1,
+                    'email': 1,
+                    'ficoreCreditBalance': 1,
+                    'isSubscribed': 1,
+                    'createdAt': 1
+                }}
+            ]))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow(['Rank', 'User ID', 'Name', 'Email', 'FC Balance', 'Naira Value (≈₦)', 'Premium Status', 'Account Created'])
+            
+            # Write data
+            for idx, user in enumerate(users, 1):
+                fc_balance = user.get('ficoreCreditBalance', 0)
+                naira_value = fc_balance * 30  # ₦30 per FC Credit
+                
+                writer.writerow([
+                    idx,
+                    user['userId'],
+                    user.get('displayName', 'Unknown'),
+                    user.get('email', 'N/A'),
+                    f"{fc_balance:.2f}",
+                    f"{naira_value:.2f}",
+                    'Premium' if user.get('isSubscribed', False) else 'Free',
+                    user.get('createdAt', '').strftime('%Y-%m-%d') if user.get('createdAt') else 'N/A'
+                ])
+            
+            # Create response
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=fc_balances_{datetime.utcnow().strftime("%Y%m%d")}.csv'
+            
+            print(f"✅ Admin {current_user.get('email')} exported {len(users)} FC credit balances")
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting FC balances: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export FC balances',
                 'error': str(e)
             }), 500
 
