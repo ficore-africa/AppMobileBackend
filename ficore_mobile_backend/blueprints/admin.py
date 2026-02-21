@@ -4624,6 +4624,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
         """
         try:
             from datetime import datetime, timedelta
+            from utils.test_account_filter import add_test_account_exclusion
             
             # Get time period filter
             period = request.args.get('period', 'all')
@@ -4709,6 +4710,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # ===== 7. VAS TRANSACTION BREAKDOWN =====
             # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types, not just AIRTIME and DATA
             # VAS types: AIRTIME, DATA, BILLS, electricity (lowercase), ELECTRICITY (uppercase), CABLE_TV
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts from metrics
             vas_query = {
                 'status': 'SUCCESS', 
                 'type': {
@@ -4726,6 +4728,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             }
             vas_query.update(date_filter)
+            vas_query = add_test_account_exclusion(vas_query, mongo)  # ✅ Exclude test accounts
             vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
             
             # Provider breakdown with commissions
@@ -5332,6 +5335,173 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'error': str(e)
             }), 500
 
+    # ===== USER LEADERBOARD ENDPOINT =====
+
+    @admin_bp.route('/treasury/leaderboard', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_leaderboard(current_user):
+        """
+        🏆 User Leaderboard: Top users by spending, subscriptions, and activity
+        Three tabs: Spending/Revenue, Recurring Subs, Login Frequency
+        """
+        try:
+            from datetime import datetime, timedelta
+            from utils.test_account_filter import get_test_account_user_ids
+
+            # Get time period filter
+            period = request.args.get('period', '30')  # Default 30 days
+            days = int(period)
+            start_date = datetime.utcnow() - timedelta(days=days)
+
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+
+            # ===== TAB 1: TOP SPENDERS (VAS Transactions) =====
+            vas_query = {
+                'status': 'SUCCESS',
+                'type': {'$in': ['AIRTIME', 'DATA', 'BILLS', 'electricity', 'ELECTRICITY', 'CABLE_TV']},
+                'createdAt': {'$gte': start_date},
+                'userId': {'$nin': test_user_ids}
+            }
+
+            # Aggregate spending by user
+            spending_pipeline = [
+                {'$match': vas_query},
+                {'$group': {
+                    '_id': '$userId',
+                    'totalSpending': {'$sum': '$amount'},
+                    'transactionCount': {'$sum': 1},
+                    'totalCommission': {'$sum': '$providerCommission'}
+                }},
+                {'$sort': {'totalSpending': -1}},
+                {'$limit': 10}
+            ]
+
+            top_spenders_raw = list(mongo.db.vas_transactions.aggregate(spending_pipeline))
+
+            # Enrich with user details
+            top_spenders = []
+            for spender in top_spenders_raw:
+                user = mongo.db.users.find_one({'_id': spender['_id']}, {'email': 1, 'fullName': 1, 'displayName': 1})
+                if user:
+                    top_spenders.append({
+                        'userId': str(spender['_id']),
+                        'email': user.get('email', 'N/A'),
+                        'displayName': user.get('displayName') or user.get('fullName', 'N/A'),
+                        'totalSpending': round(spender['totalSpending'], 2),
+                        'transactionCount': spender['transactionCount'],
+                        'totalCommission': round(spender['totalCommission'], 2),
+                        'avgTransactionSize': round(spender['totalSpending'] / spender['transactionCount'], 2)
+                    })
+
+            # ===== TAB 2: RECURRING SUBSCRIBERS =====
+            # Users with active subscriptions
+            active_subs_query = {
+                'isSubscribed': True,
+                'subscriptionEndDate': {'$gt': datetime.utcnow()},
+                '_id': {'$nin': test_user_ids}
+            }
+
+            active_subscribers = list(mongo.db.users.find(active_subs_query, {
+                'email': 1,
+                'fullName': 1,
+                'displayName': 1,
+                'subscriptionStartDate': 1,
+                'subscriptionEndDate': 1,
+                'subscriptionPlan': 1
+            }).sort('subscriptionStartDate', 1))  # Oldest first = longest subscribers
+
+            recurring_subs = []
+            for sub in active_subscribers[:10]:  # Top 10
+                # Calculate subscription duration
+                start_date_sub = sub.get('subscriptionStartDate', datetime.utcnow())
+                duration_days = (datetime.utcnow() - start_date_sub).days
+
+                # Get subscription revenue from this user
+                sub_revenue = mongo.db.corporate_revenue.find({
+                    'userId': sub['_id'],
+                    'type': 'SUBSCRIPTION'
+                })
+                total_sub_revenue = sum(r.get('amount', 0) for r in sub_revenue)
+
+                recurring_subs.append({
+                    'userId': str(sub['_id']),
+                    'email': sub.get('email', 'N/A'),
+                    'displayName': sub.get('displayName') or sub.get('fullName', 'N/A'),
+                    'subscriptionPlan': sub.get('subscriptionPlan', 'N/A'),
+                    'subscriptionDays': duration_days,
+                    'subscriptionEndDate': sub.get('subscriptionEndDate').isoformat() if sub.get('subscriptionEndDate') else None,
+                    'totalRevenue': round(total_sub_revenue, 2)
+                })
+
+            # ===== TAB 3: MOST ACTIVE USERS (Login Frequency) =====
+            # Get users with recent activity (last login)
+            active_users_query = {
+                'lastLoginAt': {'$gte': start_date},
+                '_id': {'$nin': test_user_ids}
+            }
+
+            active_users = list(mongo.db.users.find(active_users_query, {
+                'email': 1,
+                'fullName': 1,
+                'displayName': 1,
+                'lastLoginAt': 1,
+                'loginCount': 1,
+                'createdAt': 1
+            }).sort('loginCount', -1).limit(10))
+
+            most_active = []
+            for user in active_users:
+                # Calculate days since signup
+                signup_date = user.get('createdAt', datetime.utcnow())
+                days_since_signup = (datetime.utcnow() - signup_date).days or 1
+
+                # Calculate average logins per day
+                login_count = user.get('loginCount', 0)
+                avg_logins_per_day = login_count / days_since_signup if days_since_signup > 0 else 0
+
+                # Get last login
+                last_login = user.get('lastLoginAt')
+                hours_since_login = (datetime.utcnow() - last_login).total_seconds() / 3600 if last_login else None
+
+                most_active.append({
+                    'userId': str(user['_id']),
+                    'email': user.get('email', 'N/A'),
+                    'displayName': user.get('displayName') or user.get('fullName', 'N/A'),
+                    'loginCount': login_count,
+                    'daysSinceSignup': days_since_signup,
+                    'avgLoginsPerDay': round(avg_logins_per_day, 2),
+                    'lastLoginAt': last_login.isoformat() if last_login else None,
+                    'hoursSinceLogin': round(hours_since_login, 1) if hours_since_login else None
+                })
+
+            # ===== FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'topSpenders': top_spenders,
+                    'recurringSubscribers': recurring_subs,
+                    'mostActiveUsers': most_active,
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat(),
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': f'Leaderboard retrieved successfully ({period} days)'
+            })
+
+        except Exception as e:
+            print(f"Error getting leaderboard: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get leaderboard',
+                'error': str(e)
+            }), 500
+
     # ===== INTERNAL ECONOMY METRICS ENDPOINT =====
 
     @admin_bp.route('/treasury/internal-economy', methods=['GET'])
@@ -5344,6 +5514,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
         """
         try:
             from datetime import datetime, timedelta
+            from utils.test_account_filter import get_test_account_user_ids, add_test_account_exclusion
 
             # Get time period filter
             period = request.args.get('period', 'all')
@@ -5356,9 +5527,14 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 start_date = datetime.utcnow() - timedelta(days=days)
                 date_filter = {'createdAt': {'$gte': start_date}}
 
+            # ===== EXCLUDE TEST ACCOUNTS =====
+            test_user_ids = get_test_account_user_ids(mongo)
+
             # ===== 1. FC CREDITS OUTSTANDING =====
             # Total FC balance across all users (deferred revenue)
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
             fc_pipeline = [
+                {'$match': {'_id': {'$nin': test_user_ids}}},  # ✅ Exclude test accounts
                 {'$group': {
                     '_id': None,
                     'totalFCBalance': {'$sum': '$ficoreCreditBalance'},
@@ -5367,11 +5543,16 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             ]
             fc_result = list(mongo.db.users.aggregate(fc_pipeline))
             total_fc_outstanding = fc_result[0]['totalFCBalance'] if fc_result else 0.0
-            users_with_fc = mongo.db.users.count_documents({'ficoreCreditBalance': {'$gt': 0}})
+            users_with_fc = mongo.db.users.count_documents({
+                'ficoreCreditBalance': {'$gt': 0},
+                '_id': {'$nin': test_user_ids}  # ✅ Exclude test accounts
+            })
 
             # ===== 2. WALLET FLOAT =====
             # Total wallet balance across all users
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
             wallet_pipeline = [
+                {'$match': {'userId': {'$nin': test_user_ids}}},  # ✅ Exclude test accounts
                 {'$group': {
                     '_id': None,
                     'totalWalletBalance': {'$sum': '$balance'},
@@ -5380,7 +5561,10 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             ]
             wallet_result = list(mongo.db.vas_wallets.aggregate(wallet_pipeline))
             total_wallet_float = wallet_result[0]['totalWalletBalance'] if wallet_result else 0.0
-            wallets_with_balance = mongo.db.vas_wallets.count_documents({'balance': {'$gt': 0}})
+            wallets_with_balance = mongo.db.vas_wallets.count_documents({
+                'balance': {'$gt': 0},
+                'userId': {'$nin': test_user_ids}  # ✅ Exclude test accounts
+            })
 
             # ===== 3. FC CREDITS PURCHASED (THIS PERIOD) =====
             credits_purchased_query = {'type': 'CREDITS_PURCHASE'}
@@ -5402,15 +5586,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             net_fc_position = fc_purchased_amount - fc_consumed_amount
 
             # ===== 6. WALLET DEPOSITS (THIS PERIOD) =====
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
             deposits_query = {'type': 'WALLET_FUNDING', 'status': 'SUCCESS'}
             deposits_query.update(date_filter)
+            deposits_query = add_test_account_exclusion(deposits_query, mongo)  # ✅ Exclude test accounts
             deposits = list(mongo.db.vas_transactions.find(deposits_query))
 
             total_deposits_amount = sum(d.get('amountPaid', 0) for d in deposits)
             total_deposits_count = len(deposits)
 
             # ===== 7. WALLET SPEND (THIS PERIOD) =====
-            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types + Exclude test accounts
             spend_query = {
                 'status': 'SUCCESS', 
                 'type': {
@@ -5422,6 +5608,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             }
             spend_query.update(date_filter)
+            spend_query = add_test_account_exclusion(spend_query, mongo)  # ✅ Exclude test accounts
             spend_txns = list(mongo.db.vas_transactions.find(spend_query))
 
             total_spend_amount = sum(t.get('amount', 0) for t in spend_txns)
@@ -5502,17 +5689,23 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
         """
         try:
             from datetime import datetime, timedelta
+            from utils.test_account_filter import get_test_account_user_ids, add_test_account_exclusion
 
             # Get time period filter (how far back to look for expired users)
             days_back = int(request.args.get('days', 90))
             cutoff_date = datetime.utcnow() - timedelta(days=days_back)
 
+            # ===== EXCLUDE TEST ACCOUNTS =====
+            test_user_ids = get_test_account_user_ids(mongo)
+
             # ===== 1. FIND EXPIRED USERS =====
             # Users who were premium but subscription has expired
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
             expired_users = list(mongo.db.users.find({
                 'wasPremium': True,
                 'isSubscribed': False,
-                'subscriptionEndDate': {'$gte': cutoff_date, '$lt': datetime.utcnow()}
+                'subscriptionEndDate': {'$gte': cutoff_date, '$lt': datetime.utcnow()},
+                '_id': {'$nin': test_user_ids}  # ✅ Exclude test accounts
             }))
 
             # ===== 2. ANALYZE EACH EXPIRED USER =====
@@ -5619,6 +5812,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
         """
         try:
             from datetime import datetime, timedelta
+            from utils.test_account_filter import add_test_account_exclusion
 
             # Get time period filter
             period = request.args.get('period', 'all')
@@ -5632,7 +5826,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 date_filter = {'createdAt': {'$gte': start_date}}
 
             # ===== 1. GET ALL ACTIVE VAS USERS (THIS PERIOD) =====
-            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types + Exclude test accounts
             vas_query = {
                 'status': 'SUCCESS', 
                 'type': {
@@ -5644,6 +5838,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             }
             vas_query.update(date_filter)
+            vas_query = add_test_account_exclusion(vas_query, mongo)  # ✅ Exclude test accounts
 
             # Get unique user IDs with VAS transactions
             active_user_ids = mongo.db.vas_transactions.distinct('userId', vas_query)

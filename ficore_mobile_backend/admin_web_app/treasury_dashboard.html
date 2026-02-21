@@ -436,6 +436,152 @@
                 font-size: 2rem;
             }
         }
+
+        /* Leaderboard Styles */
+        .leaderboard-section {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+
+        .leaderboard-tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 15px 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab-btn:hover {
+            background: #e8e8e8;
+            color: #2c3e50;
+        }
+
+        .tab-btn.active {
+            color: #27ae60;
+            border-bottom-color: #27ae60;
+            background: white;
+        }
+
+        .tab-btn i {
+            margin-right: 8px;
+        }
+
+        .leaderboard-tab-content {
+            display: none;
+            padding: 30px;
+        }
+
+        .leaderboard-tab-content.active {
+            display: block;
+        }
+
+        .leaderboard-grid {
+            display: grid;
+            gap: 15px;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .leaderboard-item:hover {
+            background: #e8f5e9;
+            border-left-color: #27ae60;
+            transform: translateX(5px);
+        }
+
+        .leaderboard-rank {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #27ae60;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .leaderboard-rank.gold {
+            color: #f39c12;
+        }
+
+        .leaderboard-rank.silver {
+            color: #95a5a6;
+        }
+
+        .leaderboard-rank.bronze {
+            color: #cd7f32;
+        }
+
+        .leaderboard-info {
+            flex: 1;
+            margin-left: 20px;
+        }
+
+        .leaderboard-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .leaderboard-email {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .leaderboard-stats {
+            display: flex;
+            gap: 20px;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .leaderboard-stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .leaderboard-stat-value {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #27ae60;
+        }
+
+        .leaderboard-stat-label {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .empty-leaderboard {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-leaderboard i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -603,6 +749,47 @@
                 <div id="userResult" style="margin-top: 20px;"></div>
             </div>
 
+            <!-- User Leaderboard Section -->
+            <div class="leaderboard-section">
+                <div class="table-header">
+                    <h3><i class="fas fa-trophy"></i> User Leaderboard</h3>
+                </div>
+                
+                <!-- Leaderboard Tabs -->
+                <div class="leaderboard-tabs">
+                    <button class="tab-btn active" onclick="switchLeaderboardTab('spending')">
+                        <i class="fas fa-shopping-cart"></i> Top Spenders
+                    </button>
+                    <button class="tab-btn" onclick="switchLeaderboardTab('subscribers')">
+                        <i class="fas fa-crown"></i> Recurring Subs
+                    </button>
+                    <button class="tab-btn" onclick="switchLeaderboardTab('active')">
+                        <i class="fas fa-fire"></i> Most Active
+                    </button>
+                </div>
+
+                <!-- Tab 1: Top Spenders -->
+                <div id="spendingTab" class="leaderboard-tab-content active">
+                    <div class="leaderboard-grid">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Tab 2: Recurring Subscribers -->
+                <div id="subscribersTab" class="leaderboard-tab-content">
+                    <div class="leaderboard-grid">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Tab 3: Most Active Users -->
+                <div id="activeTab" class="leaderboard-tab-content">
+                    <div class="leaderboard-grid">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
             <div class="transactions-table">
                 <div class="table-header">
                     <h3><i class="fas fa-table"></i> Recent VAS Transactions</h3>
@@ -727,6 +914,9 @@
                     
                     // Load referral metrics
                     await loadReferralMetrics(token, timePeriod);
+                    
+                    // Load leaderboard
+                    await loadLeaderboard();
                     
                     showTable();
                 } else {
@@ -1487,6 +1677,168 @@
                 }).join('');
             } else {
                 listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No expired users found in the last 90 days</div>';
+            }
+        }
+        
+        // Leaderboard Functions
+        function switchLeaderboardTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.tab-btn').classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.leaderboard-tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tab}Tab`).classList.add('active');
+        }
+
+        async function loadLeaderboard() {
+            try {
+                const token = getAdminToken();
+                const timePeriod = document.getElementById('timePeriod').value;
+                
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/leaderboard?period=${timePeriod}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) throw new Error('Failed to load leaderboard');
+
+                const result = await response.json();
+                if (result.success) {
+                    displayLeaderboard(result.data);
+                }
+            } catch (error) {
+                console.error('Error loading leaderboard:', error);
+            }
+        }
+
+        function displayLeaderboard(data) {
+            // Tab 1: Top Spenders
+            const spendingGrid = document.querySelector('#spendingTab .leaderboard-grid');
+            if (data.topSpenders && data.topSpenders.length > 0) {
+                spendingGrid.innerHTML = data.topSpenders.map((user, index) => {
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank ${rankClass}">
+                                ${medal || (index + 1)}
+                            </div>
+                            <div class="leaderboard-info">
+                                <div class="leaderboard-name">${user.displayName}</div>
+                                <div class="leaderboard-email">${user.email}</div>
+                            </div>
+                            <div class="leaderboard-stats">
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">₦${user.totalSpending.toLocaleString()}</div>
+                                    <div class="leaderboard-stat-label">Total Spending</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.transactionCount}</div>
+                                    <div class="leaderboard-stat-label">Transactions</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">₦${user.avgTransactionSize.toLocaleString()}</div>
+                                    <div class="leaderboard-stat-label">Avg Size</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                spendingGrid.innerHTML = `
+                    <div class="empty-leaderboard">
+                        <i class="fas fa-shopping-cart"></i>
+                        <p>No spending data available for this period</p>
+                    </div>
+                `;
+            }
+
+            // Tab 2: Recurring Subscribers
+            const subscribersGrid = document.querySelector('#subscribersTab .leaderboard-grid');
+            if (data.recurringSubscribers && data.recurringSubscribers.length > 0) {
+                subscribersGrid.innerHTML = data.recurringSubscribers.map((user, index) => {
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank ${rankClass}">
+                                ${medal || (index + 1)}
+                            </div>
+                            <div class="leaderboard-info">
+                                <div class="leaderboard-name">${user.displayName}</div>
+                                <div class="leaderboard-email">${user.email}</div>
+                            </div>
+                            <div class="leaderboard-stats">
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.subscriptionDays}</div>
+                                    <div class="leaderboard-stat-label">Days Subscribed</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.subscriptionPlan}</div>
+                                    <div class="leaderboard-stat-label">Plan</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">₦${user.totalRevenue.toLocaleString()}</div>
+                                    <div class="leaderboard-stat-label">Total Revenue</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                subscribersGrid.innerHTML = `
+                    <div class="empty-leaderboard">
+                        <i class="fas fa-crown"></i>
+                        <p>No active subscribers</p>
+                    </div>
+                `;
+            }
+
+            // Tab 3: Most Active Users
+            const activeGrid = document.querySelector('#activeTab .leaderboard-grid');
+            if (data.mostActiveUsers && data.mostActiveUsers.length > 0) {
+                activeGrid.innerHTML = data.mostActiveUsers.map((user, index) => {
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank ${rankClass}">
+                                ${medal || (index + 1)}
+                            </div>
+                            <div class="leaderboard-info">
+                                <div class="leaderboard-name">${user.displayName}</div>
+                                <div class="leaderboard-email">${user.email}</div>
+                            </div>
+                            <div class="leaderboard-stats">
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.loginCount}</div>
+                                    <div class="leaderboard-stat-label">Total Logins</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.avgLoginsPerDay}</div>
+                                    <div class="leaderboard-stat-label">Logins/Day</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.hoursSinceLogin ? user.hoursSinceLogin + 'h' : 'N/A'}</div>
+                                    <div class="leaderboard-stat-label">Last Login</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                activeGrid.innerHTML = `
+                    <div class="empty-leaderboard">
+                        <i class="fas fa-fire"></i>
+                        <p>No active users in this period</p>
+                    </div>
+                `;
             }
         }
         
