@@ -4707,7 +4707,24 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
             
             # ===== 7. VAS TRANSACTION BREAKDOWN =====
-            vas_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA']}}
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types, not just AIRTIME and DATA
+            # VAS types: AIRTIME, DATA, BILLS, electricity (lowercase), ELECTRICITY (uppercase), CABLE_TV
+            vas_query = {
+                'status': 'SUCCESS', 
+                'type': {
+                    '$in': [
+                        'AIRTIME',      # Airtime purchases
+                        'DATA',         # Data purchases
+                        'BILLS',        # Generic bills
+                        'electricity',  # Electricity bills (lowercase - from production)
+                        'ELECTRICITY',  # Electricity bills (uppercase - for consistency)
+                        'CABLE_TV',     # Cable TV subscriptions
+                        'INTERNET',     # Internet bills
+                        'WATER',        # Water bills
+                        'TRANSPORTATION' # Transportation bills
+                    ]
+                }
+            }
             vas_query.update(date_filter)
             vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
             
@@ -4954,10 +4971,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             total_deposited = sum(d.get('amountPaid', 0) for d in deposits)
             
             # ===== 6. VAS USAGE =====
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
             vas_query = {
                 'userId': ObjectId(user_id),
                 'status': 'SUCCESS',
-                'type': {'$in': ['AIRTIME', 'DATA']}
+                'type': {
+                    '$in': [
+                        'AIRTIME', 'DATA', 'BILLS', 
+                        'electricity', 'ELECTRICITY', 
+                        'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                    ]
+                }
             }
             vas_query.update(date_filter)
             vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
@@ -5386,7 +5410,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             total_deposits_count = len(deposits)
 
             # ===== 7. WALLET SPEND (THIS PERIOD) =====
-            spend_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA', 'ELECTRICITY', 'CABLE_TV']}}
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
+            spend_query = {
+                'status': 'SUCCESS', 
+                'type': {
+                    '$in': [
+                        'AIRTIME', 'DATA', 'BILLS',
+                        'electricity', 'ELECTRICITY',
+                        'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                    ]
+                }
+            }
             spend_query.update(date_filter)
             spend_txns = list(mongo.db.vas_transactions.find(spend_query))
 
@@ -5432,7 +5466,11 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                         },
                         'netPosition': round(net_wallet_position, 2)
                     },
-                    'totalInternalEconomy': round(total_fc_outstanding + total_wallet_float, 2),
+                    # CRITICAL FIX (Feb 21, 2026): FC Credits are NOT 1:1 with Naira
+                    # Base rate: ₦30 per 1 FC Credit (from credits.py NAIRA_PER_CREDIT)
+                    # Total Internal Economy = (FC Credits × ₦30) + Wallet Float
+                    'totalInternalEconomy': round((total_fc_outstanding * 30) + total_wallet_float, 2),
+                    'fcCreditsNairaValue': round(total_fc_outstanding * 30, 2),  # For reference
                     'period': period,
                     'dateRange': {
                         'start': start_date.isoformat() if start_date else None,
@@ -5492,10 +5530,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 days_since_expiry = (datetime.utcnow() - expiry_date).days
 
                 # Get VAS transactions AFTER expiry
+                # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
                 post_expiry_txns = list(mongo.db.vas_transactions.find({
                     'userId': user_id,
                     'status': 'SUCCESS',
-                    'type': {'$in': ['AIRTIME', 'DATA']},
+                    'type': {
+                        '$in': [
+                            'AIRTIME', 'DATA', 'BILLS',
+                            'electricity', 'ELECTRICITY',
+                            'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                        ]
+                    },
                     'createdAt': {'$gte': expiry_date}
                 }))
 
@@ -5587,7 +5632,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 date_filter = {'createdAt': {'$gte': start_date}}
 
             # ===== 1. GET ALL ACTIVE VAS USERS (THIS PERIOD) =====
-            vas_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA']}}
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
+            vas_query = {
+                'status': 'SUCCESS', 
+                'type': {
+                    '$in': [
+                        'AIRTIME', 'DATA', 'BILLS',
+                        'electricity', 'ELECTRICITY',
+                        'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                    ]
+                }
+            }
             vas_query.update(date_filter)
 
             # Get unique user IDs with VAS transactions
