@@ -4729,7 +4729,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             }
             vas_query.update(date_filter)
             vas_query = add_test_account_exclusion(vas_query, mongo)  # ✅ Exclude test accounts
-            vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
+            vas_transactions = list(mongo.db.vas_transactions.find(vas_query).sort('createdAt', -1))  # ✅ Sort by date descending (latest first)
             
             # Provider breakdown with commissions
             provider_stats = {}
@@ -5351,8 +5351,13 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
 
             # Get time period filter
             period = request.args.get('period', '30')  # Default 30 days
-            days = int(period)
-            start_date = datetime.utcnow() - timedelta(days=days)
+            
+            # Handle "all" period
+            if period == 'all':
+                start_date = datetime(2020, 1, 1)  # Beginning of time
+            else:
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
 
             # Exclude test accounts
             test_user_ids = get_test_account_user_ids(mongo)
