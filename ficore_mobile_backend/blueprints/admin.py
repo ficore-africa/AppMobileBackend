@@ -4784,12 +4784,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             subscription_percentage = (subscription_revenue_total / total_revenue * 100) if total_revenue > 0 else 0
             transactional_percentage = (transactional_revenue_total / total_revenue * 100) if total_revenue > 0 else 0
             
-            # ===== 10. FORMAT RESPONSE =====
+            # ===== 10. CALCULATE TOTAL VAS VOLUME =====
+            # Total VAS Volume = Sum of all VAS transaction amounts (what customers paid)
+            total_vas_volume = sum(txn.get('amount', 0) for txn in vas_transactions)
+            
+            # ===== 11. FORMAT RESPONSE =====
             return jsonify({
                 'success': True,
                 'data': {
                     'overview': {
-                        'totalRevenue': round(total_revenue, 2),
+                        'totalRevenue': round(total_revenue, 2),  # Corporate revenue (commissions + fees)
+                        'totalVasVolume': round(total_vas_volume, 2),  # VAS transaction volume (what customers paid)
                         'totalCosts': round(total_costs, 2),
                         'netProfit': round(net_profit, 2),
                         'profitMargin': round(profit_margin, 2),
