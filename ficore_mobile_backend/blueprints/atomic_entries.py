@@ -85,6 +85,29 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             # Import auto-population utility
             from utils.expense_utils import auto_populate_expense_fields
             
+            # 🏷️ QUICK TAG INTEGRATION (Feb 21, 2026): Accept entryType from frontend
+            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  ATOMIC ENDPOINT - TAGGING DEBUG")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Entry type received: {entry_type}")
+            print(f"🏷️  Entry type is None: {entry_type is None}")
+            print(f"🏷️  Entry type is empty: {entry_type == ''}")
+            print(f"🏷️  Entry type type: {type(entry_type)}")
+            if entry_type:
+                print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG PROVIDED (will be saved as None)")
+            print(f"{'🏷️ '*40}\n")
+            
+            # Validate entryType if provided
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
             # Validate payment method
             raw_payment = data.get('paymentMethod')
             normalized_payment = normalize_payment_method(raw_payment) if raw_payment is not None else 'cash'
@@ -188,6 +211,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'notes': data.get('notes', ''),
                 'status': 'active',  # CRITICAL: Required for immutability system
                 'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # 🏷️ QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # 🏷️ QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # 🏷️ QUICK TAG: Tagged by user
                 'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),
@@ -198,11 +224,39 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'fcChargeAttemptedAt': None
             }
             
+            # 🏷️  TAGGING DEBUG: Log what will be saved to database
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  ATOMIC ENDPOINT - DATABASE INSERT")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  entryType field: {expense_data.get('entryType')}")
+            print(f"🏷️  taggedAt field: {expense_data.get('taggedAt')}")
+            print(f"🏷️  taggedBy field: {expense_data.get('taggedBy')}")
+            if expense_data.get('entryType'):
+                print(f"🏷️  ✅ WILL SAVE WITH TAG: '{expense_data.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  WILL SAVE WITHOUT TAG (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
+            
             # STEP 6: Insert expense into database
             result = atomic_entries_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
             
             print(f"✓ Expense created: {expense_id}")
+            
+            # 🏷️  TAGGING DEBUG: Verify tag was saved correctly
+            verification = atomic_entries_bp.mongo.db.expenses.find_one({'_id': result.inserted_id})
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  ATOMIC ENDPOINT - POST-INSERT VERIFICATION")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Expense ID: {expense_id}")
+            print(f"🏷️  entryType in DB: {verification.get('entryType')}")
+            print(f"🏷️  taggedAt in DB: {verification.get('taggedAt')}")
+            print(f"🏷️  taggedBy in DB: {verification.get('taggedBy')}")
+            if verification.get('entryType'):
+                print(f"🏷️  ✅ TAG SAVED SUCCESSFULLY: '{verification.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
             
             # STEP 7: Deduct FC if required (ATOMIC OPERATION)
             new_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -588,6 +642,26 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             # ✅ CRITICAL FIX: Mark if entry was created during premium period
             is_premium_entry = is_premium  # Already calculated above
             
+            # 🏷️ QUICK TAG INTEGRATION (Feb 21, 2026): Accept entryType from frontend
+            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  INCOME ATOMIC ENDPOINT - TAGGING DEBUG")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Entry type received: {entry_type}")
+            if entry_type:
+                print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG PROVIDED (will be saved as None)")
+            print(f"{'🏷️ '*40}\n")
+            
+            # Validate entryType if provided
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
             income_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -600,6 +674,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'nextRecurringDate': datetime.fromisoformat(data['nextRecurringDate'].replace('Z', '')) if data.get('nextRecurringDate') else None,
                 'status': 'active',  # CRITICAL: Required for immutability system
                 'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # 🏷️ QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # 🏷️ QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # 🏷️ QUICK TAG: Tagged by user
                 'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
@@ -611,6 +688,19 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'fcChargeAttemptedAt': None
             }
             
+            # 🏷️  TAGGING DEBUG: Log what will be saved to database
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  INCOME ATOMIC ENDPOINT - DATABASE INSERT")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  entryType field: {income_data.get('entryType')}")
+            print(f"🏷️  taggedAt field: {income_data.get('taggedAt')}")
+            print(f"🏷️  taggedBy field: {income_data.get('taggedBy')}")
+            if income_data.get('entryType'):
+                print(f"🏷️  ✅ WILL SAVE WITH TAG: '{income_data.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  WILL SAVE WITHOUT TAG (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
+            
             # Import and apply auto-population for proper source/description
             from utils.income_utils import auto_populate_income_fields
             income_data = auto_populate_income_fields(income_data)
@@ -620,6 +710,21 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             income_id = str(result.inserted_id)
             
             print(f"✓ Income created: {income_id}")
+            
+            # 🏷️  TAGGING DEBUG: Verify tag was saved correctly
+            verification = atomic_entries_bp.mongo.db.incomes.find_one({'_id': result.inserted_id})
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  INCOME ATOMIC ENDPOINT - POST-INSERT VERIFICATION")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Income ID: {income_id}")
+            print(f"🏷️  entryType in DB: {verification.get('entryType')}")
+            print(f"🏷️  taggedAt in DB: {verification.get('taggedAt')}")
+            print(f"🏷️  taggedBy in DB: {verification.get('taggedBy')}")
+            if verification.get('entryType'):
+                print(f"🏷️  ✅ TAG SAVED SUCCESSFULLY: '{verification.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
             
             # STEP 7: Deduct FC if required (ATOMIC OPERATION)
             new_fc_balance = user.get('ficoreCreditBalance', 0.0)

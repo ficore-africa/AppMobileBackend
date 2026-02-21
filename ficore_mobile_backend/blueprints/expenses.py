@@ -208,7 +208,18 @@ def create_expense():
             
             # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
             entry_type = data.get('entryType')  # 'business', 'personal', or None
-            print(f"Entry type: {entry_type}")
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  TAGGING DEBUG - EXPENSE CREATION")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Entry type received: {entry_type}")
+            print(f"🏷️  Entry type is None: {entry_type is None}")
+            print(f"🏷️  Entry type is empty: {entry_type == ''}")
+            print(f"🏷️  Entry type type: {type(entry_type)}")
+            if entry_type:
+                print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG PROVIDED (will be saved as None)")
+            print(f"{'🏷️ '*40}\n")
             
             # Validate entryType if provided (voice-entry-tagging feature - Feb 18, 2026)
             if entry_type and entry_type not in ['business', 'personal']:
@@ -275,6 +286,19 @@ def create_expense():
                 'updatedAt': datetime.utcnow()
             }
             
+            # 🏷️  TAGGING DEBUG: Log what will be saved to database
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  TAGGING DEBUG - DATABASE INSERT")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  entryType field: {expense_data.get('entryType')}")
+            print(f"🏷️  taggedAt field: {expense_data.get('taggedAt')}")
+            print(f"🏷️  taggedBy field: {expense_data.get('taggedBy')}")
+            if expense_data.get('entryType'):
+                print(f"🏷️  ✅ WILL SAVE WITH TAG: '{expense_data.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  WILL SAVE WITHOUT TAG (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
+            
             # Auto-populate title and description if missing
             expense_data = auto_populate_expense_fields(expense_data)
             print(f"Expense data prepared: amount=₦{expense_data['amount']}, category={expense_data['category']}")
@@ -290,6 +314,53 @@ def create_expense():
                 raise Exception("Database insert verification failed - expense not found after insert")
             else:
                 print(f"✅ VERIFIED: Expense {expense_id} exists in database with amount ₦{verification.get('amount')}")
+                
+                # 🏷️  TAGGING DEBUG: Verify tag was saved correctly
+                print(f"\n{'🏷️ '*40}")
+                print(f"🏷️  TAGGING DEBUG - POST-INSERT VERIFICATION")
+                print(f"{'🏷️ '*40}")
+                print(f"🏷️  Expense ID: {expense_id}")
+                print(f"🏷️  entryType in DB: {verification.get('entryType')}")
+                print(f"🏷️  taggedAt in DB: {verification.get('taggedAt')}")
+                print(f"🏷️  taggedBy in DB: {verification.get('taggedBy')}")
+                if verification.get('entryType'):
+                    print(f"🏷️  ✅ TAG SAVED SUCCESSFULLY: '{verification.get('entryType')}'")
+                else:
+                    print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
+                print(f"{'🏷️ '*40}\n")
+                
+                # 🔍 DUPLICATE DETECTION: Check if similar expense already exists
+                print(f"\n{'🔍 '*40}")
+                print(f"🔍 DUPLICATE DETECTION - CHECKING FOR SIMILAR EXPENSES")
+                print(f"{'🔍 '*40}")
+                similar_expenses = list(expenses_bp.mongo.db.expenses.find({
+                    'userId': current_user['_id'],
+                    'amount': float(data['amount']),
+                    'category': category_value,
+                    'date': {
+                        '$gte': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')) - timedelta(minutes=5),
+                        '$lte': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')) + timedelta(minutes=5)
+                    }
+                }).sort('createdAt', 1))
+                
+                print(f"🔍 Found {len(similar_expenses)} expense(s) with similar amount/category/date:")
+                for idx, exp in enumerate(similar_expenses, 1):
+                    print(f"🔍   {idx}. ID: {exp['_id']}")
+                    print(f"🔍      Amount: ₦{exp.get('amount')}")
+                    print(f"🔍      Category: {exp.get('category')}")
+                    print(f"🔍      Description: {exp.get('description')}")
+                    print(f"🔍      Created: {exp.get('createdAt')}")
+                    print(f"🔍      EntryType: {exp.get('entryType')}")
+                    print(f"🔍      Status: {exp.get('status')}")
+                    print(f"🔍      IsDeleted: {exp.get('isDeleted')}")
+                
+                if len(similar_expenses) > 1:
+                    print(f"🔍 ⚠️  POTENTIAL DUPLICATE DETECTED!")
+                    print(f"🔍 ⚠️  {len(similar_expenses)} expenses with same amount/category within 5 minutes")
+                    print(f"🔍 ⚠️  This might be a duplicate creation issue!")
+                else:
+                    print(f"🔍 ✅ No duplicates detected - this is the only expense with these characteristics")
+                print(f"{'🔍 '*40}\n")
             
             # Track expense creation event
             try:
