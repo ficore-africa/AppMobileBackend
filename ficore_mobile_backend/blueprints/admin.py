@@ -4637,20 +4637,27 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 start_date = datetime.utcnow() - timedelta(days=days)
                 date_filter = {'createdAt': {'$gte': start_date}}
             
-            # ===== 1. VAS COMMISSIONS (from corporate_revenue) =====
-            commission_query = {'type': 'VAS_COMMISSION'}
-            commission_query.update(date_filter)
+            # ===== 1. VAS COMMISSIONS (from vas_transactions.providerCommission) =====
+            # CRITICAL FIX (Feb 21, 2026): Calculate commissions from actual transactions, not corporate_revenue
+            # This is more accurate and real-time
             
-            commissions = list(mongo.db.corporate_revenue.find(commission_query))
+            # Get all SUCCESS VAS transactions
+            commission_txn_query = {
+                'status': 'SUCCESS',
+                'type': {'$in': ['AIRTIME', 'DATA', 'BILLS', 'electricity', 'ELECTRICITY', 'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION']},
+                'providerCommission': {'$exists': True, '$ne': None}
+            }
+            commission_txn_query.update(date_filter)
+            commission_txns = list(mongo.db.vas_transactions.find(commission_txn_query))
             
             # Calculate by provider
-            monnify_commission = sum(c['amount'] for c in commissions if 'MONNIFY' in c.get('category', ''))
-            peyflex_commission = sum(c['amount'] for c in commissions if 'PEYFLEX' in c.get('category', ''))
+            monnify_commission = sum(t.get('providerCommission', 0) for t in commission_txns if t.get('provider', '').lower() == 'monnify')
+            peyflex_commission = sum(t.get('providerCommission', 0) for t in commission_txns if t.get('provider', '').lower() == 'peyflex')
             total_vas_commissions = monnify_commission + peyflex_commission
             
             # Calculate by transaction type
-            airtime_commission = sum(c['amount'] for c in commissions if 'AIRTIME' in c.get('category', ''))
-            data_commission = sum(c['amount'] for c in commissions if 'DATA' in c.get('category', ''))
+            airtime_commission = sum(t.get('providerCommission', 0) for t in commission_txns if t.get('type') == 'AIRTIME')
+            data_commission = sum(t.get('providerCommission', 0) for t in commission_txns if t.get('type') == 'DATA')
             
             # ===== 2. GATEWAY FEES (from vas_transactions and corporate_revenue) =====
             # Get deposit gateway fees
