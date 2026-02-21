@@ -543,6 +543,66 @@
                 </div>
             </div>
 
+            <!-- Revenue Weighting Section -->
+            <div class="charts-grid" id="revenueWeightingSection" style="display: none; margin-top: 30px;">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-balance-scale"></i> Revenue Weighting: Subscription vs Transactional</h3>
+                    <div class="charts-grid" id="revenueWeighting" style="margin-top: 20px;">
+                        <!-- Revenue weighting will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Internal Economy Section -->
+            <div class="charts-grid" id="internalEconomySection" style="display: none; margin-top: 30px;">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-coins"></i> Internal Economy (FiCore Credits & Wallet Float)</h3>
+                    <div class="provider-breakdown" id="internalEconomy" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+                        <!-- Internal economy will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Freemium Engagement Section -->
+            <div class="charts-grid" id="freemiumSection" style="display: none; margin-top: 30px;">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-users"></i> Freemium User Engagement</h3>
+                    <div class="charts-grid" id="freemiumEngagement" style="margin-top: 20px;">
+                        <!-- Freemium engagement will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Expired User Activity Section -->
+            <div class="charts-grid" id="expiredUserSection" style="display: none; margin-top: 30px;">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-user-clock"></i> Expired User Activity (Freemium Conversion)</h3>
+                    <div class="provider-breakdown" id="expiredUserActivity" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+                        <!-- Expired user activity summary will be populated here -->
+                    </div>
+                    <div class="charts-grid" id="expiredUsersList" style="margin-top: 20px;">
+                        <!-- Top expired users list will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Profitability Search Section -->
+            <div class="chart-card" style="margin-top: 30px;">
+                <h3><i class="fas fa-search-dollar"></i> User Profitability Search</h3>
+                <div style="display: flex; gap: 15px; margin-top: 20px;">
+                    <input 
+                        type="text" 
+                        id="userIdInput" 
+                        placeholder="Enter User ID (e.g., 68e11e3bd594fe6a85546181)"
+                        style="flex: 1; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem;"
+                    >
+                    <button class="btn btn-primary" onclick="searchUserProfitability()">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+                <div id="userResult" style="margin-top: 20px;"></div>
+            </div>
+
             <div class="transactions-table">
                 <div class="table-header">
                     <h3><i class="fas fa-table"></i> Recent VAS Transactions</h3>
@@ -716,7 +776,7 @@
 
         // Update dashboard with data
         function updateDashboard() {
-            const { overview, revenueBreakdown, providerStats, transactionTypeStats, recentTransactions } = treasuryData;
+            const { overview, revenueBreakdown, providerStats, transactionTypeStats, recentTransactions, revenueWeighting } = treasuryData;
             
             // Update stats cards with correct backend properties
             document.getElementById('totalRevenue').textContent = `₦${overview.totalRevenue.toLocaleString()}`;
@@ -734,6 +794,18 @@
             
             // Update transactions table
             updateTransactionsTable(recentTransactions || []);
+            
+            // Update revenue weighting if available
+            if (revenueWeighting) {
+                displayRevenueWeighting(revenueWeighting);
+                document.getElementById('revenueWeightingSection').style.display = 'grid';
+            }
+            
+            // Load additional metrics
+            const timePeriod = document.getElementById('timePeriod').value;
+            loadInternalEconomy(timePeriod);
+            loadFreemiumEngagement(timePeriod);
+            loadExpiredUserActivity();
         }
 
         // Update provider breakdown
@@ -916,6 +988,660 @@
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('tableContainer').style.display = 'block';
         }
+
+        // ===== MERGED FUNCTIONS FROM ADMIN_TREASURY_DASHBOARD =====
+
+        // Display revenue weighting
+        function displayRevenueWeighting(weighting) {
+            const container = document.getElementById('revenueWeighting');
+            
+            container.innerHTML = `
+                <div class="chart-card">
+                    <h4 style="color: #27ae60; margin-bottom: 15px;"><i class="fas fa-credit-card"></i> Subscription Revenue</h4>
+                    <div class="provider-breakdown" style="gap: 10px;">
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Total Amount</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${weighting.subscriptionRevenue.amount.toLocaleString()}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${weighting.subscriptionRevenue.percentage.toFixed(2)}% of total</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Active Subscriptions</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${weighting.subscriptionRevenue.breakdown.activeSubscriptions.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">FC Credits Purchased</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${weighting.subscriptionRevenue.breakdown.fcCreditsPurchased.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h4 style="color: #3498db; margin-bottom: 15px;"><i class="fas fa-exchange-alt"></i> Transactional Revenue</h4>
+                    <div class="provider-breakdown" style="gap: 10px;">
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Total Amount</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${weighting.transactionalRevenue.amount.toLocaleString()}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${weighting.transactionalRevenue.percentage.toFixed(2)}% of total</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">VAS Commissions</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${weighting.transactionalRevenue.breakdown.vasCommissions.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Deposit Fees</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${weighting.transactionalRevenue.breakdown.depositFees.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Load internal economy metrics
+        async function loadInternalEconomy(period) {
+            const token = getAdminToken();
+            if (!token) return;
+        
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/internal-economy?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/internal-economy`;
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayInternalEconomy(data.data);
+                        document.getElementById('internalEconomySection').style.display = 'grid';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load internal economy:', error);
+            }
+        }
+        
+        // Display internal economy
+        function displayInternalEconomy(data) {
+            const container = document.getElementById('internalEconomy');
+            
+            container.innerHTML = `
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total FC Credits Outstanding</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.fcCredits.totalOutstanding.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Users with FC Balance</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${data.fcCredits.usersWithBalance.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Avg FC Balance per User</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.fcCredits.averageBalance.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">FC Purchased (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.fcCredits.purchasedThisPeriod.amount.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">FC Consumed (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.fcCredits.consumedThisPeriod.amount.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Net FC Position</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.fcCredits.netPosition.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total Wallet Float</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.walletFloat.totalOutstanding.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Wallets with Balance</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${data.walletFloat.walletsWithBalance.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Avg Wallet Balance</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.walletFloat.averageBalance.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Deposits (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.walletFloat.depositsThisPeriod.amount.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Spend (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.walletFloat.spendThisPeriod.amount.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item" style="background: #f8f9fa; border: 2px solid #27ae60;">
+                    <div class="provider-info">
+                        <div style="font-weight: 700; color: #27ae60; font-size: 1.1rem;">Total Internal Economy</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount" style="color: #27ae60; font-size: 1.3rem;">₦${data.totalInternalEconomy.toLocaleString()}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Load freemium engagement
+        async function loadFreemiumEngagement(period) {
+            const token = getAdminToken();
+            if (!token) return;
+        
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/freemium-engagement?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/freemium-engagement`;
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayFreemiumEngagement(data.data);
+                        document.getElementById('freemiumSection').style.display = 'grid';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load freemium engagement:', error);
+            }
+        }
+        
+        // Display freemium engagement
+        function displayFreemiumEngagement(data) {
+            const container = document.getElementById('freemiumEngagement');
+            
+            container.innerHTML = `
+                <div class="chart-card">
+                    <h4 style="color: #f39c12; margin-bottom: 15px;"><i class="fas fa-crown"></i> Premium Users</h4>
+                    <div class="provider-breakdown" style="gap: 10px;">
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Count</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${data.overview.premiumUsers.count.toLocaleString()}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${data.overview.premiumUsers.percentage}% of total</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Transactions</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${data.premiumMetrics.transactionCount.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Total Volume</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${data.premiumMetrics.totalVolume.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Commission Earned</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${data.premiumMetrics.totalCommission.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Avg Volume/User</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${data.premiumMetrics.averageVolumePerUser.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h4 style="color: #3498db; margin-bottom: 15px;"><i class="fas fa-users"></i> Freemium Users</h4>
+                    <div class="provider-breakdown" style="gap: 10px;">
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Count</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${data.overview.freemiumUsers.count.toLocaleString()}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${data.overview.freemiumUsers.percentage}% of total</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Transactions</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${data.freemiumMetrics.transactionCount.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Total Volume</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${data.freemiumMetrics.totalVolume.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Commission Earned</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${data.freemiumMetrics.totalCommission.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Commission Share</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${data.freemiumMetrics.commissionPercentage.toFixed(2)}%</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Avg Volume/User</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${data.freemiumMetrics.averageVolumePerUser.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" style="grid-column: 1 / -1; background: linear-gradient(135deg, #f8f9fa 0%, #e8f5e9 100%); border: 2px solid #27ae60;">
+                    <h4 style="color: #27ae60; margin-bottom: 10px;"><i class="fas fa-lightbulb"></i> Key Insight</h4>
+                    <p style="color: #2c3e50; font-size: 1rem; margin: 0;">${data.insights.message}</p>
+                </div>
+            `;
+        }
+        
+        // Load expired user activity
+        async function loadExpiredUserActivity() {
+            const token = getAdminToken();
+            if (!token) return;
+        
+            const url = `${API_BASE_URL}/admin/treasury/expired-user-activity?days=90`;
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayExpiredUserActivity(data.data);
+                        document.getElementById('expiredUserSection').style.display = 'grid';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load expired user activity:', error);
+            }
+        }
+        
+        // Display expired user activity
+        function displayExpiredUserActivity(data) {
+            const summaryContainer = document.getElementById('expiredUserActivity');
+            const listContainer = document.getElementById('expiredUsersList');
+            
+            // Summary stats
+            summaryContainer.innerHTML = `
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total Expired Users</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${data.summary.totalExpiredUsers.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Active Freemium Users</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${data.summary.activeFreemiumUsers.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Inactive Users</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${data.summary.inactiveUsers.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Freemium Conversion Rate</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${data.summary.freemiumConversionRate.toFixed(2)}%</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total Freemium Volume</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.summary.totalFreemiumVolume.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total Freemium Commission</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${data.summary.totalFreemiumCommission.toLocaleString()}</div>
+                    </div>
+                </div>
+            `;
+            
+            // Top expired users list
+            if (data.expiredUsers && data.expiredUsers.length > 0) {
+                const topUsers = data.expiredUsers.slice(0, 10); // Show top 10
+                listContainer.innerHTML = topUsers.map(user => {
+                    const statusBadge = user.status === 'Active Freemium' ? 'monnify' : 
+                                       user.status === 'Recently Expired' ? 'peyflex' : '';
+                    
+                    return `
+                        <div class="chart-card">
+                            <h4 style="color: #2c3e50; margin-bottom: 15px;">${user.displayName}</h4>
+                            <div class="provider-breakdown" style="gap: 10px;">
+                                <div class="provider-item">
+                                    <div class="provider-info">
+                                        <div style="font-weight: 600;">Email</div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <div style="font-size: 0.9rem; color: #666;">${user.email}</div>
+                                    </div>
+                                </div>
+                                <div class="provider-item">
+                                    <div class="provider-info">
+                                        <div style="font-weight: 600;">Days Since Expiry</div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <div class="provider-amount">${user.daysSinceExpiry} days</div>
+                                    </div>
+                                </div>
+                                <div class="provider-item">
+                                    <div class="provider-info">
+                                        <div style="font-weight: 600;">Post-Expiry Transactions</div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <div class="provider-amount">${user.postExpiryActivity.transactionCount.toLocaleString()}</div>
+                                    </div>
+                                </div>
+                                <div class="provider-item">
+                                    <div class="provider-info">
+                                        <div style="font-weight: 600;">Post-Expiry Volume</div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <div class="provider-amount">₦${user.postExpiryActivity.totalVolume.toLocaleString()}</div>
+                                    </div>
+                                </div>
+                                <div class="provider-item">
+                                    <div class="provider-info">
+                                        <div style="font-weight: 600;">Commission Earned</div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <div class="provider-amount">₦${user.postExpiryActivity.totalCommission.toLocaleString()}</div>
+                                    </div>
+                                </div>
+                                <div class="provider-item">
+                                    <div class="provider-info">
+                                        <div style="font-weight: 600;">Status</div>
+                                    </div>
+                                    <div class="provider-stats">
+                                        <span class="provider-badge ${statusBadge}">${user.status}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No expired users found in the last 90 days</div>';
+            }
+        }
+        
+        // Search user profitability
+        async function searchUserProfitability() {
+            const userId = document.getElementById('userIdInput').value.trim();
+            if (!userId) {
+                showNotification('Please enter a User ID', 'error');
+                return;
+            }
+        
+            const token = getAdminToken();
+            if (!token) {
+                showNotification('Admin token required', 'error');
+                return;
+            }
+        
+            const period = document.getElementById('timePeriod').value;
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/user-profitability/${userId}?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/user-profitability/${userId}`;
+        
+            const resultContainer = document.getElementById('userResult');
+            resultContainer.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i><p style="margin-top: 15px;">Loading user data...</p></div>';
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    showNotification('Authentication failed. Please refresh and login again.', 'error');
+                    return;
+                }
+        
+                if (response.status === 404) {
+                    resultContainer.innerHTML = '<div style="padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; color: #856404;">User not found</div>';
+                    return;
+                }
+        
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+        
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayUserProfitability(data.data);
+                } else {
+                    resultContainer.innerHTML = `<div style="padding: 20px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; color: #721c24;">${data.message || 'Failed to load user data'}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to load user profitability:', error);
+                resultContainer.innerHTML = `<div style="padding: 20px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; color: #721c24;">Failed to load user data: ${error.message}</div>`;
+            }
+        }
+        
+        // Display user profitability
+        function displayUserProfitability(user) {
+            const container = document.getElementById('userResult');
+            
+            const assessmentBadge = {
+                'profitable': 'monnify',
+                'at_risk': 'peyflex',
+                'low_vas_usage': 'peyflex',
+                'unprofitable': ''
+            }[user.profitability.assessment] || '';
+        
+            const profitClass = user.profitability.isProfitable ? 'positive' : 'negative';
+            const profitColor = user.profitability.isProfitable ? '#27ae60' : '#e74c3c';
+        
+            container.innerHTML = `
+                <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <h3 style="color: #2c3e50; margin-bottom: 5px;">${user.userName || 'Unknown User'}</h3>
+                            <p style="color: #666; margin-bottom: 5px;">${user.userEmail}</p>
+                            <p style="color: #999; font-size: 0.9rem;">User ID: ${user.userId}</p>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <span class="provider-badge ${user.isPremium ? 'monnify' : 'peyflex'}">
+                                ${user.isPremium ? 'Premium' : 'Free'}
+                            </span>
+                            <span class="provider-badge ${assessmentBadge}">
+                                ${user.profitability.assessment.replace('_', ' ').toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+        
+                    ${user.profitability.warning ? `
+                        <div style="padding: 15px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; color: #856404; margin-bottom: 20px;">
+                            ⚠️ ${user.profitability.warning}
+                        </div>
+                    ` : ''}
+        
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Revenue</div>
+                            <div style="color: #2c3e50; font-size: 1.5rem; font-weight: bold;">₦${user.revenue.total.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Costs</div>
+                            <div style="color: #2c3e50; font-size: 1.5rem; font-weight: bold;">₦${user.costs.total.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Net Profit</div>
+                            <div style="color: ${profitColor}; font-size: 1.5rem; font-weight: bold;">₦${user.profitability.netProfit.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Profit Margin</div>
+                            <div style="color: ${profitColor}; font-size: 1.5rem; font-weight: bold;">${user.profitability.profitMargin.toFixed(2)}%</div>
+                        </div>
+                    </div>
+        
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Subscription Revenue</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${user.revenue.subscription.net.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">VAS Commissions</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${user.revenue.vasCommissions.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Deposit Fees</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${user.revenue.depositFees.net.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Deposits</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">${user.usage.totalDeposits.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Deposited</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${user.usage.totalDeposited.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">VAS Transactions</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">${user.usage.totalVasTransactions.toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">VAS Volume</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${user.usage.totalVasVolume.toLocaleString()}</div>
+                        </div>
+                        ${user.subscriptionType ? `
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                                <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Subscription Type</div>
+                                <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">${user.subscriptionType}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+
+        // ===== END MERGED FUNCTIONS =====
     </script>
 </body>
 </html>
