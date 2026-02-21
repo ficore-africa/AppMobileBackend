@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Version Control & Audit - FiCore Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="responsive.css">
+    <script src="utils.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+        }
+        
+        .header {
+            background: white;
+            color: #1E3A8A;
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #1E3A8A;
+            border: 1px solid #E5E7EB;
+        }
+        
+        .btn-secondary:hover {
+            background: #f0f0f0;
+        }
+        
+        .btn-success {
+            background: #16A34A;
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1E3A8A;
+        }
+        
+        .stat-label {
+            color: #6B7280;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .section h2 {
+            color: #1E3A8A;
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .filter-group label {
+            display: block;
+            color: #374151;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .filter-group input,
+        .filter-group select,
+        .filter-group textarea {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #E5E7EB;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #2E2E2E;
+            background: white;
+        }
+        
+        .filter-group input:focus,
+        .filter-group select:focus,
+        .filter-group textarea:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        th {
+            color: #1E3A8A;
+            font-weight: 600;
+            font-size: 14px;
+            background: #F9FAFB;
+        }
+        
+        td {
+            color: #374151;
+        }
+        
+        tr:hover {
+            background: #F9FAFB;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-income {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .badge-expense {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .badge-active {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .badge-voided {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .badge-superseded {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .badge-high {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .badge-medium {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .badge-low {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .modal-header h3 {
+            color: #1E3A8A;
+            font-size: 20px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: #6B7280;
+            font-size: 28px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        
+        .close-btn:hover {
+            color: #374151;
+        }
+        
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+        
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #E5E7EB;
+        }
+        
+        .timeline-item {
+            position: relative;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #F9FAFB;
+            border-radius: 8px;
+            border: 1px solid #E5E7EB;
+        }
+        
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -24px;
+            top: 20px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #1E3A8A;
+            border: 2px solid white;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6B7280;
+        }
+        
+        .error {
+            color: #DC2626;
+            padding: 20px;
+            text-align: center;
+            background: #FEE2E2;
+            border-radius: 8px;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>
+                <i class="fas fa-history"></i>
+                Version Control & Audit
+            </h1>
+            <div class="header-actions">
+                <a href="admin_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="stats-grid" id="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="total-entries">-</div>
+                <div class="stat-label">Total Entries</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="discrepancies-count">-</div>
+                <div class="stat-label">Discrepancies</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="high-severity">-</div>
+                <div class="stat-label">High Severity</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-versions">-</div>
+                <div class="stat-label">Total Versions</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><i class="fas fa-database"></i> Financial Entries Browser</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Search User</label>
+                    <input type="text" id="search-user" placeholder="Email or name...">
+                </div>
+                <div class="filter-group">
+                    <label>Entry Type</label>
+                    <select id="entry-type">
+                        <option value="both">Both</option>
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Status</label>
+                    <select id="status">
+                        <option value="active">Active</option>
+                        <option value="all">All</option>
+                        <option value="voided">Voided</option>
+                        <option value="superseded">Superseded</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Start Date</label>
+                    <input type="date" id="start-date">
+                </div>
+                <div class="filter-group">
+                    <label>End Date</label>
+                    <input type="date" id="end-date">
+                </div>
+                <div class="filter-group" style="display: flex; align-items: flex-end;">
+                    <button class="btn btn-primary" onclick="loadEntries()">
+                        <i class="fas fa-search"></i> Apply Filters
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="entries-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>Category</th>
+                            <th>Date</th>
+                            <th>Version</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="entries-tbody">
+                        <tr><td colspan="8" class="loading">Loading entries...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination"></div>
+        </div>
+
+        <div class="section">
+            <h2><i class="fas fa-exclamation-triangle"></i> Discrepancy Dashboard</h2>
+            <div id="discrepancies-list">
+                <p class="loading">Loading discrepancies...</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><i class="fas fa-file-export"></i> Export Audit Trail</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>User ID (Optional)</label>
+                    <input type="text" id="export-user-id" placeholder="Leave empty for all users">
+                </div>
+                <div class="filter-group">
+                    <label>Entry Type</label>
+                    <select id="export-entry-type">
+                        <option value="both">Both</option>
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Start Date</label>
+                    <input type="date" id="export-start-date">
+                </div>
+                <div class="filter-group">
+                    <label>End Date</label>
+                    <input type="date" id="export-end-date">
+                </div>
+                <div class="filter-group" style="display: flex; align-items: flex-end;">
+                    <button class="btn btn-success" onclick="exportAuditTrail()">
+                        <i class="fas fa-download"></i> Export as CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="version-history-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-history"></i> Version History</h3>
+                <button class="close-btn" onclick="closeModal('version-history-modal')">×</button>
+            </div>
+            <div id="version-history-content"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="rollback-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-undo"></i> Rollback Entry</h3>
+                <button class="close-btn" onclick="closeModal('rollback-modal')">×</button>
+            </div>
+            <div id="rollback-content">
+                <p style="color: #92400E; background: #FEF3C7; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <i class="fas fa-exclamation-triangle"></i> You are about to rollback this entry to a previous version. This action creates a new version with the old data.
+                </p>
+                <div class="filter-group">
+                    <label>Admin Reason (Required, min 10 characters)</label>
+                    <textarea id="rollback-reason" rows="4"></textarea>
+                </div>
+                <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-secondary" onclick="closeModal('rollback-modal')">Cancel</button>
+                    <button class="btn btn-danger" onclick="confirmRollback()">
+                        <i class="fas fa-undo"></i> Confirm Rollback
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check authentication on page load
+        if (!checkAuth()) {
+            window.location.href = 'admin_login.html';
+        }
+
+        let currentPage = 1;
+        let currentEntryForRollback = null;
+
+        async function loadEntries(page = 1) {
+            const entryType = document.getElementById('entry-type').value;
+            const status = document.getElementById('status').value;
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            const searchUser = document.getElementById('search-user').value;
+
+            let url = `/api/admin/financial-entries?page=${page}&limit=20&entry_type=${entryType}&status=${status}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+            if (searchUser) url += `&search=${searchUser}`;
+
+            try {
+                const response = await fetchWithAuth(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayEntries(data.data.entries);
+                    displayPagination(data.data.pagination);
+                    currentPage = page;
+                } else {
+                    document.getElementById('entries-tbody').innerHTML = `<tr><td colspan="8" class="error">${data.message}</td></tr>`;
+                }
+            } catch (error) {
+                document.getElementById('entries-tbody').innerHTML = `<tr><td colspan="8" class="error">Failed to load entries: ${error.message}</td></tr>`;
+            }
+        }
+
+        function displayEntries(entries) {
+            const tbody = document.getElementById('entries-tbody');
+            if (entries.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #6B7280;">No entries found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = entries.map(entry => `
+                <tr>
+                    <td>
+                        <strong>${entry.user.displayName}</strong><br>
+                        <small style="color: #6B7280;">${entry.user.email}</small>
+                    </td>
+                    <td><span class="badge badge-${entry.entryType}">${entry.entryType}</span></td>
+                    <td><strong>₦${parseFloat(entry.amount).toLocaleString()}</strong></td>
+                    <td>${entry.category || 'N/A'}</td>
+                    <td>${new Date(entry.date).toLocaleDateString()}</td>
+                    <td><strong>v${entry.version}</strong></td>
+                    <td><span class="badge badge-${entry.status}">${entry.status}</span></td>
+                    <td>
+                        <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="viewVersionHistory('${entry._id}', '${entry.entryType}')">
+                            <i class="fas fa-history"></i> History
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function displayPagination(pagination) {
+            const container = document.getElementById('pagination');
+            let html = '';
+
+            if (pagination.hasPrev) {
+                html += `<button class="btn btn-secondary" onclick="loadEntries(${pagination.page - 1})">
+                    <i class="fas fa-chevron-left"></i> Previous
+                </button>`;
+            }
+
+            html += `<span style="color: #6B7280; padding: 10px; font-weight: 600;">Page ${pagination.page} of ${pagination.pages}</span>`;
+
+            if (pagination.hasNext) {
+                html += `<button class="btn btn-secondary" onclick="loadEntries(${pagination.page + 1})">
+                    Next <i class="fas fa-chevron-right"></i>
+                </button>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+
+        async function viewVersionHistory(entryId, entryType) {
+            try {
+                const response = await fetchWithAuth(`/api/admin/financial-entries/${entryId}/version-history?entry_type=${entryType}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayVersionHistory(data.data);
+                    document.getElementById('version-history-modal').classList.add('active');
+                } else {
+                    showError('Failed to load version history: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading version history: ' + error.message);
+            }
+        }
+
+        function displayVersionHistory(data) {
+            const content = document.getElementById('version-history-content');
+            const history = data.versionHistory;
+
+            let html = `
+                <div style="margin-bottom: 20px; padding: 15px; background: #F9FAFB; border-radius: 8px; border: 1px solid #E5E7EB;">
+                    <p style="margin-bottom: 8px;"><strong>Entry ID:</strong> ${data.entryId}</p>
+                    <p style="margin-bottom: 8px;"><strong>Type:</strong> <span class="badge badge-${data.entryType}">${data.entryType}</span></p>
+                    <p style="margin-bottom: 8px;"><strong>User:</strong> ${data.user.displayName} (${data.user.email})</p>
+                    <p><strong>Current Version:</strong> v${data.currentVersion}</p>
+                </div>
+                <div class="timeline">
+            `;
+
+            history.reverse().forEach(version => {
+                const isCurrent = version.version === data.currentVersion;
+                html += `
+                    <div class="timeline-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <strong style="color: #1E3A8A;">Version ${version.version} ${isCurrent ? '<span class="badge badge-active">Current</span>' : ''}</strong>
+                            <small style="color: #6B7280;">${new Date(version.timestamp).toLocaleString()}</small>
+                        </div>
+                        <p style="color: #6B7280; font-size: 12px; margin-bottom: 10px;">Changed by: ${version.changedBy}</p>
+                        ${version.reason ? `<p style="color: #6B7280; font-size: 12px; margin-bottom: 10px;">Reason: ${version.reason}</p>` : ''}
+                        ${!isCurrent ? `<button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px; margin-top: 10px;" onclick="initiateRollback('${data.entryId}', '${data.entryType}', ${version.version})">
+                            <i class="fas fa-undo"></i> Rollback to This Version
+                        </button>` : ''}
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            content.innerHTML = html;
+        }
+
+
+        function initiateRollback(entryId, entryType, targetVersion) {
+            currentEntryForRollback = { entryId, entryType, targetVersion };
+            document.getElementById('rollback-reason').value = '';
+            closeModal('version-history-modal');
+            document.getElementById('rollback-modal').classList.add('active');
+        }
+
+        async function confirmRollback() {
+            const reason = document.getElementById('rollback-reason').value.trim();
+
+            if (reason.length < 10) {
+                showError('Admin reason must be at least 10 characters');
+                return;
+            }
+
+            if (!currentEntryForRollback) {
+                showError('No entry selected for rollback');
+                return;
+            }
+
+            try {
+                const response = await fetchWithAuth(`/api/admin/financial-entries/${currentEntryForRollback.entryId}/rollback`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        entry_type: currentEntryForRollback.entryType,
+                        target_version: currentEntryForRollback.targetVersion,
+                        admin_reason: reason
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    showSuccess('Entry rolled back successfully!');
+                    closeModal('rollback-modal');
+                    loadEntries(currentPage);
+                    currentEntryForRollback = null;
+                } else {
+                    showError('Rollback failed: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error during rollback: ' + error.message);
+            }
+        }
+
+        async function loadDiscrepancies() {
+            try {
+                const response = await fetchWithAuth('/api/admin/financial-entries/discrepancies?limit=10');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayDiscrepancies(data.data.discrepancies, data.data.severityCounts);
+                }
+            } catch (error) {
+                document.getElementById('discrepancies-list').innerHTML = `<p class="error">Failed to load discrepancies</p>`;
+            }
+        }
+
+
+        function displayDiscrepancies(discrepancies, counts) {
+            const container = document.getElementById('discrepancies-list');
+
+            if (discrepancies.length === 0) {
+                container.innerHTML = '<p style="color: #065F46; background: #D1FAE5; padding: 15px; border-radius: 8px;"><i class="fas fa-check-circle"></i> No discrepancies found</p>';
+                return;
+            }
+
+            let html = `
+                <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                    <span class="badge badge-high">High: ${counts.high}</span>
+                    <span class="badge badge-medium">Medium: ${counts.medium}</span>
+                    <span class="badge badge-low">Low: ${counts.low}</span>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Current Ver.</th>
+                                <th>Exported Ver.</th>
+                                <th>Report</th>
+                                <th>Severity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            discrepancies.forEach(d => {
+                html += `
+                    <tr>
+                        <td>
+                            <strong>${d.user.displayName}</strong><br>
+                            <small style="color: #6B7280;">${d.user.email}</small>
+                        </td>
+                        <td><span class="badge badge-${d.entryType}">${d.entryType}</span></td>
+                        <td><strong>₦${parseFloat(d.amount).toLocaleString()}</strong></td>
+                        <td>v${d.currentVersion}</td>
+                        <td>v${d.exportedVersion}</td>
+                        <td>${d.reportName}</td>
+                        <td><span class="badge badge-${d.severity}">${d.severity}</span></td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        async function exportAuditTrail() {
+            const userId = document.getElementById('export-user-id').value;
+            const entryType = document.getElementById('export-entry-type').value;
+            const startDate = document.getElementById('export-start-date').value;
+            const endDate = document.getElementById('export-end-date').value;
+
+            let url = `/api/admin/audit-trail/export?entry_type=${entryType}`;
+            if (userId) url += `&user_id=${userId}`;
+            if (startDate) url += `&start_date=${startDate}`;
+            if (endDate) url += `&end_date=${endDate}`;
+            url += `&token=${getAdminToken()}`;
+
+            window.open(API_BASE_URL + url, '_blank');
+        }
+
+
+        async function loadStats() {
+            try {
+                const response = await fetchWithAuth('/api/admin/financial-entries?limit=1');
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('total-entries').textContent = data.data.pagination.total.toLocaleString();
+                }
+
+                const discResponse = await fetchWithAuth('/api/admin/financial-entries/discrepancies?limit=1');
+                const discData = await discResponse.json();
+                
+                if (discData.success) {
+                    document.getElementById('discrepancies-count').textContent = discData.data.pagination.total.toLocaleString();
+                    document.getElementById('high-severity').textContent = discData.data.severityCounts.high.toLocaleString();
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.classList.remove('active');
+            }
+        }
+
+        window.onload = function() {
+            loadStats();
+            loadEntries();
+            loadDiscrepancies();
+        }
+    </script>
+</body>
+</html>

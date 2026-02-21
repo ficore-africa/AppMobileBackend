@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Credit Purchases - FiCore Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="backend_switcher.css">
+    <style>
+        :root {
+            --primary-color: #B88A44;
+            --secondary-color: #917243;
+            --success-color: #10B981;
+            --warning-color: #F59E0B;
+            --danger-color: #EF4444;
+            --info-color: #3B82F6;
+        }
+
+        body {
+            background: #FFF8F0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .navbar-brand {
+            color: var(--primary-color) !important;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid var(--primary-color);
+            transition: transform 0.2s;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .metric-label {
+            color: #6B7280;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-top: 20px;
+        }
+
+        .badge {
+            padding: 6px 12px;
+            font-weight: 600;
+        }
+
+        .status-completed {
+            background-color: var(--success-color);
+        }
+
+        .status-pending {
+            background-color: var(--warning-color);
+        }
+
+        .status-failed {
+            background-color: var(--danger-color);
+        }
+
+        .filter-section {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .pagination-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="admin_dashboard.html">
+                <i class="fas fa-shield-alt"></i> FiCore Admin
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="admin_dashboard.html">
+                            <i class="fas fa-home"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="credit_requests_dashboard.html">
+                            <i class="fas fa-hand-holding-usd"></i> Credit Requests
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="admin_credit_purchases.html">
+                            <i class="fas fa-shopping-cart"></i> Credit Purchases
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="premium_users.html">
+                            <i class="fas fa-crown"></i> Premium Users
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="logout()">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Backend Switcher -->
+    <div id="backend-switcher"></div>
+
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fas fa-shopping-cart text-info"></i> Credit Purchases (Automated)</h2>
+                <p class="text-muted">View all automated credit purchases via Paystack</p>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4" id="statisticsCards">
+            <div class="col-md-2">
+                <div class="metric-card">
+                    <div class="metric-value" id="totalCount">0</div>
+                    <div class="metric-label">Total</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="metric-card">
+                    <div class="metric-value text-success" id="completedCount">0</div>
+                    <div class="metric-label">Completed</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="metric-card">
+                    <div class="metric-value text-warning" id="pendingCount">0</div>
+                    <div class="metric-label">Pending</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="metric-card">
+                    <div class="metric-value text-danger" id="failedCount">0</div>
+                    <div class="metric-label">Failed</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="metric-card">
+                    <div class="metric-value text-warning" id="testCount">0</div>
+                    <div class="metric-label">Test Mode</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="metric-card">
+                    <div class="metric-value text-success" id="liveCount">0</div>
+                    <div class="metric-label">Live Mode</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-section">
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="filterStatus" onchange="loadPurchases()">
+                        <option value="all">All Status</option>
+                        <option value="completed">Completed</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Mode</label>
+                    <select class="form-select" id="filterTestMode" onchange="loadPurchases()">
+                        <option value="all">All Modes</option>
+                        <option value="test">Test Only</option>
+                        <option value="live">Live Only</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Email or reference..." onkeyup="searchPurchases()">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn btn-primary w-100" onclick="exportPurchases()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchases Table -->
+        <div class="table-container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5><i class="fas fa-list"></i> Credit Purchases</h5>
+                <span class="badge bg-primary" id="displayCount">0 purchases</span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>User</th>
+                            <th>Amount (₦)</th>
+                            <th>Credits</th>
+                            <th>Status</th>
+                            <th>Mode</th>
+                            <th>Payment Ref</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="purchasesTableBody">
+                        <tr>
+                            <td colspan="8" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2">Loading credit purchases...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination-controls">
+                <div>
+                    <span id="paginationInfo">Page 1 of 1</span>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" id="prevBtn" onclick="previousPage()" disabled>
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" id="nextBtn" onclick="nextPage()" disabled>
+                        Next <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="backend_switcher.js"></script>
+    <script src="utils.js"></script>
+    <script>
+        let authToken = localStorage.getItem('adminToken');
+        let allPurchases = [];
+        let filteredPurchases = [];
+        let currentPage = 1;
+        let totalPages = 1;
+        const limit = 50;
+
+        // Check authentication
+        if (!authToken) {
+            window.location.href = 'admin_login.html';
+        }
+
+        // Load purchases on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPurchases();
+        });
+
+        // Load credit purchases
+        async function loadPurchases() {
+            try {
+                const status = document.getElementById('filterStatus').value;
+                const testMode = document.getElementById('filterTestMode').value;
+
+                const response = await fetch(`${API_BASE_URL}/admin/credit-purchases?page=${currentPage}&limit=${limit}&status=${status}&testMode=${testMode}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    allPurchases = data.data.transactions;
+                    filteredPurchases = [...allPurchases];
+                    
+                    // Update statistics
+                    updateStatistics(data.data.statistics);
+                    
+                    // Update pagination
+                    totalPages = data.data.pagination.pages;
+                    updatePagination(data.data.pagination);
+                    
+                    // Display purchases
+                    displayPurchases();
+                } else {
+                    showError('Failed to load credit purchases');
+                }
+            } catch (error) {
+                console.error('Error loading purchases:', error);
+                showError('Error loading credit purchases');
+            }
+        }
+
+        // Update statistics cards
+        function updateStatistics(stats) {
+            document.getElementById('totalCount').textContent = stats.total;
+            document.getElementById('completedCount').textContent = stats.completed;
+            document.getElementById('pendingCount').textContent = stats.pending;
+            document.getElementById('failedCount').textContent = stats.failed;
+            document.getElementById('testCount').textContent = stats.test;
+            document.getElementById('liveCount').textContent = stats.live;
+        }
+
+        // Display purchases in table
+        function displayPurchases() {
+            const tbody = document.getElementById('purchasesTableBody');
+
+            if (filteredPurchases.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center text-muted">
+                            <i class="fas fa-inbox"></i> No credit purchases found
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('displayCount').textContent = '0 purchases';
+                return;
+            }
+
+            tbody.innerHTML = filteredPurchases.map(purchase => {
+                const statusClass = purchase.status === 'completed' ? 'status-completed' : 
+                                   purchase.status === 'pending' ? 'status-pending' : 'status-failed';
+                const statusText = purchase.status.charAt(0).toUpperCase() + purchase.status.slice(1);
+
+                const testModeBadge = purchase.testMode ? 
+                    '<span class="badge bg-warning"><i class="fas fa-flask"></i> TEST</span>' : 
+                    '<span class="badge bg-success"><i class="fas fa-dollar-sign"></i> LIVE</span>';
+
+                return `
+                    <tr>
+                        <td>${formatDate(purchase.createdAt)}</td>
+                        <td>
+                            <div>${purchase.user?.email || 'N/A'}</div>
+                            <small class="text-muted">${purchase.user?.displayName || ''}</small>
+                        </td>
+                        <td>₦${(purchase.amountNaira || 0).toLocaleString()}</td>
+                        <td><strong>${purchase.amount.toLocaleString()} FCs</strong></td>
+                        <td><span class="badge ${statusClass}">${statusText}</span></td>
+                        <td>${testModeBadge}</td>
+                        <td style="font-size: 0.75rem; font-family: monospace;">
+                            ${purchase.paymentReference || purchase.reference || 'N/A'}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-info" onclick="viewPurchaseDetail('${purchase._id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('displayCount').textContent = `${filteredPurchases.length} purchase${filteredPurchases.length !== 1 ? 's' : ''}`;
+        }
+
+        // Format date
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Search purchases
+        function searchPurchases() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            if (!searchTerm) {
+                filteredPurchases = [...allPurchases];
+            } else {
+                filteredPurchases = allPurchases.filter(purchase => 
+                    (purchase.user?.email && purchase.user.email.toLowerCase().includes(searchTerm)) ||
+                    (purchase.user?.displayName && purchase.user.displayName.toLowerCase().includes(searchTerm)) ||
+                    (purchase.paymentReference && purchase.paymentReference.toLowerCase().includes(searchTerm)) ||
+                    (purchase.reference && purchase.reference.toLowerCase().includes(searchTerm))
+                );
+            }
+
+            displayPurchases();
+        }
+
+        // Export to CSV
+        function exportPurchases() {
+            if (filteredPurchases.length === 0) {
+                alert('No purchases to export');
+                return;
+            }
+
+            const headers = [
+                'Date',
+                'User Email',
+                'User Name',
+                'Amount (Naira)',
+                'Credits',
+                'Status',
+                'Mode',
+                'Payment Reference'
+            ];
+
+            const rows = filteredPurchases.map(purchase => [
+                formatDate(purchase.createdAt),
+                purchase.user?.email || '',
+                purchase.user?.displayName || '',
+                purchase.amountNaira || 0,
+                purchase.amount,
+                purchase.status,
+                purchase.testMode ? 'TEST' : 'LIVE',
+                purchase.paymentReference || purchase.reference || ''
+            ]);
+
+            let csvContent = headers.join(',') + '\n';
+            rows.forEach(row => {
+                csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `credit_purchases_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // View purchase detail
+        function viewPurchaseDetail(purchaseId) {
+            const purchase = allPurchases.find(p => p._id === purchaseId);
+            if (!purchase) return;
+
+            const detailHtml = `
+                <div class="modal fade" id="purchaseDetailModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Purchase Details</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>User:</strong> ${purchase.user?.email || 'N/A'}</p>
+                                        <p><strong>Display Name:</strong> ${purchase.user?.displayName || 'N/A'}</p>
+                                        <p><strong>Amount (Naira):</strong> ₦${(purchase.amountNaira || 0).toLocaleString()}</p>
+                                        <p><strong>Credits:</strong> ${purchase.amount.toLocaleString()} FCs</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Status:</strong> ${purchase.status}</p>
+                                        <p><strong>Mode:</strong> ${purchase.testMode ? 'TEST' : 'LIVE'}</p>
+                                        <p><strong>Date:</strong> ${formatDate(purchase.createdAt)}</p>
+                                        <p><strong>Reference:</strong> ${purchase.paymentReference || purchase.reference || 'N/A'}</p>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h6>Metadata</h6>
+                                <pre>${JSON.stringify(purchase.metadata || {}, null, 2)}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if any
+            const existingModal = document.getElementById('purchaseDetailModal');
+            if (existingModal) existingModal.remove();
+
+            // Add new modal
+            document.body.insertAdjacentHTML('beforeend', detailHtml);
+            const modal = new bootstrap.Modal(document.getElementById('purchaseDetailModal'));
+            modal.show();
+        }
+
+        // Pagination
+        function updatePagination(pagination) {
+            document.getElementById('paginationInfo').textContent = `Page ${pagination.page} of ${pagination.pages}`;
+            document.getElementById('prevBtn').disabled = !pagination.hasPrev;
+            document.getElementById('nextBtn').disabled = !pagination.hasNext;
+        }
+
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                loadPurchases();
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadPurchases();
+            }
+        }
+
+        // Show error
+        function showError(message) {
+            const tbody = document.getElementById('purchasesTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> ${message}
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('adminToken');
+            window.location.href = 'admin_login.html';
+        }
+    </script>
+</body>
+</html>

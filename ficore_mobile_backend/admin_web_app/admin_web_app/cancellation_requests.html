@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Subscription Cancellation Requests - FiCore Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="backend_switcher.css">
+    <style>
+        :root {
+            --primary-color: #B88A44;
+            --secondary-color: #917243;
+            --success-color: #10B981;
+            --warning-color: #F59E0B;
+            --danger-color: #EF4444;
+            --info-color: #3B82F6;
+        }
+
+        body {
+            background: #FFF8F0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .navbar-brand {
+            color: var(--primary-color) !important;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .metric-label {
+            color: #6B7280;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .status-pending {
+            background-color: var(--warning-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .status-approved {
+            background-color: var(--success-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .status-rejected {
+            background-color: var(--danger-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .status-completed {
+            background-color: var(--info-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .request-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-left: 4px solid var(--warning-color);
+        }
+
+        .request-card.approved {
+            border-left-color: var(--success-color);
+        }
+
+        .request-card.rejected {
+            border-left-color: var(--danger-color);
+        }
+
+        .request-card.completed {
+            border-left-color: var(--info-color);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .filter-section {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .badge-urgent {
+            background-color: var(--danger-color);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="analytics_dashboard.html">
+                <i class="fas fa-coins"></i> FiCore Admin
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="analytics_dashboard.html">
+                    <i class="fas fa-home"></i> Dashboard
+                </a>
+                <a class="nav-link" href="premium_users.html">
+                    <i class="fas fa-crown"></i> Premium Users
+                </a>
+                <a class="nav-link active" href="cancellation_requests.html">
+                    <i class="fas fa-ban"></i> Cancellation Requests
+                    <span class="badge bg-danger ms-1" id="pendingBadge" style="display: none;">0</span>
+                </a>
+                <a class="nav-link" href="analytics_dashboard.html">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a class="nav-link" href="user_management.html">
+                    <i class="fas fa-users"></i> User Management
+                </a>
+                <a class="nav-link" href="audit_logs.html">
+                    <i class="fas fa-clipboard-list"></i> Audit Logs
+                </a>
+                <span class="navbar-text me-3">Welcome, <span id="adminName">Admin</span></span>
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Page Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fas fa-ban text-danger"></i> Subscription Cancellation Requests</h2>
+                <p class="text-muted">Review and manage user subscription cancellation requests</p>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--warning-color);">
+                    <div class="metric-label">Pending Requests</div>
+                    <div class="metric-value" style="color: var(--warning-color);" id="pendingCount">0</div>
+                    <small class="text-muted">Awaiting review</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--success-color);">
+                    <div class="metric-label">Approved Today</div>
+                    <div class="metric-value" style="color: var(--success-color);" id="approvedTodayCount">0</div>
+                    <small class="text-muted">Last 24 hours</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--danger-color);">
+                    <div class="metric-label">Rejected Today</div>
+                    <div class="metric-value" style="color: var(--danger-color);" id="rejectedTodayCount">0</div>
+                    <small class="text-muted">Last 24 hours</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card" style="border-left-color: var(--info-color);">
+                    <div class="metric-label">Total Requests</div>
+                    <div class="metric-value" style="color: var(--info-color);" id="totalCount">0</div>
+                    <small class="text-muted">All time</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-section">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <select class="form-select" id="statusFilter" onchange="filterRequests()">
+                        <option value="all">All Statuses</option>
+                        <option value="pending" selected>Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="timeFilter" onchange="filterRequests()">
+                        <option value="all">All Time</option>
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search by email or name..." onkeyup="filterRequests()">
+                </div>
+                <div class="col-md-3 text-end">
+                    <button class="btn btn-primary" onclick="loadCancellationRequests()">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                    <button class="btn btn-success" onclick="exportRequests()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Requests List -->
+        <div class="table-container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5><i class="fas fa-list"></i> Cancellation Requests</h5>
+                <span class="badge bg-primary" id="displayCount">0 requests</span>
+            </div>
+
+            <div id="requestsContainer">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading cancellation requests...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Modal -->
+    <div class="modal fade" id="actionModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="actionModalTitle">Process Request</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="actionModalContent"></div>
+                    <div class="mb-3">
+                        <label for="adminNotes" class="form-label">Admin Notes (Optional)</label>
+                        <textarea class="form-control" id="adminNotes" rows="3" placeholder="Add any notes about this decision..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn" id="actionButton" onclick="processRequest()">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="utils.js"></script>
+    <script src="backend_switcher.js"></script>
+    <script>
+        // Configuration - use the API_BASE_URL from utils.js
+        // (already defined as const in utils.js)
+
+        let authToken = getAdminToken();
+        let allRequests = [];
+        let filteredRequests = [];
+        let currentRequestId = null;
+        let currentAction = null;
+        let actionModalInstance = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!authToken) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+            
+            const adminName = localStorage.getItem('adminName') || 'Admin';
+            document.getElementById('adminName').textContent = adminName;
+            
+            actionModalInstance = new bootstrap.Modal(document.getElementById('actionModal'));
+            
+            loadCancellationRequests();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(loadCancellationRequests, 30000);
+        });
+
+        function logout() {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminName');
+            window.location.href = 'admin_login.html';
+        }
+
+        // Load cancellation requests from API
+        async function loadCancellationRequests() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/cancellation-requests`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = 'admin_login.html';
+                        return;
+                    }
+                    throw new Error('Failed to fetch cancellation requests');
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    allRequests = data.data.requests || [];
+                    filteredRequests = [...allRequests];
+                    updateStatistics();
+                    filterRequests();
+                } else {
+                    showError('Failed to load cancellation requests: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error loading cancellation requests:', error);
+                showError('Error loading cancellation requests: ' + error.message);
+            }
+        }
+
+        function updateStatistics() {
+            const pending = allRequests.filter(r => r.status === 'pending').length;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const approvedToday = allRequests.filter(r => 
+                r.status === 'approved' && new Date(r.processedAt) >= today
+            ).length;
+            
+            const rejectedToday = allRequests.filter(r => 
+                r.status === 'rejected' && new Date(r.processedAt) >= today
+            ).length;
+            
+            document.getElementById('pendingCount').textContent = pending;
+            document.getElementById('approvedTodayCount').textContent = approvedToday;
+            document.getElementById('rejectedTodayCount').textContent = rejectedToday;
+            document.getElementById('totalCount').textContent = allRequests.length;
+            
+            // Update badge in navigation
+            const badge = document.getElementById('pendingBadge');
+            if (pending > 0) {
+                badge.textContent = pending;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function filterRequests() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const timeFilter = document.getElementById('timeFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            let requests = [...allRequests];
+            
+            // Status filter
+            if (statusFilter !== 'all') {
+                requests = requests.filter(r => r.status === statusFilter);
+            }
+            
+            // Time filter
+            if (timeFilter !== 'all') {
+                const now = new Date();
+                const filterDate = new Date();
+                
+                if (timeFilter === 'today') {
+                    filterDate.setHours(0, 0, 0, 0);
+                } else if (timeFilter === 'week') {
+                    filterDate.setDate(now.getDate() - 7);
+                } else if (timeFilter === 'month') {
+                    filterDate.setMonth(now.getMonth() - 1);
+                }
+                
+                requests = requests.filter(r => new Date(r.requestedAt) >= filterDate);
+            }
+            
+            // Search filter
+            if (searchTerm) {
+                requests = requests.filter(r => 
+                    r.userEmail.toLowerCase().includes(searchTerm) ||
+                    r.userName.toLowerCase().includes(searchTerm) ||
+                    (r.reason && r.reason.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            filteredRequests = requests;
+            displayRequests();
+        }
+
+        function displayRequests() {
+            const container = document.getElementById('requestsContainer');
+            
+            if (filteredRequests.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-inbox fa-3x mb-3"></i>
+                        <p>No cancellation requests found</p>
+                    </div>
+                `;
+                document.getElementById('displayCount').textContent = '0 requests';
+                return;
+            }
+            
+            container.innerHTML = filteredRequests.map(request => {
+                const statusClass = `status-${request.status}`;
+                const cardClass = request.status === 'pending' ? '' : request.status;
+                const isUrgent = request.status === 'pending' && 
+                    (new Date() - new Date(request.requestedAt)) > 24 * 60 * 60 * 1000;
+                
+                return `
+                    <div class="request-card ${cardClass}">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="user-info">
+                                    <div class="user-avatar">
+                                        ${request.userName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                        <strong>${request.userName}</strong>
+                                        <br>
+                                        <small class="text-muted">${request.userEmail}</small>
+                                    </div>
+                                    ${isUrgent ? '<span class="badge badge-urgent ms-2">URGENT</span>' : ''}
+                                </div>
+                                
+                                <div class="mb-2">
+                                    <strong>Subscription:</strong> ${request.subscriptionType || 'Premium'} 
+                                    <span class="text-muted">| Expires: ${formatDate(request.subscriptionEndDate)}</span>
+                                </div>
+                                
+                                ${request.reason ? `
+                                    <div class="mb-2">
+                                        <strong>Reason:</strong> ${request.reason}
+                                    </div>
+                                ` : ''}
+                                
+                                <div class="mb-2">
+                                    <small class="text-muted">
+                                        <i class="fas fa-clock"></i> Requested: ${formatDateTime(request.requestedAt)}
+                                        ${request.processedAt ? ` | Processed: ${formatDateTime(request.processedAt)}` : ''}
+                                    </small>
+                                </div>
+                                
+                                ${request.adminNotes ? `
+                                    <div class="alert alert-info py-2 mb-2">
+                                        <strong>Admin Notes:</strong> ${request.adminNotes}
+                                    </div>
+                                ` : ''}
+                                
+                                ${request.processedBy ? `
+                                    <div>
+                                        <small class="text-muted">
+                                            <i class="fas fa-user-shield"></i> Processed by: ${request.processedByName || 'Admin'}
+                                        </small>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            <div class="col-md-4 text-end">
+                                <div class="mb-3">
+                                    <span class="${statusClass}">${request.status.toUpperCase()}</span>
+                                </div>
+                                
+                                ${request.status === 'pending' ? `
+                                    <div class="btn-group-vertical w-100" role="group">
+                                        <button class="btn btn-success btn-sm mb-2" onclick="showActionModal('${request.id}', 'approve')">
+                                            <i class="fas fa-check"></i> Approve Cancellation
+                                        </button>
+                                        <button class="btn btn-danger btn-sm mb-2" onclick="showActionModal('${request.id}', 'reject')">
+                                            <i class="fas fa-times"></i> Reject Request
+                                        </button>
+                                        <button class="btn btn-info btn-sm" onclick="contactUser('${request.userEmail}', '${request.userName}')">
+                                            <i class="fas fa-envelope"></i> Contact User
+                                        </button>
+                                    </div>
+                                ` : `
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="viewRequestDetails('${request.id}')">
+                                        <i class="fas fa-eye"></i> View Details
+                                    </button>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('displayCount').textContent = `${filteredRequests.length} request${filteredRequests.length !== 1 ? 's' : ''}`;
+        }
+
+        function showActionModal(requestId, action) {
+            currentRequestId = requestId;
+            currentAction = action;
+            
+            const request = allRequests.find(r => r.id === requestId);
+            if (!request) return;
+            
+            const modalTitle = document.getElementById('actionModalTitle');
+            const modalContent = document.getElementById('actionModalContent');
+            const actionButton = document.getElementById('actionButton');
+            
+            if (action === 'approve') {
+                modalTitle.textContent = 'Approve Cancellation Request';
+                modalContent.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Confirm Approval</strong>
+                        <p class="mb-0 mt-2">This will approve the cancellation request for <strong>${request.userName}</strong>.</p>
+                        <p class="mb-0">Their subscription will remain active until: <strong>${formatDate(request.subscriptionEndDate)}</strong></p>
+                    </div>
+                `;
+                actionButton.className = 'btn btn-success';
+                actionButton.innerHTML = '<i class="fas fa-check"></i> Approve';
+            } else {
+                modalTitle.textContent = 'Reject Cancellation Request';
+                modalContent.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Confirm Rejection</strong>
+                        <p class="mb-0 mt-2">This will reject the cancellation request for <strong>${request.userName}</strong>.</p>
+                        <p class="mb-0">Please provide a reason for rejection in the notes below.</p>
+                    </div>
+                `;
+                actionButton.className = 'btn btn-danger';
+                actionButton.innerHTML = '<i class="fas fa-times"></i> Reject';
+            }
+            
+            document.getElementById('adminNotes').value = '';
+            actionModalInstance.show();
+        }
+
+        async function processRequest() {
+            if (!currentRequestId || !currentAction) return;
+            
+            const adminNotes = document.getElementById('adminNotes').value.trim();
+            
+            if (currentAction === 'reject' && !adminNotes) {
+                alert('Please provide a reason for rejection in the admin notes.');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/cancellation-requests/${currentRequestId}/${currentAction}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ adminNotes })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    actionModalInstance.hide();
+                    showSuccessToast(`Request ${currentAction}d successfully`);
+                    loadCancellationRequests();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error processing request:', error);
+                alert('Error processing request: ' + error.message);
+            }
+        }
+
+        function contactUser(email, name) {
+            window.location.href = `mailto:${email}?subject=Regarding Your Subscription Cancellation Request&body=Dear ${name},%0D%0A%0D%0A`;
+        }
+
+        function viewRequestDetails(requestId) {
+            const request = allRequests.find(r => r.id === requestId);
+            if (!request) return;
+            
+            alert(`Request Details:\n\nUser: ${request.userName}\nEmail: ${request.userEmail}\nStatus: ${request.status}\nRequested: ${formatDateTime(request.requestedAt)}\n${request.processedAt ? `Processed: ${formatDateTime(request.processedAt)}` : ''}\n${request.reason ? `\nReason: ${request.reason}` : ''}\n${request.adminNotes ? `\nAdmin Notes: ${request.adminNotes}` : ''}`);
+        }
+
+        function exportRequests() {
+            const csv = [
+                ['User Name', 'Email', 'Subscription Type', 'Status', 'Requested At', 'Processed At', 'Reason', 'Admin Notes'].join(','),
+                ...filteredRequests.map(r => [
+                    r.userName,
+                    r.userEmail,
+                    r.subscriptionType || 'Premium',
+                    r.status,
+                    formatDateTime(r.requestedAt),
+                    r.processedAt ? formatDateTime(r.processedAt) : '',
+                    r.reason || '',
+                    r.adminNotes || ''
+                ].map(field => `"${field}"`).join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cancellation_requests_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function showError(message) {
+            document.getElementById('requestsContainer').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${message}
+                </div>
+            `;
+        }
+
+        function showSuccessToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'position-fixed top-0 end-0 p-3';
+            toast.style.zIndex = '9999';
+            toast.innerHTML = `
+                <div class="toast show" role="alert">
+                    <div class="toast-header bg-success text-white">
+                        <i class="fas fa-check-circle me-2"></i>
+                        <strong class="me-auto">Success</strong>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+</body>
+</html>

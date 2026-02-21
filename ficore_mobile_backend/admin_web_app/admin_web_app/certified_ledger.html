@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certified Ledger Export - FiCore Admin</title>
+    <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="backend_switcher.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        h1 {
+            color: #1E3A8A;
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .header-actions {
+            position: absolute;
+            right: 30px;
+            top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-logout {
+            background: #DC2626;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn-logout:hover {
+            background: #B91C1C;
+        }
+        
+        nav {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        nav a {
+            color: #6B7280;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        nav a:hover {
+            background: #F3F4F6;
+            color: #1E3A8A;
+        }
+        
+        nav a.active {
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .search-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1E3A8A;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .search-box input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #E5E7EB;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        
+        .search-box input:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        
+        .search-box button {
+            padding: 12px 24px;
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .search-box button:hover {
+            background: #1E40AF;
+        }
+        
+        .user-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 2px solid #E5E7EB;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+        
+        .user-card:hover {
+            box-shadow: 0 4px 12px rgba(30, 58, 138, 0.1);
+            border-color: #1E3A8A;
+            transform: translateY(-2px);
+        }
+        
+        .user-info {
+            flex: 1;
+        }
+        
+        .user-name {
+            font-weight: 600;
+            font-size: 18px;
+            color: #1E3A8A;
+            margin-bottom: 8px;
+        }
+        
+        .user-email {
+            color: #6B7280;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .user-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #6B7280;
+            margin-top: 10px;
+        }
+        
+        .user-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .user-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-export {
+            padding: 12px 24px;
+            background: #B88A44;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn-export:hover {
+            background: #D4AF37;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            max-width: 550px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 25px;
+            color: #1E3A8A;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2E2E2E;
+            font-size: 14px;
+        }
+        
+        .form-group input[type="date"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #E5E7EB;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input[type="date"]:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        
+        .form-group input[type="checkbox"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 14px;
+            color: #2E2E2E;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 30px;
+        }
+        
+        .btn-cancel {
+            padding: 12px 24px;
+            background: #F3F4F6;
+            color: #2E2E2E;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn-cancel:hover {
+            background: #E5E7EB;
+        }
+        
+        .btn-generate {
+            padding: 12px 24px;
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .btn-generate:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-generate:disabled {
+            background: #9CA3AF;
+            cursor: not-allowed;
+        }
+        
+        .info-box {
+            background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+            border-left: 5px solid #1E3A8A;
+            padding: 25px;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .info-box h3 {
+            margin: 0 0 15px 0;
+            color: #1E3A8A;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        .info-box p {
+            color: #2E2E2E;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+        
+        .info-box ul {
+            margin: 15px 0 0 20px;
+            color: #2E2E2E;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        
+        .info-box ul li {
+            margin-bottom: 8px;
+        }
+        
+        .info-box strong {
+            color: #1E3A8A;
+            font-weight: 600;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6B7280;
+            font-size: 16px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #1E3A8A;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .error-state {
+            text-align: center;
+            padding: 40px;
+            color: #DC2626;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏛️ Certified Ledger Export</h1>
+            <p class="subtitle">Generate tamper-evident financial ledgers for regulatory compliance</p>
+            <div class="header-actions">
+                <span id="adminName" style="color: #6B7280; margin-right: 15px; font-weight: 500;">Admin</span>
+                <button onclick="logout()" class="btn-logout">Logout</button>
+            </div>
+        </header>
+
+        <nav>
+            <a href="analytics_dashboard.html">Dashboard</a>
+            <a href="user_management.html">Users</a>
+            <a href="credit_requests_dashboard.html">Credits</a>
+            <a href="premium_users.html">Premium</a>
+            <a href="notification_analytics.html">Notifications</a>
+            <a href="audit_logs.html">Audit Logs</a>
+            <a href="certified_ledger.html" class="active">Certified Ledger</a>
+        </nav>
+
+        <div class="info-box">
+            <h3>📋 About Certified Ledger</h3>
+            <p>Generate tamper-evident financial ledgers for regulatory compliance and institutional partnerships.</p>
+            <ul>
+                <li><strong>Complete Audit Trail:</strong> Shows all transaction versions, edits, and deletions</li>
+                <li><strong>Regulatory Compliance:</strong> Meets CBN microfinance licensing requirements</li>
+                <li><strong>Verification QR Code:</strong> Each ledger includes a unique verification code</li>
+                <li><strong>Use Cases:</strong> FIRS tax audits, bank loan applications, partner due diligence</li>
+            </ul>
+        </div>
+
+        <div class="search-section">
+            <h2 class="section-title">Search Merchant</h2>
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search by email, name, or phone..."
+                    onkeypress="if(event.key === 'Enter') searchUsers()"
+                >
+                <button onclick="searchUsers()">🔍 Search</button>
+            </div>
+            
+            <div id="searchResults">
+                <div class="empty-state">Enter a search query to find merchants</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Options Modal -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">📊 Export Options</div>
+            
+            <div class="form-group">
+                <label>Merchant:</label>
+                <div id="selectedUserInfo" style="color: #6B7280; font-size: 14px; padding: 10px; background: #F9FAFB; border-radius: 6px;"></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="startDate">Start Date (Optional):</label>
+                <input type="date" id="startDate">
+            </div>
+            
+            <div class="form-group">
+                <label for="endDate">End Date (Optional):</label>
+                <input type="date" id="endDate">
+            </div>
+            
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="includeAllStatuses" checked>
+                    <span>Include voided/superseded transactions (recommended for audit trail)</span>
+                </label>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeExportModal()">Cancel</button>
+                <button class="btn-generate" onclick="generateLedger()">📄 Generate PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="utils.js"></script>
+    <script src="backend_switcher.js"></script>
+    <script>
+        let selectedUser = null;
+
+        async function searchUsers() {
+            const query = document.getElementById('searchInput').value.trim();
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (!query) {
+                resultsDiv.innerHTML = '<div class="empty-state">Enter a search query to find merchants</div>';
+                return;
+            }
+            
+            resultsDiv.innerHTML = '<div class="loading">🔍 Searching...</div>';
+            
+            try {
+                const response = await fetchWithAuth(`/admin/ledger/search-users?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                if (data.success && data.data.users.length > 0) {
+                    resultsDiv.innerHTML = data.data.users.map(user => `
+                        <div class="user-card">
+                            <div class="user-info">
+                                <div class="user-name">${escapeHtml(user.displayName || 'Unknown User')}</div>
+                                <div class="user-email">${escapeHtml(user.email)}</div>
+                                ${user.businessName ? `<div class="user-email">Business: ${escapeHtml(user.businessName)}</div>` : ''}
+                                <div class="user-stats">
+                                    <span class="user-stat">📊 <strong>${user.transactionCount}</strong> transactions</span>
+                                    <span class="user-stat">💰 <strong>${user.incomeCount}</strong> incomes</span>
+                                    <span class="user-stat">💸 <strong>${user.expenseCount}</strong> expenses</span>
+                                </div>
+                            </div>
+                            <div class="user-actions">
+                                <button class="btn-export" onclick='openExportModal(${JSON.stringify(user).replace(/'/g, "&#39;")})'>
+                                    📄 Export Ledger
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    resultsDiv.innerHTML = '<div class="empty-state">No merchants found matching your search</div>';
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                resultsDiv.innerHTML = '<div class="error-state">❌ Error searching users. Please try again.</div>';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function openExportModal(user) {
+            selectedUser = user;
+            document.getElementById('selectedUserInfo').innerHTML = `
+                <strong>${escapeHtml(user.displayName)}</strong><br>
+                ${escapeHtml(user.email)}<br>
+                ${user.transactionCount} transactions
+            `;
+            document.getElementById('exportModal').classList.add('active');
+        }
+
+        function closeExportModal() {
+            document.getElementById('exportModal').classList.remove('active');
+            selectedUser = null;
+            // Reset form
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('includeAllStatuses').checked = true;
+        }
+
+        async function generateLedger() {
+            if (!selectedUser) return;
+            
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const includeAllStatuses = document.getElementById('includeAllStatuses').checked;
+            
+            // Build query parameters
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            params.append('include_all_statuses', includeAllStatuses);
+            
+            try {
+                // Show loading state
+                const generateBtn = document.querySelector('.btn-generate');
+                const originalText = generateBtn.innerHTML;
+                generateBtn.innerHTML = '⏳ Generating...';
+                generateBtn.disabled = true;
+                
+                // Fetch PDF
+                const response = await fetchWithAuth(
+                    `/admin/ledger/certified/${selectedUser.id}?${params.toString()}`
+                );
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to generate ledger');
+                }
+                
+                // Download PDF
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // Extract filename from Content-Disposition header
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'FiCore_Certified_Ledger.pdf';
+                if (contentDisposition) {
+                    const matches = /filename=([^;]+)/.exec(contentDisposition);
+                    if (matches && matches[1]) {
+                        filename = matches[1].trim();
+                    }
+                }
+                
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                // Close modal
+                closeExportModal();
+                
+                // Show success message
+                showSuccess('✅ Certified Ledger generated successfully!');
+                
+            } catch (error) {
+                console.error('Export error:', error);
+                showError('❌ Failed to generate ledger: ' + error.message);
+            } finally {
+                // Reset button
+                const generateBtn = document.querySelector('.btn-generate');
+                if (generateBtn) {
+                    generateBtn.innerHTML = '📄 Generate PDF';
+                    generateBtn.disabled = false;
+                }
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('exportModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeExportModal();
+            }
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+            loadAdminInfo();
+        });
+    </script>
+</body>
+</html>

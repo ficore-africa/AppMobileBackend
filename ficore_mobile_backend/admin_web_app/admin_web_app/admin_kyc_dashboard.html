@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>KYC Management - FiCore Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="responsive.css">
+    <script src="utils.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+        }
+        
+        .header {
+            background: white;
+            color: #1E3A8A;
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #1E3A8A;
+        }
+        
+        .btn-secondary:hover {
+            background: #f0f0f0;
+        }
+        
+        .btn-success {
+            background: #16A34A;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #15803D;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #B91C1C;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card h3 {
+            font-size: 14px;
+            color: #6B7280;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .stat-card .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1E3A8A;
+        }
+        
+        .submissions-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .section-header h2 {
+            font-size: 20px;
+            color: #1E3A8A;
+        }
+        
+        .kyc-card {
+            background: #F9FAFB;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #E5E7EB;
+            transition: all 0.2s;
+        }
+        
+        .kyc-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .kyc-card.status-submitted {
+            border-left-color: #F59E0B;
+        }
+        
+        .kyc-card.status-verified {
+            border-left-color: #16A34A;
+        }
+        
+        .kyc-card.status-rejected {
+            border-left-color: #DC2626;
+        }
+        
+        .kyc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .kyc-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2E2E2E;
+        }
+        
+        .kyc-email {
+            font-size: 14px;
+            color: #6B7280;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-submitted {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .badge-verified {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .badge-rejected {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .kyc-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .detail-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+        }
+        
+        .detail-label {
+            font-size: 12px;
+            color: #6B7280;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .detail-value {
+            font-size: 14px;
+            color: #2E2E2E;
+            font-weight: 600;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6B7280;
+        }
+        
+        .loading i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6B7280;
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        /* Backend Switcher */
+        .backend-switcher {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+        
+        .backend-switcher label {
+            font-weight: 600;
+            color: #6B7280;
+        }
+        
+        .backend-toggle {
+            display: flex;
+            background: #F3F4F6;
+            border-radius: 6px;
+            padding: 3px;
+        }
+        
+        .backend-toggle button {
+            padding: 6px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6B7280;
+            transition: all 0.2s;
+        }
+        
+        .backend-toggle button.active {
+            background: white;
+            color: #1E3A8A;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .backend-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .backend-indicator.production {
+            background: #16A34A;
+        }
+        
+        .backend-indicator.dev {
+            background: #F59E0B;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1><i class="fas fa-id-card"></i> KYC Management</h1>
+            <div class="header-actions">
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="user_management.html" class="btn btn-secondary">
+                    <i class="fas fa-users"></i> Users
+                </a>
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="audit_logs.html" class="btn btn-secondary">
+                    <i class="fas fa-clipboard-list"></i> Audit Logs
+                </a>
+                <button onclick="logout()" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Pending Submissions</h3>
+                <div class="stat-number" id="pendingCount">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Verified Today</h3>
+                <div class="stat-number" id="verifiedTodayCount">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Rejected Today</h3>
+                <div class="stat-number" id="rejectedTodayCount">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Processed</h3>
+                <div class="stat-number" id="totalProcessedCount">-</div>
+            </div>
+        </div>
+        
+        <!-- Submissions Section -->
+        <div class="submissions-section">
+            <div class="section-header">
+                <h2>Pending KYC Submissions</h2>
+                <button class="btn btn-primary" onclick="loadSubmissions()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            
+            <div id="submissionsContainer">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading KYC submissions...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Backend Switcher -->
+        <div class="backend-switcher">
+            <label>Backend:</label>
+            <div class="backend-toggle">
+                <button id="prodBtn" onclick="switchBackend('production')">
+                    <span class="backend-indicator production"></span>
+                    Production
+                </button>
+                <button id="devBtn" onclick="switchBackend('dev')">
+                    <span class="backend-indicator dev"></span>
+                    Dev
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Update backend switcher UI
+        function updateBackendSwitcherUI() {
+            const currentBackend = getCurrentBackend();
+            document.getElementById('prodBtn').classList.toggle('active', currentBackend === 'production');
+            document.getElementById('devBtn').classList.toggle('active', currentBackend === 'dev');
+        }
+        
+        // Check authentication on load
+        window.addEventListener('load', () => {
+            if (!checkAuth()) return;
+            updateBackendSwitcherUI();
+            loadSubmissions();
+        });
+        
+        // Load KYC submissions
+        async function loadSubmissions() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/kyc/pending`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displaySubmissions(data.data.submissions);
+                    updateStats(data.data.submissions);
+                } else {
+                    showError(data.message || 'Failed to load submissions');
+                }
+            } catch (error) {
+                showError('Error loading submissions: ' + error.message);
+            }
+        }
+        
+        // Display submissions
+        async function displaySubmissions(submissions) {
+            const container = document.getElementById('submissionsContainer');
+            
+            if (submissions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-check-circle"></i>
+                        <h3>No Pending Submissions</h3>
+                        <p>All KYC submissions have been processed</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Fetch wallet status for each user
+            const submissionsWithWallet = await Promise.all(submissions.map(async (submission) => {
+                try {
+                    const walletResponse = await fetch(`${API_BASE_URL}/admin/users/${submission.userId}/wallet`, {
+                        headers: {
+                            'Authorization': `Bearer ${getAdminToken()}`
+                        }
+                    });
+                    
+                    if (walletResponse.ok) {
+                        const walletData = await walletResponse.json();
+                        submission.wallet = walletData.data;
+                    } else {
+                        submission.wallet = null;
+                    }
+                } catch (error) {
+                    console.error('Error fetching wallet for user:', submission.userId, error);
+                    submission.wallet = null;
+                }
+                return submission;
+            }));
+            
+            container.innerHTML = submissionsWithWallet.map(submission => {
+                const wallet = submission.wallet;
+                const hasBvn = submission.bvnNumberMasked && submission.bvnNumberMasked !== 'N/A';
+                const hasNin = submission.ninNumberMasked && submission.ninNumberMasked !== 'N/A';
+                const bvnSubmitted = wallet?.bvnSubmittedToMonnify || false;
+                const ninSubmitted = wallet?.ninSubmittedToMonnify || false;
+                
+                return `
+                <div class="kyc-card status-${submission.status.toLowerCase()}">
+                    <div class="kyc-header">
+                        <div>
+                            <div class="kyc-title">${submission.firstName} ${submission.lastName}</div>
+                            <div class="kyc-email">${submission.userEmail}</div>
+                        </div>
+                        <span class="badge badge-${submission.status.toLowerCase()}">${submission.status}</span>
+                    </div>
+                    
+                    <div class="kyc-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Submission Type</div>
+                            <div class="detail-value">${submission.submissionType}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Phone Number</div>
+                            <div class="detail-value">${submission.phoneNumber || 'N/A'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">BVN (Masked)</div>
+                            <div class="detail-value">
+                                ${submission.bvnNumberMasked || 'N/A'}
+                                ${hasBvn && bvnSubmitted ? '<span class="badge badge-success" style="margin-left: 8px; font-size: 10px;">✓ Submitted to Monnify</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">NIN (Masked)</div>
+                            <div class="detail-value">
+                                ${submission.ninNumberMasked || 'N/A'}
+                                ${hasNin && ninSubmitted ? '<span class="badge badge-success" style="margin-left: 8px; font-size: 10px;">✓ Submitted to Monnify</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Submitted At</div>
+                            <div class="detail-value">${formatDate(submission.submittedAt)}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">User ID</div>
+                            <div class="detail-value">${submission.userId.substring(0, 8)}...</div>
+                        </div>
+                    </div>
+                    
+                    ${wallet ? `
+                    <div class="kyc-details" style="border-top: 1px solid #E5E7EB; margin-top: 15px; padding-top: 15px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <i class="fas fa-wallet" style="color: #1E3A8A;"></i>
+                            <strong>Wallet Status</strong>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Wallet</div>
+                            <div class="detail-value">
+                                <span class="badge badge-${wallet.status === 'active' ? 'success' : 'warning'}">${wallet.status || 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Accounts</div>
+                            <div class="detail-value">${wallet.accounts?.length || 0} bank(s)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Monnify Status</div>
+                            <div class="detail-value">
+                                <span class="badge badge-${wallet.monnifyStatus === 'ACTIVE' ? 'success' : 'warning'}">${wallet.monnifyStatus || 'N/A'}</span>
+                            </div>
+                        </div>
+                        ${wallet.kycSubmittedAt ? `
+                        <div class="detail-item">
+                            <div class="detail-label">KYC Submitted to Monnify</div>
+                            <div class="detail-value">${formatDate(wallet.kycSubmittedAt)}</div>
+                        </div>
+                        ` : ''}
+                        ${(bvnSubmitted || ninSubmitted) ? `
+                        <div style="background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 6px; padding: 10px; margin-top: 10px; font-size: 12px;">
+                            <i class="fas fa-exclamation-triangle" style="color: #F59E0B;"></i>
+                            <strong>Note:</strong> BVN/NIN already submitted to Monnify. Resubmitting will incur additional charges.
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : `
+                    <div class="kyc-details" style="border-top: 1px solid #E5E7EB; margin-top: 15px; padding-top: 15px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <i class="fas fa-wallet" style="color: #6B7280;"></i>
+                            <strong>Wallet Status</strong>
+                        </div>
+                        <div style="color: #6B7280; font-size: 14px;">
+                            <i class="fas fa-info-circle"></i> No wallet created yet
+                        </div>
+                    </div>
+                    `}
+                    
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="verifySubmission('${submission._id}', '${submission.userEmail}')">
+                            <i class="fas fa-check"></i> Verify
+                        </button>
+                        <button class="btn btn-danger" onclick="rejectSubmission('${submission._id}', '${submission.userEmail}')">
+                            <i class="fas fa-times"></i> Reject
+                        </button>
+                    </div>
+                </div>
+            `;
+            }).join('');
+        }
+        
+        // Update stats
+        function updateStats(submissions) {
+            document.getElementById('pendingCount').textContent = submissions.length;
+            // TODO: Fetch verified/rejected today counts from backend
+            document.getElementById('verifiedTodayCount').textContent = '-';
+            document.getElementById('rejectedTodayCount').textContent = '-';
+            document.getElementById('totalProcessedCount').textContent = '-';
+        }
+        
+        // Verify submission
+        async function verifySubmission(submissionId, userEmail) {
+            if (!confirm(`Verify KYC for ${userEmail}?\n\nThis will:\n- Mark KYC as verified\n- Upgrade wallet to TIER_2\n- Grant full VAS access`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/kyc/verify/${submissionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'VERIFY'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('KYC verified successfully! User wallet upgraded to TIER_2.');
+                    loadSubmissions(); // Refresh list
+                } else {
+                    showError(data.message || 'Failed to verify KYC');
+                }
+            } catch (error) {
+                showError('Error verifying KYC: ' + error.message);
+            }
+        }
+        
+        // Reject submission
+        async function rejectSubmission(submissionId, userEmail) {
+            const reason = prompt(`Reject KYC for ${userEmail}?\n\nPlease provide a reason (minimum 10 characters):`);
+            
+            if (!reason) return;
+            
+            if (reason.length < 10) {
+                showError('Rejection reason must be at least 10 characters');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/kyc/verify/${submissionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'REJECT',
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('KYC rejected successfully');
+                    loadSubmissions(); // Refresh list
+                } else {
+                    showError(data.message || 'Failed to reject KYC');
+                }
+            } catch (error) {
+                showError('Error rejecting KYC: ' + error.message);
+            }
+        }
+        
+        // Format date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    </script>
+</body>
+</html>

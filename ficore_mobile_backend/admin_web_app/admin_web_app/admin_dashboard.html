@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FiCore Admin Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .admin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+        }
+
+        .admin-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .admin-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+
+        .admin-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--card-color);
+        }
+
+        .admin-card.reconciliation { --card-color: #f39c12; }
+        .admin-card.revenue { --card-color: #27ae60; }
+        .admin-card.users { --card-color: #3498db; }
+        .admin-card.analytics { --card-color: #27ae60; }
+        .admin-card.emergency { --card-color: #e74c3c; }
+        .admin-card.ledger { --card-color: #9b59b6; }
+        .admin-card.notifications { --card-color: #1abc9c; }
+        .admin-card.credits { --card-color: #f1c40f; }
+        .admin-card.premium { --card-color: #34495e; }
+        .admin-card.kyc { --card-color: #e67e22; }
+        .admin-card.referrals { --card-color: #16a085; }
+
+        .card-icon {
+            font-size: 3rem;
+            color: var(--card-color);
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .card-description {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .card-badge {
+            display: inline-block;
+            background: var(--card-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .card-badge.new {
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+
+        .card-badge.priority {
+            background: #f39c12;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .logout-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: #c0392b;
+        }
+
+        .stats-bar {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .admin-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .stats-bar {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="logout-btn" onclick="logout()">
+        <i class="fas fa-sign-out-alt"></i> Logout
+    </button>
+
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-shield-alt"></i> FiCore Admin Dashboard</h1>
+            <p>Comprehensive administration and management tools</p>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-number" id="pendingReconciliations">-</div>
+                <div class="stat-label">Pending Reconciliations</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="pendingKyc">-</div>
+                <div class="stat-label">Pending KYC</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="totalUsers">-</div>
+                <div class="stat-label">Total Users</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="activeUsers">-</div>
+                <div class="stat-label">Active Users</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="totalTransactions">-</div>
+                <div class="stat-label">Total Transactions</div>
+            </div>
+        </div>
+
+        <div class="admin-grid">
+            <a href="treasury_dashboard.html" class="admin-card revenue">
+                <div class="card-icon"><i class="fas fa-university"></i></div>
+                <div class="card-title">Treasury Dashboard</div>
+                <div class="card-description">
+                    VAS revenue analytics, Monnify 3% commissions, provider breakdown, and corporate finance tracking.
+                </div>
+                <span class="card-badge new">Revenue</span>
+            </a>
+
+            <a href="reconciliation_management.html" class="admin-card reconciliation">
+                <div class="card-icon"><i class="fas fa-balance-scale"></i></div>
+                <div class="card-title">Reconciliation Management</div>
+                <div class="card-description">
+                    Review and resolve VAS transactions that need manual verification. Handle cases where users may have received services despite system failures.
+                </div>
+                <span class="card-badge priority">Priority</span>
+            </a>
+
+            <a href="user_management.html" class="admin-card users">
+                <div class="card-icon"><i class="fas fa-users"></i></div>
+                <div class="card-title">User Management</div>
+                <div class="card-description">
+                    Search, view, and manage user accounts. Handle wallet operations, subscriptions, and user-specific issues.
+                </div>
+                <span class="card-badge">Core</span>
+            </a>
+
+            <a href="analytics_dashboard.html" class="admin-card analytics">
+                <div class="card-icon"><i class="fas fa-chart-line"></i></div>
+                <div class="card-title">Analytics Dashboard</div>
+                <div class="card-description">
+                    View comprehensive analytics, transaction reports, and business intelligence data.
+                </div>
+                <span class="card-badge">Insights</span>
+            </a>
+
+            <a href="emergency_recovery.html" class="admin-card emergency">
+                <div class="card-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="card-title">Emergency Recovery</div>
+                <div class="card-description">
+                    Emergency tools for system recovery, data fixes, and critical issue resolution.
+                </div>
+                <span class="card-badge">Emergency</span>
+            </a>
+
+            <a href="certified_ledger.html" class="admin-card ledger">
+                <div class="card-icon"><i class="fas fa-book"></i></div>
+                <div class="card-title">Certified Ledger</div>
+                <div class="card-description">
+                    Generate certified financial reports and audit trails for regulatory compliance.
+                </div>
+                <span class="card-badge">Compliance</span>
+            </a>
+
+            <a href="admin_version_control.html" class="admin-card ledger">
+                <div class="card-icon"><i class="fas fa-history"></i></div>
+                <div class="card-title">Version Control & Audit</div>
+                <div class="card-description">
+                    View version history, rollback financial entries, track discrepancies, and export comprehensive audit trails.
+                </div>
+                <span class="card-badge new">Audit</span>
+            </a>
+
+            <a href="notification_analytics.html" class="admin-card notifications">
+                <div class="card-icon"><i class="fas fa-bell"></i></div>
+                <div class="card-title">Notification Analytics</div>
+                <div class="card-description">
+                    Monitor notification delivery, engagement rates, and communication effectiveness.
+                </div>
+                <span class="card-badge">Monitoring</span>
+            </a>
+
+            <a href="credit_requests_dashboard.html" class="admin-card credits">
+                <div class="card-icon"><i class="fas fa-coins"></i></div>
+                <div class="card-title">Credit Requests</div>
+                <div class="card-description">
+                    Review and approve user credit requests and wallet funding applications.
+                </div>
+                <span class="card-badge">Financial</span>
+            </a>
+
+            <a href="premium_users.html" class="admin-card premium">
+                <div class="card-icon"><i class="fas fa-crown"></i></div>
+                <div class="card-title">Premium Users</div>
+                <div class="card-description">
+                    Manage premium subscriptions, benefits, and exclusive user features.
+                </div>
+                <span class="card-badge">Premium</span>
+            </a>
+
+            <a href="admin_kyc_dashboard.html" class="admin-card kyc">
+                <div class="card-icon"><i class="fas fa-id-card"></i></div>
+                <div class="card-title">KYC Management</div>
+                <div class="card-description">
+                    Review and verify user KYC submissions. Internal verification system with zero external charges.
+                </div>
+                <span class="card-badge new">Zero Cost</span>
+            </a>
+
+            <a href="referral_code_manager.html" class="admin-card referrals">
+                <div class="card-icon"><i class="fas fa-user-friends"></i></div>
+                <div class="card-title">Referral Code Manager</div>
+                <div class="card-description">
+                    Assign custom referral codes to key partners and influencers. Track referral performance and manage partner relationships.
+                </div>
+                <span class="card-badge new">Revenue Engine</span>
+            </a>
+
+            <a href="admin_withdrawal_requests.html" class="admin-card referrals">
+                <div class="card-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                <div class="card-title">Withdrawal Requests</div>
+                <div class="card-description">
+                    Review and approve referral earnings withdrawals to Wallet Balance. Manage payouts and prevent fraud.
+                </div>
+                <span class="card-badge new">Payouts</span>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Load dashboard stats
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardStats();
+        });
+
+        function getAdminToken() {
+            return localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken');
+        }
+
+        async function loadDashboardStats() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                // Load reconciliation stats
+                const reconciliationResponse = await fetch('https://mobilebackend.ficoreafrica.com/admin/reconciliation/stats', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (reconciliationResponse.ok) {
+                    const reconciliationData = await reconciliationResponse.json();
+                    if (reconciliationData.success) {
+                        document.getElementById('pendingReconciliations').textContent = 
+                            reconciliationData.data.pendingCount.toLocaleString();
+                    }
+                }
+
+                // Load KYC stats
+                const kycResponse = await fetch('/api/admin/kyc/pending', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (kycResponse.ok) {
+                    const kycData = await kycResponse.json();
+                    if (kycData.success) {
+                        document.getElementById('pendingKyc').textContent = 
+                            kycData.data.count.toLocaleString();
+                    }
+                } else {
+                    document.getElementById('pendingKyc').textContent = '0';
+                }
+
+                // Load real dashboard statistics from backend API
+                const statsResponse = await fetch('/admin/dashboard/stats', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (statsResponse.ok) {
+                    const statsData = await statsResponse.json();
+                    if (statsData.success) {
+                        const stats = statsData.data;
+                        
+                        // Update UI with real data
+                        document.getElementById('totalUsers').textContent = stats.totalUsers.toLocaleString();
+                        document.getElementById('activeUsers').textContent = stats.activeUsers.toLocaleString();
+                        document.getElementById('totalTransactions').textContent = stats.totalTransactions.toLocaleString();
+                        
+                        console.log('✅ Dashboard stats loaded successfully:', stats);
+                    } else {
+                        console.error('❌ Failed to load dashboard stats:', statsData.message);
+                        // Fallback to show dashes
+                        document.getElementById('totalUsers').textContent = '-';
+                        document.getElementById('activeUsers').textContent = '-';
+                        document.getElementById('totalTransactions').textContent = '-';
+                    }
+                } else {
+                    console.error('❌ Dashboard stats API request failed:', statsResponse.status);
+                    // Fallback to show dashes
+                    document.getElementById('totalUsers').textContent = '-';
+                    document.getElementById('activeUsers').textContent = '-';
+                    document.getElementById('totalTransactions').textContent = '-';
+                }
+
+            } catch (error) {
+                console.error('Error loading dashboard stats:', error);
+            }
+        }
+
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('adminToken');
+                sessionStorage.removeItem('adminToken');
+                window.location.href = 'admin_login.html';
+            }
+        }
+    </script>
+</body>
+</html>

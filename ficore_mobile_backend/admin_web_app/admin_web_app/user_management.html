@@ -1,0 +1,2352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>User Management - FiCore Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="responsive.css">
+    <script src="utils.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+        }
+        
+        .header {
+            background: white;
+            color: #1E3A8A;
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #1E3A8A;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #1E3A8A;
+        }
+        
+        .btn-secondary:hover {
+            background: #f0f0f0;
+        }
+        
+        .btn-success {
+            background: #16A34A;
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 30px;
+        }
+        
+        .search-section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .search-form {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+        
+        .form-group {
+            flex: 1;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2E2E2E;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #E5E7EB;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        
+        .user-detail {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .user-detail.show {
+            display: block;
+        }
+        
+        .user-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .user-info h2 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .user-info p {
+            color: #6B7280;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            color: #6B7280;
+            transition: all 0.2s;
+        }
+        
+        .tab.active {
+            color: #1E3A8A;
+            border-bottom-color: #1E3A8A;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .info-item {
+            padding: 15px;
+            background: #F9FAFB;
+            border-radius: 8px;
+        }
+        
+        .info-item label {
+            display: block;
+            font-size: 12px;
+            color: #6B7280;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .info-item value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2E2E2E;
+        }
+        
+        .action-section {
+            background: #F9FAFB;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .action-section h3 {
+            margin-bottom: 15px;
+            color: #1E3A8A;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-success {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .badge-danger {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .badge-warning {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6B7280;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6B7280;
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        /* Backend Switcher */
+        .backend-switcher {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+        
+        .backend-switcher label {
+            font-weight: 600;
+            color: #6B7280;
+        }
+        
+        .backend-toggle {
+            display: flex;
+            background: #F3F4F6;
+            border-radius: 6px;
+            padding: 3px;
+        }
+        
+        .backend-toggle button {
+            padding: 6px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6B7280;
+            transition: all 0.2s;
+        }
+        
+        .backend-toggle button.active {
+            background: white;
+            color: #1E3A8A;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .backend-toggle button:hover:not(.active) {
+            color: #1E3A8A;
+        }
+        
+        .backend-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .backend-indicator.production {
+            background: #16A34A;
+        }
+        
+        .backend-indicator.dev {
+            background: #F59E0B;
+        }
+        
+        /* Reconciliation Styles */
+        .reconciliation-results {
+            background: white;
+            border-radius: 8px;
+            margin-top: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .reconciliation-header {
+            background: #F9FAFB;
+            padding: 15px 20px;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .reconciliation-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .transaction-item {
+            padding: 20px;
+            border-bottom: 1px solid #E5E7EB;
+            transition: background-color 0.2s;
+        }
+        
+        .transaction-item:hover {
+            background: #F9FAFB;
+        }
+        
+        .transaction-item:last-child {
+            border-bottom: none;
+        }
+        
+        .transaction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
+        .transaction-info h5 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .transaction-info p {
+            margin: 0;
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .transaction-status {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+        
+        .transaction-amount {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1E3A8A;
+        }
+        
+        .transaction-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .transaction-detail {
+            background: #F9FAFB;
+            padding: 10px 15px;
+            border-radius: 6px;
+        }
+        
+        .transaction-detail label {
+            display: block;
+            font-size: 12px;
+            color: #6B7280;
+            margin-bottom: 3px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .transaction-detail value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2E2E2E;
+        }
+        
+        .transaction-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-badge.pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .status-badge.failed {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .status-badge.success {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .status-badge.needs-reconciliation {
+            background: #FECACA;
+            color: #B91C1C;
+        }
+        
+        .status-badge.processing {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1><i class="fas fa-users"></i> User Management</h1>
+            <div class="header-actions">
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-home"></i> Home
+                </a>
+                <a href="analytics_dashboard.html" class="btn btn-secondary">
+                    <i class="fas fa-chart-line"></i> Analytics
+                </a>
+                <a href="premium_users.html" class="btn btn-secondary">
+                    <i class="fas fa-crown"></i> Premium
+                </a>
+                <a href="cancellation_requests.html" class="btn btn-secondary">
+                    <i class="fas fa-ban"></i> Cancellations
+                </a>
+                <a href="audit_logs.html" class="btn btn-secondary">
+                    <i class="fas fa-clipboard-list"></i> Audit Logs
+                </a>
+                <button onclick="logout()" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="search-section">
+            <h3 style="margin-bottom: 20px;">Search User</h3>
+            <form class="search-form" id="searchForm">
+                <div class="form-group">
+                    <label for="searchEmail">Email Address</label>
+                    <input 
+                        type="email" 
+                        id="searchEmail" 
+                        placeholder="Enter user email"
+                        required
+                    >
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search"></i> Search
+                </button>
+            </form>
+        </div>
+        
+        <div id="userDetail" class="user-detail">
+            <div class="user-header">
+                <div class="user-info">
+                    <h2 id="userName">-</h2>
+                    <p id="userEmail">-</p>
+                </div>
+                <div>
+                    <span id="userStatus" class="badge">-</span>
+                </div>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('overview')">
+                    <i class="fas fa-info-circle"></i> Overview
+                </button>
+                <button class="tab" onclick="switchTab('credits')">
+                    <i class="fas fa-coins"></i> Credits
+                </button>
+                <button class="tab" onclick="switchTab('subscription')">
+                    <i class="fas fa-crown"></i> Subscription
+                </button>
+                <button class="tab" onclick="switchTab('liquidWallet')">
+                    <i class="fas fa-wallet"></i> Liquid Wallet
+                </button>
+                <button class="tab" onclick="switchTab('reconciliations')">
+                    <i class="fas fa-balance-scale"></i> Reconciliations
+                </button>
+            </div>
+            
+            <!-- Overview Tab -->
+            <div id="overviewTab" class="tab-content active">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>User ID</label>
+                        <value id="userId">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Role</label>
+                        <value id="userRole">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Created At</label>
+                        <value id="userCreatedAt">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Last Login</label>
+                        <value id="userLastLogin">-</value>
+                    </div>
+                </div>
+                
+                <div class="action-section" id="accountActions">
+                    <h3>Account Management</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-danger" onclick="showResetPasswordModal()">
+                            <i class="fas fa-key"></i> Reset Password
+                        </button>
+                        <button class="btn btn-primary" onclick="showSendResetEmailModal()">
+                            <i class="fas fa-envelope"></i> Send Reset Email
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Credits Tab -->
+            <div id="creditsTab" class="tab-content">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Current Balance</label>
+                        <value id="creditBalance" style="font-size: 24px; color: #16A34A;">-</value>
+                    </div>
+                </div>
+                
+                <div class="action-section" id="creditActions">
+                    <h3>Credit Management</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="showGrantCreditsModal()">
+                            <i class="fas fa-plus-circle"></i> Grant Credits
+                        </button>
+                        <button class="btn btn-danger" onclick="showDeductCreditsModal()">
+                            <i class="fas fa-minus-circle"></i> Deduct Credits
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportCreditsTransactions()">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Subscription Tab -->
+            <div id="subscriptionTab" class="tab-content">
+                <div id="subscriptionInfo" class="info-grid">
+                    <div class="info-item">
+                        <label>Status</label>
+                        <value id="subStatus">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Plan Type</label>
+                        <value id="subPlan">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Start Date</label>
+                        <value id="subStartDate">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>End Date</label>
+                        <value id="subEndDate">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Days Remaining</label>
+                        <value id="subDaysRemaining">-</value>
+                    </div>
+                </div>
+                
+                <div class="action-section" id="subscriptionActions">
+                    <h3>Subscription Management</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="showGrantSubscriptionModal()">
+                            <i class="fas fa-crown"></i> Grant Subscription
+                        </button>
+                        <button class="btn btn-primary" onclick="showExtendSubscriptionModal()">
+                            <i class="fas fa-calendar-plus"></i> Extend Subscription
+                        </button>
+                        <button class="btn btn-danger" onclick="showCancelSubscriptionModal()">
+                            <i class="fas fa-times-circle"></i> Cancel Subscription
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Liquid Wallet Tab -->
+            <div id="liquidWalletTab" class="tab-content">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Wallet Balance</label>
+                        <value id="walletBalance" style="font-size: 24px; color: #1E3A8A;">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Account Name</label>
+                        <value id="walletAccountName">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Wallet Status</label>
+                        <value id="walletStatus">-</value>
+                    </div>
+                    <div class="info-item">
+                        <label>Account Numbers</label>
+                        <value id="walletAccounts">-</value>
+                    </div>
+                </div>
+                
+                <!-- Show this section when wallet doesn't exist -->
+                <div id="noWalletSection" class="action-section" style="display: none; background: #FEF3C7; border: 2px solid #F59E0B;">
+                    <h3 style="color: #92400E;">⚠️ No VAS Wallet Found</h3>
+                    <p style="color: #92400E; margin-bottom: 15px;">
+                        This user doesn't have a VAS wallet yet. This may happen if wallet creation failed during signup.
+                        You can create one now to enable VAS features for this user.
+                    </p>
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="createUserWallet()">
+                            <i class="fas fa-plus-circle"></i> Create VAS Wallet
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Show this section when wallet exists but is broken/incomplete -->
+                <div id="brokenWalletSection" class="action-section" style="display: none; background: #FEE2E2; border: 2px solid #DC2626;">
+                    <h3 style="color: #991B1B;">🔧 Wallet Needs Repair</h3>
+                    <p style="color: #991B1B; margin-bottom: 15px;">
+                        This wallet is in <strong id="brokenWalletStatus">pending_activation</strong> status. 
+                        This usually means the reserved account creation failed during signup.
+                        You can fix this by completing the wallet setup or recreating it entirely.
+                    </p>
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="completeWalletSetup()">
+                            <i class="fas fa-wrench"></i> Complete Wallet Setup
+                        </button>
+                        <button class="btn btn-warning" onclick="recreateUserWallet()">
+                            <i class="fas fa-redo"></i> Recreate Wallet
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteUserWallet()">
+                            <i class="fas fa-trash"></i> Delete Wallet
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="action-section" id="walletActions">
+                    <h3>Liquid Wallet Management</h3>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" onclick="refreshWalletData()">
+                            <i class="fas fa-sync-alt"></i> Refresh Wallet Data
+                        </button>
+                        <button class="btn btn-success" onclick="showFundWalletModal()">
+                            <i class="fas fa-plus-circle"></i> Process Refund
+                        </button>
+                        <button class="btn btn-danger" onclick="showDeductWalletModal()">
+                            <i class="fas fa-minus-circle"></i> Process Deduction
+                        </button>
+                        <button class="btn btn-warning" onclick="showWalletHistoryModal()">
+                            <i class="fas fa-history"></i> Transaction History
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportWalletTransactions()">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Reconciliations Tab -->
+            <div id="reconciliationsTab" class="tab-content">
+                <div class="action-section">
+                    <h3>Transaction Reconciliation</h3>
+                    <p style="color: #6B7280; margin-bottom: 20px;">
+                        Manage VAS transactions that need manual review or status correction.
+                    </p>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" onclick="loadPendingReconciliations()">
+                            <i class="fas fa-clock"></i> View Pending Reconciliations
+                        </button>
+                        <button class="btn btn-warning" onclick="loadFailedTransactions()">
+                            <i class="fas fa-exclamation-triangle"></i> View Failed Transactions
+                        </button>
+                        <button class="btn btn-success" onclick="loadSuccessfulTransactions()">
+                            <i class="fas fa-check-circle"></i> View Recent Successful
+                        </button>
+                        <button class="btn btn-secondary" onclick="refreshReconciliationData()">
+                            <i class="fas fa-sync-alt"></i> Refresh Data
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="reconciliationResults" class="reconciliation-results" style="display: none;">
+                    <div class="reconciliation-header">
+                        <h4 id="reconciliationTitle">Transactions</h4>
+                        <span id="reconciliationCount" class="badge badge-primary">0</span>
+                    </div>
+                    
+                    <div id="reconciliationList" class="reconciliation-list">
+                        <!-- Transaction list will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="emptyState" class="empty-state">
+            <i class="fas fa-search"></i>
+            <h3>Search for a user to get started</h3>
+            <p>Enter a user's email address above to view and manage their account</p>
+        </div>
+        
+        <!-- Backend Switcher -->
+        <div class="backend-switcher">
+            <label>Backend:</label>
+            <div class="backend-toggle">
+                <button id="prodBtn" onclick="switchBackend('production')">
+                    <span class="backend-indicator production"></span>
+                    Production
+                </button>
+                <button id="devBtn" onclick="switchBackend('dev')">
+                    <span class="backend-indicator dev"></span>
+                    Dev
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for displaying transaction history and other data -->
+    <div id="dataModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+        <div class="modal-content" style="background-color: #fefefe; margin: 5% auto; padding: 0; border: 1px solid #888; border-radius: 10px; width: 80%; max-width: 900px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div class="modal-header" style="padding: 20px; background: #1E3A8A; color: white; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                <h2 id="modalTitle" style="margin: 0; font-size: 20px;">Modal Title</h2>
+                <button onclick="closeModal()" class="btn btn-danger" style="background: white; color: #DC2626; padding: 8px 16px;">Close</button>
+            </div>
+            <div id="modalContent" class="modal-body" style="padding: 20px; max-height: 500px; overflow-y: auto;"></div>
+        </div>
+    </div>
+    
+    <script>
+        let currentUser = null;
+        let subscriptionPlans = [];
+        
+        // Update backend switcher UI
+        function updateBackendSwitcherUI() {
+            const currentBackend = getCurrentBackend();
+            document.getElementById('prodBtn').classList.toggle('active', currentBackend === 'production');
+            document.getElementById('devBtn').classList.toggle('active', currentBackend === 'dev');
+        }
+        
+        // Check authentication on load
+        window.addEventListener('load', () => {
+            if (!checkAuth()) return;
+            
+            // Update backend switcher UI
+            updateBackendSwitcherUI();
+            
+            // Load subscription plans
+            loadSubscriptionPlans();
+            
+            // Check permissions and hide actions if needed
+            if (!hasPermission('admin:credits:grant') && !hasPermission('admin:credits:deduct')) {
+                const creditActions = document.getElementById('creditActions');
+                if (creditActions) creditActions.style.display = 'none';
+            }
+            
+            if (!hasPermission('admin:subscription:grant') && !hasPermission('admin:subscription:cancel')) {
+                const subscriptionActions = document.getElementById('subscriptionActions');
+                if (subscriptionActions) subscriptionActions.style.display = 'none';
+            }
+        });
+        
+        // Load subscription plans
+        async function loadSubscriptionPlans() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/subscription-plans`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    subscriptionPlans = data.data.plans;
+                }
+            } catch (error) {
+                console.error('Error loading subscription plans:', error);
+            }
+        }
+        
+        // Search user
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('searchEmail').value.trim();
+            if (!email) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users?email=${encodeURIComponent(email)}&limit=1`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data.users.length > 0) {
+                    currentUser = data.data.users[0];
+                    await loadUserDetails(currentUser.id);
+                } else {
+                    showError('User not found');
+                }
+            } catch (error) {
+                showError('Error searching user: ' + error.message);
+            }
+        });
+        
+        // Load user details
+        async function loadUserDetails(userId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentUser = data.data;
+                    displayUserDetails(currentUser);
+                    
+                    // Load subscription details
+                    await loadSubscriptionDetails(userId);
+                }
+            } catch (error) {
+                showError('Error loading user details: ' + error.message);
+            }
+        }
+        
+        // Display user details
+        function displayUserDetails(user) {
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('userDetail').classList.add('show');
+            
+            document.getElementById('userName').textContent = user.displayName || user.name;
+            document.getElementById('userEmail').textContent = user.email;
+            document.getElementById('userId').textContent = user.id;
+            document.getElementById('userRole').textContent = user.role;
+            document.getElementById('userCreatedAt').textContent = formatDate(user.createdAt);
+            document.getElementById('userLastLogin').textContent = formatDate(user.lastLogin);
+            document.getElementById('creditBalance').textContent = formatCurrency(user.ficoreCreditBalance);
+            
+            const statusBadge = document.getElementById('userStatus');
+            if (user.isActive) {
+                statusBadge.textContent = 'Active';
+                statusBadge.className = 'badge badge-success';
+            } else {
+                statusBadge.textContent = 'Inactive';
+                statusBadge.className = 'badge badge-danger';
+            }
+            
+            // Load additional data
+            loadSubscriptionDetails(user.id);
+            loadWalletDetails(user.id);
+        }
+        
+        // Load subscription details
+        async function loadSubscriptionDetails(userId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/subscription`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displaySubscriptionDetails(data.data);
+                }
+            } catch (error) {
+                console.error('Error loading subscription:', error);
+            }
+        }
+        
+        // Display subscription details
+        function displaySubscriptionDetails(subscription) {
+            document.getElementById('subStatus').textContent = subscription.status || 'inactive';
+            document.getElementById('subPlan').textContent = subscription.subscriptionType || 'None';
+            document.getElementById('subStartDate').textContent = formatDate(subscription.startDate);
+            document.getElementById('subEndDate').textContent = formatDate(subscription.endDate);
+            document.getElementById('subDaysRemaining').textContent = subscription.daysRemaining !== null ? subscription.daysRemaining + ' days' : 'N/A';
+        }
+        
+        // Load wallet details
+        async function loadWalletDetails(userId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/wallet`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayWalletDetails(data.data);
+                } else {
+                    // No wallet found - show empty state
+                    displayWalletDetails(null);
+                }
+            } catch (error) {
+                console.error('Error loading wallet:', error);
+                displayWalletDetails(null);
+            }
+        }
+        
+        // Display wallet details
+        function displayWalletDetails(wallet) {
+            const noWalletSection = document.getElementById('noWalletSection');
+            const brokenWalletSection = document.getElementById('brokenWalletSection');
+            const walletActions = document.getElementById('walletActions');
+            
+            if (!wallet) {
+                document.getElementById('walletBalance').textContent = 'No wallet found';
+                document.getElementById('walletAccountName').textContent = '-';
+                document.getElementById('walletStatus').textContent = 'Not created';
+                document.getElementById('walletAccounts').textContent = '-';
+                
+                // Show create wallet section, hide others
+                noWalletSection.style.display = 'block';
+                brokenWalletSection.style.display = 'none';
+                walletActions.style.display = 'none';
+                return;
+            }
+            
+            // Check if wallet is broken/incomplete (pending_activation, no accounts, or balance is 0)
+            const isBroken = wallet.status === 'pending_activation' || 
+                           (!wallet.accounts || wallet.accounts.length === 0) ||
+                           (wallet.balance === 0 && wallet.status !== 'active');
+            
+            if (isBroken) {
+                // Show broken wallet section
+                document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0, 'NGN');
+                document.getElementById('walletAccountName').textContent = wallet.accountName || '-';
+                document.getElementById('walletStatus').textContent = wallet.status || 'unknown';
+                document.getElementById('walletAccounts').textContent = 'No accounts';
+                document.getElementById('brokenWalletStatus').textContent = wallet.status || 'unknown';
+                
+                noWalletSection.style.display = 'none';
+                brokenWalletSection.style.display = 'block';
+                walletActions.style.display = 'none';
+                return;
+            }
+            
+            // Hide special sections, show normal actions
+            noWalletSection.style.display = 'none';
+            brokenWalletSection.style.display = 'none';
+            walletActions.style.display = 'block';
+            
+            document.getElementById('walletBalance').textContent = formatCurrency(wallet.balance || 0, 'NGN');
+            document.getElementById('walletAccountName').textContent = wallet.accountName || '-';
+            document.getElementById('walletStatus').textContent = wallet.status || 'unknown';
+            
+            // Format account numbers
+            if (wallet.accounts && wallet.accounts.length > 0) {
+                const accountNumbers = wallet.accounts.map(acc => acc.accountNumber || acc).join(', ');
+                document.getElementById('walletAccounts').textContent = accountNumbers;
+            } else {
+                document.getElementById('walletAccounts').textContent = 'No accounts';
+            }
+        }
+        
+        // Create VAS wallet for user (Admin action)
+        async function createUserWallet() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`Create VAS wallet for ${currentUser.email}?\n\nThis will create a basic TIER_0 wallet that the user can upgrade by completing KYC and creating a reserved account.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/create`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('VAS wallet created successfully!');
+                    // Refresh wallet data to show the new wallet
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to create wallet');
+                }
+            } catch (error) {
+                showError('Error creating wallet: ' + error.message);
+            }
+        }
+        
+        // Complete wallet setup (fix broken wallet)
+        async function completeWalletSetup() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`Complete wallet setup for ${currentUser.email}?\n\nThis will:\n- Create reserved account if missing\n- Update wallet status to active\n- Enable VAS features for the user`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/complete-setup`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Wallet setup completed successfully!');
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to complete wallet setup');
+                }
+            } catch (error) {
+                showError('Error completing wallet setup: ' + error.message);
+            }
+        }
+        
+        // Recreate wallet (delete and create new)
+        async function recreateUserWallet() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`⚠️ RECREATE wallet for ${currentUser.email}?\n\nThis will:\n- DELETE the existing broken wallet\n- CREATE a new wallet from scratch\n- User's balance will be RESET to ₦0.00\n\nOnly do this if the wallet is completely broken and cannot be fixed.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/recreate`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Wallet recreated successfully!');
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to recreate wallet');
+                }
+            } catch (error) {
+                showError('Error recreating wallet: ' + error.message);
+            }
+        }
+        
+        // Delete wallet
+        async function deleteUserWallet() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            if (!confirm(`⚠️ DELETE wallet for ${currentUser.email}?\n\nThis will PERMANENTLY delete the wallet and all associated data.\n\nAre you absolutely sure?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Wallet deleted successfully!');
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to delete wallet');
+                }
+            } catch (error) {
+                showError('Error deleting wallet: ' + error.message);
+            }
+        }
+        
+        // Refresh wallet data
+        async function refreshWalletData() {
+            if (!currentUser) return;
+            
+            try {
+                await loadWalletDetails(currentUser.id);
+                showSuccess('Wallet data refreshed successfully');
+            } catch (error) {
+                showError('Failed to refresh wallet data: ' + error.message);
+            }
+        }
+        
+        // Show fund wallet modal (placeholder)
+        async function showFundWalletModal() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            // Check if wallet exists first
+            const walletBalanceText = document.getElementById('walletBalance').textContent;
+            if (walletBalanceText === 'No wallet found') {
+                showError('User does not have a VAS wallet. Please create one first.');
+                return;
+            }
+            
+            const amount = prompt('Enter refund amount (₦):');
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                if (amount !== null) showError('Invalid amount');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for refund (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const referenceTransactionId = prompt('Enter reference transaction ID (optional):') || '';
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Wallet Refund',
+                message: `Process refund of ₦${parseFloat(amount).toLocaleString()} to ${currentUser.displayName}?`,
+                details: {
+                    'User': currentUser.displayName,
+                    'Email': currentUser.email,
+                    'Refund Amount': `₦${parseFloat(amount).toLocaleString()}`,
+                    'Reason': reason,
+                    'Reference Transaction': referenceTransactionId || 'None'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/refund`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: parseFloat(amount),
+                        reason: reason,
+                        referenceTransactionId: referenceTransactionId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Refund processed successfully! ₦${data.data.amount.toLocaleString()} added to wallet.`);
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to process refund');
+                }
+            } catch (error) {
+                showError('Error processing refund: ' + error.message);
+            }
+        }
+        
+        // Show deduct wallet modal
+        async function showDeductWalletModal() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            // Check if wallet exists first
+            const currentBalanceText = document.getElementById('walletBalance').textContent;
+            if (currentBalanceText === 'No wallet found') {
+                showError('User does not have a VAS wallet. Please create one first.');
+                return;
+            }
+            
+            // Check current balance
+            const currentBalance = parseFloat(currentBalanceText.replace(/[₦,]/g, ''));
+            
+            const amount = prompt('Enter deduction amount (₦):');
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                if (amount !== null) showError('Invalid amount');
+                return;
+            }
+            
+            const deductionAmount = parseFloat(amount);
+            
+            // Check if user has sufficient balance
+            if (deductionAmount > currentBalance) {
+                showError(`Insufficient balance. User has ₦${currentBalance.toLocaleString()}, cannot deduct ₦${deductionAmount.toLocaleString()}`);
+                return;
+            }
+            
+            const reason = prompt('Enter reason for deduction (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const referenceTransactionId = prompt('Enter reference transaction ID (optional):') || '';
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Wallet Deduction',
+                message: `Process deduction of ₦${deductionAmount.toLocaleString()} from ${currentUser.displayName}?`,
+                details: {
+                    'User': currentUser.displayName,
+                    'Email': currentUser.email,
+                    'Current Balance': `₦${currentBalance.toLocaleString()}`,
+                    'Deduction Amount': `₦${deductionAmount.toLocaleString()}`,
+                    'New Balance': `₦${(currentBalance - deductionAmount).toLocaleString()}`,
+                    'Reason': reason,
+                    'Reference Transaction': referenceTransactionId || 'None'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/deduct`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: deductionAmount,
+                        reason: reason,
+                        referenceTransactionId: referenceTransactionId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Deduction processed successfully! ₦${data.data.amount.toLocaleString()} deducted from wallet.`);
+                    // Refresh wallet data
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to process deduction');
+                }
+            } catch (error) {
+                showError('Error processing deduction: ' + error.message);
+            }
+        }
+        
+        // Show wallet history modal
+        async function showWalletHistoryModal() {
+            if (!currentUser) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/transactions`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let html = '<h3>Wallet Transaction History</h3>';
+                    html += '<div style="max-height: 400px; overflow-y: auto;">';
+                    
+                    if (data.data.transactions && data.data.transactions.length > 0) {
+                        html += '<table style="width: 100%; border-collapse: collapse;">';
+                        html += '<thead><tr style="background: #F4F1EC;">';
+                        html += '<th style="padding: 10px; text-align: left;">Date</th>';
+                        html += '<th style="padding: 10px; text-align: left;">Type</th>';
+                        html += '<th style="padding: 10px; text-align: right;">Amount</th>';
+                        html += '<th style="padding: 10px; text-align: left;">Status</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        data.data.transactions.forEach(tx => {
+                            html += '<tr style="border-bottom: 1px solid #eee;">';
+                            html += `<td style="padding: 10px;">${formatDate(tx.createdAt)}</td>`;
+                            html += `<td style="padding: 10px;">${tx.type || 'Unknown'}</td>`;
+                            html += `<td style="padding: 10px; text-align: right;">${formatCurrency(tx.amount || 0, 'NGN')}</td>`;
+                            html += `<td style="padding: 10px;">${tx.status || 'Unknown'}</td>`;
+                            html += '</tr>';
+                        });
+                        
+                        html += '</tbody></table>';
+                    } else {
+                        html += '<p style="text-align: center; padding: 20px; color: #6B7280;">No transactions found</p>';
+                    }
+                    
+                    html += '</div>';
+                    showModal('Wallet History', html);
+                } else {
+                    showError('Failed to load wallet history: ' + data.message);
+                }
+            } catch (error) {
+                showError('Failed to load wallet history: ' + error.message);
+            }
+        }
+
+        // Export Liquid Wallet Transactions as CSV
+        async function exportWalletTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                showSuccess('Preparing export... This may take a moment.');
+                
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/wallet/transactions/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                if (response.ok) {
+                    // Get the CSV content
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `liquid_wallet_${currentUser.email}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showSuccess('Liquid Wallet transactions exported successfully!');
+                } else {
+                    const data = await response.json();
+                    showError('Failed to export transactions: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Failed to export transactions: ' + error.message);
+            }
+        }
+
+        // Export FiCore Credits Transactions as CSV
+        async function exportCreditsTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                showSuccess('Preparing export... This may take a moment.');
+                
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/credits/transactions/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                if (response.ok) {
+                    // Get the CSV content
+                    const blob = await response.blob();
+                    
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ficore_credits_${currentUser.email}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showSuccess('FiCore Credits transactions exported successfully!');
+                } else {
+                    const data = await response.json();
+                    showError('Failed to export transactions: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Failed to export transactions: ' + error.message);
+            }
+        }
+        
+        // Switch tabs
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.closest('.tab').classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+        
+        // Grant Credits Modal
+        async function showGrantCreditsModal() {
+            if (!hasPermission('admin:credits:grant')) {
+                showError('You do not have permission to grant credits');
+                return;
+            }
+            
+            const amount = prompt('Enter amount of credits to grant:');
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                if (amount !== null) showError('Invalid amount');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for granting credits (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Credit Grant',
+                message: `Grant ${amount} FCs to ${currentUser.displayName}?`,
+                details: {
+                    'Current Balance': formatCurrency(currentUser.ficoreCreditBalance),
+                    'Amount to Grant': formatCurrency(amount),
+                    'New Balance': formatCurrency(parseFloat(currentUser.ficoreCreditBalance) + parseFloat(amount)),
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/credits`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        operation: 'add',
+                        amount: parseFloat(amount),
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Credits granted successfully!');
+                    await loadUserDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to grant credits');
+                }
+            } catch (error) {
+                showError('Error granting credits: ' + error.message);
+            }
+        }
+        
+        // Deduct Credits Modal
+        async function showDeductCreditsModal() {
+            if (!hasPermission('admin:credits:deduct')) {
+                showError('You do not have permission to deduct credits');
+                return;
+            }
+            
+            const amount = prompt('Enter amount of credits to deduct:');
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                if (amount !== null) showError('Invalid amount');
+                return;
+            }
+            
+            if (parseFloat(amount) > currentUser.ficoreCreditBalance) {
+                showError('Insufficient credits to deduct');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for deducting credits (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Credit Deduction',
+                message: `Deduct ${amount} FCs from ${currentUser.displayName}?`,
+                details: {
+                    'Current Balance': formatCurrency(currentUser.ficoreCreditBalance),
+                    'Amount to Deduct': formatCurrency(amount),
+                    'New Balance': formatCurrency(parseFloat(currentUser.ficoreCreditBalance) - parseFloat(amount)),
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/credits`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        operation: 'deduct',
+                        amount: parseFloat(amount),
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Credits deducted successfully!');
+                    await loadUserDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to deduct credits');
+                }
+            } catch (error) {
+                showError('Error deducting credits: ' + error.message);
+            }
+        }
+        
+        // Grant Subscription Modal
+        async function showGrantSubscriptionModal() {
+            if (!hasPermission('admin:subscription:grant')) {
+                showError('You do not have permission to grant subscriptions');
+                return;
+            }
+            
+            const planType = prompt('Enter plan type (MONTHLY, ANNUAL, or CUSTOM):');
+            if (!planType) return;
+            
+            const planTypeUpper = planType.toUpperCase();
+            if (!['MONTHLY', 'ANNUAL', 'CUSTOM'].includes(planTypeUpper)) {
+                showError('Invalid plan type. Must be MONTHLY, ANNUAL, or CUSTOM');
+                return;
+            }
+            
+            let durationDays, amount;
+            
+            if (planTypeUpper === 'MONTHLY') {
+                durationDays = 30;
+                amount = 2500;
+            } else if (planTypeUpper === 'ANNUAL') {
+                durationDays = 365;
+                amount = 10000;
+            } else {
+                durationDays = prompt('Enter duration in days:');
+                if (!durationDays || isNaN(durationDays) || parseInt(durationDays) <= 0) {
+                    if (durationDays !== null) showError('Invalid duration');
+                    return;
+                }
+                durationDays = parseInt(durationDays);
+                
+                amount = prompt('Enter amount (NGN):');
+                if (!amount || isNaN(amount) || parseFloat(amount) < 0) {
+                    if (amount !== null) showError('Invalid amount');
+                    return;
+                }
+                amount = parseFloat(amount);
+            }
+            
+            const reason = prompt('Enter reason for granting subscription (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Subscription Grant',
+                message: `Grant ${planTypeUpper} subscription to ${currentUser.displayName}?`,
+                details: {
+                    'Plan Type': planTypeUpper,
+                    'Duration': durationDays + ' days',
+                    'Amount': formatCurrency(amount, 'NGN'),
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/subscription`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        planId: planTypeUpper,
+                        planName: planTypeUpper + ' Premium',
+                        durationDays: durationDays,
+                        autoRenew: false,
+                        amount: amount,
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Subscription granted successfully!');
+                    await loadUserDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to grant subscription');
+                }
+            } catch (error) {
+                showError('Error granting subscription: ' + error.message);
+            }
+        }
+        
+        // Extend Subscription Modal
+        async function showExtendSubscriptionModal() {
+            if (!hasPermission('admin:subscription:extend')) {
+                showError('You do not have permission to extend subscriptions');
+                return;
+            }
+            
+            const days = prompt('Enter number of days to extend:');
+            if (!days || isNaN(days) || parseInt(days) <= 0) {
+                if (days !== null) showError('Invalid number of days');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for extending subscription (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Subscription Extension',
+                message: `Extend subscription for ${currentUser.displayName} by ${days} days?`,
+                details: {
+                    'Extension': days + ' days',
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/subscription`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        extendDays: parseInt(days),
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Subscription extended successfully!');
+                    await loadUserDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to extend subscription');
+                }
+            } catch (error) {
+                showError('Error extending subscription: ' + error.message);
+            }
+        }
+        
+        // Cancel Subscription Modal
+        async function showCancelSubscriptionModal() {
+            if (!hasPermission('admin:subscription:cancel')) {
+                showError('You do not have permission to cancel subscriptions');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for cancelling subscription (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Subscription Cancellation',
+                message: `Cancel subscription for ${currentUser.displayName}?`,
+                details: {
+                    'Warning': 'This action will immediately cancel the subscription',
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/subscription`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Subscription cancelled successfully!');
+                    await loadUserDetails(currentUser.id);
+                } else {
+                    showError(data.message || 'Failed to cancel subscription');
+                }
+            } catch (error) {
+                showError('Error cancelling subscription: ' + error.message);
+            }
+        }
+
+        // Reset Password Modal (Direct Reset)
+        async function showResetPasswordModal() {
+            if (!hasPermission('admin:password:reset')) {
+                showError('You do not have permission to reset passwords');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for resetting password (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Confirm Password Reset',
+                message: `Reset password for ${currentUser.displayName}?`,
+                details: {
+                    'Warning': 'This will generate a temporary password that the user must change on next login',
+                    'User Email': currentUser.email,
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/reset-password-direct`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show the temporary password in a modal
+                    showPasswordResetSuccess(data.data);
+                } else {
+                    showError(data.message || 'Failed to reset password');
+                }
+            } catch (error) {
+                showError('Error resetting password: ' + error.message);
+            }
+        }
+
+        // Send Reset Email Modal
+        async function showSendResetEmailModal() {
+            if (!hasPermission('admin:password:reset')) {
+                showError('You do not have permission to send reset emails');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Send Password Reset Email',
+                message: `Send password reset email to ${currentUser.displayName}?`,
+                details: {
+                    'User Email': currentUser.email,
+                    'Note': 'User will receive an email with reset instructions'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/reset-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Password reset email sent successfully!');
+                } else {
+                    showError(data.message || 'Failed to send reset email');
+                }
+            } catch (error) {
+                showError('Error sending reset email: ' + error.message);
+            }
+        }
+
+        // Show password reset success with temporary password
+        function showPasswordResetSuccess(data) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+            
+            modal.innerHTML = `
+                <div style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    max-width: 500px;
+                    width: 90%;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                ">
+                    <h3 style="color: #16A34A; margin-bottom: 20px;">
+                        <i class="fas fa-check-circle"></i> Password Reset Successful
+                    </h3>
+                    <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <p><strong>User:</strong> ${data.userEmail}</p>
+                        <p><strong>Temporary Password:</strong> 
+                            <code style="background: #E5E7EB; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 16px; font-weight: bold;">
+                                ${data.temporaryPassword}
+                            </code>
+                        </p>
+                        <p style="color: #DC2626; font-weight: 600; margin-top: 15px;">
+                            ⚠️ ${data.note}
+                        </p>
+                    </div>
+                    <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="color: #92400E; font-size: 14px;">
+                            <strong>Important:</strong> Please provide this temporary password to the user securely. 
+                            They will be required to change it immediately upon login.
+                        </p>
+                    </div>
+                    <div style="text-align: right;">
+                        <button onclick="this.closest('div').parentElement.remove()" 
+                                style="background: #1E3A8A; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Auto-remove after 30 seconds for security
+            setTimeout(() => {
+                if (document.body.contains(modal)) {
+                    modal.remove();
+                }
+            }, 30000);
+        }
+        
+        // ==================== RECONCILIATION FUNCTIONS ====================
+        
+        // Load pending reconciliations for current user
+        async function loadPendingReconciliations() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/user/${currentUser.email}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayReconciliationResults('Pending Reconciliations', data.data.transactions, 'pending');
+                } else {
+                    showError('Failed to load pending reconciliations: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading pending reconciliations: ' + error.message);
+            }
+        }
+        
+        // Load failed transactions for current user
+        async function loadFailedTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/transactions?status=FAILED&limit=50`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayReconciliationResults('Failed Transactions', data.data.transactions, 'failed');
+                } else {
+                    showError('Failed to load failed transactions: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading failed transactions: ' + error.message);
+            }
+        }
+        
+        // Load successful transactions for current user
+        async function loadSuccessfulTransactions() {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/users/${currentUser.id}/transactions?status=SUCCESS&limit=20`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayReconciliationResults('Recent Successful Transactions', data.data.transactions, 'success');
+                } else {
+                    showError('Failed to load successful transactions: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading successful transactions: ' + error.message);
+            }
+        }
+        
+        // Display reconciliation results
+        function displayReconciliationResults(title, transactions, type) {
+            const resultsDiv = document.getElementById('reconciliationResults');
+            const titleElement = document.getElementById('reconciliationTitle');
+            const countElement = document.getElementById('reconciliationCount');
+            const listElement = document.getElementById('reconciliationList');
+            
+            titleElement.textContent = title;
+            countElement.textContent = transactions.length;
+            
+            if (transactions.length === 0) {
+                listElement.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #6B7280;">
+                        <i class="fas fa-inbox" style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;"></i>
+                        <h4>No transactions found</h4>
+                        <p>No ${title.toLowerCase()} for this user.</p>
+                    </div>
+                `;
+            } else {
+                listElement.innerHTML = transactions.map(tx => createTransactionItem(tx, type)).join('');
+            }
+            
+            resultsDiv.style.display = 'block';
+        }
+        
+        // Create transaction item HTML
+        function createTransactionItem(transaction, type) {
+            const statusClass = getStatusClass(transaction.status);
+            const canChangeStatus = type === 'failed' || type === 'pending' || transaction.status === 'NEEDS_RECONCILIATION';
+            
+            return `
+                <div class="transaction-item">
+                    <div class="transaction-header">
+                        <div class="transaction-info">
+                            <h5>${transaction.type || 'VAS Transaction'} - ${transaction.phoneNumber || 'N/A'}</h5>
+                            <p>ID: ${transaction._id || transaction.id} | ${formatDate(transaction.createdAt)}</p>
+                        </div>
+                        <div class="transaction-status">
+                            <div class="transaction-amount">₦${(transaction.amount || 0).toLocaleString()}</div>
+                            <span class="status-badge ${statusClass}">${transaction.status || 'Unknown'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="transaction-details">
+                        <div class="transaction-detail">
+                            <label>Network</label>
+                            <value>${transaction.network || 'N/A'}</value>
+                        </div>
+                        <div class="transaction-detail">
+                            <label>Provider</label>
+                            <value>${transaction.provider || 'N/A'}</value>
+                        </div>
+                        <div class="transaction-detail">
+                            <label>Reference</label>
+                            <value>${transaction.reference || transaction.requestId || 'N/A'}</value>
+                        </div>
+                        <div class="transaction-detail">
+                            <label>Selling Price</label>
+                            <value>₦${(transaction.sellingPrice || transaction.totalAmount || 0).toLocaleString()}</value>
+                        </div>
+                        ${transaction.failureReason ? `
+                        <div class="transaction-detail" style="grid-column: 1 / -1;">
+                            <label>Failure Reason</label>
+                            <value style="color: #DC2626;">${transaction.failureReason}</value>
+                        </div>
+                        ` : ''}
+                        ${transaction.reconciliationRequired ? `
+                        <div class="transaction-detail" style="grid-column: 1 / -1;">
+                            <label>Reconciliation Notes</label>
+                            <value style="color: #F59E0B;">${transaction.reconciliationTimestamp ? 'Marked on ' + formatDate(transaction.reconciliationTimestamp) : 'Needs manual review'}</value>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="transaction-actions">
+                        ${canChangeStatus ? `
+                            <button class="btn btn-success btn-sm" onclick="changeTransactionStatus('${transaction._id || transaction.id}', 'SUCCESS')">
+                                <i class="fas fa-check"></i> Mark Success
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="changeTransactionStatus('${transaction._id || transaction.id}', 'FAILED')">
+                                <i class="fas fa-times"></i> Mark Failed
+                            </button>
+                        ` : ''}
+                        <button class="btn btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction._id || transaction.id}')">
+                            <i class="fas fa-eye"></i> View Details
+                        </button>
+                        ${transaction.status === 'FAILED' ? `
+                            <button class="btn btn-warning btn-sm" onclick="markForReconciliation('${transaction._id || transaction.id}')">
+                                <i class="fas fa-balance-scale"></i> Mark for Reconciliation
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Get status class for styling
+        function getStatusClass(status) {
+            switch (status?.toUpperCase()) {
+                case 'SUCCESS':
+                case 'COMPLETED':
+                    return 'success';
+                case 'FAILED':
+                case 'ERROR':
+                    return 'failed';
+                case 'PENDING':
+                    return 'pending';
+                case 'PROCESSING':
+                    return 'processing';
+                case 'NEEDS_RECONCILIATION':
+                    return 'needs-reconciliation';
+                default:
+                    return 'pending';
+            }
+        }
+        
+        // Change transaction status
+        async function changeTransactionStatus(transactionId, newStatus) {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            const reason = prompt(`Enter reason for changing status to ${newStatus} (minimum 10 characters):`);
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: `Confirm Status Change`,
+                message: `Change transaction status to ${newStatus}?`,
+                details: {
+                    'Transaction ID': transactionId,
+                    'User': currentUser.displayName,
+                    'New Status': newStatus,
+                    'Reason': reason,
+                    'Warning': newStatus === 'SUCCESS' ? 'This will ensure wallet balance is properly adjusted' : 'This action cannot be undone'
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/resolve`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        status: newStatus,
+                        adminNotes: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Transaction status changed to ${newStatus} successfully!`);
+                    // Refresh the current view
+                    refreshReconciliationData();
+                    // Refresh wallet data to show updated balance
+                    await loadWalletDetails(currentUser.id);
+                } else {
+                    showError('Failed to change transaction status: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error changing transaction status: ' + error.message);
+            }
+        }
+        
+        // Mark transaction for reconciliation
+        async function markForReconciliation(transactionId) {
+            if (!currentUser) {
+                showError('No user selected');
+                return;
+            }
+            
+            const reason = prompt('Enter reason for marking for reconciliation (minimum 10 characters):');
+            if (!reason || reason.length < 10) {
+                if (reason !== null) showError('Reason must be at least 10 characters');
+                return;
+            }
+            
+            const confirmed = await showConfirmation({
+                title: 'Mark for Reconciliation',
+                message: 'Mark this transaction for manual reconciliation?',
+                details: {
+                    'Transaction ID': transactionId,
+                    'User': currentUser.displayName,
+                    'Reason': reason
+                }
+            });
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/reconciliation/mark`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        transactionId: transactionId,
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Transaction marked for reconciliation successfully!');
+                    refreshReconciliationData();
+                } else {
+                    showError('Failed to mark transaction for reconciliation: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error marking transaction for reconciliation: ' + error.message);
+            }
+        }
+        
+        // View transaction details
+        async function viewTransactionDetails(transactionId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/transactions/${transactionId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const transaction = data.data;
+                    
+                    let html = '<h3>Transaction Details</h3>';
+                    html += '<div style="max-height: 500px; overflow-y: auto;">';
+                    html += '<table style="width: 100%; border-collapse: collapse;">';
+                    
+                    // Display all transaction fields
+                    Object.entries(transaction).forEach(([key, value]) => {
+                        if (value !== null && value !== undefined && value !== '') {
+                            html += `<tr style="border-bottom: 1px solid #eee;">`;
+                            html += `<td style="padding: 8px; font-weight: 600; text-transform: capitalize;">${key.replace(/([A-Z])/g, ' $1').trim()}:</td>`;
+                            html += `<td style="padding: 8px;">${formatTransactionValue(key, value)}</td>`;
+                            html += `</tr>`;
+                        }
+                    });
+                    
+                    html += '</table>';
+                    html += '</div>';
+                    
+                    showModal('Transaction Details', html);
+                } else {
+                    showError('Failed to load transaction details: ' + data.message);
+                }
+            } catch (error) {
+                showError('Error loading transaction details: ' + error.message);
+            }
+        }
+        
+        // Format transaction value for display
+        function formatTransactionValue(key, value) {
+            if (key.toLowerCase().includes('date') || key.toLowerCase().includes('at')) {
+                return formatDate(value);
+            } else if (key.toLowerCase().includes('amount') || key.toLowerCase().includes('price') || key.toLowerCase().includes('balance')) {
+                return typeof value === 'number' ? `₦${value.toLocaleString()}` : value;
+            } else if (typeof value === 'object') {
+                return JSON.stringify(value, null, 2);
+            } else {
+                return value;
+            }
+        }
+        
+        // Refresh reconciliation data
+        function refreshReconciliationData() {
+            const resultsDiv = document.getElementById('reconciliationResults');
+            if (resultsDiv.style.display !== 'none') {
+                // Re-run the last action based on the current title
+                const title = document.getElementById('reconciliationTitle').textContent;
+                if (title.includes('Pending')) {
+                    loadPendingReconciliations();
+                } else if (title.includes('Failed')) {
+                    loadFailedTransactions();
+                } else if (title.includes('Successful')) {
+                    loadSuccessfulTransactions();
+                }
+            }
+        }
+        
+        // Modal functions
+        function showModal(title, content) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalContent').innerHTML = content;
+            document.getElementById('dataModal').style.display = 'block';
+        }
+        
+        function closeModal() {
+            document.getElementById('dataModal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('dataModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

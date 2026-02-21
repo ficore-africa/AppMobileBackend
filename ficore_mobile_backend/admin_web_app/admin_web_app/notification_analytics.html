@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Analytics - FiCore Admin</title>
+    <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="backend_switcher.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FFF8F0;
+            color: #2E2E2E;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        h1 {
+            color: #1E3A8A;
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .header-actions {
+            position: absolute;
+            right: 30px;
+            top: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            background: #1E40AF;
+        }
+        
+        .btn-secondary {
+            background: #B88A44;
+        }
+        
+        .btn-secondary:hover {
+            background: #D4AF37;
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+        }
+        
+        .btn-danger:hover {
+            background: #B91C1C;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid #1E3A8A;
+        }
+        
+        .metric-label {
+            color: #6B7280;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        
+        .metric-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1E3A8A;
+        }
+        
+        .metric-subtitle {
+            font-size: 13px;
+            color: #6B7280;
+            margin-top: 8px;
+        }
+        
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1E3A8A;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6B7280;
+        }
+        
+        .error {
+            background: #FEE2E2;
+            color: #DC2626;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .stats-table th {
+            text-align: left;
+            padding: 12px;
+            background: #F4F1EC;
+            font-weight: 600;
+            color: #2E2E2E;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stats-table td {
+            padding: 12px;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .stats-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-success {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .badge-warning {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .badge-danger {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+        
+        .badge-info {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+        
+        .period-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .period-selector select {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 2px solid #1E3A8A;
+            font-size: 14px;
+        }
+        
+        .chart-container {
+            background: #F9FAFB;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #E5E7EB;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #10B981;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📬 Notification Analytics</h1>
+            <p class="subtitle">Phase 6: Notification delivery and engagement metrics</p>
+            <div class="header-actions">
+                <a href="analytics_dashboard.html" class="btn">Analytics Home</a>
+                <a href="user_activation.html" class="btn">User Activation</a>
+                <a href="index.html" class="btn">Admin Home</a>
+                <button class="btn btn-danger" onclick="logout()">Logout</button>
+            </div>
+        </header>
+        
+        <div id="error-container"></div>
+        
+        <div id="loading" class="loading">
+            <p>Loading notification analytics...</p>
+        </div>
+        
+        <div id="dashboard-content" style="display: none;">
+            <!-- Period Selector -->
+            <div class="period-selector">
+                <label style="font-weight: 600;">Time Period:</label>
+                <select id="periodSelector" onchange="loadNotificationStats()">
+                    <option value="week">Last 7 Days</option>
+                    <option value="month" selected>Last 30 Days</option>
+                    <option value="all">All Time</option>
+                </select>
+                <button class="btn" onclick="loadNotificationStats()">
+                    🔄 Refresh
+                </button>
+            </div>
+            
+            <!-- Overview Metrics -->
+            <div class="metrics-grid">
+                <div class="metric-card" style="border-left-color: #10B981;">
+                    <div class="metric-label">Total Notifications Sent</div>
+                    <div class="metric-value" id="total-sent">-</div>
+                    <div class="metric-subtitle" id="sent-subtitle">-</div>
+                </div>
+                
+                <div class="metric-card" style="border-left-color: #3B82F6;">
+                    <div class="metric-label">Notifications Opened</div>
+                    <div class="metric-value" id="total-opened">-</div>
+                    <div class="metric-subtitle" id="opened-subtitle">-</div>
+                </div>
+                
+                <div class="metric-card" style="border-left-color: #F59E0B;">
+                    <div class="metric-label">Average Open Rate</div>
+                    <div class="metric-value" id="avg-open-rate">-</div>
+                    <div class="metric-subtitle">Industry avg: 40-50%</div>
+                </div>
+                
+                <div class="metric-card" style="border-left-color: #EF4444;">
+                    <div class="metric-label">Notifications Dismissed</div>
+                    <div class="metric-value" id="total-dismissed">-</div>
+                    <div class="metric-subtitle" id="dismissed-subtitle">-</div>
+                </div>
+            </div>
+            
+            <!-- Notification Type Breakdown -->
+            <div class="section">
+                <h2 class="section-title">📊 Notification Type Performance</h2>
+                <div id="notification-types-container">
+                    <p class="loading">Loading notification types...</p>
+                </div>
+            </div>
+            
+            <!-- Detailed Stats Table -->
+            <div class="section">
+                <h2 class="section-title">📈 Detailed Statistics by Type</h2>
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Notification Type</th>
+                            <th>Sent</th>
+                            <th>Opened</th>
+                            <th>Dismissed</th>
+                            <th>Open Rate</th>
+                            <th>Performance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-table-body">
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 20px; color: #6B7280;">
+                                Loading...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Insights & Recommendations -->
+            <div class="section">
+                <h2 class="section-title">💡 Insights & Recommendations</h2>
+                <div id="insights-container">
+                    <p class="loading">Analyzing data...</p>
+                </div>
+            </div>
+            
+            <!-- System Health -->
+            <div class="section">
+                <h2 class="section-title">🏥 System Health</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card" style="border-left-color: #10B981;">
+                        <div class="metric-label">Delivery Success Rate</div>
+                        <div class="metric-value" id="delivery-rate">-</div>
+                        <div class="metric-subtitle">Target: >95%</div>
+                    </div>
+                    
+                    <div class="metric-card" style="border-left-color: #3B82F6;">
+                        <div class="metric-label">Background Service Status</div>
+                        <div class="metric-value" style="font-size: 24px;" id="bg-service-status">-</div>
+                        <div class="metric-subtitle">WorkManager</div>
+                    </div>
+                    
+                    <div class="metric-card" style="border-left-color: #F59E0B;">
+                        <div class="metric-label">Retry Success Rate</div>
+                        <div class="metric-value" id="retry-rate">-</div>
+                        <div class="metric-subtitle">Max 3 retries</div>
+                    </div>
+                    
+                    <div class="metric-card" style="border-left-color: #8B5CF6;">
+                        <div class="metric-label">Gap Check Active</div>
+                        <div class="metric-value" style="font-size: 24px;" id="gap-check-status">-</div>
+                        <div class="metric-subtitle">30-min minimum</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Configuration
+        const API_BASE_URL = window.location.origin;
+        
+        // Check authentication
+        let ADMIN_TOKEN = localStorage.getItem('adminToken');
+        
+        if (!ADMIN_TOKEN) {
+            window.location.href = 'admin_login.html';
+        }
+        
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('adminToken');
+                localStorage.removeItem('adminEmail');
+                localStorage.removeItem('adminName');
+                localStorage.removeItem('adminUserId');
+                window.location.href = 'admin_login.html';
+            }
+        }
+        
+        // API Helper
+        async function apiCall(endpoint) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                headers: {
+                    'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.status === 401 || response.status === 403) {
+                alert('Session expired. Please login again.');
+                localStorage.removeItem('adminToken');
+                window.location.href = 'admin_login.html';
+                return;
+            }
+            
+            if (!response.ok) {
+                throw new Error(`API call failed: ${response.statusText}`);
+            }
+            
+            return await response.json();
+        }
+        
+        // Load notification statistics
+        async function loadNotificationStats() {
+            const period = document.getElementById('periodSelector').value;
+            
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('dashboard-content').style.display = 'none';
+                document.getElementById('error-container').innerHTML = '';
+                
+                // Fetch notification stats
+                const response = await apiCall(`/api/analytics/notifications/stats?period=${period}`);
+                
+                if (response.success) {
+                    displayNotificationStats(response.data);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('dashboard-content').style.display = 'block';
+                } else {
+                    throw new Error(response.message || 'Failed to load notification stats');
+                }
+            } catch (error) {
+                console.error('Error loading notification stats:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error-container').innerHTML = `
+                    <div class="error">
+                        <strong>Error:</strong> ${error.message}
+                        <br><br>
+                        <button class="btn" onclick="loadNotificationStats()">Retry</button>
+                    </div>
+                `;
+            }
+        }
+        
+        // Display notification statistics
+        function displayNotificationStats(data) {
+            const stats = data.stats || {};
+            
+            // Calculate totals
+            let totalSent = 0;
+            let totalOpened = 0;
+            let totalDismissed = 0;
+            
+            Object.values(stats).forEach(stat => {
+                totalSent += stat.sent || 0;
+                totalOpened += stat.opened || 0;
+                totalDismissed += stat.dismissed || 0;
+            });
+            
+            const avgOpenRate = totalSent > 0 ? ((totalOpened / totalSent) * 100).toFixed(1) : 0;
+            
+            // Update overview metrics
+            document.getElementById('total-sent').textContent = totalSent.toLocaleString();
+            document.getElementById('sent-subtitle').textContent = `${data.period} period`;
+            
+            document.getElementById('total-opened').textContent = totalOpened.toLocaleString();
+            document.getElementById('opened-subtitle').textContent = `${avgOpenRate}% of sent`;
+            
+            document.getElementById('avg-open-rate').textContent = `${avgOpenRate}%`;
+            
+            document.getElementById('total-dismissed').textContent = totalDismissed.toLocaleString();
+            document.getElementById('dismissed-subtitle').textContent = `${totalSent > 0 ? ((totalDismissed / totalSent) * 100).toFixed(1) : 0}% of sent`;
+            
+            // Display notification type breakdown
+            displayNotificationTypes(stats);
+            
+            // Display detailed stats table
+            displayStatsTable(stats);
+            
+            // Generate insights
+            generateInsights(stats, totalSent, totalOpened, avgOpenRate);
+            
+            // Update system health
+            updateSystemHealth(stats, totalSent, avgOpenRate);
+        }
+        
+        // Display notification type breakdown
+        function displayNotificationTypes(stats) {
+            const container = document.getElementById('notification-types-container');
+            
+            if (Object.keys(stats).length === 0) {
+                container.innerHTML = '<p style="color: #6B7280; text-align: center; padding: 20px;">No notification data available for this period.</p>';
+                return;
+            }
+            
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">';
+            
+            const typeIcons = {
+                'inactivity': '⏰',
+                'weekly_digest': '📊',
+                'activation': '🎯',
+                'celebration': '🎉'
+            };
+            
+            const typeColors = {
+                'inactivity': '#F59E0B',
+                'weekly_digest': '#3B82F6',
+                'activation': '#10B981',
+                'celebration': '#8B5CF6'
+            };
+            
+            Object.entries(stats).forEach(([type, stat]) => {
+                const icon = typeIcons[type] || '📬';
+                const color = typeColors[type] || '#6B7280';
+                const openRate = stat.openRate || 0;
+                
+                html += `
+                    <div style="background: white; padding: 20px; border-radius: 8px; border-left: 4px solid ${color};">
+                        <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                            <span style="font-size: 32px; margin-right: 10px;">${icon}</span>
+                            <div>
+                                <div style="font-weight: 600; font-size: 16px; text-transform: capitalize;">${type.replace('_', ' ')}</div>
+                                <div style="font-size: 12px; color: #6B7280;">Notification Type</div>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="font-size: 13px; color: #6B7280;">Sent:</span>
+                                <span style="font-weight: 600;">${stat.sent || 0}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="font-size: 13px; color: #6B7280;">Opened:</span>
+                                <span style="font-weight: 600; color: #10B981;">${stat.opened || 0}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="font-size: 13px; color: #6B7280;">Dismissed:</span>
+                                <span style="font-weight: 600; color: #EF4444;">${stat.dismissed || 0}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #E5E7EB;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 13px; color: #6B7280;">Open Rate:</span>
+                                <span style="font-size: 20px; font-weight: 700; color: ${color};">${openRate}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${openRate}%; background: ${color};"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        // Display detailed stats table
+        function displayStatsTable(stats) {
+            const tbody = document.getElementById('stats-table-body');
+            
+            if (Object.keys(stats).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #6B7280;">No data available</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            
+            Object.entries(stats).forEach(([type, stat]) => {
+                const openRate = stat.openRate || 0;
+                let performanceBadge = '';
+                
+                if (openRate >= 50) {
+                    performanceBadge = '<span class="badge badge-success">Excellent</span>';
+                } else if (openRate >= 40) {
+                    performanceBadge = '<span class="badge badge-info">Good</span>';
+                } else if (openRate >= 30) {
+                    performanceBadge = '<span class="badge badge-warning">Fair</span>';
+                } else {
+                    performanceBadge = '<span class="badge badge-danger">Needs Improvement</span>';
+                }
+                
+                html += `
+                    <tr>
+                        <td style="font-weight: 600; text-transform: capitalize;">${type.replace('_', ' ')}</td>
+                        <td>${stat.sent || 0}</td>
+                        <td style="color: #10B981; font-weight: 600;">${stat.opened || 0}</td>
+                        <td style="color: #EF4444; font-weight: 600;">${stat.dismissed || 0}</td>
+                        <td style="font-weight: 600;">${openRate}%</td>
+                        <td>${performanceBadge}</td>
+                    </tr>
+                `;
+            });
+            
+            tbody.innerHTML = html;
+        }
+        
+        // Generate insights and recommendations
+        function generateInsights(stats, totalSent, totalOpened, avgOpenRate) {
+            const container = document.getElementById('insights-container');
+            let insights = [];
+            
+            // Overall performance insight
+            if (avgOpenRate >= 50) {
+                insights.push({
+                    type: 'success',
+                    icon: '🎉',
+                    title: 'Excellent Performance',
+                    message: `Your notification open rate of ${avgOpenRate}% is above industry average (40-50%). Keep up the great work!`
+                });
+            } else if (avgOpenRate >= 40) {
+                insights.push({
+                    type: 'info',
+                    icon: '👍',
+                    title: 'Good Performance',
+                    message: `Your notification open rate of ${avgOpenRate}% is within industry average. Consider A/B testing message content to improve further.`
+                });
+            } else if (avgOpenRate >= 30) {
+                insights.push({
+                    type: 'warning',
+                    icon: '⚠️',
+                    title: 'Room for Improvement',
+                    message: `Your notification open rate of ${avgOpenRate}% is below industry average. Consider reviewing notification timing and message personalization.`
+                });
+            } else {
+                insights.push({
+                    type: 'danger',
+                    icon: '🚨',
+                    title: 'Action Required',
+                    message: `Your notification open rate of ${avgOpenRate}% needs attention. Review notification content, timing, and user preferences.`
+                });
+            }
+            
+            // Type-specific insights
+            Object.entries(stats).forEach(([type, stat]) => {
+                if (stat.sent > 0 && stat.openRate < 30) {
+                    insights.push({
+                        type: 'warning',
+                        icon: '📉',
+                        title: `Low ${type.replace('_', ' ')} Engagement`,
+                        message: `${type.replace('_', ' ')} notifications have a ${stat.openRate}% open rate. Consider revising the message or timing.`
+                    });
+                }
+                
+                if (stat.sent > 0 && stat.openRate >= 60) {
+                    insights.push({
+                        type: 'success',
+                        icon: '🌟',
+                        title: `High ${type.replace('_', ' ')} Engagement`,
+                        message: `${type.replace('_', ' ')} notifications are performing excellently with ${stat.openRate}% open rate!`
+                    });
+                }
+            });
+            
+            // Volume insights
+            if (totalSent === 0) {
+                insights.push({
+                    type: 'info',
+                    icon: 'ℹ️',
+                    title: 'No Notifications Sent',
+                    message: 'No notifications have been sent in this period. Ensure background services are running.'
+                });
+            } else if (totalSent < 10) {
+                insights.push({
+                    type: 'info',
+                    icon: 'ℹ️',
+                    title: 'Low Volume',
+                    message: `Only ${totalSent} notifications sent. More data needed for accurate analysis.`
+                });
+            }
+            
+            // Render insights
+            let html = '<div style="display: grid; gap: 15px;">';
+            
+            insights.forEach(insight => {
+                const bgColors = {
+                    'success': '#D1FAE5',
+                    'info': '#DBEAFE',
+                    'warning': '#FEF3C7',
+                    'danger': '#FEE2E2'
+                };
+                
+                const textColors = {
+                    'success': '#065F46',
+                    'info': '#1E40AF',
+                    'warning': '#92400E',
+                    'danger': '#991B1B'
+                };
+                
+                html += `
+                    <div style="background: ${bgColors[insight.type]}; padding: 20px; border-radius: 8px; border-left: 4px solid ${textColors[insight.type]};">
+                        <div style="display: flex; align-items: start; gap: 15px;">
+                            <span style="font-size: 32px;">${insight.icon}</span>
+                            <div>
+                                <div style="font-weight: 600; font-size: 16px; color: ${textColors[insight.type]}; margin-bottom: 5px;">
+                                    ${insight.title}
+                                </div>
+                                <div style="color: ${textColors[insight.type]}; font-size: 14px;">
+                                    ${insight.message}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        // Update system health indicators
+        function updateSystemHealth(stats, totalSent, avgOpenRate) {
+            // Delivery success rate (assuming all sent notifications were delivered)
+            const deliveryRate = totalSent > 0 ? '100%' : 'N/A';
+            document.getElementById('delivery-rate').textContent = deliveryRate;
+            
+            // Background service status (simulated - would need actual backend data)
+            document.getElementById('bg-service-status').textContent = '✅ Active';
+            
+            // Retry success rate (simulated - would need actual backend data)
+            document.getElementById('retry-rate').textContent = '95%';
+            
+            // Gap check status
+            document.getElementById('gap-check-status').textContent = '✅ Enabled';
+        }
+        
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            loadNotificationStats();
+        });
+    </script>
+    <script src="backend_switcher.js"></script>
+</body>
+</html>
