@@ -594,7 +594,7 @@
         <div class="stats-grid">
             <div class="stat-card revenue">
                 <div class="icon"><i class="fas fa-chart-line"></i></div>
-                <div class="number" id="totalRevenue">₦0</div>
+                <div class="number" id="totalVasVolume">₦0</div>
                 <div class="label">Total VAS Sales</div>
                 <div class="sublabel">All-time user spending</div>
             </div>
@@ -609,6 +609,12 @@
                 <div class="number" id="peyflexCommission">₦0</div>
                 <div class="label">Peyflex Commission (1-5%)</div>
                 <div class="sublabel">Earnings from Peyflex</div>
+            </div>
+            <div class="stat-card" style="--card-color: #2ecc71;">
+                <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="number" id="corporateRevenue">₦0</div>
+                <div class="label">Corporate Revenue</div>
+                <div class="sublabel">Total earnings (commissions + fees)</div>
             </div>
             <div class="stat-card transactions">
                 <div class="icon"><i class="fas fa-exchange-alt"></i></div>
@@ -946,10 +952,13 @@
             const { overview, revenueBreakdown, providerStats, transactionTypeStats, recentTransactions, revenueWeighting } = treasuryData;
             
             // Update stats cards with correct backend properties
-            document.getElementById('totalRevenue').textContent = `₦${overview.totalRevenue.toLocaleString()}`;
+            // CRITICAL FIX (Feb 21, 2026): Display VAS Volume (what customers paid), NOT Corporate Revenue
+            document.getElementById('totalVasVolume').textContent = `₦${(overview.totalVasVolume || 0).toLocaleString()}`;
             // Show BOTH Monnify and Peyflex commissions
             document.getElementById('monnifyCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.monnify || 0).toLocaleString()}`;
             document.getElementById('peyflexCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.peyflex || 0).toLocaleString()}`;
+            // Show Corporate Revenue (total earnings)
+            document.getElementById('corporateRevenue').textContent = `₦${(overview.totalRevenue || 0).toLocaleString()}`;
             document.getElementById('totalTransactions').textContent = overview.totalTransactions.toLocaleString();
             
             // Update provider breakdown (use providerStats from backend)
