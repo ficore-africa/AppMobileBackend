@@ -63,7 +63,6 @@ TEST_ACCOUNT_EMAILS = [
     # warpiiv@gmail.com - EXCLUDED (real user, founder using own app with real money)
     # Additional test accounts from @ficoreafrica.com domain
     'premiumtester@ficoreafrica.com',
-    'WizardTest@ficoreafrica.com',
     'newuser@test.com',
     'test1759502800077@ficore.com',
     'test1759590317560@ficore.com',
@@ -316,4 +315,3 @@ stats = get_test_account_stats(mongo)
 print(f"Test accounts: {stats['testAccountCount']}")
 print(f"Test spending: ₦{stats['totalSpending']:,.2f}")
 """
-
