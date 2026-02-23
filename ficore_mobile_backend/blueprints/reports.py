@@ -6088,6 +6088,10 @@ def init_reports_blueprint(mongo, token_required):
                 'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
+            # Get user's registered tax profile (for watermark comparison)
+            user_tax_profile = user.get('taxProfile', {}) if user else {}
+            profile_tax_type = user_tax_profile.get('type', 'PIT').upper() if user_tax_profile else 'PIT'
+            
             # Prepare financial data
             financial_data = {
                 'incomes': incomes,
@@ -6284,7 +6288,8 @@ def init_reports_blueprint(mongo, token_required):
                 assets_data=assets_data,
                 start_date=start_date,
                 end_date=end_date,
-                tax_type=tax_type
+                tax_type=tax_type,
+                profile_tax_type=profile_tax_type  # NEW: Pass user's registered tax type for watermark
             )
             
             # Deduct credits if not premium
