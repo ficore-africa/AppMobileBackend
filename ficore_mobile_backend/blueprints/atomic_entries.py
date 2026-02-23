@@ -86,18 +86,20 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             from utils.expense_utils import auto_populate_expense_fields
             
             # 🏷️ QUICK TAG INTEGRATION (Feb 21, 2026): Accept entryType from frontend
-            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            # DEFAULT TO 'personal' IF NOT PROVIDED (Backend Safeguard)
+            entry_type = data.get('entryType') or 'personal'  # Default to 'personal' if None or empty
             print(f"\n{'🏷️ '*40}")
             print(f"🏷️  ATOMIC ENDPOINT - TAGGING DEBUG")
             print(f"{'🏷️ '*40}")
-            print(f"🏷️  Entry type received: {entry_type}")
-            print(f"🏷️  Entry type is None: {entry_type is None}")
-            print(f"🏷️  Entry type is empty: {entry_type == ''}")
+            print(f"🏷️  Entry type received: {data.get('entryType')}")
+            print(f"🏷️  Entry type after default: {entry_type}")
+            print(f"🏷️  Entry type is None: {data.get('entryType') is None}")
+            print(f"🏷️  Entry type is empty: {data.get('entryType') == ''}")
             print(f"🏷️  Entry type type: {type(entry_type)}")
-            if entry_type:
+            if data.get('entryType'):
                 print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
             else:
-                print(f"🏷️  ⚠️  NO TAG PROVIDED (will be saved as None)")
+                print(f"🏷️  ⚠️  NO TAG PROVIDED - DEFAULTED TO: '{entry_type}'")
             print(f"{'🏷️ '*40}\n")
             
             # Validate entryType if provided
@@ -643,15 +645,17 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             is_premium_entry = is_premium  # Already calculated above
             
             # 🏷️ QUICK TAG INTEGRATION (Feb 21, 2026): Accept entryType from frontend
-            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            # DEFAULT TO 'personal' IF NOT PROVIDED (Backend Safeguard)
+            entry_type = data.get('entryType') or 'personal'  # Default to 'personal' if None or empty
             print(f"\n{'🏷️ '*40}")
             print(f"🏷️  INCOME ATOMIC ENDPOINT - TAGGING DEBUG")
             print(f"{'🏷️ '*40}")
-            print(f"🏷️  Entry type received: {entry_type}")
-            if entry_type:
+            print(f"🏷️  Entry type received: {data.get('entryType')}")
+            print(f"🏷️  Entry type after default: {entry_type}")
+            if data.get('entryType'):
                 print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
             else:
-                print(f"🏷️  ⚠️  NO TAG PROVIDED (will be saved as None)")
+                print(f"🏷️  ⚠️  NO TAG PROVIDED - DEFAULTED TO: '{entry_type}'")
             print(f"{'🏷️ '*40}\n")
             
             # Validate entryType if provided

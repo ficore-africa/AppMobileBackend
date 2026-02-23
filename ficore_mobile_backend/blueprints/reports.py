@@ -6053,15 +6053,25 @@ def init_reports_blueprint(mongo, token_required):
                 ]
             
             # Apply date filtering
+            # CRITICAL FIX (Feb 22, 2026): Balance Sheet items (assets, debtors, creditors, inventory)
+            # are CUMULATIVE and should NOT be filtered by date range.
+            # Only P&L items (income, expenses) should be filtered by date range.
+            # 
+            # Accounting Principle: Balance Sheet = Point-in-time snapshot (cumulative from beginning)
+            #                       Income Statement = Period summary (start_date to end_date)
             if start_date or end_date:
                 if start_date:
                     income_query['dateReceived'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
-                    asset_query['purchaseDate'] = {'$gte': start_date}
+                    # ❌ REMOVED: asset_query['purchaseDate'] = {'$gte': start_date}
                 if end_date:
                     income_query.setdefault('dateReceived', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
-                    asset_query.setdefault('purchaseDate', {})['$lte'] = end_date
+                    # ❌ REMOVED: asset_query.setdefault('purchaseDate', {})['$lte'] = end_date
+            
+            # NOTE: Assets, Debtors, Creditors, Inventory are NOT date-filtered
+            # They are cumulative (all entries from beginning of time)
+            # NBV calculation will use end_date as "as of" date for depreciation
             
             # Fetch all data in parallel (6 collections)
             results = fetch_collections_parallel({

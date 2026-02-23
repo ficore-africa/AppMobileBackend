@@ -1743,27 +1743,16 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
                 'filingDeadline': 'March 31st',
                 'description': '🎉 Great news! Your income is below ₦800,000, so you pay 0% tax. This applies to freelancers, side hustles, and small businesses. Keep records for future growth and stay compliant.'
             }
-        elif annual_income and annual_income < 3000000:
-            return {
-                'businessStructure': 'personal_income',
-                'incomeLevel': '800k_to_3m',
-                'annualIncome': annual_income,
-                'taxAuthority': 'sirs',
-                'taxRate': '0% on first ₦800k, then 15%',
-                'exemptionEligible': False,
-                'filingDeadline': 'March 31st',
-                'description': 'You pay 15% tax on income above ₦800,000. For employees: Your salary is taxed via PAYE by your employer. This 15% applies ONLY to your side income tracked in FiCore.'
-            }
         else:
             return {
                 'businessStructure': 'personal_income',
-                'incomeLevel': 'above_3m',
+                'incomeLevel': 'above_800k',
                 'annualIncome': annual_income,
                 'taxAuthority': 'sirs',
-                'taxRate': '15-25% (Progressive)',
+                'taxRate': '0% on first ₦800k, then progressive rates',
                 'exemptionEligible': False,
                 'filingDeadline': 'March 31st',
-                'description': 'You pay progressive rates (15%-25%) as your income grows. First ₦800,000 is always tax-free. This applies to all personal income including freelance work, side hustles, and business income.'
+                'description': 'You pay progressive tax rates on income above ₦800,000. For employees: Your salary is taxed via PAYE by your employer. Progressive rates apply ONLY to your side income tracked in FiCore.'
             }
     
     elif business_structure == 'llc':

@@ -1,6 +1,15 @@
 """
-Cash/Bank Management Blueprint
-Handles opening balance, manual adjustments (drawings, capital deposits), and balance calculations
+Opening Balances Management Blueprint
+
+MODERNIZATION (Feb 22, 2026): Renamed from "Cash/Bank Management" to "Opening Balances"
+Handles opening balances for cash/bank AND equity, plus manual adjustments (drawings, capital deposits)
+
+This is the "Financial Setup Hub" where users establish their starting financial position:
+- Opening Cash/Bank Balance (what's in the bank at start of period)
+- Opening Equity (owner's capital invested at start of period)
+- Drawings (owner withdrawals during period)
+- Capital Deposits (additional owner investments during period)
+
 Part of the Virtual Vault strategy for double-entry bookkeeping
 """
 from flask import Blueprint, request, jsonify
@@ -19,7 +28,12 @@ def init_cash_bank_blueprint(mongo, token_required):
     @cash_bank_bp.route('/opening-balance', methods=['GET'])
     @token_required
     def get_opening_balance(current_user):
-        """Get user's opening cash/bank balance"""
+        """
+        Get user's opening balances (cash/bank and equity)
+        
+        MODERNIZATION (Feb 22, 2026): Renamed from "Cash/Bank Management" to "Opening Balances"
+        Now handles both opening cash/bank balance AND opening equity
+        """
         try:
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             
@@ -30,54 +44,92 @@ def init_cash_bank_blueprint(mongo, token_required):
                     'message': 'User not found'
                 }), 404
             
-            # Default to 0.0 if field doesn't exist
-            opening_balance = user.get('openingCashBalance', 0.0)
+            # Default to 0.0 if fields don't exist
+            opening_cash_balance = user.get('openingCashBalance', 0.0)
+            opening_equity = user.get('openingEquity', 0.0)
             
-            print(f'✓ Opening balance fetched for user {current_user["_id"]}: ₦{opening_balance}')
+            print(f'✓ Opening balances fetched for user {current_user["_id"]}: Cash=₦{opening_cash_balance}, Equity=₦{opening_equity}')
             
             return jsonify({
                 'success': True,
-                'openingBalance': opening_balance
+                'openingCashBalance': opening_cash_balance,
+                'openingEquity': opening_equity
             }), 200
             
         except Exception as e:
-            print(f'❌ Error fetching opening balance: {str(e)}')
+            print(f'❌ Error fetching opening balances: {str(e)}')
             import traceback
             traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to fetch opening balance'
+                'message': 'Failed to fetch opening balances'
             }), 500
     
     @cash_bank_bp.route('/opening-balance', methods=['POST'])
     @token_required
     def set_opening_balance(current_user):
-        """Set user's opening cash/bank balance (one-time setup)"""
+        """
+        Set user's opening balances (cash/bank and/or equity)
+        
+        MODERNIZATION (Feb 22, 2026): Now handles both cash/bank and equity opening balances
+        Users can set one or both in a single request
+        """
         try:
             data = request.get_json()
-            opening_balance = float(data.get('openingBalance', 0.0))
             
-            if opening_balance < 0:
+            # Get values from request (optional - user can set one or both)
+            opening_cash_balance = data.get('openingCashBalance')
+            opening_equity = data.get('openingEquity')
+            
+            # Validate if provided
+            if opening_cash_balance is not None:
+                opening_cash_balance = float(opening_cash_balance)
+                if opening_cash_balance < 0:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Opening cash balance cannot be negative'
+                    }), 400
+            
+            if opening_equity is not None:
+                opening_equity = float(opening_equity)
+                # Note: Opening equity CAN be negative (if business started with debt)
+            
+            # Build update document
+            update_doc = {}
+            if opening_cash_balance is not None:
+                update_doc['openingCashBalance'] = opening_cash_balance
+                update_doc['openingCashBalanceSetAt'] = datetime.utcnow()
+            
+            if opening_equity is not None:
+                update_doc['openingEquity'] = opening_equity
+                update_doc['openingEquitySetAt'] = datetime.utcnow()
+            
+            if not update_doc:
                 return jsonify({
                     'success': False,
-                    'message': 'Opening balance cannot be negative'
+                    'message': 'No opening balance values provided'
                 }), 400
             
-            # Update user's opening balance
+            # Update user's opening balances
             mongo.db.users.update_one(
                 {'_id': current_user['_id']},
-                {
-                    '$set': {
-                        'openingCashBalance': opening_balance,
-                        'openingCashBalanceSetAt': datetime.utcnow()
-                    }
-                }
+                {'$set': update_doc}
             )
+            
+            # Build response message
+            updated_items = []
+            if opening_cash_balance is not None:
+                updated_items.append(f'Cash/Bank: ₦{opening_cash_balance:,.2f}')
+            if opening_equity is not None:
+                updated_items.append(f'Equity: ₦{opening_equity:,.2f}')
+            
+            message = f'Opening balances set successfully: {", ".join(updated_items)}'
             
             return jsonify({
                 'success': True,
-                'message': 'Opening balance set successfully',
-                'openingBalance': opening_balance
+                'message': message,
+                'openingCashBalance': opening_cash_balance,
+                'openingEquity': opening_equity
             }), 200
             
         except ValueError:
@@ -86,10 +138,12 @@ def init_cash_bank_blueprint(mongo, token_required):
                 'message': 'Invalid balance amount'
             }), 400
         except Exception as e:
-            print(f'Error setting opening balance: {str(e)}')
+            print(f'Error setting opening balances: {str(e)}')
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to set opening balance'
+                'message': 'Failed to set opening balances'
             }), 500
     
     @cash_bank_bp.route('/adjustments', methods=['GET'])
