@@ -1392,4 +1392,217 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ==================== BILL PAYMENT HISTORY & BENEFICIARIES ====================
+    
+    @vas_bills_bp.route('/recent', methods=['GET'])
+    @token_required
+    def get_recent_bill_transactions(current_user):
+        """
+        Get user's recent bill payment transactions
+        Query params: billType (electricity, cable_tv, internet, transportation), limit (default 5)
+        """
+        try:
+            user_id = current_user['_id']
+            bill_type = request.args.get('billType')
+            limit = int(request.args.get('limit', 5))
+            
+            # Query vas_transactions collection
+            query = {
+                'userId': ObjectId(user_id),
+                'type': 'BILL',
+                'status': {'$in': ['SUCCESS', 'PENDING']},
+            }
+            
+            # Add bill type filter if provided
+            if bill_type:
+                query['billCategory'] = bill_type
+            
+            transactions = mongo.db.vas_transactions.find(query).sort('createdAt', -1).limit(limit)
+            
+            result = []
+            for txn in transactions:
+                result.append({
+                    'providerId': txn.get('billProvider'),
+                    'providerName': txn.get('billProvider', 'Unknown Provider'),
+                    'accountNumber': txn.get('accountNumber'),
+                    'customerName': txn.get('customerName'),
+                    'amount': txn.get('amount'),
+                    'productCode': txn.get('productCode'),
+                    'status': txn.get('status'),
+                    'createdAt': txn.get('createdAt').isoformat() if txn.get('createdAt') else None,
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': result
+            }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Error getting recent bill transactions: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+    
+    @vas_bills_bp.route('/beneficiaries', methods=['GET'])
+    @token_required
+    def get_saved_beneficiaries(current_user):
+        """
+        Get user's saved bill payment beneficiaries
+        Query params: billType (electricity, cable_tv, internet, transportation)
+        """
+        try:
+            user_id = current_user['_id']
+            bill_type = request.args.get('billType')
+            
+            # Query bill_beneficiaries collection
+            query = {
+                'userId': ObjectId(user_id),
+                'isDeleted': False,
+            }
+            
+            # Add bill type filter if provided
+            if bill_type:
+                query['billType'] = bill_type
+            
+            beneficiaries = mongo.db.bill_beneficiaries.find(query).sort('lastUsed', -1)
+            
+            result = []
+            for ben in beneficiaries:
+                result.append({
+                    '_id': str(ben['_id']),
+                    'name': ben.get('name'),
+                    'providerId': ben.get('providerId'),
+                    'providerName': ben.get('providerName'),
+                    'accountNumber': ben.get('accountNumber'),
+                    'customerName': ben.get('customerName'),
+                    'billType': ben.get('billType'),
+                    'lastUsed': ben.get('lastUsed').isoformat() if ben.get('lastUsed') else None,
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': result
+            }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Error getting saved beneficiaries: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+    
+    @vas_bills_bp.route('/beneficiaries', methods=['POST'])
+    @token_required
+    def save_beneficiary(current_user):
+        """
+        Save a bill payment beneficiary for quick access
+        Body: billType, providerId, accountNumber, customerName, name
+        """
+        try:
+            user_id = current_user['_id']
+            data = request.get_json()
+            
+            bill_type = data.get('billType')
+            provider_id = data.get('providerId')
+            account_number = data.get('accountNumber')
+            customer_name = data.get('customerName')
+            name = data.get('name')
+            
+            # Check if beneficiary already exists
+            existing = mongo.db.bill_beneficiaries.find_one({
+                'userId': ObjectId(user_id),
+                'billType': bill_type,
+                'providerId': provider_id,
+                'accountNumber': account_number,
+            })
+            
+            if existing:
+                # Update last used timestamp
+                mongo.db.bill_beneficiaries.update_one(
+                    {'_id': existing['_id']},
+                    {
+                        '$set': {
+                            'lastUsed': datetime.utcnow(),
+                            'customerName': customer_name,
+                            'name': name,
+                        }
+                    }
+                )
+                return jsonify({
+                    'success': True,
+                    'message': 'Beneficiary updated',
+                    'data': {'_id': str(existing['_id'])}
+                }), 200
+            
+            # Create new beneficiary
+            beneficiary = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'billType': bill_type,
+                'providerId': provider_id,
+                'providerName': data.get('providerName', 'Unknown Provider'),
+                'accountNumber': account_number,
+                'customerName': customer_name,
+                'name': name,
+                'isDeleted': False,
+                'createdAt': datetime.utcnow(),
+                'lastUsed': datetime.utcnow(),
+            }
+            
+            mongo.db.bill_beneficiaries.insert_one(beneficiary)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Beneficiary saved',
+                'data': {'_id': str(beneficiary['_id'])}
+            }), 201
+            
+        except Exception as e:
+            print(f'ERROR: Error saving beneficiary: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+    
+    @vas_bills_bp.route('/beneficiaries/<beneficiary_id>', methods=['DELETE'])
+    @token_required
+    def delete_beneficiary(current_user, beneficiary_id):
+        """
+        Delete a saved beneficiary (soft delete)
+        """
+        try:
+            user_id = current_user['_id']
+            
+            result = mongo.db.bill_beneficiaries.update_one(
+                {
+                    '_id': ObjectId(beneficiary_id),
+                    'userId': ObjectId(user_id),
+                },
+                {
+                    '$set': {
+                        'isDeleted': True,
+                        'deletedAt': datetime.utcnow(),
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Beneficiary not found'
+                }), 404
+            
+            return jsonify({
+                'success': True,
+                'message': 'Beneficiary deleted'
+            }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Error deleting beneficiary: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+
     return vas_bills_bp
