@@ -1777,7 +1777,7 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
             'taxRate': '30% CIT (Standard Rate)',
             'exemptionEligible': False,
             'filingDeadline': 'June 30th',
-            'description': '⚠️ Professional services firms (law, accounting, consulting, engineering, architecture, medical) are EXCLUDED from the 0% CIT exemption under Nigeria Tax Act 2025. You pay the standard 30% CIT rate regardless of turnover or asset size. This applies to LLP, Ltd, BN, and Partnership structures.'
+            'description': 'Professional services firms (law, accounting, consulting, engineering, architecture, medical) are EXCLUDED from the 0% CIT exemption under Nigeria Tax Act 2025. You pay the standard 30% CIT rate regardless of turnover or asset size. This applies to LLP, Ltd, BN, and Partnership structures that are offering professional services.'
         }
     
     return None
