@@ -2045,14 +2045,11 @@ def init_reports_blueprint(mongo, token_required):
                     download_name=f'ficore_{report_type}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
                 )
             
-# Fetch assets data
-            query = {'userId': current_user['_id']}
-            if start_date or end_date:
-                query['purchaseDate'] = {}
-                if start_date:
-                    query['purchaseDate']['$gte'] = start_date
-                if end_date:
-                    query['purchaseDate']['$lte'] = end_date
+            # Fetch assets data
+            # CRITICAL: Assets are Balance Sheet items (cumulative), NOT filtered by date
+            # Balance Sheet = point-in-time snapshot of ALL assets owned, regardless of purchase date
+            # Only Income Statement items (income/expenses) should be date-filtered
+            query = {'userId': current_user['_id'], 'status': 'active'}
             
             assets = list(mongo.db.assets.find(query, PDF_PROJECTIONS['assets']).sort('purchaseDate', -1))
             
@@ -2150,14 +2147,11 @@ def init_reports_blueprint(mongo, token_required):
                     download_name=f'ficore_{report_type}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
                 )
             
-# Fetch assets data
-            query = {'userId': current_user['_id']}
-            if start_date or end_date:
-                query['purchaseDate'] = {}
-                if start_date:
-                    query['purchaseDate']['$gte'] = start_date
-                if end_date:
-                    query['purchaseDate']['$lte'] = end_date
+            # Fetch assets data
+            # CRITICAL: Assets are Balance Sheet items (cumulative), NOT filtered by date
+            # Balance Sheet = point-in-time snapshot of ALL assets owned, regardless of purchase date
+            # Only Income Statement items (income/expenses) should be date-filtered
+            query = {'userId': current_user['_id'], 'status': 'active'}
             
             assets = list(mongo.db.assets.find(query, PDF_PROJECTIONS['assets']).sort('purchaseDate', -1))
             
@@ -3087,13 +3081,10 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # Fetch assets data
-            query = {'userId': current_user['_id']}
-            if start_date or end_date:
-                query['purchaseDate'] = {}
-                if start_date:
-                    query['purchaseDate']['$gte'] = start_date
-                if end_date:
-                    query['purchaseDate']['$lte'] = end_date
+            # CRITICAL: Assets are Balance Sheet items (cumulative), NOT filtered by date
+            # Balance Sheet = point-in-time snapshot of ALL assets owned, regardless of purchase date
+            # Only Income Statement items (income/expenses) should be date-filtered
+            query = {'userId': current_user['_id'], 'status': 'active'}
             
             assets = list(mongo.db.assets.find(query, PDF_PROJECTIONS['assets']).sort('purchaseDate', -1))
             
@@ -3187,13 +3178,10 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # Fetch assets data
-            query = {'userId': current_user['_id']}
-            if start_date or end_date:
-                query['purchaseDate'] = {}
-                if start_date:
-                    query['purchaseDate']['$gte'] = start_date
-                if end_date:
-                    query['purchaseDate']['$lte'] = end_date
+            # CRITICAL: Assets are Balance Sheet items (cumulative), NOT filtered by date
+            # Balance Sheet = point-in-time snapshot of ALL assets owned, regardless of purchase date
+            # Only Income Statement items (income/expenses) should be date-filtered
+            query = {'userId': current_user['_id'], 'status': 'active'}
             
             assets = list(mongo.db.assets.find(query, PDF_PROJECTIONS['assets']).sort('purchaseDate', -1))
             
