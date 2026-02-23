@@ -19,16 +19,255 @@ from blueprints.notifications import create_user_notification
 def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
     vas_bills_bp = Blueprint('vas_bills', __name__, url_prefix='/api/vas/bills')
     
-    # Environment variables (NEVER hardcode these)
+    # ==================== ENVIRONMENT VARIABLES ====================
+    # NEVER hardcode these - use environment variables
+    
+    # Peyflex (PRIMARY for bills - specialized VAS provider)
+    PEYFLEX_BASE_URL = os.environ.get('PEYFLEX_BASE_URL', 'https://client.peyflex.com.ng')
+    PEYFLEX_API_TOKEN = os.environ.get('PEYFLEX_API_TOKEN', '')
+    
+    # Monnify (FALLBACK for bills - primary for wallet/banking)
     MONNIFY_API_KEY = os.environ.get('MONNIFY_API_KEY', '')
     MONNIFY_SECRET_KEY = os.environ.get('MONNIFY_SECRET_KEY', '')
     MONNIFY_CONTRACT_CODE = os.environ.get('MONNIFY_CONTRACT_CODE', '')
     MONNIFY_BASE_URL = os.environ.get('MONNIFY_BASE_URL', 'https://sandbox.monnify.com')
-    
-    # Monnify Bills API specific
     MONNIFY_BILLS_BASE_URL = f"{MONNIFY_BASE_URL}/api/v1/vas/bills-payment"
     
-    # ==================== HELPER FUNCTIONS ====================
+    # ==================== PEYFLEX HELPER FUNCTIONS (PRIMARY) ====================
+    
+    def call_peyflex_bills_api(endpoint, method='GET', data=None, require_auth=True):
+        """Generic Peyflex Bills API caller"""
+        try:
+            headers = {'Content-Type': 'application/json'}
+            
+            if require_auth:
+                headers['Authorization'] = f'Token {PEYFLEX_API_TOKEN}'
+            
+            url = f"{PEYFLEX_BASE_URL}/api/{endpoint}"
+            
+            if method.upper() == 'GET':
+                response = requests.get(url, headers=headers, timeout=8)
+            elif method.upper() == 'POST':
+                response = requests.post(url, headers=headers, json=data, timeout=8)
+            else:
+                raise Exception(f"Unsupported HTTP method: {method}")
+            
+            print(f'INFO: Peyflex Bills API {method} {endpoint}: {response.status_code}')
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f'ERROR: Peyflex Bills API error: {response.status_code} - {response.text}')
+                raise Exception(f'Peyflex Bills API error: {response.status_code}')
+                
+        except Exception as e:
+            print(f'ERROR: Peyflex Bills API call failed: {str(e)}')
+            raise Exception(f'Peyflex Bills API failed: {str(e)}')
+    
+    def get_peyflex_electricity_providers():
+        """Get electricity providers from Peyflex (no auth required)"""
+        try:
+            print('INFO: Fetching electricity providers from Peyflex')
+            response = call_peyflex_bills_api(
+                'electricity/plans/?identifier=electricity',
+                'GET',
+                require_auth=False
+            )
+            
+            # Transform Peyflex response to our format
+            providers = []
+            if isinstance(response, list):
+                for plan in response:
+                    provider_code = plan.get('code', '')
+                    provider_name = plan.get('name', '')
+                    
+                    if provider_code and provider_name:
+                        providers.append({
+                            'id': provider_code,
+                            'code': provider_code,
+                            'name': provider_name,
+                            'category': 'electricity',
+                            'source': 'peyflex',
+                            'description': f"{provider_name} - Electricity provider"
+                        })
+            
+            print(f'SUCCESS: Retrieved {len(providers)} electricity providers from Peyflex')
+            return providers
+            
+        except Exception as e:
+            print(f'ERROR: Failed to get Peyflex electricity providers: {str(e)}')
+            raise
+    
+    def get_peyflex_cable_providers():
+        """Get cable TV providers from Peyflex (no auth required)"""
+        try:
+            print('INFO: Fetching cable TV providers from Peyflex')
+            response = call_peyflex_bills_api(
+                'cable/providers/',
+                'GET',
+                require_auth=False
+            )
+            
+            # Transform Peyflex response to our format
+            providers = []
+            if isinstance(response, list):
+                for provider in response:
+                    provider_code = provider.get('code', '')
+                    provider_name = provider.get('name', '')
+                    
+                    if provider_code and provider_name:
+                        providers.append({
+                            'id': provider_code,
+                            'code': provider_code,
+                            'name': provider_name,
+                            'category': 'cable_tv',
+                            'source': 'peyflex',
+                            'description': f"{provider_name} - Cable TV provider"
+                        })
+            
+            print(f'SUCCESS: Retrieved {len(providers)} cable TV providers from Peyflex')
+            return providers
+            
+        except Exception as e:
+            print(f'ERROR: Failed to get Peyflex cable providers: {str(e)}')
+            raise
+    
+    def get_peyflex_cable_plans(provider_code):
+        """Get cable TV plans for a specific provider from Peyflex"""
+        try:
+            print(f'INFO: Fetching cable plans for {provider_code} from Peyflex')
+            response = call_peyflex_bills_api(
+                f'cable/plans/{provider_code}/',
+                'GET',
+                require_auth=False
+            )
+            
+            # Transform Peyflex response to our format
+            plans = []
+            if isinstance(response, list):
+                for plan in response:
+                    plan_code = plan.get('code', '')
+                    plan_name = plan.get('name', '')
+                    plan_price = plan.get('price', 0)
+                    
+                    if plan_code and plan_name:
+                        plans.append({
+                            'code': plan_code,
+                            'name': plan_name,
+                            'price': plan_price,
+                            'priceType': 'FIXED',
+                            'source': 'peyflex'
+                        })
+            
+            print(f'SUCCESS: Retrieved {len(plans)} plans for {provider_code} from Peyflex')
+            return plans
+            
+        except Exception as e:
+            print(f'ERROR: Failed to get Peyflex cable plans: {str(e)}')
+            raise
+    
+    def verify_peyflex_electricity_meter(meter, plan, meter_type):
+        """Verify electricity meter with Peyflex (no auth required)"""
+        try:
+            print(f'INFO: Verifying meter {meter} with Peyflex')
+            response = call_peyflex_bills_api(
+                f'electricity/verify/?identifier=electricity&meter={meter}&plan={plan}&type={meter_type}',
+                'GET',
+                require_auth=False
+            )
+            
+            return {
+                'success': True,
+                'customerName': response.get('customer_name', ''),
+                'meterNumber': meter,
+                'address': response.get('address', ''),
+                'source': 'peyflex'
+            }
+            
+        except Exception as e:
+            print(f'ERROR: Peyflex meter verification failed: {str(e)}')
+            raise
+    
+    def verify_peyflex_cable_iuc(iuc, provider):
+        """Verify cable IUC with Peyflex (auth required)"""
+        try:
+            print(f'INFO: Verifying IUC {iuc} with Peyflex')
+            response = call_peyflex_bills_api(
+                'cable/verify/',
+                'POST',
+                data={'iuc': iuc, 'identifier': provider},
+                require_auth=True
+            )
+            
+            return {
+                'success': True,
+                'customerName': response.get('customer_name', ''),
+                'iuc': iuc,
+                'source': 'peyflex'
+            }
+            
+        except Exception as e:
+            print(f'ERROR: Peyflex IUC verification failed: {str(e)}')
+            raise
+    
+    def purchase_peyflex_electricity(meter, plan, amount, meter_type, phone):
+        """Purchase electricity via Peyflex"""
+        try:
+            print(f'INFO: Purchasing electricity via Peyflex: {meter}, ₦{amount}')
+            response = call_peyflex_bills_api(
+                'electricity/subscribe/',
+                'POST',
+                data={
+                    'identifier': 'electricity',
+                    'meter': meter,
+                    'plan': plan,
+                    'amount': str(amount),
+                    'type': meter_type,
+                    'phone': phone
+                },
+                require_auth=True
+            )
+            
+            return {
+                'success': True,
+                'reference': response.get('reference', ''),
+                'token': response.get('token', ''),
+                'units': response.get('units', ''),
+                'source': 'peyflex'
+            }
+            
+        except Exception as e:
+            print(f'ERROR: Peyflex electricity purchase failed: {str(e)}')
+            raise
+    
+    def purchase_peyflex_cable(iuc, provider, plan, amount, phone):
+        """Purchase cable TV subscription via Peyflex"""
+        try:
+            print(f'INFO: Purchasing cable TV via Peyflex: {iuc}, ₦{amount}')
+            response = call_peyflex_bills_api(
+                'cable/subscribe/',
+                'POST',
+                data={
+                    'identifier': provider,
+                    'plan': plan,
+                    'iuc': iuc,
+                    'phone': phone,
+                    'amount': str(amount)
+                },
+                require_auth=True
+            )
+            
+            return {
+                'success': True,
+                'reference': response.get('reference', ''),
+                'source': 'peyflex'
+            }
+            
+        except Exception as e:
+            print(f'ERROR: Peyflex cable purchase failed: {str(e)}')
+            raise
+    
+    # ==================== MONNIFY HELPER FUNCTIONS (FALLBACK) ====================
     
     def call_monnify_auth():
         """Get Monnify access token for Bills API"""
@@ -248,156 +487,129 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
     @vas_bills_bp.route('/providers/<category>', methods=['GET'])
     @token_required
     def get_bill_providers(current_user, category):
-        """Get bill providers for a specific category"""
+        """
+        Get bill providers for a specific category
+        STRATEGY: Peyflex PRIMARY, Monnify FALLBACK
+        """
         try:
             print(f'INFO: Fetching bill providers for category: {category}')
             
-            # Dynamic category mapping - handle both frontend names and Monnify codes
-            # First, try direct mapping for common frontend categories
-            category_mapping = {
-                'electricity': 'ELECTRICITY',
-                'cable_tv': 'CABLE_TV', 
-                'cable': 'CABLE_TV',
-                'tv': 'CABLE_TV',
-                'water': 'WATER',
-                'internet': 'INTERNET',
-                'transportation': 'TRANSPORTATION',
-                'transport': 'TRANSPORTATION',
-                'betting': 'BETTING',
-                'gaming': 'BETTING',
-                'insurance': 'INSURANCE',
-                'education': 'EDUCATION',
-                'government': 'GOVERNMENT',
-                'tax': 'TAX',
-                'religious': 'RELIGIOUS',
-                'donation': 'DONATION',
-                'charity': 'DONATION'
-            }
+            providers = []
+            peyflex_success = False
+            monnify_success = False
             
-            # Try direct mapping first
-            monnify_category = category_mapping.get(category.lower())
+            # ==================== PEYFLEX PRIMARY ====================
+            try:
+                print(f'INFO: Trying Peyflex (PRIMARY) for {category}')
+                
+                if category.lower() == 'electricity':
+                    peyflex_providers = get_peyflex_electricity_providers()
+                    if peyflex_providers and len(peyflex_providers) > 0:
+                        providers.extend(peyflex_providers)
+                        peyflex_success = True
+                        print(f'SUCCESS: Peyflex returned {len(peyflex_providers)} electricity providers')
+                
+                elif category.lower() in ['cable_tv', 'cable', 'tv']:
+                    peyflex_providers = get_peyflex_cable_providers()
+                    if peyflex_providers and len(peyflex_providers) > 0:
+                        providers.extend(peyflex_providers)
+                        peyflex_success = True
+                        print(f'SUCCESS: Peyflex returned {len(peyflex_providers)} cable TV providers')
+                
+                else:
+                    print(f'INFO: Peyflex does not support {category} category')
+                    
+            except Exception as peyflex_error:
+                print(f'WARNING: Peyflex failed for {category}: {peyflex_error}')
+                print(f'INFO: Will try Monnify fallback')
             
-            # If no direct mapping, try to match with actual Monnify categories
-            if not monnify_category:
-                # Get available categories from Monnify to find the best match
+            # ==================== MONNIFY FALLBACK ====================
+            # Only try Monnify if Peyflex failed OR returned no providers
+            if not peyflex_success:
                 try:
-                    access_token_temp = call_monnify_auth()
-                    categories_response = call_monnify_bills_api(
-                        'biller-categories?size=50',
+                    print(f'INFO: Trying Monnify (FALLBACK) for {category}')
+                    
+                    # Dynamic category mapping
+                    category_mapping = {
+                        'electricity': 'ELECTRICITY',
+                        'cable_tv': 'CABLE_TV', 
+                        'cable': 'CABLE_TV',
+                        'tv': 'CABLE_TV',
+                        'water': 'WATER',
+                        'internet': 'INTERNET',
+                        'transportation': 'TRANSPORTATION',
+                        'transport': 'TRANSPORTATION',
+                    }
+                    
+                    monnify_category = category_mapping.get(category.lower())
+                    
+                    if not monnify_category:
+                        raise Exception(f'Unsupported category: {category}')
+                    
+                    access_token = call_monnify_auth()
+                    response = call_monnify_bills_api(
+                        f'billers?category_code={monnify_category}&size=100',
                         'GET',
-                        access_token=access_token_temp
+                        access_token=access_token
                     )
                     
-                    available_categories = [cat['code'] for cat in categories_response['responseBody']['content']]
+                    raw_providers = response['responseBody']['content']
                     
-                    # Try case-insensitive exact match
-                    for available_cat in available_categories:
-                        if available_cat.lower() == category.lower():
-                            monnify_category = available_cat
-                            break
+                    for biller in raw_providers:
+                        provider_data = {
+                            'id': biller['code'],
+                            'name': biller['name'],
+                            'code': biller['code'],
+                            'category': category,
+                            'source': 'monnify',
+                            'description': f"{biller['name']} - {category.replace('_', ' ').title()} provider"
+                        }
+                        providers.append(provider_data)
                     
-                    # Try partial match
-                    if not monnify_category:
-                        for available_cat in available_categories:
-                            if category.lower() in available_cat.lower() or available_cat.lower() in category.lower():
-                                monnify_category = available_cat
-                                print(f'INFO: Using partial match: {category} -> {available_cat}')
-                                break
-                                
-                except Exception as mapping_error:
-                    print(f'WARNING: Could not fetch categories for dynamic mapping: {mapping_error}')
+                    monnify_success = True
+                    print(f'SUCCESS: Monnify returned {len(raw_providers)} providers for {category}')
+                    
+                except Exception as monnify_error:
+                    print(f'ERROR: Monnify fallback also failed: {monnify_error}')
             
-            if not monnify_category:
-                print(f'ERROR: Unsupported category: {category}')
+            # ==================== RESULT ====================
+            if len(providers) == 0:
                 return jsonify({
                     'success': False,
-                    'message': f'Unsupported category: {category}',
-                    'errors': {'category': [f'Category {category} is not supported']},
-                    'available_categories': list(category_mapping.keys())
-                }), 400
+                    'message': f'No providers available for {category} at this time',
+                    'errors': {
+                        'providers': [f'Both primary and fallback providers failed for {category}']
+                    },
+                    'debug': {
+                        'peyflex_attempted': True,
+                        'peyflex_success': peyflex_success,
+                        'monnify_attempted': not peyflex_success,
+                        'monnify_success': monnify_success
+                    }
+                }), 503
             
-            print(f'INFO: Calling Monnify API for category: {monnify_category}')
-            # print(f'VAS_DEBUG: Fetching bill providers for category: {category}')
-            # print(f'VAS_DEBUG: Route /api/vas/bills/providers/{category} was called by user {current_user["_id"]}')
-            # print(f'VAS_DEBUG: Mapped {category} → {monnify_category} for Monnify')
-            
-            access_token = call_monnify_auth()
-            response = call_monnify_bills_api(
-                f'billers?category_code={monnify_category}&size=100',
-                'GET',
-                access_token=access_token
-            )
-            
-            # print(f'VAS_DEBUG: Raw Monnify response for {monnify_category}: {json.dumps(response, indent=2)}')
-            print(f'INFO: Monnify providers response for {monnify_category}: {response}')
-            
-            # DEBUGGING: Check if we're getting wrong providers for transportation
-            if category.lower() == 'transportation':
-                print(f'WARNING: TRANSPORTATION DEBUG: Raw Monnify response: {json.dumps(response, indent=2)}')
-                
-                # Check if any providers contain electricity-related terms
-                electricity_keywords = ['electricity', 'electric', 'distribution', 'disco', 'power', 'energy']
-                raw_providers = response.get('responseBody', {}).get('content', [])
-                
-                electricity_providers = []
-                for provider in raw_providers:
-                    provider_name = provider.get('name', '').lower()
-                    if any(keyword in provider_name for keyword in electricity_keywords):
-                        electricity_providers.append(provider)
-                
-                if electricity_providers:
-                    print(f'WARNING: TRANSPORTATION ISSUE: Found {len(electricity_providers)} electricity providers in transportation category!')
-                    print(f'WARNING: Electricity providers: {[p.get("name") for p in electricity_providers]}')
-                    print(f'WARNING: This indicates Monnify API configuration issue - transportation category returning electricity providers')
-                    
-                    # Return error with detailed explanation
-                    return jsonify({
-                        'success': False,
-                        'message': 'Transportation providers are misconfigured on the payment gateway',
-                        'errors': {
-                            'backend_issue': [
-                                'Monnify API is returning electricity providers for transportation category',
-                                'This is a payment gateway configuration issue, not an app issue',
-                                f'Found {len(electricity_providers)} electricity providers in transportation response'
-                            ]
-                        },
-                        'debug_info': {
-                            'requested_category': category,
-                            'monnify_category': monnify_category,
-                            'total_providers': len(raw_providers),
-                            'electricity_providers_found': len(electricity_providers),
-                            'electricity_provider_names': [p.get('name') for p in electricity_providers]
-                        }
-                    }), 503  # Service Unavailable
-            
-            providers = []
-            raw_providers = response['responseBody']['content']
-            # print(f'VAS_DEBUG: Processing {len(raw_providers)} Monnify providers for {category}')
-            
-            for biller in raw_providers:
-                provider_data = {
-                    'id': biller['code'],
-                    'name': biller['name'],
-                    'code': biller['code'],
-                    'category': category,
-                    'description': f"{biller['name']} - {category.replace('_', ' ').title()} provider"
-                }
-                providers.append(provider_data)
-                # print(f'VAS_DEBUG: ✅ INCLUDED: {biller["code"]} - {biller["name"]} (category={category})')
-            
-            # print(f'VAS_DEBUG: FINAL RESULT: {len(providers)} {category} providers from Monnify (from {len(raw_providers)} total providers)')
-            print(f'SUCCESS: Successfully retrieved {len(providers)} providers from Monnify for {category}')
-            
-            print(f'SUCCESS: Processed {len(providers)} providers for {category}')
+            print(f'SUCCESS: Returning {len(providers)} total providers for {category}')
+            print(f'INFO: Provider sources - Peyflex: {peyflex_success}, Monnify: {monnify_success}')
             
             return jsonify({
                 'success': True,
                 'data': providers,
                 'message': f'Providers for {category} retrieved successfully',
-                'source': 'monnify_bills',
-                'category': category,
-                'monnify_category': monnify_category
+                'meta': {
+                    'total': len(providers),
+                    'category': category,
+                    'primary_source': 'peyflex' if peyflex_success else 'monnify',
+                    'fallback_used': monnify_success and not peyflex_success
+                }
             }), 200
+            
+        except Exception as e:
+            print(f'ERROR: Failed to get providers for {category}: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': f'Failed to load providers: {str(e)}',
+                'errors': {'general': [str(e)]}
+            }), 500
             
         except Exception as e:
             print(f'ERROR: Error getting providers for {category}: {str(e)}')
@@ -410,91 +622,147 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
     @vas_bills_bp.route('/products/<provider>', methods=['GET'])
     @token_required
     def get_bill_products(current_user, provider):
-        """Get products/packages for a specific provider"""
+        """
+        Get products/packages for a specific provider
+        STRATEGY: Route based on provider code format (Peyflex vs Monnify)
+        """
         try:
-            # print(f'VAS_DEBUG: Fetching bill products for provider: {provider}')
-            # print(f'VAS_DEBUG: Route /api/vas/bills/products/{provider} was called by user {current_user["_id"]}')
             print(f'INFO: Fetching bill products for provider: {provider}')
             
-            access_token = call_monnify_auth()
-            response = call_monnify_bills_api(
-                f'biller-products?biller_code={provider}&size=100',
-                'GET',
-                access_token=access_token
-            )
-            
-            # print(f'VAS_DEBUG: Raw Monnify products response for {provider}: {json.dumps(response, indent=2)}')
-            print(f'INFO: Monnify products response for {provider}: {response}')
-            
             products = []
-            raw_products = response['responseBody']['content']
-            # print(f'VAS_DEBUG: Processing {len(raw_products)} Monnify products for {provider}')
             
-            for product in raw_products:
-                # Extract metadata for better product information
-                metadata = product.get('metadata', {})
-                duration = metadata.get('duration', 1)
-                duration_unit = metadata.get('durationUnit', 'MONTHLY')
-                product_type = metadata.get('productType', {})
-                
-                # Format duration display
-                duration_display = f"{duration} {duration_unit.lower()}" if duration_unit else "One-time"
-                
-                product_data = {
-                    'id': product['code'],
-                    'name': product['name'],
-                    'code': product['code'],
-                    'price': product.get('price'),
-                    'priceType': product.get('priceType', 'OPEN'),
-                    'minAmount': product.get('minAmount'),
-                    'maxAmount': product.get('maxAmount'),
-                    'duration': duration_display,
-                    'productType': product_type.get('name', 'Service'),
-                    'description': f"{product['name']} - {duration_display}",
-                    'metadata': metadata
-                }
-                products.append(product_data)
-                
-                price_info = f"₦{product.get('price', 'Variable')}" if product.get('price') else f"₦{product.get('minAmount', 0)}-{product.get('maxAmount', 'Open')}"
-                # print(f'VAS_DEBUG: ✅ INCLUDED: {product["code"]} - {product["name"]} - {price_info} (duration={duration_display})')
+            # ==================== DETECT PROVIDER SOURCE ====================
+            # Peyflex codes: simple lowercase (e.g., 'startimes', 'kaduna-electric')
+            # Monnify codes: 'biller-' prefix (e.g., 'biller-ibedc-post')
             
-            # print(f'VAS_DEBUG: FINAL RESULT: {len(products)} products for {provider} from Monnify (from {len(raw_products)} total products)')
-            print(f'SUCCESS: Successfully retrieved {len(products)} products from Monnify for {provider}')
+            is_peyflex = not provider.startswith('biller-')
             
-            print(f'SUCCESS: Processed {len(products)} products for {provider}')
+            if is_peyflex:
+                # ==================== PEYFLEX PROVIDER ====================
+                try:
+                    print(f'INFO: Provider {provider} detected as Peyflex format')
+                    
+                    # Determine category based on provider code
+                    # Cable TV providers: startimes, dstv, gotv
+                    # Electricity providers: kaduna-electric, benin-electric, etc.
+                    
+                    cable_providers = ['startimes', 'dstv', 'gotv', 'showmax']
+                    
+                    if provider.lower() in cable_providers:
+                        # Cable TV - fetch plans
+                        peyflex_plans = get_peyflex_cable_plans(provider)
+                        products = peyflex_plans
+                        print(f'SUCCESS: Retrieved {len(products)} cable plans from Peyflex for {provider}')
+                    else:
+                        # Electricity - Peyflex doesn't have separate products endpoint
+                        # The provider itself IS the product
+                        products = [{
+                            'code': provider,
+                            'name': 'Electricity Recharge',
+                            'price': None,
+                            'priceType': 'OPEN',
+                            'minAmount': 100,
+                            'maxAmount': 100000,
+                            'source': 'peyflex',
+                            'description': 'Variable amount electricity recharge'
+                        }]
+                        print(f'SUCCESS: Electricity provider {provider} uses variable pricing')
+                    
+                except Exception as peyflex_error:
+                    print(f'ERROR: Peyflex products fetch failed: {peyflex_error}')
+                    raise
+            
+            else:
+                # ==================== MONNIFY PROVIDER ====================
+                try:
+                    print(f'INFO: Provider {provider} detected as Monnify format')
+                    
+                    access_token = call_monnify_auth()
+                    response = call_monnify_bills_api(
+                        f'biller-products?biller_code={provider}&size=100',
+                        'GET',
+                        access_token=access_token
+                    )
+                    
+                    print(f'INFO: Monnify products response for {provider}: {response}')
+                    
+                    raw_products = response['responseBody']['content']
+                    
+                    for product in raw_products:
+                        metadata = product.get('metadata', {})
+                        duration = metadata.get('duration', 1)
+                        duration_unit = metadata.get('durationUnit', 'MONTHLY')
+                        product_type = metadata.get('productType', {})
+                        
+                        duration_display = f"{duration} {duration_unit.lower()}" if duration_unit else "One-time"
+                        
+                        product_data = {
+                            'id': product['code'],
+                            'name': product['name'],
+                            'code': product['code'],
+                            'price': product.get('price'),
+                            'priceType': product.get('priceType', 'OPEN'),
+                            'minAmount': product.get('minAmount'),
+                            'maxAmount': product.get('maxAmount'),
+                            'duration': duration_display,
+                            'productType': product_type.get('name', 'Service'),
+                            'description': f"{product['name']} - {duration_display}",
+                            'source': 'monnify',
+                            'metadata': metadata
+                        }
+                        products.append(product_data)
+                    
+                    print(f'SUCCESS: Retrieved {len(products)} products from Monnify for {provider}')
+                    
+                except Exception as monnify_error:
+                    print(f'ERROR: Monnify products fetch failed: {monnify_error}')
+                    raise
+            
+            # ==================== RESULT ====================
+            if len(products) == 0:
+                return jsonify({
+                    'success': False,
+                    'message': f'No products available for {provider}',
+                    'errors': {'products': ['This provider has no products available']},
+                    'data': []
+                }), 200  # Return 200 with empty array, not 500
             
             return jsonify({
                 'success': True,
                 'data': products,
                 'message': f'Products for {provider} retrieved successfully',
-                'source': 'monnify_bills',
-                'provider': provider
+                'meta': {
+                    'total': len(products),
+                    'provider': provider,
+                    'source': 'peyflex' if is_peyflex else 'monnify'
+                }
             }), 200
             
         except Exception as e:
             print(f'ERROR: Error getting products for {provider}: {str(e)}')
             return jsonify({
                 'success': False,
-                'message': f'Failed to get products for {provider}: {str(e)}',
-                'errors': {'general': [str(e)]}
+                'message': f'Failed to get products: {str(e)}',
+                'errors': {'general': [str(e)]},
+                'data': []
             }), 500
 
     @vas_bills_bp.route('/validate', methods=['POST'])
     @token_required
     def validate_bill_account(current_user):
-        """Validate customer account for bill payment"""
+        """
+        Validate customer account for bill payment
+        STRATEGY: Route based on product code format (Peyflex vs Monnify)
+        """
         try:
             data = request.get_json()
             
-            # Extract required fields
             product_code = data.get('productCode')
             customer_id = data.get('customerId')
             
             print(f'INFO: Validating bill account - Product: {product_code}, Customer: {customer_id}')
             
-            # Validate required fields
             if not product_code or not customer_id:
-                print('ERROR: Missing required fields for validation')
                 return jsonify({
                     'success': False,
                     'message': 'Product code and customer ID are required',
@@ -504,44 +772,92 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                     }
                 }), 400
             
-            access_token = call_monnify_auth()
-            response = call_monnify_bills_api(
-                'validate-customer',
-                'POST',
-                {
-                    'productCode': product_code,
-                    'customerId': customer_id
-                },
-                access_token=access_token
-            )
+            # Detect provider from product code
+            is_peyflex = not product_code.startswith('biller-')
             
-            print(f'INFO: Monnify validation response: {response}')
+            if is_peyflex:
+                # PEYFLEX VALIDATION
+                try:
+                    print(f'INFO: Using Peyflex validation for {product_code}')
+                    
+                    # Determine category
+                    cable_providers = ['startimes', 'dstv', 'gotv', 'showmax']
+                    
+                    if product_code.lower() in cable_providers:
+                        # Cable TV - verify IUC
+                        response = verify_peyflex_cable_iuc(customer_id, product_code)
+                    else:
+                        # Electricity - verify meter
+                        # Need meter type - default to prepaid
+                        meter_type = data.get('meterType', 'prepaid')
+                        response = verify_peyflex_electricity_meter(customer_id, product_code, meter_type)
+                    
+                    result = {
+                        'customerName': response.get('customerName', ''),
+                        'priceType': 'OPEN',
+                        'requireValidationRef': False,
+                        'validationReference': None,
+                        'productCode': product_code,
+                        'customerId': customer_id,
+                        'source': 'peyflex'
+                    }
+                    
+                    print(f'SUCCESS: Peyflex validation successful for {customer_id}')
+                    
+                    return jsonify({
+                        'success': True,
+                        'data': result,
+                        'message': 'Account validated successfully'
+                    }), 200
+                    
+                except Exception as peyflex_error:
+                    print(f'ERROR: Peyflex validation failed: {peyflex_error}')
+                    raise
             
-            validation_data = response['responseBody']
-            vend_instruction = validation_data.get('vendInstruction', {})
-            
-            result = {
-                'customerName': validation_data.get('customerName', ''),
-                'priceType': validation_data.get('priceType', 'OPEN'),
-                'requireValidationRef': vend_instruction.get('requireValidationRef', False),
-                'validationReference': validation_data.get('validationReference'),
-                'productCode': product_code,
-                'customerId': customer_id
-            }
-            
-            print(f'SUCCESS: Account validation successful for {customer_id}')
-            
-            return jsonify({
-                'success': True,
-                'data': result,
-                'message': 'Account validated successfully',
-                'source': 'monnify_bills'
-            }), 200
+            else:
+                # MONNIFY VALIDATION
+                try:
+                    print(f'INFO: Using Monnify validation for {product_code}')
+                    
+                    access_token = call_monnify_auth()
+                    response = call_monnify_bills_api(
+                        'validate-customer',
+                        'POST',
+                        {
+                            'productCode': product_code,
+                            'customerId': customer_id
+                        },
+                        access_token=access_token
+                    )
+                    
+                    validation_data = response['responseBody']
+                    vend_instruction = validation_data.get('vendInstruction', {})
+                    
+                    result = {
+                        'customerName': validation_data.get('customerName', ''),
+                        'priceType': validation_data.get('priceType', 'OPEN'),
+                        'requireValidationRef': vend_instruction.get('requireValidationRef', False),
+                        'validationReference': validation_data.get('validationReference'),
+                        'productCode': product_code,
+                        'customerId': customer_id,
+                        'source': 'monnify'
+                    }
+                    
+                    print(f'SUCCESS: Monnify validation successful for {customer_id}')
+                    
+                    return jsonify({
+                        'success': True,
+                        'data': result,
+                        'message': 'Account validated successfully'
+                    }), 200
+                    
+                except Exception as monnify_error:
+                    print(f'ERROR: Monnify validation failed: {monnify_error}')
+                    raise
             
         except Exception as e:
             print(f'ERROR: Account validation failed: {str(e)}')
             
-            # Handle specific validation errors
             error_message = str(e)
             if 'invalid customer' in error_message.lower():
                 return jsonify({
@@ -551,17 +867,6 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                     'user_message': {
                         'title': 'Invalid Account',
                         'message': 'The account number you entered is not valid. Please check and try again.',
-                        'type': 'validation_error'
-                    }
-                }), 400
-            elif 'product not found' in error_message.lower():
-                return jsonify({
-                    'success': False,
-                    'message': 'Product not found. Please select a valid product.',
-                    'errors': {'productCode': ['Product not found']},
-                    'user_message': {
-                        'title': 'Product Not Found',
-                        'message': 'The selected product is not available. Please choose another option.',
                         'type': 'validation_error'
                     }
                 }), 400
@@ -579,19 +884,22 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
     @vas_bills_bp.route('/buy', methods=['POST'])
     @token_required
     def buy_bill(current_user):
-        """Purchase bill payment using Monnify Bills API"""
-        # 🔒 DEFENSIVE CODING: Pre-define all variables to prevent NameError crashes
+        """
+        Purchase bill payment
+        STRATEGY: Route based on product code format (Peyflex vs Monnify)
+        """
+        # 🔒 DEFENSIVE CODING: Pre-define all variables
         wallet_update_result = None
         transaction_update_result = None
         api_response = None
         success = False
         error_message = ''
         final_status = 'FAILED'
+        provider_source = 'unknown'
         
         try:
             data = request.get_json()
             
-            # Extract required fields
             category = data.get('category')
             provider = data.get('provider')
             account_number = data.get('accountNumber')
@@ -600,32 +908,27 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             product_code = data.get('productCode')
             product_name = data.get('productName', '')
             validation_reference = data.get('validationReference')
+            phone_number = current_user.get('phoneNumber', '')
             
             print(f'INFO: Processing bill purchase:')
             print(f'   Category: {category}')
             print(f'   Provider: {provider}')
             print(f'   Account: {account_number}')
-            print(f'   Amount: ₦ {amount:,.2f}')
+            print(f'   Amount: ₦{amount:,.2f}')
             print(f'   Product: {product_code}')
             
             # Validate required fields
             required_fields = ['category', 'provider', 'accountNumber', 'amount', 'productCode']
-            missing_fields = []
-            for field in required_fields:
-                if not data.get(field):
-                    missing_fields.append(field)
+            missing_fields = [field for field in required_fields if not data.get(field)]
             
             if missing_fields:
-                print(f'ERROR: Missing required fields: {missing_fields}')
                 return jsonify({
                     'success': False,
                     'message': 'Missing required fields',
                     'errors': {field: [f'{field} is required'] for field in missing_fields}
                 }), 400
             
-            # Validate amount
             if amount <= 0:
-                print(f'ERROR: Invalid amount: {amount}')
                 return jsonify({
                     'success': False,
                     'message': 'Amount must be greater than zero',
@@ -635,7 +938,6 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             # Check wallet balance
             wallet = mongo.db.vas_wallets.find_one({'userId': current_user['_id']})
             if not wallet:
-                print('ERROR: Wallet not found')
                 return jsonify({
                     'success': False,
                     'message': 'Wallet not found. Please create a wallet first.',
@@ -643,24 +945,27 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                 }), 404
             
             if wallet['balance'] < amount:
-                print(f'ERROR: Insufficient balance: ₦ {wallet["balance"]:,.2f} < ₦ {amount:,.2f}')
                 return jsonify({
                     'success': False,
                     'message': 'Insufficient wallet balance',
                     'errors': {'balance': ['Insufficient wallet balance']},
                     'user_message': {
                         'title': 'Insufficient Balance',
-                        'message': f'You need ₦ {amount:,.2f} but only have ₦ {wallet["balance"]:,.2f} in your wallet.',
+                        'message': f'You need ₦{amount:,.2f} but only have ₦{wallet["balance"]:,.2f} in your wallet.',
                         'type': 'insufficient_balance'
                     }
                 }), 402
             
             # Generate unique transaction reference
             transaction_ref = f"BILL_{uuid.uuid4().hex[:12].upper()}"
-            print(f'INFO: Generated transaction reference: {transaction_ref}')
             
-            # 🔒 ATOMIC TRANSACTION PATTERN: Create FAILED transaction first
-            # This prevents stuck PENDING states if backend crashes during processing
+            # Detect provider source
+            is_peyflex = not product_code.startswith('biller-')
+            provider_source = 'peyflex' if is_peyflex else 'monnify'
+            
+            print(f'INFO: Provider source detected: {provider_source}')
+            
+            # 🔒 ATOMIC: Create FAILED transaction first
             transaction = {
                 '_id': ObjectId(),
                 'userId': current_user['_id'],
@@ -671,15 +976,14 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                 'accountNumber': account_number,
                 'customerName': customer_name,
                 'amount': amount,
-                'status': 'FAILED',  # 🔒 Start as FAILED, update to SUCCESS only when complete
-                'failureReason': 'Transaction in progress',  # Will be updated if it actually fails
+                'status': 'FAILED',
+                'failureReason': 'Transaction in progress',
                 'transactionReference': transaction_ref,
                 'description': f"Bill payment: {provider} - {account_number}",
-                'provider': 'monnify',
+                'provider': provider_source,
                 'createdAt': datetime.utcnow(),
                 'productCode': product_code,
                 'productName': product_name,
-                # These will be updated after successful processing:
                 'vendReference': None,
                 'billerCode': None,
                 'billerName': None,
@@ -688,114 +992,119 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                 'vendAmount': amount
             }
             
-            # Insert FAILED transaction first
             result = mongo.db.vas_transactions.insert_one(transaction)
             transaction_id = result.inserted_id
             print(f'INFO: Created atomic transaction with ID: {transaction_id}')
             
-            # Call Monnify Bills API
-            access_token = call_monnify_auth()
+            # ==================== CALL PROVIDER API ====================
+            if is_peyflex:
+                # PEYFLEX PURCHASE
+                try:
+                    print(f'INFO: Using Peyflex for bill purchase')
+                    
+                    cable_providers = ['startimes', 'dstv', 'gotv', 'showmax']
+                    
+                    if product_code.lower() in cable_providers:
+                        # Cable TV purchase
+                        response = purchase_peyflex_cable(
+                            iuc=account_number,
+                            provider=product_code,
+                            plan=product_name,
+                            amount=amount,
+                            phone=phone_number
+                        )
+                    else:
+                        # Electricity purchase
+                        meter_type = data.get('meterType', 'prepaid')
+                        response = purchase_peyflex_electricity(
+                            meter=account_number,
+                            plan=product_code,
+                            amount=amount,
+                            meter_type=meter_type,
+                            phone=phone_number
+                        )
+                    
+                    # Peyflex returns success immediately
+                    final_status = 'SUCCESS' if response.get('success') else 'FAILED'
+                    vend_reference = response.get('reference', transaction_ref)
+                    
+                    print(f'INFO: Peyflex purchase status: {final_status}')
+                    
+                except Exception as peyflex_error:
+                    print(f'ERROR: Peyflex purchase failed: {peyflex_error}')
+                    final_status = 'FAILED'
+                    error_message = str(peyflex_error)
+                    vend_reference = None
             
-            vend_data = {
-                'productCode': product_code,
-                'customerId': account_number,
-                'amount': amount,
-                'emailAddress': current_user.get('email', 'customer@ficoreafrica.com')
-            }
+            else:
+                # MONNIFY PURCHASE
+                try:
+                    print(f'INFO: Using Monnify for bill purchase')
+                    
+                    access_token = call_monnify_auth()
+                    
+                    vend_data = {
+                        'productCode': product_code,
+                        'customerId': account_number,
+                        'amount': amount,
+                        'emailAddress': current_user.get('email', 'customer@ficoreafrica.com')
+                    }
+                    
+                    if validation_reference:
+                        vend_data['validationReference'] = validation_reference
+                    
+                    response = call_monnify_bills_api(
+                        'vend',
+                        'POST',
+                        vend_data,
+                        access_token=access_token
+                    )
+                    
+                    vend_result = response['responseBody']
+                    
+                    # Handle IN_PROGRESS with requery
+                    if vend_result.get('vendStatus') == 'IN_PROGRESS':
+                        import time
+                        time.sleep(3)
+                        
+                        requery_response = call_monnify_bills_api(
+                            f'requery?reference={transaction_ref}',
+                            'GET',
+                            access_token=access_token
+                        )
+                        vend_result = requery_response['responseBody']
+                    
+                    final_status = vend_result.get('vendStatus', 'FAILED')
+                    vend_reference = vend_result.get('vendReference')
+                    
+                    print(f'INFO: Monnify purchase status: {final_status}')
+                    
+                except Exception as monnify_error:
+                    print(f'ERROR: Monnify purchase failed: {monnify_error}')
+                    final_status = 'FAILED'
+                    error_message = str(monnify_error)
+                    vend_reference = None
             
-            # Add validation reference if required
-            if validation_reference:
-                vend_data['validationReference'] = validation_reference
-                print(f'INFO: Using validation reference: {validation_reference}')
-            
-            print(f'INFO: Calling Monnify vend API with data: {vend_data}')
-            
-            response = call_monnify_bills_api(
-                'vend',
-                'POST',
-                vend_data,
-                access_token=access_token
-            )
-            
-            print(f'INFO: Monnify vend response: {response}')
-            
-            vend_result = response['responseBody']
-            
-            # Handle IN_PROGRESS status with requery
-            if vend_result.get('vendStatus') == 'IN_PROGRESS':
-                print('INFO: Transaction in progress, waiting 3 seconds before requery...')
-                import time
-                time.sleep(3)
-                
-                requery_response = call_monnify_bills_api(
-                    f'requery?reference={transaction_ref}',
-                    'GET',
-                    access_token=access_token
-                )
-                
-                print(f'INFO: Monnify requery response: {requery_response}')
-                vend_result = requery_response['responseBody']
-            
-            # Determine final status
-            final_status = vend_result.get('vendStatus', 'FAILED')
-            print(f'INFO: Final transaction status: {final_status}')
-            
-            # 🔒 ATOMIC PATTERN: Update transaction with final status and details
+            # ==================== UPDATE TRANSACTION ====================
             update_operation = {
                 '$set': {
                     'status': final_status,
-                    'vendReference': vend_result.get('vendReference'),
-                    'productName': vend_result.get('productName', product_name),
-                    'billerCode': vend_result.get('billerCode'),
-                    'billerName': vend_result.get('billerName'),
-                    'commission': vend_result.get('commission', 0),
-                    'payableAmount': vend_result.get('payableAmount', amount),
-                    'vendAmount': vend_result.get('vendAmount', amount),
+                    'vendReference': vend_reference,
                     'updatedAt': datetime.utcnow()
                 }
             }
             
-            # 🔒 Clear failureReason on success, update it on failure
             if final_status == 'SUCCESS':
                 update_operation['$unset'] = {'failureReason': ""}
             else:
-                failure_reason = vend_result.get('message', 'Bill payment failed')
-                update_operation['$set']['failureReason'] = failure_reason
+                update_operation['$set']['failureReason'] = error_message or 'Bill payment failed'
             
-            # Update the transaction record
-            transaction_update_result = mongo.db.vas_transactions.update_one(
+            mongo.db.vas_transactions.update_one(
                 {'_id': transaction_id},
                 update_operation
             )
             
-            # CRITICAL: Verify transaction was actually updated
-            if transaction_update_result.modified_count == 0:
-                print(f'ERROR: Failed to update bills transaction {transaction_id} to {final_status}')
-                print(f'       Transaction ID type: {type(transaction_id)}')
-                print(f'       Transaction ID value: {transaction_id}')
-                
-                # Try to find the transaction to debug
-                debug_txn = mongo.db.vas_transactions.find_one({'_id': transaction_id})
-                if debug_txn:
-                    print(f'       Found transaction with status: {debug_txn.get("status")}')
-                else:
-                    print(f'       Transaction not found in database!')
-            else:
-                print(f'SUCCESS: Bills transaction {transaction_id} updated to {final_status} status')
-                
-                # Double-check the update worked for SUCCESS transactions
-                if final_status == 'SUCCESS':
-                    verify_txn = mongo.db.vas_transactions.find_one({'_id': transaction_id})
-                    if verify_txn and verify_txn.get('status') == 'SUCCESS':
-                        print(f'VERIFIED: Bills transaction {transaction_id} status is SUCCESS')
-                    else:
-                        print(f'WARNING: Bills transaction {transaction_id} status verification failed')
-                        print(f'         Current status: {verify_txn.get("status") if verify_txn else "NOT_FOUND"}')
-            
-            print(f'INFO: Updated transaction {transaction_id} to {final_status}')
-            
-            # Get updated transaction for response
-            updated_transaction = mongo.db.vas_transactions.find_one({'_id': transaction_id})
+            updated_transaction = mongo.db.vas_wallets.find_one({'_id': transaction_id})
             
             # Update wallet balance if successful
             if final_status == 'SUCCESS':
