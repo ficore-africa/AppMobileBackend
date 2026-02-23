@@ -50,10 +50,13 @@ def init_cash_bank_blueprint(mongo, token_required):
             
             print(f'✓ Opening balances fetched for user {current_user["_id"]}: Cash=₦{opening_cash_balance}, Equity=₦{opening_equity}')
             
+            # CRITICAL FIX: Wrap data in 'data' field for DioApiClient compatibility
             return jsonify({
                 'success': True,
-                'openingCashBalance': opening_cash_balance,
-                'openingEquity': opening_equity
+                'data': {
+                    'openingCashBalance': opening_cash_balance,
+                    'openingEquity': opening_equity
+                }
             }), 200
             
         except Exception as e:
@@ -162,9 +165,12 @@ def init_cash_bank_blueprint(mongo, token_required):
                 adjustment['_id'] = str(adjustment['_id'])
                 adjustment['userId'] = str(adjustment['userId'])
             
+            # CRITICAL FIX: Wrap data in 'data' field for DioApiClient compatibility
             return jsonify({
                 'success': True,
-                'adjustments': adjustments
+                'data': {
+                    'adjustments': adjustments
+                }
             }), 200
             
         except Exception as e:
@@ -339,15 +345,18 @@ def init_cash_bank_blueprint(mongo, token_required):
             # Calculate current balance
             current_balance = opening_balance + total_income - total_expenses - total_drawings + total_capital
             
+            # CRITICAL FIX: Wrap data in 'data' field for DioApiClient compatibility
             return jsonify({
                 'success': True,
-                'currentBalance': current_balance,
-                'breakdown': {
-                    'openingBalance': opening_balance,
-                    'totalIncome': total_income,
-                    'totalExpenses': total_expenses,
-                    'totalDrawings': total_drawings,
-                    'totalCapital': total_capital
+                'data': {
+                    'currentBalance': current_balance,
+                    'breakdown': {
+                        'openingBalance': opening_balance,
+                        'totalIncome': total_income,
+                        'totalExpenses': total_expenses,
+                        'totalDrawings': total_drawings,
+                        'totalCapital': total_capital
+                    }
                 }
             }), 200
             
