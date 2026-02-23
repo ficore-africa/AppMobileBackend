@@ -5652,6 +5652,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }},
                 {'$unwind': '$user'},
                 {'$project': {
+                    '_id': 0,  # Exclude _id from response
                     'userId': {'$toString': '$userId'},
                     'balance': 1,
                     'displayName': '$user.displayName',
@@ -5665,6 +5666,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 {'$sort': {'ficoreCreditBalance': -1}},
                 {'$limit': 3},
                 {'$project': {
+                    '_id': 0,  # Exclude _id from response
                     'userId': {'$toString': '$_id'},
                     'balance': '$ficoreCreditBalance',
                     'displayName': 1,
@@ -5762,6 +5764,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }},
                 {'$unwind': '$user'},
                 {'$project': {
+                    '_id': 0,  # Exclude _id
                     'userId': {'$toString': '$userId'},
                     'displayName': '$user.displayName',
                     'email': '$user.email',
@@ -5831,6 +5834,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 {'$match': {'ficoreCreditBalance': {'$gt': 0}, '_id': {'$nin': test_user_ids}}},
                 {'$sort': {'ficoreCreditBalance': -1}},
                 {'$project': {
+                    '_id': 0,  # Exclude _id
                     'userId': {'$toString': '$_id'},
                     'displayName': 1,
                     'email': 1,
