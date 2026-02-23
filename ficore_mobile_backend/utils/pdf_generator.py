@@ -180,6 +180,63 @@ class PDFGenerator:
             textColor=colors.HexColor('#666666')
         ))
     
+    def _create_tax_override_watermark(self, selected_tax_type, profile_tax_type):
+        """
+        Create tax override watermark when selected tax type differs from user's profile
+        
+        LEGAL PROTECTION (Feb 23, 2026):
+        - Protects FiCore from liability (not providing 'wrong' advice)
+        - Protects users from accidental wrong filing
+        - Enables safe 'what if I incorporated?' scenarios
+        - Professional appearance (info box, not scary warning)
+        
+        Args:
+            selected_tax_type: Tax type selected for this report ('PIT' or 'CIT')
+            profile_tax_type: User's registered tax type from profile ('PIT' or 'CIT')
+        
+        Returns:
+            Table with watermark content (light blue info box)
+        """
+        # Get full tax type names
+        selected_name = "Corporate Income Tax (CIT)" if selected_tax_type == 'CIT' else "Personal Income Tax (PIT)"
+        profile_name = "Corporate Income Tax (CIT)" if profile_tax_type == 'CIT' else "Personal Income Tax (PIT)"
+        
+        # Create watermark content
+        watermark_text = f"""
+<para alignment="left" fontSize="10" textColor="#1565C0">
+<b>ℹ️ TAX TYPE OVERRIDE NOTICE</b>
+</para>
+<para alignment="left" fontSize="9" textColor="#333333" spaceBefore="6">
+This report was generated using <b>{selected_name}</b> rates at your request.<br/>
+Your registered tax profile remains <b>{profile_name}</b>.
+</para>
+<para alignment="left" fontSize="9" textColor="#555555" spaceBefore="6">
+<i>This is a simulation for planning purposes. Consult a tax professional before making filing decisions.</i>
+</para>
+"""
+        
+        # Create table with light blue background
+        watermark_table = Table(
+            [[Paragraph(watermark_text, self.styles['Normal'])]],
+            colWidths=[6.5*inch]
+        )
+        
+        watermark_table.setStyle(TableStyle([
+            # Light blue background (info, not error)
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E3F2FD')),
+            # Medium blue border
+            ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor('#1976D2')),
+            # Padding
+            ('LEFTPADDING', (0, 0), (-1, -1), 15),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            # Alignment
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        
+        return watermark_table
+    
     def generate_financial_report(self, user_data, export_data, data_type='all'):
         """Generate comprehensive financial report PDF"""
         # DISABLED FOR VAS FOCUS
@@ -2409,7 +2466,7 @@ class PDFGenerator:
         return buffer
 
     def generate_statement_of_affairs(self, user_data, financial_data, tax_data, assets_data, 
-                                      start_date=None, end_date=None, tax_type='PIT'):
+                                      start_date=None, end_date=None, tax_type='PIT', profile_tax_type='PIT'):
         """
         Generate comprehensive Statement of Affairs PDF
         
@@ -2433,7 +2490,8 @@ class PDFGenerator:
             assets_data: List of assets with CURRENT depreciation (should be pre-calculated as of endDate)
             start_date: Report start date
             end_date: Report end date (CRITICAL for depreciation calculation)
-            tax_type: 'PIT' or 'CIT'
+            tax_type: 'PIT' or 'CIT' (selected for this report)
+            profile_tax_type: User's registered tax type from profile (default: 'PIT')
         
         Note: The endpoint should calculate asset NBV as of endDate before passing to this method.
         """
@@ -2982,6 +3040,13 @@ Asset depreciation and all values reflect the position at that specific date.</i
         
         # Footer
         report_id = f"SOA-{nigerian_time.strftime('%Y%m%d%H%M%S')}"
+        
+        # Add tax override watermark if needed (Feb 23, 2026)
+        if tax_type != profile_tax_type:
+            story.append(Spacer(1, 0.3*inch))
+            story.append(self._create_tax_override_watermark(tax_type, profile_tax_type))
+            story.append(Spacer(1, 0.2*inch))
+        
         footer_text = f"""
 <i><b>DISCLAIMER:</b><br/>
 This Statement of Affairs is generated from your FiCore Mobile App data for informational purposes only.<br/>
