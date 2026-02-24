@@ -65,21 +65,25 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             raise Exception(f'Peyflex Bills API failed: {str(e)}')
     
     def get_peyflex_electricity_providers():
-        """Get electricity providers from Peyflex (no auth required)"""
+        """Get electricity providers from Peyflex"""
         try:
             print('INFO: Fetching electricity providers from Peyflex')
             response = call_peyflex_bills_api(
                 'electricity/plans/?identifier=electricity',
                 'GET',
-                require_auth=False
+                require_auth=True  # ✅ FIX: Auth IS required (same as data endpoint)
             )
             
             # Transform Peyflex response to our format
             providers = []
-            if isinstance(response, list):
-                for plan in response:
-                    provider_code = plan.get('code', '')
-                    provider_name = plan.get('name', '')
+            
+            # ✅ FIX: Peyflex returns dict with 'plans' key, not a list
+            plans_data = response.get('plans', []) if isinstance(response, dict) else response
+            
+            if isinstance(plans_data, list):
+                for plan in plans_data:
+                    provider_code = plan.get('plan_code', '')
+                    provider_name = plan.get('plan_name', '')
                     
                     if provider_code and provider_name:
                         providers.append({
@@ -88,7 +92,9 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                             'name': provider_name,
                             'category': 'electricity',
                             'source': 'peyflex',
-                            'description': f"{provider_name} - Electricity provider"
+                            'description': f"{provider_name} - Electricity provider",
+                            'minAmount': plan.get('min_amount', 100),
+                            'maxAmount': plan.get('max_amount', 1000000)
                         })
             
             print(f'SUCCESS: Retrieved {len(providers)} electricity providers from Peyflex')
@@ -105,7 +111,7 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             response = call_peyflex_bills_api(
                 'cable/providers/',
                 'GET',
-                require_auth=False
+                require_auth=True  # ✅ FIX: Auth IS required (same as data endpoint)
             )
             
             # Transform Peyflex response to our format
@@ -139,7 +145,7 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             response = call_peyflex_bills_api(
                 f'cable/plans/{provider_code}/',
                 'GET',
-                require_auth=False
+                require_auth=True  # ✅ FIX: Auth IS required (same as data endpoint)
             )
             
             # Transform Peyflex response to our format
@@ -173,7 +179,7 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             response = call_peyflex_bills_api(
                 f'electricity/verify/?identifier=electricity&meter={meter}&plan={plan}&type={meter_type}',
                 'GET',
-                require_auth=False
+                require_auth=True  # ✅ FIX: Auth IS required (same as data endpoint)
             )
             
             return {
