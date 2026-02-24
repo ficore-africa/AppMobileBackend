@@ -4658,6 +4658,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Calculate by transaction type (handle None and 0 values)
             airtime_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('type') == 'AIRTIME')
             data_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('type') == 'DATA')
+            electricity_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('type') == 'BILL' and t.get('billCategory', '').lower() == 'electricity')
             
             # ===== 2. GATEWAY FEES (from vas_transactions and corporate_revenue) =====
             # Get deposit gateway fees
@@ -4831,7 +4832,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                             'monnify': round(monnify_commission, 2),
                             'peyflex': round(peyflex_commission, 2),
                             'airtime': round(airtime_commission, 2),
-                            'data': round(data_commission, 2)
+                            'data': round(data_commission, 2),
+                            'electricity': round(electricity_commission, 2)
                         },
                         'subscriptions': {
                             'gross': round(total_subscription_revenue, 2),

@@ -610,6 +610,12 @@
                 <div class="label">Peyflex Commission (1-5%)</div>
                 <div class="sublabel">Earnings from Peyflex</div>
             </div>
+            <div class="stat-card commission" style="--card-color: #e74c3c;">
+                <div class="icon"><i class="fas fa-bolt"></i></div>
+                <div class="number" id="electricityCommission">₦0</div>
+                <div class="label">Electricity Commission (0.2%)</div>
+                <div class="sublabel">Earnings from electricity bills</div>
+            </div>
             <div class="stat-card" style="--card-color: #2ecc71;">
                 <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
                 <div class="number" id="corporateRevenue">₦0</div>
@@ -1017,6 +1023,8 @@
             // Show BOTH Monnify and Peyflex commissions
             document.getElementById('monnifyCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.monnify || 0).toLocaleString()}`;
             document.getElementById('peyflexCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.peyflex || 0).toLocaleString()}`;
+            // Show Electricity Commission (NEW - Feb 24, 2026)
+            document.getElementById('electricityCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.electricity || 0).toLocaleString()}`;
             // Show Corporate Revenue (total earnings)
             document.getElementById('corporateRevenue').textContent = `₦${(overview.totalRevenue || 0).toLocaleString()}`;
             // Show Deposit Fees (₦30 from free users)
