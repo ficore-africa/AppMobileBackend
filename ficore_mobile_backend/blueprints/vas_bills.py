@@ -38,7 +38,10 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
     def call_peyflex_bills_api(endpoint, method='GET', data=None, require_auth=True):
         """Generic Peyflex Bills API caller"""
         try:
-            headers = {'Content-Type': 'application/json'}
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'FiCore-Backend/1.0'  # ✅ CRITICAL: Peyflex requires User-Agent header
+            }
             
             if require_auth:
                 headers['Authorization'] = f'Token {PEYFLEX_API_TOKEN}'
@@ -1141,6 +1144,54 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                     print(f'WARNING: Balance update may have failed for user {current_user["_id"]}')
                 else:
                     print(f'SUCCESS: Updated BOTH balances using utility after bill payment - New balance: ₦{new_balance:,.2f}')
+                
+                # 💰 CALCULATE PROVIDER COMMISSION (Electricity Bills)
+                # Peyflex: 0.2% commission on electricity for API users like FiCore
+                # Monnify: 0.2% commission on electricity (assumed same rate)
+                if category.lower() == 'electricity':
+                    commission_rate = 0.002  # 0.2%
+                    provider_commission = amount * commission_rate
+                    provider_cost = amount - provider_commission  # What provider charged us
+                    
+                    gateway_fee = 0.0  # No gateway fee on VAS sales (only on deposits)
+                    net_margin = provider_commission - gateway_fee
+                    
+                    # Update transaction with commission data
+                    mongo.db.vas_transactions.update_one(
+                        {'_id': transaction_id},
+                        {'$set': {
+                            'providerCost': round(provider_cost, 2),
+                            'providerCommission': round(provider_commission, 2),
+                            'providerCommissionRate': commission_rate,
+                            'gatewayFee': gateway_fee,
+                            'netMargin': round(net_margin, 2)
+                        }}
+                    )
+                    
+                    # Record provider commission as corporate revenue
+                    if provider_commission > 0:
+                        corporate_revenue = {
+                            '_id': ObjectId(),
+                            'type': 'VAS_COMMISSION',
+                            'category': f'{provider_source.upper()}_ELECTRICITY',
+                            'amount': round(provider_commission, 2),
+                            'userId': ObjectId(current_user['_id']),
+                            'relatedTransaction': str(transaction_id),
+                            'description': f'{provider_source.capitalize()} {commission_rate*100}% commission on electricity bill',
+                            'status': 'RECORDED',
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'provider': provider_source,
+                                'commissionRate': commission_rate,
+                                'transactionAmount': amount,
+                                'providerCost': round(provider_cost, 2),
+                                'billProvider': provider,
+                                'accountNumber': account_number,
+                                'transactionType': 'ELECTRICITY'
+                            }
+                        }
+                        mongo.db.corporate_revenue.insert_one(corporate_revenue)
+                        print(f'💰 Corporate revenue recorded: ₦{provider_commission:.2f} commission from {provider_source} electricity bill - User {current_user["_id"]}')
                 
                 # Auto-create expense entry (auto-bookkeeping) for bill payments
                 try:
