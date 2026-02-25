@@ -2080,6 +2080,24 @@ def init_reports_blueprint(mongo, token_required):
             total_income = sum(income.get('amount', 0) for income in incomes)
             total_expenses = sum(expense.get('amount', 0) for expense in expenses)
             
+            # MODERNIZATION (Feb 25, 2026): Calculate 3-Step P&L (align with SOA)
+            # Separate Sales Revenue from Other Income
+            sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
+            other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+            
+            # Separate COGS from Operating Expenses
+            cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
+            operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+            
+            total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+            total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
+            
+            # Calculate 3-Step P&L
+            gross_profit = (sales_revenue + other_income) - total_cogs
+            gross_margin_pct = (gross_profit / (sales_revenue + other_income) * 100) if (sales_revenue + other_income) > 0 else 0
+            operating_profit = gross_profit - total_operating
+            net_income = operating_profit
+            
             # Prepare user data
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             
@@ -2093,8 +2111,27 @@ def init_reports_blueprint(mongo, token_required):
             
             # Prepare comprehensive tax data
             tax_data = {
+                # Revenue Breakdown (NEW - Feb 25, 2026)
+                'sales_revenue': sales_revenue,
+                'other_income': other_income,
                 'total_income': total_income,
+                
+                # COGS (NEW - Feb 25, 2026)
+                'cost_of_goods_sold': total_cogs,
+                
+                # Gross Profit (NEW - Feb 25, 2026)
+                'gross_profit': gross_profit,
+                'gross_margin_percentage': gross_margin_pct,
+                
+                # Operating Expenses (NEW - Feb 25, 2026)
+                'operating_expenses': total_operating,
+                
+                # Operating Profit (NEW - Feb 25, 2026)
+                'operating_profit': operating_profit,
+                
+                # Legacy fields (for backward compatibility)
                 'deductible_expenses': total_expenses,
+                
                 'tag_filter': tag_filter,  # Include filter info in report
                 'tag_filter_label': {
                     'business': 'Business Only',
@@ -2444,6 +2481,24 @@ def init_reports_blueprint(mongo, token_required):
                 total_income = sum(income.get('amount', 0) for income in incomes)
                 total_expenses = sum(expense.get('amount', 0) for expense in expenses)
                 
+                # MODERNIZATION (Feb 25, 2026): Calculate 3-Step P&L (align with SOA)
+                # Separate Sales Revenue from Other Income
+                sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
+                other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+                
+                # Separate COGS from Operating Expenses
+                cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
+                operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+                
+                total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+                total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
+                
+                # Calculate 3-Step P&L
+                gross_profit = (sales_revenue + other_income) - total_cogs
+                gross_margin_pct = (gross_profit / (sales_revenue + other_income) * 100) if (sales_revenue + other_income) > 0 else 0
+                operating_profit = gross_profit - total_operating
+                net_income = operating_profit
+                
                 # Prepare user data
                 user = mongo.db.users.find_one({'_id': current_user['_id']})
                 user_data = {
@@ -2456,8 +2511,27 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Prepare tax data
                 tax_data = {
+                    # Revenue Breakdown (NEW - Feb 25, 2026)
+                    'sales_revenue': sales_revenue,
+                    'other_income': other_income,
                     'total_income': total_income,
+                    
+                    # COGS (NEW - Feb 25, 2026)
+                    'cost_of_goods_sold': total_cogs,
+                    
+                    # Gross Profit (NEW - Feb 25, 2026)
+                    'gross_profit': gross_profit,
+                    'gross_margin_percentage': gross_margin_pct,
+                    
+                    # Operating Expenses (NEW - Feb 25, 2026)
+                    'operating_expenses': total_operating,
+                    
+                    # Operating Profit (NEW - Feb 25, 2026)
+                    'operating_profit': operating_profit,
+                    
+                    # Legacy fields (for backward compatibility)
                     'deductible_expenses': total_expenses,
+                    
                     'tag_filter': tag_filter,
                     'tag_filter_label': {
                         'business': 'Business Only',
