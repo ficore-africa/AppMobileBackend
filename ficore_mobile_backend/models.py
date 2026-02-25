@@ -114,6 +114,17 @@ class DatabaseSchema:
             'taxPaid': Optional[float],  # Tax payments made during period, default: 0.0
             'lastEquityUpdate': Optional[datetime],  # Last time equity fields were updated
             
+            # Opening Balances (Phase 3C - Feb 18, 2026, Updated Feb 25, 2026)
+            'openingCashBalance': Optional[float],  # Cash/bank at start, default: 0.0
+            'openingLiability': Optional[float],  # NEW (Feb 25, 2026): Total liabilities at start, default: 0.0
+            'openingBalancesLocked': Optional[bool],  # NEW (Feb 25, 2026): Lock after first set, default: False
+            'openingBalancesSetAt': Optional[datetime],  # When opening balances were first set
+            'openingCashBalanceSetAt': Optional[datetime],  # When cash balance was set
+            'openingEquitySetAt': Optional[datetime],  # When equity was set
+            'openingLiabilitySetAt': Optional[datetime],  # NEW (Feb 25, 2026): When liability was set
+            'openingBalancesUnlockedAt': Optional[datetime],  # NEW (Feb 25, 2026): When unlocked (if ever)
+            'openingBalancesUnlockedBy': Optional[ObjectId],  # NEW (Feb 25, 2026): Who unlocked it
+            
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled
@@ -160,6 +171,20 @@ class DatabaseSchema:
         """
         Schema for incomes collection.
         Stores user income records with sources (simplified - no recurring).
+        
+        TAGGING SYSTEM (Phase 3B - Feb 6, 2026):
+        - entryType: 'business' | 'personal' | None (for tax classification)
+        - taggedAt: When entry was tagged
+        - taggedBy: Who tagged it ('user', 'system_migration', 'admin')
+        
+        IMMUTABILITY SYSTEM (Jan 14, 2026):
+        - status: 'active' | 'voided' | 'superseded' (for soft delete)
+        - isDeleted: Boolean flag for deleted entries
+        - version: Version number for edit tracking
+        - versionLog: Array of previous versions
+        
+        SOURCE TYPE TRACKING (Financial Protocol):
+        - sourceType: Origin of entry ('manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale', etc.)
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -176,9 +201,29 @@ class DatabaseSchema:
             'metadata': Optional[Dict[str, Any]],  # Additional metadata
             'createdAt': datetime,  # Record creation timestamp
             'updatedAt': datetime,  # Last update timestamp
+            
+            # TAGGING SYSTEM (Phase 3B - Feb 6, 2026)
+            'entryType': Optional[str],  # 'business' | 'personal' | None (untagged)
+            'taggedAt': Optional[datetime],  # When entry was tagged
+            'taggedBy': Optional[str],  # 'user' | 'system_migration' | 'admin'
+            
+            # IMMUTABILITY SYSTEM (Jan 14, 2026)
+            'status': Optional[str],  # 'active' | 'voided' | 'superseded', default: 'active'
+            'isDeleted': Optional[bool],  # Soft delete flag, default: False
+            'version': Optional[int],  # Version number, default: 1
+            'versionLog': Optional[List[Dict[str, Any]]],  # Previous versions
+            'exportHistory': Optional[List[Dict[str, Any]]],  # Export tracking
+            'reversalEntryId': Optional[str],  # Link to reversal entry if deleted
+            'originalEntryId': Optional[str],  # Link to original if this is a reversal
+            
+            # SOURCE TYPE TRACKING (Financial Protocol)
+            'sourceType': Optional[str],  # 'manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale', etc.
+            
+            # OPENING BALANCE TRACKING (Phase 3C - Feb 18, 2026)
+            'isOpeningBalance': Optional[bool],  # True if this is an opening balance entry
+            'openingBalanceDate': Optional[datetime],  # Date of opening balance
         }
     
-    @staticmethod
     @staticmethod
     def get_income_indexes() -> List[Dict[str, Any]]:
         """Define indexes for incomes collection."""
@@ -191,6 +236,12 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
             # CRITICAL FIX: Add index for immutable ledger queries
             {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
+            # TAGGING SYSTEM: Add index for tagging queries (Phase 3B)
+            {'keys': [('userId', 1), ('entryType', 1)], 'name': 'user_entry_type'},
+            # SOURCE TYPE: Add index for source type filtering
+            {'keys': [('userId', 1), ('sourceType', 1)], 'name': 'user_source_type'},
+            # OPENING BALANCE: Add index for opening balance queries
+            {'keys': [('userId', 1), ('isOpeningBalance', 1)], 'name': 'user_opening_balance'},
         ]
     
     # ==================== EXPENSES COLLECTION ====================
@@ -200,6 +251,20 @@ class DatabaseSchema:
         """
         Schema for expenses collection.
         Stores user expense records with categories and budget linkage.
+        
+        TAGGING SYSTEM (Phase 3B - Feb 6, 2026):
+        - entryType: 'business' | 'personal' | None (for tax classification)
+        - taggedAt: When entry was tagged
+        - taggedBy: Who tagged it ('user', 'system_migration', 'admin')
+        
+        IMMUTABILITY SYSTEM (Jan 14, 2026):
+        - status: 'active' | 'voided' | 'superseded' (for soft delete)
+        - isDeleted: Boolean flag for deleted entries
+        - version: Version number for edit tracking
+        - versionLog: Array of previous versions
+        
+        SOURCE TYPE TRACKING (Financial Protocol):
+        - sourceType: Origin of entry ('manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale_cogs', etc.)
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -215,6 +280,30 @@ class DatabaseSchema:
             'notes': Optional[str],  # Additional notes
             'createdAt': datetime,  # Record creation timestamp
             'updatedAt': datetime,  # Last update timestamp
+            
+            # TAGGING SYSTEM (Phase 3B - Feb 6, 2026)
+            'entryType': Optional[str],  # 'business' | 'personal' | None (untagged)
+            'taggedAt': Optional[datetime],  # When entry was tagged
+            'taggedBy': Optional[str],  # 'user' | 'system_migration' | 'admin'
+            
+            # IMMUTABILITY SYSTEM (Jan 14, 2026)
+            'status': Optional[str],  # 'active' | 'voided' | 'superseded', default: 'active'
+            'isDeleted': Optional[bool],  # Soft delete flag, default: False
+            'version': Optional[int],  # Version number, default: 1
+            'versionLog': Optional[List[Dict[str, Any]]],  # Previous versions
+            'exportHistory': Optional[List[Dict[str, Any]]],  # Export tracking
+            'reversalEntryId': Optional[str],  # Link to reversal entry if deleted
+            'originalEntryId': Optional[str],  # Link to original if this is a reversal
+            
+            # SOURCE TYPE TRACKING (Financial Protocol)
+            'sourceType': Optional[str],  # 'manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale_cogs', etc.
+            
+            # VAS TRANSACTION LINKING (for auto-generated expenses)
+            'vasTransactionId': Optional[str],  # Link to VAS transaction if auto-generated
+            
+            # OPENING BALANCE TRACKING (Phase 3C - Feb 18, 2026)
+            'isOpeningBalance': Optional[bool],  # True if this is an opening balance entry
+            'openingBalanceDate': Optional[datetime],  # Date of opening balance
         }
     
     @staticmethod
@@ -228,6 +317,14 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
             # CRITICAL FIX: Add index for immutable ledger queries
             {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
+            # TAGGING SYSTEM: Add index for tagging queries (Phase 3B)
+            {'keys': [('userId', 1), ('entryType', 1)], 'name': 'user_entry_type'},
+            # SOURCE TYPE: Add index for source type filtering
+            {'keys': [('userId', 1), ('sourceType', 1)], 'name': 'user_source_type'},
+            # VAS LINKING: Add index for VAS transaction queries
+            {'keys': [('userId', 1), ('vasTransactionId', 1)], 'sparse': True, 'name': 'user_vas_transaction'},
+            # OPENING BALANCE: Add index for opening balance queries
+            {'keys': [('userId', 1), ('isOpeningBalance', 1)], 'name': 'user_opening_balance'},
         ]
     
     # ==================== CREDIT_TRANSACTIONS COLLECTION ====================

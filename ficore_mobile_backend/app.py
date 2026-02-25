@@ -34,6 +34,7 @@ from blueprints.assets import init_assets_blueprint
 from blueprints.dashboard import init_dashboard_blueprint
 from blueprints.drawings_routes import init_drawings_blueprint  # Phase 2.2: Automatic Drawings
 from blueprints.cash_bank import init_cash_bank_blueprint  # Cash/Bank Management System
+from blueprints.loans import init_loans_blueprint  # Phase 2: Loans Module (Feb 25, 2026)
 from blueprints.rewards import init_rewards_blueprint
 from blueprints.subscription import init_subscription_blueprint
 from blueprints.subscription_discounts import init_subscription_discounts_blueprint
@@ -385,6 +386,7 @@ assets_blueprint = init_assets_blueprint(mongo, token_required, serialize_doc)
 dashboard_blueprint = init_dashboard_blueprint(mongo, token_required, serialize_doc)
 drawings_blueprint = init_drawings_blueprint(mongo, token_required, serialize_doc)  # Phase 2.2
 cash_bank_blueprint = init_cash_bank_blueprint(mongo, token_required)  # Cash/Bank Management
+loans_blueprint = init_loans_blueprint(mongo, token_required)  # Phase 2: Loans Module (Feb 25, 2026)
 rewards_blueprint = init_rewards_blueprint(mongo, token_required, serialize_doc)
 subscription_blueprint = init_subscription_blueprint(mongo, token_required, serialize_doc)
 subscription_discounts_blueprint = init_subscription_discounts_blueprint(mongo, token_required, serialize_doc)
@@ -448,6 +450,8 @@ app.register_blueprint(drawings_blueprint)  # Phase 2.2: Automatic Drawings
 print("✓ Drawings blueprint registered at /api/drawings")
 app.register_blueprint(cash_bank_blueprint)  # Cash/Bank Management System
 print("✓ Cash/Bank blueprint registered at /api/cash-bank")
+app.register_blueprint(loans_blueprint)  # Phase 2: Loans Module (Feb 25, 2026)
+print("✓ Loans blueprint registered at /api/loans")
 app.register_blueprint(rewards_blueprint)
 app.register_blueprint(subscription_blueprint)
 app.register_blueprint(subscription_discounts_blueprint)
