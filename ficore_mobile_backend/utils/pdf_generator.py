@@ -3067,3 +3067,209 @@ Report ID: {report_id} | Generated: {nigerian_time.strftime('%B %d, %Y at %H:%M 
         buffer.seek(0)
         return buffer
 
+
+
+def generate_balance_breakdown_pdf(user_data, balance_data):
+    """
+    Generate Balance Breakdown PDF
+    
+    Shows how the current cash/bank balance is calculated from:
+    - Opening Balance
+    - Total Income
+    - Total Expenses
+    - Total Drawings
+    - Total Capital Deposits
+    
+    This is a simplified, focused report for users who want to understand
+    their current cash position without the full Statement of Affairs.
+    
+    Args:
+        user_data: Dict with firstName, lastName, email, businessName, tin
+        balance_data: Dict with openingBalance, totalIncome, totalExpenses,
+                     totalDrawings, totalCapital, currentBalance
+    
+    Returns:
+        PDF bytes
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    story = []
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#D4AF37'),  # FiCore golden
+        spaceAfter=12,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.grey,
+        spaceAfter=20,
+        alignment=TA_CENTER
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#D4AF37'),
+        spaceAfter=12,
+        spaceBefore=20,
+        fontName='Helvetica-Bold'
+    )
+    
+    # Header
+    story.append(Paragraph("FiCore Africa", title_style))
+    story.append(Paragraph("Balance Breakdown Report", subtitle_style))
+    
+    # User info
+    user_info_data = [
+        ['Business Name:', user_data.get('businessName', 'N/A')],
+        ['Owner:', f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}"],
+        ['Email:', user_data.get('email', 'N/A')],
+        ['TIN:', user_data.get('tin', 'Not Provided')],
+        ['Generated:', get_nigerian_time().strftime('%B %d, %Y at %I:%M %p WAT')]
+    ]
+    
+    user_info_table = Table(user_info_data, colWidths=[2*inch, 4*inch])
+    user_info_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.grey),
+        ('TEXTCOLOR', (1, 0), (1, -1), colors.black),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(user_info_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Current Balance (Large Display)
+    story.append(Paragraph("Current Cash/Bank Balance", heading_style))
+    
+    current_balance = balance_data.get('currentBalance', 0.0)
+    balance_color = colors.HexColor('#2E7D32') if current_balance >= 0 else colors.red
+    
+    balance_display_data = [[
+        Paragraph(
+            f'<font size="24" color="{balance_color.hexval()}">{format_currency(current_balance)}</font>',
+            styles['Normal']
+        )
+    ]]
+    
+    balance_display_table = Table(balance_display_data, colWidths=[6*inch])
+    balance_display_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#D4AF37')),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FFF9E6')),
+        ('TOPPADDING', (0, 0), (-1, -1), 20),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
+    ]))
+    story.append(balance_display_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Balance Breakdown
+    story.append(Paragraph("How We Calculate Your Balance", heading_style))
+    
+    opening_balance = balance_data.get('openingBalance', 0.0)
+    total_income = balance_data.get('totalIncome', 0.0)
+    total_expenses = balance_data.get('totalExpenses', 0.0)
+    total_drawings = balance_data.get('totalDrawings', 0.0)
+    total_capital = balance_data.get('totalCapital', 0.0)
+    
+    breakdown_data = [
+        ['Component', 'Amount', 'Effect'],
+        ['Opening Balance', format_currency(opening_balance), 'Starting point'],
+        ['Total Income', f'+ {format_currency(total_income)}', 'Money received'],
+        ['Total Expenses', f'- {format_currency(total_expenses)}', 'Money spent'],
+        ['Total Drawings', f'- {format_currency(total_drawings)}', 'Owner withdrawals'],
+        ['Total Capital Deposits', f'+ {format_currency(total_capital)}', 'Owner investments'],
+        ['', '', ''],
+        ['Current Balance', format_currency(current_balance), 'Final result']
+    ]
+    
+    breakdown_table = Table(breakdown_data, colWidths=[2.5*inch, 2*inch, 2*inch])
+    breakdown_table.setStyle(TableStyle([
+        # Header row
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#D4AF37')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        
+        # Data rows
+        ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -2), 9),
+        ('ALIGN', (0, 1), (0, -2), 'LEFT'),
+        ('ALIGN', (1, 1), (1, -2), 'RIGHT'),
+        ('ALIGN', (2, 1), (2, -2), 'LEFT'),
+        
+        # Total row
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FFF9E6')),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, -1), (-1, -1), 11),
+        ('TEXTCOLOR', (0, -1), (1, -1), balance_color),
+        
+        # Grid
+        ('GRID', (0, 0), (-1, -2), 0.5, colors.grey),
+        ('BOX', (0, 0), (-1, -1), 1, colors.black),
+        ('LINEABOVE', (0, -1), (-1, -1), 2, colors.black),
+        
+        # Padding
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    story.append(breakdown_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Formula Explanation
+    story.append(Paragraph("Formula", heading_style))
+    
+    formula_text = """
+    <para align="center" fontSize="10" fontName="Courier">
+    Current Balance = Opening Balance + Income - Expenses - Drawings + Capital
+    </para>
+    """
+    story.append(Paragraph(formula_text, styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
+    
+    explanation_text = """
+    <para fontSize="9" textColor="grey">
+    This balance represents your current cash/bank position based on all recorded 
+    transactions. It includes money received (income), money spent (expenses), 
+    owner withdrawals (drawings), and additional owner investments (capital deposits).
+    </para>
+    """
+    story.append(Paragraph(explanation_text, styles['Normal']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Footer
+    footer_text = """
+    <para fontSize="8" textColor="grey" align="center">
+    Generated by FiCore Africa - Your Digital CFO<br/>
+    This report is for informational purposes only. For tax compliance, 
+    please consult with a qualified tax professional.
+    </para>
+    """
+    story.append(Spacer(1, 0.5*inch))
+    story.append(Paragraph(footer_text, styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_bytes
