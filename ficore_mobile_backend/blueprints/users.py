@@ -1868,8 +1868,13 @@ def get_tagging_statistics():
             personal_income_query['entryType'] = 'personal'
             personal_income = users_bp.mongo.db.incomes.count_documents(personal_income_query)
             
+            # CRITICAL FIX: Check for both None AND missing entryType field
             untagged_income_query = income_query.copy()
-            untagged_income_query['entryType'] = None
+            untagged_income_query['$or'] = [
+                {'entryType': None},
+                {'entryType': {'$exists': False}},
+                {'entryType': ''}  # Empty string
+            ]
             untagged_income = users_bp.mongo.db.incomes.count_documents(untagged_income_query)
             
             # Expense stats
@@ -1884,8 +1889,13 @@ def get_tagging_statistics():
             personal_expenses_query['entryType'] = 'personal'
             personal_expenses = users_bp.mongo.db.expenses.count_documents(personal_expenses_query)
             
+            # CRITICAL FIX: Check for both None AND missing entryType field
             untagged_expenses_query = expense_query.copy()
-            untagged_expenses_query['entryType'] = None
+            untagged_expenses_query['$or'] = [
+                {'entryType': None},
+                {'entryType': {'$exists': False}},
+                {'entryType': ''}  # Empty string
+            ]
             untagged_expenses = users_bp.mongo.db.expenses.count_documents(untagged_expenses_query)
             
             # Calculate totals

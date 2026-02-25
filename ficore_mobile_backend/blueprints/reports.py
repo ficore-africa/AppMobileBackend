@@ -1139,6 +1139,13 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None,
+                'tag_filter': tag_filter
+            }
+            
             # Fetch income and expense data with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses
             income_query = {
@@ -1344,6 +1351,12 @@ def init_reports_blueprint(mongo, token_required):
             
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             # Fetch income and expense data
             income_query = {'userId': current_user['_id']}
@@ -1517,6 +1530,14 @@ def init_reports_blueprint(mongo, token_required):
             
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
+            
+            # OPTIMIZATION: Define cache parameters for PDF caching
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None,
+                'tag_filter': tag_filter,
+                'tax_type': tax_type
+            }
             
             # Fetch income and expense data for tax calculation
             # CRITICAL: Apply tag filtering for tax compliance
@@ -1870,6 +1891,12 @@ def init_reports_blueprint(mongo, token_required):
             
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             # Fetch debtors data
             query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
@@ -1943,6 +1970,12 @@ def init_reports_blueprint(mongo, token_required):
             
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             # Fetch creditors data
             query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
@@ -2217,6 +2250,12 @@ def init_reports_blueprint(mongo, token_required):
                         'shortfall': credit_cost - current_balance
                     }
                 }), 402
+            
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            # Inventory doesn't use date filtering, so cache is simpler
+            cache_params = {
+                'report_type': 'inventory'
+            }
             
             # Fetch inventory data
             query = {'userId': current_user['_id']}
@@ -3300,6 +3339,13 @@ def init_reports_blueprint(mongo, token_required):
             if end_date:
                 end_date = datetime.fromisoformat(end_date.replace('Z', ''))
             
+            # Cache parameters for this report
+            cache_params = {
+                'report_type': 'credits',
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
+            
             # Build query
             query = {'userId': current_user['_id']}
             if start_date or end_date:
@@ -3437,6 +3483,13 @@ def init_reports_blueprint(mongo, token_required):
                 start_date = datetime.fromisoformat(start_date.replace('Z', ''))
             if end_date:
                 end_date = datetime.fromisoformat(end_date.replace('Z', ''))
+            
+            # Cache parameters for this report
+            cache_params = {
+                'report_type': 'credits',
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             # Build query
             query = {'userId': current_user['_id']}
@@ -4999,6 +5052,12 @@ def init_reports_blueprint(mongo, token_required):
                 }), 402
             
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             query = {
                 'userId': ObjectId(str(current_user['_id'])),
@@ -5182,6 +5241,12 @@ def init_reports_blueprint(mongo, token_required):
                 }), 402
             
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             # MODERNIZATION: Query expenses with VAS sourceType for granular breakdown
             expense_query = {
@@ -5409,6 +5474,12 @@ def init_reports_blueprint(mongo, token_required):
                 }), 402
             
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             # MODERNIZATION: Query expenses with sourceType 'vas_airtime'
             expense_query = {
@@ -5618,6 +5689,12 @@ def init_reports_blueprint(mongo, token_required):
                 }), 402
             
             start_date, end_date = parse_date_range(request_data)
+
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None
+            }
             
             query = {
                 'userId': ObjectId(str(current_user['_id']))
@@ -5971,6 +6048,14 @@ def init_reports_blueprint(mongo, token_required):
             
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
+            
+            # OPTIMIZATION: Define cache parameters for PDF caching (Feb 25, 2026)
+            cache_params = {
+                'start_date': start_date.isoformat() if start_date else None,
+                'end_date': end_date.isoformat() if end_date else None,
+                'tag_filter': tag_filter,
+                'tax_type': tax_type
+            }
             
             # Build queries with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses (Default Business Assumption)
