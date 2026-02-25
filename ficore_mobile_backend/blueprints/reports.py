@@ -7520,6 +7520,24 @@ def init_reports_blueprint(mongo, token_required):
                     cash_balance = calculate_cash_bank_balance(current_user['_id'])
                     print(f"✅ SOA GENERATION: Cash balance = ₦{cash_balance:,.2f}")
                     
+                    # Calculate 3-Step P&L (align with SOA sync endpoint)
+                    print(f"🟢 SOA GENERATION: Calculating 3-Step P&L...")
+                    sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
+                    other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+                    
+                    cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
+                    operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+                    
+                    total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
+                    total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
+                    
+                    gross_profit = (sales_revenue + other_income) - total_cogs
+                    gross_margin_pct = (gross_profit / (sales_revenue + other_income) * 100) if (sales_revenue + other_income) > 0 else 0
+                    operating_profit = gross_profit - total_operating
+                    net_income = operating_profit
+                    
+                    print(f"✅ SOA GENERATION: 3-Step P&L - Sales: ₦{sales_revenue:,.2f}, Other: ₦{other_income:,.2f}, COGS: ₦{total_cogs:,.2f}, Gross: ₦{gross_profit:,.2f}, Operating: ₦{total_operating:,.2f}, Net: ₦{net_income:,.2f}")
+                    
                     # Prepare comprehensive data structure
                     print(f"🟢 SOA GENERATION: Preparing comprehensive data structure...")
                     comprehensive_data = {
@@ -7531,7 +7549,14 @@ def init_reports_blueprint(mongo, token_required):
                         'inventory': inventory,
                         'total_income': total_income,
                         'total_expenses': total_expenses,
-                        'net_income': total_income - total_expenses,
+                        'net_income': net_income,
+                        'sales_revenue': sales_revenue,
+                        'other_income': other_income,
+                        'cost_of_goods_sold': total_cogs,
+                        'gross_profit': gross_profit,
+                        'gross_margin_percentage': gross_margin_pct,
+                        'operating_expenses': total_operating,
+                        'operating_profit': operating_profit,
                         'debtors_value': debtors_value,
                         'creditors_value': creditors_value,
                         'inventory_value': inventory_value,
@@ -7543,12 +7568,47 @@ def init_reports_blueprint(mongo, token_required):
                     # Generate PDF
                     print(f"🟢 SOA GENERATION: Calling PDF generator...")
                     pdf_generator = PDFGenerator()
-                    pdf_buffer = pdf_generator.generate_statement_of_affairs_report(
-                        user_data, 
-                        comprehensive_data, 
-                        start_date, 
-                        end_date, 
-                        tax_type
+                    
+                    # Prepare data in the format expected by generate_statement_of_affairs
+                    financial_data = {
+                        'incomes': comprehensive_data['incomes'],
+                        'expenses': comprehensive_data['expenses']
+                    }
+                    
+                    tax_data = {
+                        'sales_revenue': comprehensive_data.get('sales_revenue', 0),
+                        'other_income': comprehensive_data.get('other_income', 0),
+                        'total_income': comprehensive_data['total_income'],
+                        'cost_of_goods_sold': comprehensive_data.get('cost_of_goods_sold', 0),
+                        'gross_profit': comprehensive_data.get('gross_profit', 0),
+                        'gross_margin_percentage': comprehensive_data.get('gross_margin_percentage', 0),
+                        'operating_expenses': comprehensive_data.get('operating_expenses', 0),
+                        'operating_profit': comprehensive_data.get('operating_profit', 0),
+                        'net_income': comprehensive_data['net_income'],
+                        'deductible_expenses': comprehensive_data['total_expenses'],
+                        'tax_type': tax_type,
+                        'inventory_value': comprehensive_data['inventory_value'],
+                        'debtors_value': comprehensive_data['debtors_value'],
+                        'creditors_value': comprehensive_data['creditors_value'],
+                        'cash_balance': comprehensive_data['cash_balance'],
+                        'inventory_count': len(comprehensive_data['inventory']),
+                        'debtors_count': len(comprehensive_data['debtors']),
+                        'creditors_count': len(comprehensive_data['creditors']),
+                        'opening_equity': 0,
+                        'drawings': 0
+                    }
+                    
+                    assets_data = comprehensive_data['assets']
+                    
+                    pdf_buffer = pdf_generator.generate_statement_of_affairs(
+                        user_data=user_data,
+                        financial_data=financial_data,
+                        tax_data=tax_data,
+                        assets_data=assets_data,
+                        start_date=start_date,
+                        end_date=end_date,
+                        tax_type=tax_type,
+                        profile_tax_type=tax_type
                     )
                     
                     print(f"✅ SOA GENERATION: PDF generated successfully! Size = {len(pdf_buffer.getvalue())} bytes")
