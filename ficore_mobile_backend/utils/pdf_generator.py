@@ -722,20 +722,42 @@ Your registered tax profile remains <b>{profile_name}</b>.
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
         
-        # Income Summary
+        # Income Summary (3-Step P&L - aligned with SOA - Feb 25, 2026)
         story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
+        
+        # Get revenue breakdown from tax_data
+        sales_revenue = tax_data.get('sales_revenue', 0)
+        other_income = tax_data.get('other_income', 0)
         total_income = tax_data.get('total_income', 0)
+        total_cogs = tax_data.get('cost_of_goods_sold', 0)
+        gross_profit = tax_data.get('gross_profit', 0)
+        gross_margin = tax_data.get('gross_margin_percentage', 0)
+        total_operating = tax_data.get('operating_expenses', 0)
+        operating_profit = tax_data.get('operating_profit', 0)
         deductible_expenses = tax_data.get('deductible_expenses', 0)
         
-        # Build income data based on tax type
+        # Build income data with 3-Step P&L
         income_data = [['Description', 'Amount (N)']]
-        income_data.append(['Gross Income', format_currency(total_income)])
+        income_data.append(['REVENUE', ''])
+        income_data.append(['Sales Revenue', format_currency(sales_revenue)])
+        income_data.append(['Other Income', format_currency(other_income)])
+        income_data.append(['Total Revenue', format_currency(total_income)])
+        income_data.append(['', ''])
+        income_data.append(['Less: Cost of Goods Sold (COGS)', format_currency(total_cogs)])
+        income_data.append(['GROSS PROFIT', format_currency(gross_profit)])
+        
+        # Add gross margin percentage if applicable
+        if sales_revenue > 0 or other_income > 0:
+            income_data.append(['Gross Margin %', f'{gross_margin:.1f}%'])
+        
+        income_data.append(['', ''])
+        income_data.append(['Less: Operating Expenses', format_currency(total_operating)])
+        income_data.append(['OPERATING PROFIT', format_currency(operating_profit)])
+        income_data.append(['', ''])
         
         # For PIT, show detailed statutory deductions breakdown
         if tax_type == 'PIT' and 'statutory_deductions' in tax_data:
             statutory = tax_data['statutory_deductions']
-            
-            income_data.append(['Less: Business Expenses', format_currency(tax_data.get('deductible_expenses', 0) - statutory.get('total', 0))])
             
             # Show statutory deductions breakdown
             if statutory.get('rent_relief', {}).get('relief_amount', 0) > 0:
@@ -752,23 +774,57 @@ Your registered tax profile remains <b>{profile_name}</b>.
             
             if statutory.get('hmo_premiums', 0) > 0:
                 income_data.append(['Less: HMO Premiums', format_currency(statutory['hmo_premiums'])])
+            
+            income_data.append(['', ''])
+            
+            # Calculate taxable income after statutory deductions
+            statutory_total = statutory.get('total', 0)
+            taxable_income = operating_profit - statutory_total
+            income_data.append(['TAXABLE INCOME', format_currency(taxable_income)])
         else:
-            income_data.append(['Less: Deductible Expenses', format_currency(deductible_expenses)])
-        
-        net_income = total_income - deductible_expenses
-        income_data.append(['Taxable Income', format_currency(net_income)])
+            # For CIT or PIT without statutory deductions
+            income_data.append(['TAXABLE INCOME', format_currency(operating_profit)])
         
         income_table = create_table(income_data, col_widths=[4*inch, 2*inch])
-        income_table.setStyle(TableStyle([
+        
+        # Find row indices for highlighting (dynamic based on content)
+        revenue_row = next((i for i, row in enumerate(income_data) if row[0] == 'REVENUE'), None)
+        gross_profit_row = next((i for i, row in enumerate(income_data) if row[0] == 'GROSS PROFIT'), None)
+        operating_profit_row = next((i for i, row in enumerate(income_data) if row[0] == 'OPERATING PROFIT'), None)
+        taxable_income_row = next((i for i, row in enumerate(income_data) if row[0] == 'TAXABLE INCOME'), None)
+        
+        # Base styling
+        table_style = [
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, -1), (-1, -1), ReportColors.TAX_LIGHT),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
+        ]
+        
+        # Highlight REVENUE section header
+        if revenue_row is not None:
+            table_style.append(('FONTNAME', (0, revenue_row), (0, revenue_row), 'Helvetica-Bold'))
+            table_style.append(('BACKGROUND', (0, revenue_row), (-1, revenue_row), colors.HexColor('#FFF9C4')))  # Light yellow
+        
+        # Highlight GROSS PROFIT row
+        if gross_profit_row is not None:
+            table_style.append(('FONTNAME', (0, gross_profit_row), (-1, gross_profit_row), 'Helvetica-Bold'))
+            table_style.append(('BACKGROUND', (0, gross_profit_row), (-1, gross_profit_row), colors.HexColor('#FFE082')))  # Medium yellow
+        
+        # Highlight OPERATING PROFIT row
+        if operating_profit_row is not None:
+            table_style.append(('FONTNAME', (0, operating_profit_row), (-1, operating_profit_row), 'Helvetica-Bold'))
+            table_style.append(('BACKGROUND', (0, operating_profit_row), (-1, operating_profit_row), colors.HexColor('#FFD54F')))  # Darker yellow
+        
+        # Highlight TAXABLE INCOME row (final result)
+        if taxable_income_row is not None:
+            table_style.append(('FONTNAME', (0, taxable_income_row), (-1, taxable_income_row), 'Helvetica-Bold'))
+            table_style.append(('BACKGROUND', (0, taxable_income_row), (-1, taxable_income_row), ReportColors.TAX_BROWN))
+            table_style.append(('TEXTCOLOR', (0, taxable_income_row), (-1, taxable_income_row), colors.whitesmoke))
+        
+        income_table.setStyle(TableStyle(table_style))
         
         story.append(income_table)
         story.append(Spacer(1, 20))
