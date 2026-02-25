@@ -7305,28 +7305,36 @@ def init_reports_blueprint(mongo, token_required):
     def export_statement_of_affairs_pdf_async(current_user):
         """Generate Statement of Affairs PDF in background (PRIORITY ENDPOINT)"""
         try:
+            print(f"🔵 SOA ASYNC: Starting for user {current_user['_id']}")
             request_data = request.get_json() or {}
             report_type = 'statement_of_affairs_pdf'
             
             # Get tax type and tag filter
             tax_type = request_data.get('taxType', 'PIT').upper()
+            print(f"🔵 SOA ASYNC: Tax type = {tax_type}")
             if tax_type not in ['PIT', 'CIT']:
+                print(f"❌ SOA ASYNC: Invalid tax type {tax_type}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid tax type. Must be either PIT or CIT'
                 }), 400
             
             tag_filter = request_data.get('tagFilter', 'business').lower()
+            print(f"🔵 SOA ASYNC: Tag filter = {tag_filter}")
             if tag_filter not in ['business', 'personal', 'all', 'untagged']:
+                print(f"❌ SOA ASYNC: Invalid tag filter {tag_filter}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid tag filter'
                 }), 400
             
             # Check credits (fast)
+            print(f"🔵 SOA ASYNC: Checking credits...")
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
+            print(f"🔵 SOA ASYNC: Credits check - has_access={has_access}, is_premium={is_premium}, balance={current_balance}, cost={credit_cost}")
             
             if not has_access:
+                print(f"❌ SOA ASYNC: Insufficient credits")
                 return jsonify({
                     'success': False,
                     'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
@@ -7338,9 +7346,12 @@ def init_reports_blueprint(mongo, token_required):
                 }), 402
             
             # Parse parameters
+            print(f"🔵 SOA ASYNC: Parsing date range...")
             start_date, end_date = parse_date_range(request_data)
+            print(f"🔵 SOA ASYNC: Date range = {start_date} to {end_date}")
             
             # Create background job
+            print(f"🔵 SOA ASYNC: Creating background job...")
             bg_generator = get_background_generator(mongo.db)
             job_id = bg_generator.create_job(
                 user_id=current_user['_id'],
@@ -7353,118 +7364,146 @@ def init_reports_blueprint(mongo, token_required):
                     'tax_type': tax_type
                 }
             )
+            print(f"✅ SOA ASYNC: Job created with ID = {job_id}")
             
             # Define generation function
             def generate_statement_of_affairs_pdf():
-                # NOTE: This is a complex report - copying full logic from sync endpoint
-                # Due to length, this is a simplified version that calls the same PDF generator
-                # For full implementation, copy lines 6750-7295 from sync endpoint
-                
-                # Build queries (simplified - see sync endpoint for full logic)
-                income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
-                expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
-                asset_query = {'userId': current_user['_id'], 'status': 'active'}
-                debtors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
-                creditors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
-                inventory_query = {'userId': current_user['_id']}
-                
-                # Apply tag filtering
-                if tag_filter == 'business':
-                    income_query['tags'] = 'Business'
-                    expense_query['tags'] = 'Business'
-                elif tag_filter == 'personal':
-                    income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
-                    expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
-                
-                # Apply date filtering (only for P&L items)
-                if start_date or end_date:
-                    if start_date:
-                        income_query['dateReceived'] = {'$gte': start_date}
-                        expense_query['date'] = {'$gte': start_date}
-                    if end_date:
-                        income_query.setdefault('dateReceived', {})['$lte'] = end_date
-                        expense_query.setdefault('date', {})['$lte'] = end_date
-                
-                # Fetch all data in parallel
-                results = fetch_collections_parallel({
-                    'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
-                    'expenses': lambda: list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses'])),
-                    'assets': lambda: list(mongo.db.assets.find(asset_query, PDF_PROJECTIONS['assets'])),
-                    'debtors': lambda: list(mongo.db.debtors.find(debtors_query, PDF_PROJECTIONS['debtors'])),
-                    'creditors': lambda: list(mongo.db.creditors.find(creditors_query, PDF_PROJECTIONS['creditors'])),
-                    'inventory': lambda: list(mongo.db.inventory.find(inventory_query, PDF_PROJECTIONS['inventory']))
-                }, max_workers=6)
-                
-                # Prepare user data
-                user = mongo.db.users.find_one({'_id': current_user['_id']})
-                user_data = {
-                    'firstName': current_user.get('firstName', ''),
-                    'lastName': current_user.get('lastName', ''),
-                    'email': current_user.get('email', ''),
-                    'businessName': user.get('businessName', '') if user else '',
-                    'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
-                }
-                
-                # Calculate financial metrics (simplified - see sync endpoint for full calculations)
-                incomes = results['incomes']
-                expenses = results['expenses']
-                assets = results['assets']
-                debtors = results['debtors']
-                creditors = results['creditors']
-                inventory = results['inventory']
-                
-                # Calculate totals
-                total_income = sum(inc.get('amount', 0) for inc in incomes)
-                total_expenses = sum(exp.get('amount', 0) for exp in expenses)
-                debtors_value = sum(d.get('amount', 0) for d in debtors)
-                creditors_value = sum(c.get('amount', 0) for c in creditors)
-                inventory_value = sum(i.get('quantity', 0) * i.get('unitCost', 0) for i in inventory)
-                
-                # Calculate cash balance
-                cash_balance = calculate_cash_bank_balance(current_user['_id'])
-                
-                # Prepare comprehensive data structure
-                comprehensive_data = {
-                    'incomes': incomes,
-                    'expenses': expenses,
-                    'assets': assets,
-                    'debtors': debtors,
-                    'creditors': creditors,
-                    'inventory': inventory,
-                    'total_income': total_income,
-                    'total_expenses': total_expenses,
-                    'net_income': total_income - total_expenses,
-                    'debtors_value': debtors_value,
-                    'creditors_value': creditors_value,
-                    'inventory_value': inventory_value,
-                    'cash_balance': cash_balance,
-                    'tag_filter': tag_filter,
-                    'tax_type': tax_type
-                }
-                
-                # Generate PDF
-                pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_statement_of_affairs_report(
-                    user_data, 
-                    comprehensive_data, 
-                    start_date, 
-                    end_date, 
-                    tax_type
-                )
-                
-                return pdf_buffer
+                try:
+                    print(f"🟢 SOA GENERATION: Starting for job {job_id}")
+                    
+                    # Build queries
+                    print(f"🟢 SOA GENERATION: Building queries...")
+                    income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+                    expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+                    asset_query = {'userId': current_user['_id'], 'status': 'active'}
+                    debtors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
+                    creditors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
+                    inventory_query = {'userId': current_user['_id']}
+                    
+                    # Apply tag filtering
+                    print(f"🟢 SOA GENERATION: Applying tag filter = {tag_filter}")
+                    if tag_filter == 'business':
+                        income_query['tags'] = 'Business'
+                        expense_query['tags'] = 'Business'
+                    elif tag_filter == 'personal':
+                        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
+                        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
+                    
+                    # Apply date filtering (only for P&L items)
+                    if start_date or end_date:
+                        print(f"🟢 SOA GENERATION: Applying date filter...")
+                        if start_date:
+                            income_query['dateReceived'] = {'$gte': start_date}
+                            expense_query['date'] = {'$gte': start_date}
+                        if end_date:
+                            income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                            expense_query.setdefault('date', {})['$lte'] = end_date
+                    
+                    # Fetch all data in parallel
+                    print(f"🟢 SOA GENERATION: Fetching data from 6 collections...")
+                    results = fetch_collections_parallel({
+                        'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
+                        'expenses': lambda: list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses'])),
+                        'assets': lambda: list(mongo.db.assets.find(asset_query, PDF_PROJECTIONS['assets'])),
+                        'debtors': lambda: list(mongo.db.debtors.find(debtors_query, PDF_PROJECTIONS['debtors'])),
+                        'creditors': lambda: list(mongo.db.creditors.find(creditors_query, PDF_PROJECTIONS['creditors'])),
+                        'inventory': lambda: list(mongo.db.inventory.find(inventory_query, PDF_PROJECTIONS['inventory']))
+                    }, max_workers=6)
+                    
+                    incomes = results['incomes']
+                    expenses = results['expenses']
+                    assets = results['assets']
+                    debtors = results['debtors']
+                    creditors = results['creditors']
+                    inventory = results['inventory']
+                    
+                    print(f"✅ SOA GENERATION: Data fetched - {len(incomes)} incomes, {len(expenses)} expenses, {len(assets)} assets, {len(debtors)} debtors, {len(creditors)} creditors, {len(inventory)} inventory")
+                    
+                    # Prepare user data
+                    print(f"🟢 SOA GENERATION: Preparing user data...")
+                    user = mongo.db.users.find_one({'_id': current_user['_id']})
+                    user_data = {
+                        'firstName': current_user.get('firstName', ''),
+                        'lastName': current_user.get('lastName', ''),
+                        'email': current_user.get('email', ''),
+                        'businessName': user.get('businessName', '') if user else '',
+                        'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
+                    }
+                    print(f"✅ SOA GENERATION: User data prepared for {user_data.get('firstName')} {user_data.get('lastName')}")
+                    
+                    # Calculate financial metrics
+                    print(f"🟢 SOA GENERATION: Calculating financial metrics...")
+                    total_income = sum(inc.get('amount', 0) for inc in incomes)
+                    total_expenses = sum(exp.get('amount', 0) for exp in expenses)
+                    debtors_value = sum(d.get('amount', 0) for d in debtors)
+                    creditors_value = sum(c.get('amount', 0) for c in creditors)
+                    inventory_value = sum(i.get('quantity', 0) * i.get('unitCost', 0) for i in inventory)
+                    
+                    print(f"✅ SOA GENERATION: Metrics - Income: ₦{total_income:,.2f}, Expenses: ₦{total_expenses:,.2f}, Debtors: ₦{debtors_value:,.2f}, Creditors: ₦{creditors_value:,.2f}, Inventory: ₦{inventory_value:,.2f}")
+                    
+                    # Calculate cash balance
+                    print(f"🟢 SOA GENERATION: Calculating cash balance...")
+                    cash_balance = calculate_cash_bank_balance(current_user['_id'])
+                    print(f"✅ SOA GENERATION: Cash balance = ₦{cash_balance:,.2f}")
+                    
+                    # Prepare comprehensive data structure
+                    print(f"🟢 SOA GENERATION: Preparing comprehensive data structure...")
+                    comprehensive_data = {
+                        'incomes': incomes,
+                        'expenses': expenses,
+                        'assets': assets,
+                        'debtors': debtors,
+                        'creditors': creditors,
+                        'inventory': inventory,
+                        'total_income': total_income,
+                        'total_expenses': total_expenses,
+                        'net_income': total_income - total_expenses,
+                        'debtors_value': debtors_value,
+                        'creditors_value': creditors_value,
+                        'inventory_value': inventory_value,
+                        'cash_balance': cash_balance,
+                        'tag_filter': tag_filter,
+                        'tax_type': tax_type
+                    }
+                    
+                    # Generate PDF
+                    print(f"🟢 SOA GENERATION: Calling PDF generator...")
+                    pdf_generator = PDFGenerator()
+                    pdf_buffer = pdf_generator.generate_statement_of_affairs_report(
+                        user_data, 
+                        comprehensive_data, 
+                        start_date, 
+                        end_date, 
+                        tax_type
+                    )
+                    
+                    print(f"✅ SOA GENERATION: PDF generated successfully! Size = {len(pdf_buffer.getvalue())} bytes")
+                    return pdf_buffer
+                    
+                except Exception as gen_error:
+                    print(f"❌ SOA GENERATION ERROR: {str(gen_error)}")
+                    print(f"❌ SOA GENERATION ERROR TYPE: {type(gen_error).__name__}")
+                    import traceback
+                    print(f"❌ SOA GENERATION TRACEBACK:\n{traceback.format_exc()}")
+                    raise
             
             # Start background generation
+            print(f"🔵 SOA ASYNC: Starting background generation...")
             bg_generator.start_generation(job_id, generate_statement_of_affairs_pdf)
+            print(f"✅ SOA ASYNC: Background generation started")
             
             # Deduct credits immediately
             if not is_premium and credit_cost > 0:
+                print(f"🔵 SOA ASYNC: Deducting {credit_cost} credits...")
                 deduct_credits(current_user, credit_cost, report_type)
+                print(f"✅ SOA ASYNC: Credits deducted")
             
             # Log export event
             log_export_event(current_user, report_type, 'pdf', success=True)
+            print(f"✅ SOA ASYNC: Export event logged")
             
             # Return job_id immediately
+            print(f"✅ SOA ASYNC: Returning job_id to client")
             return jsonify({
                 'success': True,
                 'message': 'Your comprehensive report is being prepared. This may take 3-5 minutes due to the detailed calculations.',
@@ -7474,6 +7513,10 @@ def init_reports_blueprint(mongo, token_required):
             }), 202
             
         except Exception as e:
+            print(f"❌ SOA ASYNC ERROR: {str(e)}")
+            print(f"❌ SOA ASYNC ERROR TYPE: {type(e).__name__}")
+            import traceback
+            print(f"❌ SOA ASYNC TRACEBACK:\n{traceback.format_exc()}")
             return jsonify({
                 'success': False,
                 'message': f'Unable to start preparing your report: {str(e)}'
