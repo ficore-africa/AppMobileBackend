@@ -451,9 +451,9 @@ def init_reports_blueprint(mongo, token_required):
                 query['tags'] = 'Personal'
             elif tag_filter == 'untagged':
                 query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             if start_date or end_date:
                 query['dateReceived'] = {}
@@ -504,7 +504,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'incomes')
+            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'incomes', tag_filter)
             
             # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
             # This enables "Report Discrepancy" warnings when entries are edited after export
@@ -618,9 +618,9 @@ def init_reports_blueprint(mongo, token_required):
                     query['tags'] = 'Personal'
                 elif tag_filter == 'untagged':
                     query['$or'] = [
-                        {'tags': {'$exists': False}},
-                        {'tags': {'$size': 0}},
-                        {'tags': None}
+                        {'entryType': {'$exists': False}},
+                        {'entryType': {'$size': 0}},
+                        {'entryType': None}
                     ]
                 
                 if start_date or end_date:
@@ -654,7 +654,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'incomes')
+                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'incomes', tag_filter)
                 
                 # Track export for audit
                 try:
@@ -747,9 +747,9 @@ def init_reports_blueprint(mongo, token_required):
                 query['tags'] = 'Personal'
             elif tag_filter == 'untagged':
                 query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             if start_date or end_date:
                 query['dateReceived'] = {}
@@ -892,9 +892,9 @@ def init_reports_blueprint(mongo, token_required):
                 query['tags'] = 'Personal'
             elif tag_filter == 'untagged':
                 query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             if start_date or end_date:
                 query['date'] = {}
@@ -938,7 +938,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'expenses')
+            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'expenses', tag_filter)
             
             # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
             # This enables "Report Discrepancy" warnings when entries are edited after export
@@ -1049,9 +1049,9 @@ def init_reports_blueprint(mongo, token_required):
                     query['tags'] = 'Personal'
                 elif tag_filter == 'untagged':
                     query['$or'] = [
-                        {'tags': {'$exists': False}},
-                        {'tags': {'$size': 0}},
-                        {'tags': None}
+                        {'entryType': {'$exists': False}},
+                        {'entryType': {'$size': 0}},
+                        {'entryType': None}
                     ]
                 
                 if start_date or end_date:
@@ -1088,7 +1088,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'expenses')
+                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'expenses', tag_filter)
                 
                 # Track export
                 try:
@@ -1181,9 +1181,9 @@ def init_reports_blueprint(mongo, token_required):
                 query['tags'] = 'Personal'
             elif tag_filter == 'untagged':
                 query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             if start_date or end_date:
                 query['date'] = {}
@@ -1318,32 +1318,32 @@ def init_reports_blueprint(mongo, token_required):
             
             # Apply legacy tag filtering (for backward compatibility)
             if tag_filter == 'business':
-                income_query['tags'] = 'Business'
-                expense_query['tags'] = 'Business'
+                income_query['entryType'] = 'business'
+                expense_query['entryType'] = 'business'
             elif tag_filter == 'personal':
                 # Override: If user explicitly requests personal, show personal
                 income_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
-                    'tags': 'Personal'
+                    'entryType': 'personal'
                 }
                 expense_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
-                    'tags': 'Personal'
+                    'entryType': 'personal'
                 }
             elif tag_filter == 'untagged':
                 income_query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
                 expense_query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             
             if start_date or end_date:
@@ -1407,7 +1407,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'all')
+            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'all', tag_filter)
             
             # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
             # Track both incomes and expenses for P&L report
@@ -1542,31 +1542,31 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Apply tag filtering
                 if tag_filter == 'business':
-                    income_query['tags'] = 'Business'
-                    expense_query['tags'] = 'Business'
+                    income_query['entryType'] = 'business'
+                    expense_query['entryType'] = 'business'
                 elif tag_filter == 'personal':
                     income_query = {
                         'userId': current_user['_id'],
                         'status': 'active',
                         'isDeleted': False,
-                        'tags': 'Personal'
+                        'entryType': 'personal'
                     }
                     expense_query = {
                         'userId': current_user['_id'],
                         'status': 'active',
                         'isDeleted': False,
-                        'tags': 'Personal'
+                        'entryType': 'personal'
                     }
                 elif tag_filter == 'untagged':
                     income_query['$or'] = [
-                        {'tags': {'$exists': False}},
-                        {'tags': {'$size': 0}},
-                        {'tags': None}
+                        {'entryType': {'$exists': False}},
+                        {'entryType': {'$size': 0}},
+                        {'entryType': None}
                     ]
                     expense_query['$or'] = [
-                        {'tags': {'$exists': False}},
-                        {'tags': {'$size': 0}},
-                        {'tags': None}
+                        {'entryType': {'$exists': False}},
+                        {'entryType': {'$size': 0}},
+                        {'entryType': None}
                     ]
                 
                 if start_date or end_date:
@@ -1616,7 +1616,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'all')
+                pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, 'all', tag_filter)
                 
                 # Track export
                 try:
@@ -1764,7 +1764,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_cash_flow_report(user_data, transactions, start_date, end_date)
+            pdf_buffer = pdf_generator.generate_cash_flow_report(user_data, transactions, start_date, end_date, tag_filter)
             
             # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
             # Track both incomes and expenses for cash flow report
@@ -1913,7 +1913,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_cash_flow_report(user_data, transactions, start_date, end_date)
+                pdf_buffer = pdf_generator.generate_cash_flow_report(user_data, transactions, start_date, end_date, tag_filter)
                 
                 # Track export
                 try:
@@ -2028,23 +2028,23 @@ def init_reports_blueprint(mongo, token_required):
             # Apply tag filtering based on user selection
             if tag_filter == 'business':
                 # Only entries tagged as "Business"
-                income_query['tags'] = 'Business'
-                expense_query['tags'] = 'Business'
+                income_query['entryType'] = 'business'
+                expense_query['entryType'] = 'business'
             elif tag_filter == 'personal':
                 # Only entries tagged as "Personal"
-                income_query['tags'] = 'Personal'
-                expense_query['tags'] = 'Personal'
+                income_query['entryType'] = 'personal'
+                expense_query['entryType'] = 'personal'
             elif tag_filter == 'untagged':
                 # Only entries without any tags
                 income_query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
                 expense_query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             # If 'all', no tag filtering applied
             
@@ -2308,7 +2308,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_tax_summary_report(user_data, tax_data, start_date, end_date, tax_type)
+            pdf_buffer = pdf_generator.generate_tax_summary_report(user_data, tax_data, start_date, end_date, tax_type, tag_filter)
             
             # AUDIT SHIELD: Track export for version history (Feb 7, 2026)
             # CRITICAL: Tax reports are the most important for audit trail
@@ -2430,6 +2430,7 @@ def init_reports_blueprint(mongo, token_required):
             # Define generation function
             def generate_tax_summary_pdf():
                 # Build queries with tag filtering
+                # CRITICAL FIX (Feb 26, 2026): Use 'entryType' not 'tags'
                 income_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
@@ -2441,24 +2442,25 @@ def init_reports_blueprint(mongo, token_required):
                     'isDeleted': False
                 }
                 
-                # Apply tag filtering
+                # Apply tag filtering - FIXED to use entryType field
                 if tag_filter == 'business':
-                    income_query['tags'] = 'Business'
-                    expense_query['tags'] = 'Business'
+                    income_query['entryType'] = 'business'
+                    expense_query['entryType'] = 'business'
                 elif tag_filter == 'personal':
-                    income_query['tags'] = 'Personal'
-                    expense_query['tags'] = 'Personal'
+                    income_query['entryType'] = 'personal'
+                    expense_query['entryType'] = 'personal'
                 elif tag_filter == 'untagged':
                     income_query['$or'] = [
-                        {'tags': {'$exists': False}},
-                        {'tags': {'$size': 0}},
-                        {'tags': None}
+                        {'entryType': {'$exists': False}},
+                        {'entryType': {'$size': 0}},
+                        {'entryType': None}
                     ]
                     expense_query['$or'] = [
-                        {'tags': {'$exists': False}},
-                        {'tags': {'$size': 0}},
-                        {'tags': None}
+                        {'entryType': {'$exists': False}},
+                        {'entryType': {'$size': 0}},
+                        {'entryType': None}
                     ]
+                # For 'all' filter, no additional filtering needed
                 
                 if start_date or end_date:
                     if start_date:
@@ -2631,7 +2633,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_tax_summary_report(user_data, tax_data, start_date, end_date, tax_type)
+                pdf_buffer = pdf_generator.generate_tax_summary_report(user_data, tax_data, start_date, end_date, tax_type, tag_filter)
                 
                 # Track export
                 try:
@@ -2731,7 +2733,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_debtors_report(user_data, debtors, start_date, end_date)
+            pdf_buffer = pdf_generator.generate_debtors_report(user_data, debtors, start_date, end_date, tag_filter)
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -2810,7 +2812,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_creditors_report(user_data, creditors, start_date, end_date)
+            pdf_buffer = pdf_generator.generate_creditors_report(user_data, creditors, start_date, end_date, tag_filter)
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -2908,7 +2910,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_assets_report(user_data, assets, start_date, end_date)
+            pdf_buffer = pdf_generator.generate_assets_report(user_data, assets, start_date, end_date, tag_filter)
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -2988,7 +2990,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_assets_report(user_data, assets, start_date, end_date)
+                pdf_buffer = pdf_generator.generate_assets_report(user_data, assets, start_date, end_date, tag_filter)
                 
                 return pdf_buffer
             
@@ -3091,7 +3093,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_asset_depreciation_report(user_data, assets, start_date, end_date)
+            pdf_buffer = pdf_generator.generate_asset_depreciation_report(user_data, assets, start_date, end_date, tag_filter)
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -3171,7 +3173,7 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # Generate PDF
                 pdf_generator = PDFGenerator()
-                pdf_buffer = pdf_generator.generate_asset_depreciation_report(user_data, assets, start_date, end_date)
+                pdf_buffer = pdf_generator.generate_asset_depreciation_report(user_data, assets, start_date, end_date, tag_filter)
                 
                 return pdf_buffer
             
@@ -3245,7 +3247,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_inventory_report(user_data, inventory_items)
+            pdf_buffer = pdf_generator.generate_inventory_report(user_data, inventory_items, None, None, tag_filter)
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -4405,7 +4407,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Generate PDF
             pdf_generator = PDFGenerator()
-            pdf_buffer = pdf_generator.generate_credit_transactions_report(user_data, credit_data, start_date, end_date)
+            pdf_buffer = pdf_generator.generate_credit_transactions_report(user_data, credit_data, start_date, end_date, tag_filter)
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -7072,32 +7074,32 @@ def init_reports_blueprint(mongo, token_required):
             
             # Apply legacy tag filtering (for backward compatibility)
             if tag_filter == 'business':
-                income_query['tags'] = 'Business'
-                expense_query['tags'] = 'Business'
+                income_query['entryType'] = 'business'
+                expense_query['entryType'] = 'business'
             elif tag_filter == 'personal':
                 # Override: If user explicitly requests personal, show personal
                 income_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
-                    'tags': 'Personal'
+                    'entryType': 'personal'
                 }
                 expense_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
-                    'tags': 'Personal'
+                    'entryType': 'personal'
                 }
             elif tag_filter == 'untagged':
                 income_query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
                 expense_query['$or'] = [
-                    {'tags': {'$exists': False}},
-                    {'tags': {'$size': 0}},
-                    {'tags': None}
+                    {'entryType': {'$exists': False}},
+                    {'entryType': {'$size': 0}},
+                    {'entryType': None}
                 ]
             
             # Apply date filtering
@@ -7349,7 +7351,8 @@ def init_reports_blueprint(mongo, token_required):
                 start_date=start_date,
                 end_date=end_date,
                 tax_type=tax_type,
-                profile_tax_type=profile_tax_type  # NEW: Pass user's registered tax type for watermark
+                profile_tax_type=profile_tax_type,  # NEW: Pass user's registered tax type for watermark
+                tag_filter=tag_filter
             )
             
             # Deduct credits if not premium
@@ -7457,11 +7460,11 @@ def init_reports_blueprint(mongo, token_required):
                     # Apply tag filtering
                     print(f"🟢 SOA GENERATION: Applying tag filter = {tag_filter}")
                     if tag_filter == 'business':
-                        income_query['tags'] = 'Business'
-                        expense_query['tags'] = 'Business'
+                        income_query['entryType'] = 'business'
+                        expense_query['entryType'] = 'business'
                     elif tag_filter == 'personal':
-                        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
-                        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
+                        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
+                        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
                     
                     # Apply date filtering (only for P&L items)
                     if start_date or end_date:
@@ -7608,7 +7611,8 @@ def init_reports_blueprint(mongo, token_required):
                         start_date=start_date,
                         end_date=end_date,
                         tax_type=tax_type,
-                        profile_tax_type=tax_type
+                        profile_tax_type=tax_type,
+                        tag_filter=tag_filter
                     )
                     
                     print(f"✅ SOA GENERATION: PDF generated successfully! Size = {len(pdf_buffer.getvalue())} bytes")
@@ -7706,11 +7710,11 @@ def init_reports_blueprint(mongo, token_required):
             
             # Apply tag filtering
             if tag_filter == 'business':
-                income_query['tags'] = 'Business'
-                expense_query['tags'] = 'Business'
+                income_query['entryType'] = 'business'
+                expense_query['entryType'] = 'business'
             elif tag_filter == 'personal':
-                income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
-                expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'tags': 'Personal'}
+                income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
+                expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
             
             # Apply date filtering
             if start_date or end_date:

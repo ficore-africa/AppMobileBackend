@@ -195,13 +195,56 @@ def init_notifications_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def sync_notifications(current_user):
         """
-        Sync notifications between client and server
-        Client sends last sync timestamp, server returns newer notifications
+        Bidirectional sync notifications between client and server
+        - Client sends locally-created notifications (needsBackendSync=true)
+        - Client sends last sync timestamp
+        - Server saves incoming notifications
+        - Server returns notifications newer than last sync
         """
         try:
             data = request.get_json()
             user_id = str(current_user['_id'])
             last_sync = data.get('lastSync')  # ISO timestamp string
+            client_notifications = data.get('notifications', [])  # NEW: Notifications from client
+            
+            # ✅ NEW (Feb 26, 2026): Save client notifications to backend
+            saved_count = 0
+            for client_notif in client_notifications:
+                try:
+                    # Check if notification already exists (prevent duplicates)
+                    existing = mongo.db.user_notifications.find_one({
+                        'userId': ObjectId(user_id),
+                        'timestamp': datetime.fromisoformat(client_notif['timestamp'].replace('Z', '+00:00'))
+                    })
+                    
+                    if existing:
+                        print(f"📱 Notification already exists, skipping: {client_notif.get('title')}")
+                        continue
+                    
+                    # Create notification in backend
+                    notification = {
+                        '_id': ObjectId(),
+                        'userId': ObjectId(user_id),
+                        'category': client_notif.get('category', 'general'),
+                        'title': client_notif['title'],
+                        'body': client_notif['body'],
+                        'relatedId': client_notif.get('relatedId'),
+                        'metadata': client_notif.get('metadata', {}),
+                        'priority': client_notif.get('priority', 'normal'),
+                        'timestamp': datetime.fromisoformat(client_notif['timestamp'].replace('Z', '+00:00')),
+                        'isRead': client_notif.get('isRead', False),
+                        'isArchived': client_notif.get('isArchived', False),
+                        'createdAt': datetime.utcnow()
+                    }
+                    
+                    mongo.db.user_notifications.insert_one(notification)
+                    saved_count += 1
+                    
+                    print(f"📱 ✅ Saved client notification: {notification['title']}")
+                    
+                except Exception as e:
+                    print(f"📱 ⚠️ Failed to save client notification: {str(e)}")
+                    continue
             
             # Parse last sync timestamp
             if last_sync:
@@ -235,9 +278,10 @@ def init_notifications_blueprint(mongo, token_required, serialize_doc):
                 'data': {
                     'notifications': [serialize_doc(n) for n in notifications],
                     'unreadCount': unread_count,
-                    'syncTimestamp': datetime.utcnow().isoformat() + 'Z'
+                    'syncTimestamp': datetime.utcnow().isoformat() + 'Z',
+                    'savedCount': saved_count  # NEW: How many client notifications were saved
                 },
-                'message': f'Synced {len(notifications)} notifications'
+                'message': f'Synced {len(notifications)} notifications (saved {saved_count} from client)'
             })
             
         except Exception as e:
