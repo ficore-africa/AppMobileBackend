@@ -1,0 +1,1537 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('landing_page_title', default='FiCore Africa - Stop Losing Money to Poor Record Keeping') | e }}{% endblock %}
+{% block content %}
+
+<div class="lang-switcher-fixed">
+    <div class="dropdown">
+        <button class="btn btn-sm btn-outline-light dropdown-toggle rounded-pill px-3 shadow-sm" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-translate"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+            <li><a class="dropdown-item" href="?lang=en">{{ t('general_language_english', default='English') | e }}</a></li>
+            <li><a class="dropdown-item" href="?lang=ha">{{ t('general_language_hausa', default='Hausa') | e }}</a></li>
+        </ul>
+    </div>
+</div>
+
+<!-- HERO SECTION - Addresses Fear & Desire -->
+<div class="hero-edge-to-edge text-white overflow-hidden">
+    <div class="container py-5">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-7 reveal">
+                <!-- Social Proof Badge -->
+                <span class="badge bg-success text-white mb-3 px-3 py-2 rounded-pill fw-bold">
+                    <i class="bi bi-people-fill"></i> {{ t('landing_trusted_by_entrepreneurs', default='TRUSTED BY NIGERIAN ENTREPRENEURS') | e }}
+                </span>
+                
+                <!-- Fear-Based Headline -->
+                <h1 class="display-3 fw-bold mb-4">
+                    <span class="text-white">{{ t('landing_stop_losing_money', default='Stop Losing Money Monthly') | e }}</span><br>
+                    <span class="text-white">{{ t('landing_to_poor_record_keeping', default='to') | e }}</span> <span class="text-warning">{{ t('landing_poor_record_keeping', default='Poor Record Keeping') | e }}</span>
+                </h1>
+                
+                <!-- App Name Badge -->
+                <div class="mb-3">
+                    <span class="badge bg-white text-primary px-3 py-2 rounded-pill fw-bold">
+                        <i class="bi bi-wallet2"></i> {{ t('landing_app_name', default='FiCore Africa: Business Wallet') | e }}
+                    </span>
+                </div>
+                
+                <!-- Desire-Focused Subheading -->
+                <p class="lead mb-4 opacity-90">
+                    {{ t('landing_entrepreneurs_increase_profits', default='Nigerian entrepreneurs using FiCore increase their profits by 35% in 90 days. Replace 3 expensive apps (Bookkeeping + VTU + Banking) with one ₦10,000/year solution.') | e }}
+                </p>
+                
+                <!-- Specific Benefits -->
+                <div class="benefits-list mb-4">
+                    <div class="benefit-item d-flex align-items-center mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-3"></i>
+                        <span>{{ t('landing_benefit_exact_profit', default='Know your exact profit every single day') | e }}</span>
+                    </div>
+                    <div class="benefit-item d-flex align-items-center mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-3"></i>
+                        <span>{{ t('landing_benefit_voice_logging', default='Record sales in 3 seconds with voice logging') | e }}</span>
+                    </div>
+                    <div class="benefit-item d-flex align-items-center mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-3"></i>
+                        <span>{{ t('landing_benefit_tax_compliance', default='Never lose money to tax penalties (2025 Tax Act compliant)') | e }}</span>
+                    </div>
+                    <div class="benefit-item d-flex align-items-center mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-3"></i>
+                        <span>{{ t('landing_benefit_offline', default='Works offline - never miss a sale due to poor network') | e }}</span>
+                    </div>
+                </div>
+                
+                <!-- Risk-Free CTA -->
+                <div class="cta-section mb-4">
+                    <div class="d-flex flex-wrap gap-3 mb-3">
+                        <a href="https://play.google.com/apps/internaltest/4700871616841758723" target="_blank" class="btn btn-warning btn-lg px-4 py-3 fw-bold shadow-lg">
+                            <i class="bi bi-download"></i> {{ t('landing_start_free_trial', default='Start FREE Trial (20 Entries)') | e }}
+                        </a>
+                        <a href="https://wa.me/2348108309309?text=Hi%20FiCore%2C%20I%27d%20like%20to%20learn%20more%20about%20the%20app" target="_blank" class="btn btn-outline-light btn-lg px-4 py-3">
+                            <i class="bi bi-whatsapp"></i> {{ t('landing_chat_whatsapp', default='Chat on WhatsApp') | e }}
+                        </a>
+                    </div>
+                    <small class="text-white-50">
+                        <i class="bi bi-shield-check"></i> {{ t('landing_no_credit_card', default='No credit card required • Cancel anytime • 30-day money-back guarantee') | e }}
+                    </small>
+                </div>
+                
+                <!-- App Download Links -->
+                <div class="d-flex flex-wrap gap-3 mb-4">
+                    <a href="https://play.google.com/apps/internaltest/4700871616841758723" target="_blank" class="btn btn-success btn-lg px-4 py-3 fw-bold shadow-lg">
+                        <i class="bi bi-download"></i> {{ t('landing_download_android', default='Download Android APK') | e }}
+                    </a>
+                    <a href="https://play.google.com/store/apps/details?id=com.ficore.africa" target="_blank" class="store-btn transition-transform">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" height="60">
+                        <small class="d-block text-center text-white-50 mt-1">{{ t('landing_coming_soon', default='Coming Soon') | e }}</small>
+                    </a>
+                    <a href="#" class="store-btn transition-transform opacity-50">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg" height="60">
+                        <small class="d-block text-center text-white-50 mt-1">{{ t('landing_coming_soon', default='Coming Soon!') | e }}</small>
+                    </a>
+                </div>
+            </div>
+            
+            <div class="col-lg-5 d-none d-lg-block reveal">
+                <!-- Enhanced Mockup with Real Data -->
+                <div class="glass-mockup shadow-lg p-4">
+                    <div class="mockup-header d-flex justify-content-between mb-4">
+                        <span class="fw-bold">{{ t('landing_see_kemi_business', default="See Kemi's Business") | e }}</span>
+                        <span class="badge bg-success">{{ t('landing_profitable', default='PROFITABLE') | e }}</span>
+                    </div>
+                    
+                    <div class="mockup-balance mb-4">
+                        <small class="opacity-75">{{ t('landing_todays_profit', default="Today's Profit") | e }}</small>
+                        <h2 class="text-success fw-bold">+₦45,000.00</h2>
+                        <small class="text-success">{{ t('landing_vs_yesterday', default='↗ 23% vs yesterday') | e }}</small>
+                    </div>
+                    
+                    <div class="mockup-features">
+                        <div class="feature-item bg-white bg-opacity-10 p-3 rounded-3 mb-2">
+                            <div class="d-flex justify-content-between">
+                                <span><i class="bi bi-mic-fill text-warning"></i> {{ t('landing_voice_sold_rice', default='Voice: "Sold 5 bags rice"') | e }}</span>
+                                <span class="text-success">+₦25k</span>
+                            </div>
+                        </div>
+                        <div class="feature-item bg-white bg-opacity-10 p-3 rounded-3 mb-2">
+                            <div class="d-flex justify-content-between">
+                                <span><i class="bi bi-phone text-primary"></i> {{ t('landing_mtn_data', default='MTN 5GB Data') | e }}</span>
+                                <span class="text-warning">-₦2.5k</span>
+                            </div>
+                        </div>
+                        <div class="feature-item bg-white bg-opacity-10 p-3 rounded-3">
+                            <div class="d-flex justify-content-between">
+                                <span><i class="bi bi-people text-info"></i> {{ t('landing_debtors_reminded', default='3 Debtors Reminded') | e }}</span>
+                                <span class="text-info">{{ t('landing_due_amount', default='₦15k Due') | e }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- KEY FEATURES SECTION -->
+<div class="bg-white py-4 border-bottom">
+    <div class="container">
+        <div class="row text-center">
+            <div class="col-md-4 col-6 mb-3">
+                <div class="text-center">
+                    <i class="bi bi-mic-fill text-primary fs-1"></i>
+                    <h5 class="fw-bold mt-2">{{ t('landing_voice_logging', default='Voice Logging') | e }}</h5>
+                    <small class="text-muted">{{ t('landing_record_sales_seconds', default='Record sales in seconds') | e }}</small>
+                </div>
+            </div>
+            <div class="col-md-4 col-6 mb-3">
+                <div class="text-center">
+                    <i class="bi bi-shield-check text-success fs-1"></i>
+                    <h5 class="fw-bold mt-2">{{ t('landing_tax_compliant', default='Tax Compliant') | e }}</h5>
+                    <small class="text-muted">{{ t('landing_2025_tax_act', default='2025 Tax Act ready') | e }}</small>
+                </div>
+            </div>
+            <div class="col-md-4 col-6 mb-3">
+                <div class="text-center">
+                    <i class="bi bi-wifi-off text-info fs-1"></i>
+                    <h5 class="fw-bold mt-2">{{ t('landing_works_offline', default='Works Offline') | e }}</h5>
+                    <small class="text-muted">{{ t('landing_sync_online', default='Sync when online') | e }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PROBLEM/SOLUTION SECTION -->
+<div class="bg-light py-5">
+    <div class="container">
+        <div class="text-center mb-5 reveal">
+            <h2 class="fw-bold text-danger mb-3">{{ t('landing_hidden_cost_title', default='The Hidden Cost of Poor Financial Management') | e }}</h2>
+            <p class="lead text-muted">{{ t('landing_entrepreneurs_lose_profits', default='Most Nigerian entrepreneurs lose 20-40% of potential profits due to these common mistakes:') | e }}</p>
+        </div>
+        
+        <div class="row g-4 mb-5">
+            <div class="col-lg-4 reveal">
+                <div class="problem-card p-4 h-100 bg-white shadow-sm rounded-4">
+                    <div class="text-danger mb-3">
+                        <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+                    </div>
+                    <h5 class="fw-bold text-danger">{{ t('landing_no_profit_visibility', default='No Real-Time Profit Visibility') | e }}</h5>
+                    <p class="text-muted">{{ t('landing_profit_visibility_desc', default='You think you\'re making money, but expenses eat into profits. Without daily P&L tracking, you\'re flying blind.') | e }}</p>
+                    <div class="cost-highlight">
+                        <strong class="text-danger">{{ t('landing_cost_hidden_losses', default='Cost: ₦30,000-50,000 monthly in hidden losses') | e }}</strong>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4 reveal">
+                <div class="problem-card p-4 h-100 bg-white shadow-sm rounded-4">
+                    <div class="text-warning mb-3">
+                        <i class="bi bi-clock-fill fs-1"></i>
+                    </div>
+                    <h5 class="fw-bold text-warning">{{ t('landing_time_wasted_title', default='Time Wasted on Manual Records') | e }}</h5>
+                    <p class="text-muted">{{ t('landing_time_wasted_desc', default='Spending 2-3 hours daily on Excel sheets and multiple apps instead of growing your business.') | e }}</p>
+                    <div class="cost-highlight">
+                        <strong class="text-warning">{{ t('landing_cost_opportunity', default='Cost: 15+ hours weekly (₦25,000 opportunity cost)') | e }}</strong>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4 reveal">
+                <div class="problem-card p-4 h-100 bg-white shadow-sm rounded-4">
+                    <div class="text-info mb-3">
+                        <i class="bi bi-shield-exclamation-fill fs-1"></i>
+                    </div>
+                    <h5 class="fw-bold text-info">{{ t('landing_tax_compliance_nightmares', default='Tax Compliance Nightmares') | e }}</h5>
+                    <p class="text-muted">{{ t('landing_tax_compliance_desc', default='Tax penalties, missed deductions, and expensive accountant fees because your records are incomplete.') | e }}</p>
+                    <div class="cost-highlight">
+                        <strong class="text-info">{{ t('landing_cost_penalties', default='Cost: ₦50,000-200,000 in penalties & fees') | e }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Solution Arrow -->
+        <div class="text-center mb-5">
+            <div class="solution-arrow">
+                <i class="bi bi-arrow-down-circle-fill fs-1 text-success"></i>
+                <h3 class="fw-bold text-success mt-3">{{ t('landing_ficore_solves_all', default='FiCore Solves All This') | e }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FEATURES SECTION - Benefit-Focused -->
+<div class="bg-white py-5">
+    <div class="container">
+        <div class="text-center mb-5 reveal">
+            <h2 class="fw-bold">{{ t('landing_why_entrepreneurs_choose', default='Why 5,000+ Nigerian Entrepreneurs Choose FiCore') | e }}</h2>
+            <p class="text-muted">{{ t('landing_replaced_apps_desc', default='We replaced 3 expensive apps with 1 intelligent solution that actually increases your profits.') | e }}</p>
+        </div>
+        
+        <div class="row g-4">
+            <div class="col-lg-4 col-md-12 reveal">
+                <div class="consolidated-card p-4 h-100 shadow-sm border-0">
+                    <div class="icon-wrap bg-primary-light text-primary mb-4">
+                        <i class="bi bi-bar-chart-fill fs-3"></i>
+                    </div>
+                    <h4 class="fw-bold">{{ t('landing_smart_bookkeeping', default='Smart Bookkeeping (DIICE)') | e }}</h4>
+                    <p class="text-muted mb-3">
+                        <strong>{{ t('landing_replaces', default='Replaces:') | e }}</strong> {{ t('landing_quickbooks_cost', default='Other Bookkeeping apps (upto 500k/year)') | e }}<br>
+                        {{ t('landing_bookkeeping_desc', default='Know your exact profit every day. Track debtors automatically. Generate tax-compliant reports in seconds.') | e }}
+                    </p>
+                    <div class="feature-benefits">
+                        <small class="text-primary fw-bold d-block"><i class="bi bi-mic-fill"></i> {{ t('landing_voice_logging_feature', default='Voice Logging: "Sold 10 bags for 50k"') | e }}</small>
+                        <small class="text-primary fw-bold d-block"><i class="bi bi-calculator"></i> {{ t('landing_auto_tax_calc', default='Auto Tax Calculations (2025 Act)') | e }}</small>
+                        <small class="text-primary fw-bold d-block"><i class="bi bi-graph-up"></i> {{ t('landing_realtime_dashboard', default='Real-time P&L Dashboard') | e }}</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4 col-md-12 reveal">
+                <div class="consolidated-card p-4 h-100 shadow-sm border-0">
+                    <div class="icon-wrap bg-success-light text-success mb-4">
+                        <i class="bi bi-phone-vibrate-fill fs-3"></i>
+                    </div>
+                    <h4 class="fw-bold">{{ t('landing_wholesale_vtu', default='Wholesale VTU & QuickPay') | e }}</h4>
+                    <p class="text-muted mb-3">
+                        <strong>{{ t('landing_replaces', default='Replaces:') | e }}</strong> {{ t('landing_vtu_apps_fees', default='VTU Apps + High Fees') | e }}<br>
+                        {{ t('landing_vtu_desc', default='Buy data at wholesale prices. Every purchase auto-records in your books. Save 15-20% on all VTU.') | e }}
+                    </p>
+                    <div class="feature-benefits">
+                        <small class="text-success fw-bold d-block"><i class="bi bi-percent"></i> {{ t('landing_wholesale_pricing', default='Wholesale Pricing (Save 20%)') | e }}</small>
+                        <small class="text-success fw-bold d-block"><i class="bi bi-lightning-fill"></i> {{ t('landing_instant_delivery', default='Instant Delivery') | e }}</small>
+                        <small class="text-success fw-bold d-block"><i class="bi bi-journal-check"></i> {{ t('landing_auto_expense_recording', default='Auto Expense Recording') | e }}</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4 col-md-12 reveal">
+                <div class="consolidated-card p-4 h-100 shadow-sm border-0">
+                    <div class="icon-wrap bg-warning-light text-warning mb-4">
+                        <i class="bi bi-wallet2 fs-3"></i>
+                    </div>
+                    <h4 class="fw-bold">{{ t('landing_smart_liquidity_wallet', default='Smart Liquidity Wallet') | e }}</h4>
+                    <p class="text-muted mb-3">
+                        <strong>{{ t('landing_replaces', default='Replaces:') | e }}</strong> {{ t('landing_banking_apps_cash', default='Banking Apps + Cash Management') | e }}<br>
+                        {{ t('landing_wallet_desc', default='Always know your available cash. Monnify-secured funding. Smart spending alerts.') | e }}
+                    </p>
+                    <div class="feature-benefits">
+                        <small class="text-warning fw-bold d-block"><i class="bi bi-shield-check"></i> {{ t('landing_monnify_security', default='Monnify Security') | e }}</small>
+                        <small class="text-warning fw-bold d-block"><i class="bi bi-bell"></i> {{ t('landing_low_balance_alerts', default='Low Balance Alerts') | e }}</small>
+                        <small class="text-warning fw-bold d-block"><i class="bi bi-graph-down"></i> {{ t('landing_spending_analytics', default='Spending Analytics') | e }}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TESTIMONIALS SECTION -->
+<div class="bg-light py-5">
+    <div class="container">
+        <div class="text-center mb-5 reveal">
+            <h2 class="fw-bold">{{ t('landing_what_entrepreneurs_say', default='What Nigerian Entrepreneurs Say') | e }}</h2>
+        </div>
+        
+        <div class="row g-4">
+            <div class="col-lg-4 reveal">
+                <div class="testimonial-card p-4 bg-white shadow-sm rounded-4 h-100">
+                    <div class="stars mb-3">
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                    </div>
+                    <p class="mb-3">{{ t('landing_testimonial_kemi', default='"FiCore helped me discover I was losing ₦40,000 monthly to untracked expenses. Now I know my exact profit every day. My business grew 45% in 6 months!"') | e }}</p>
+                    <div class="d-flex align-items-center">
+                        <div class="avatar bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                            <strong>KA</strong>
+                        </div>
+                        <div>
+                            <strong>{{ t('landing_kemi_adebayo', default='Kemi Adebayo') | e }}</strong><br>
+                            <small class="text-muted">{{ t('landing_fashion_retailer_lagos', default='Fashion Retailer, Lagos') | e }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4 reveal">
+                <div class="testimonial-card p-4 bg-white shadow-sm rounded-4 h-100">
+                    <div class="stars mb-3">
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                    </div>
+                    <p class="mb-3">{{ t('landing_testimonial_olu', default='"Voice logging is a game-changer! I record sales while serving customers. Saved me 2 hours daily. The tax reports helped me avoid ₦80,000 in FIRS penalties."') | e }}</p>
+                    <div class="d-flex align-items-center">
+                        <div class="avatar bg-success text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                            <strong>OU</strong>
+                        </div>
+                        <div>
+                            <strong>{{ t('landing_olu_usman', default='Olu Usman') | e }}</strong><br>
+                            <small class="text-muted">{{ t('landing_electronics_dealer_kano', default='Electronics Dealer, Kano') | e }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4 reveal">
+                <div class="testimonial-card p-4 bg-white shadow-sm rounded-4 h-100">
+                    <div class="stars mb-3">
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <i class="bi bi-star-fill text-warning"></i>
+                    </div>
+                    <p class="mb-3">{{ t('landing_testimonial_chioma', default='"Replaced 3 apps with FiCore. The wholesale VTU rates alone save me ₦15,000 monthly. Plus my books are always up-to-date. Best ₦10k I\'ve ever spent!"') | e }}</p>
+                    <div class="d-flex align-items-center">
+                        <div class="avatar bg-info text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                            <strong>CN</strong>
+                        </div>
+                        <div>
+                            <strong>{{ t('landing_chioma_nwosu', default='Chioma Nwosu') | e }}</strong><br>
+                            <small class="text-muted">{{ t('landing_food_vendor_abuja', default='Food Vendor, Abuja') | e }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PRICING SECTION -->
+<div class="bg-white py-5">
+    <div class="container">
+        <div class="text-center mb-5 reveal">
+            <h2 class="fw-bold">{{ t('landing_simple_transparent_pricing', default='Simple, Transparent Pricing') | e }}</h2>
+            <p class="text-muted">{{ t('landing_no_hidden_fees', default='No hidden fees. No per-transaction charges. One price, unlimited growth.') | e }}</p>
+        </div>
+        
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="pricing-comparison p-4 bg-light rounded-4">
+                    <div class="row text-center">
+                        <div class="col-md-6">
+                            <h5 class="text-danger fw-bold">{{ t('landing_traditional_approach', default='Traditional Approach') | e }}</h5>
+                            <div class="traditional-costs">
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_bookkeeping', default='Bookkeeping') | e }}</span>
+                                    <span class="text-danger">{{ t('landing_bookkeeping_cost', default='₦30,000/year') | e }}</span>
+                                </div>
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_vtu_app_fees', default='VTU App Fees') | e }}</span>
+                                    <span class="text-danger">{{ t('landing_vtu_fees_cost', default='Upto ₦100,000/year') | e }}</span>
+                                </div>
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_banking_charges', default='Banking Charges') | e }}</span>
+                                    <span class="text-danger">{{ t('landing_banking_cost', default='₦12,000/year') | e }}</span>
+                                </div>
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_accountant_fees', default='Accountant Fees') | e }}</span>
+                                    <span class="text-danger">{{ t('landing_accountant_cost', default='Upto ₦500,000/year') | e }}</span>
+                                </div>
+                                <hr>
+                                <div class="total-cost d-flex justify-content-between py-2 fw-bold">
+                                    <span>{{ t('landing_total_cost', default='TOTAL COST') | e }}</span>
+                                    <span class="text-danger fs-4">{{ t('landing_total_traditional_cost', default='₦642,000/year') | e }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <h5 class="text-success fw-bold">{{ t('landing_ficore_all_in_one', default='FiCore All-in-One') | e }}</h5>
+                            <div class="ficore-costs">
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_smart_bookkeeping', default='Smart Bookkeeping') | e }}</span>
+                                    <span class="text-success">{{ t('landing_included', default='✓ Included') | e }}</span>
+                                </div>
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_wholesale_vtu', default='Wholesale VTU') | e }}</span>
+                                    <span class="text-success">{{ t('landing_included', default='✓ Included') | e }}</span>
+                                </div>
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_liquidity_wallet', default='Liquidity Wallet') | e }}</span>
+                                    <span class="text-success">{{ t('landing_included', default='✓ Included') | e }}</span>
+                                </div>
+                                <div class="cost-item d-flex justify-content-between py-2">
+                                    <span>{{ t('landing_tax_compliance', default='Tax Compliance') | e }}</span>
+                                    <span class="text-success">{{ t('landing_included', default='✓ Included') | e }}</span>
+                                </div>
+                                <hr>
+                                <div class="total-cost d-flex justify-content-between py-2 fw-bold">
+                                    <span>{{ t('landing_total_cost', default='TOTAL COST') | e }}</span>
+                                    <span class="text-success fs-4">{{ t('landing_ficore_cost', default='₦10,000/year') | e }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <div class="savings-highlight p-3 bg-success text-white rounded-3">
+                            <h4 class="fw-bold mb-0">{{ t('landing_you_save_yearly', default='Save over ₦632,000/year!') | e }}</h4>
+                            <small>{{ t('landing_plus_increase_profits', default='Plus increase profits by 35% on average') | e }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FAQ SECTION -->
+<div class="bg-light py-5">
+    <div class="container">
+        <div class="text-center mb-5 reveal">
+            <h2 class="fw-bold">{{ t('landing_faq_title', default='Frequently Asked Questions') | e }}</h2>
+            <p class="text-muted">{{ t('landing_faq_subtitle', default='Everything you need to know about FiCore') | e }}</p>
+        </div>
+        
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="accordion" id="faqAccordion">
+                    
+                    <!-- FAQ 1 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                                <i class="bi bi-question-circle-fill text-primary me-3"></i>
+                                {{ t('landing_faq1_question', default='How is FiCore different from QuickBooks or other accounting software?') | e }}
+                            </button>
+                        </h2>
+                        <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>{{ t('landing_faq1_answer_intro', default='FiCore is built specifically for Nigerian entrepreneurs and mobile-first usage.') | e }}</strong> {{ t('landing_faq1_unlike_quickbooks', default='Unlike QuickBooks:') | e }}
+                                <ul class="mt-3">
+                                    <li><strong>{{ t('landing_faq1_mobile_native', default='Mobile-Native:') | e }}</strong> {{ t('landing_faq1_mobile_desc', default='Designed for smartphones, not desktop computers') | e }}</li>
+                                    <li><strong>{{ t('landing_faq1_voice_logging', default='Voice Logging:') | e }}</strong> {{ t('landing_faq1_voice_desc', default='Record transactions by speaking (QuickBooks doesn\'t have this)') | e }}</li>
+                                    <li><strong>{{ t('landing_faq1_integrated_vtu', default='Integrated VTU:') | e }}</strong> {{ t('landing_faq1_vtu_desc', default='Buy airtime/data directly from your accounting app') | e }}</li>
+                                    <li><strong>{{ t('landing_faq1_nigerian_tax', default='Nigerian Tax Compliance:') | e }}</strong> {{ t('landing_faq1_tax_desc', default='2025 Tax Act built-in, not generic international tax') | e }}</li>
+                                    <li><strong>{{ t('landing_faq1_affordable', default='Affordable:') | e }}</strong> {{ t('landing_faq1_price_comparison', default='₦10,000/year vs QuickBooks ₦30,000+/year') | e }}</li>
+                                    <li><strong>{{ t('landing_faq1_offline_first', default='Offline-First:') | e }}</strong> {{ t('landing_faq1_offline_desc', default='Works without internet (critical for Nigeria)') | e }}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 2 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                                <i class="bi bi-shield-check-fill text-success me-3"></i>
+                                Is my financial data safe and secure?
+                            </button>
+                        </h2>
+                        <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>Yes, your data is protected with bank-level security:</strong>
+                                <ul class="mt-3">
+                                    <li><strong>Encryption:</strong> All data encrypted in transit and at rest</li>
+                                    <li><strong>Compliance:</strong> Follows established guidelines for financial data protection</li>
+                                </ul>
+                                <div class="alert alert-success mt-3">
+                                    <i class="bi bi-info-circle-fill"></i> <strong>Your data belongs to you.</strong> Export anytime, delete anytime.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 3 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                                <i class="bi bi-currency-exchange text-warning me-3"></i>
+                                What are FC Credits and how do they work?
+                            </button>
+                        </h2>
+                        <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>FC (FiCore Credits) are our internal currency for premium features:</strong>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <h6 class="fw-bold text-primary">How to Get FC:</h6>
+                                        <ul>
+                                            <li>Sign-up bonus: 5 FC free</li>
+                                            <li>Daily streaks: 5-15 FC rewards</li>
+                                            <li>Purchase packages: 5 FC (₦100) to 200 FC (₦5,000)</li>
+                                            <li>Tax education: Up to 10 FC total</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="fw-bold text-success">FC Costs:</h6>
+                                        <ul>
+                                            <li>Income/Expense entry: 1 FC (after 20 free)</li>
+                                            <li>Debtors/Creditors: 2 FC each</li>
+                                            <li>Inventory tracking: 3 FC</li>
+                                            <li>PDF reports: 3 FC</li>
+                                            <li>Asset management: 3 FC</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-star-fill"></i> <strong>Premium users get unlimited FC</strong> - no per-transaction costs!
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 4 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
+                                <i class="bi bi-wifi-off text-info me-3"></i>
+                                Does FiCore work without internet connection?
+                            </button>
+                        </h2>
+                        <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>Yes! FiCore is designed for Nigeria's connectivity challenges:</strong>
+                                <ul class="mt-3">
+                                    <li><strong>Offline Recording:</strong> Add income, expenses, and inventory without internet</li>
+                                    <li><strong>Auto-Sync:</strong> When internet returns, everything syncs automatically</li>
+                                    <li><strong>Voice Logging:</strong> Works using your phone's speaker/mouthpiece</li>
+                                    <li><strong>Reports:</strong> Generate PDF reports offline from local data</li>
+                                </ul>
+                                <div class="alert alert-warning mt-3">
+                                    <i class="bi bi-exclamation-triangle-fill"></i> <strong>Note:</strong> VTU purchases require internet connection (obviously!), but all bookkeeping works offline.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 5 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
+                                <i class="bi bi-phone-fill text-primary me-3"></i>
+                                Can I use FiCore on iPhone? What about multiple devices?
+                            </button>
+                        </h2>
+                        <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>Currently Android only, but iOS is coming soon:</strong>
+                                <ul class="mt-3">
+                                    <li><strong>Android:</strong> Available now for download</li>
+                                    <li><strong>iOS:</strong> Coming soon in 2026</li>
+                                    <li><strong>Web Access:</strong> Limited access via browser, download app instead</li>
+                                    <li><strong>Multiple Devices:</strong> Same account works on multiple Android devices</li>
+                                    <li><strong>Data Sync:</strong> All devices stay synchronized automatically</li>
+                                </ul>
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-apple"></i> <strong>iPhone users:</strong> Join our waitlist to be notified when iOS version launches!
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 6 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq6">
+                                <i class="bi bi-calculator-fill text-success me-3"></i>
+                                How does the tax compliance feature work?
+                            </button>
+                        </h2>
+                        <div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>FiCore automatically handles Nigerian tax calculations:</strong>
+                                <ul class="mt-3">
+                                    <li><strong>2025 Tax Act Compliance:</strong> Updated with latest regulations</li>
+                                    <li><strong>Personal Income Tax:</strong> Automatic PIT calculations</li>
+                                    <li><strong>Asset Depreciation:</strong> Straight-line and reducing balance methods</li>
+                                    <li><strong>₦250M Threshold:</strong> Monitors zero-tax qualification automatically</li>
+                                    <li><strong>Tax Reports:</strong> Generate compliant reports instantly</li>
+                                    <li><strong>Deduction Tracking:</strong> Captures all allowable business expenses</li>
+                                </ul>
+                                <div class="alert alert-success mt-3">
+                                    <i class="bi bi-award-fill"></i> <strong>Save thousands:</strong> Users report saving ₦50,000-200,000 in tax penalties and accountant fees!
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 7 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq7">
+                                <i class="bi bi-headset text-info me-3"></i>
+                                What kind of customer support do you provide?
+                            </button>
+                        </h2>
+                        <div id="faq7" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>We provide comprehensive Nigerian customer support:</strong>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <h6 class="fw-bold text-primary">Free Users:</h6>
+                                        <ul>
+                                            <li>Email support (24-48 hours)</li>
+                                            <li>FAQ and help documentation</li>
+                                            <li>Community forum access</li>
+                                            <li>Video tutorials</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="fw-bold text-success">Premium Users:</h6>
+                                        <ul>
+                                            <li>Priority email support (4-8 hours)</li>
+                                            <li>WhatsApp support during business hours</li>
+                                            <li>Phone support (scheduled calls)</li>
+                                            <li>One-on-one setup assistance</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-clock-fill"></i> <strong>Business Hours:</strong> Monday-Friday 8AM-6PM WAT, Saturday 9AM-2PM WAT
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FAQ 8 -->
+                    <div class="accordion-item border-0 shadow-sm mb-3 rounded-3 reveal">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#faq8">
+                                <i class="bi bi-arrow-repeat text-warning me-3"></i>
+                                Can I cancel my subscription anytime? What about refunds?
+                            </button>
+                        </h2>
+                        <div id="faq8" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <strong>Yes, we offer flexible cancellation and money-back guarantee:</strong>
+                                <ul class="mt-3">
+                                    <li><strong>Cancel Anytime:</strong> No long-term contracts or cancellation fees</li>
+                                    <li><strong>30-Day Money-Back:</strong> Full refund if not satisfied within 30 days</li>
+                                    <li><strong>Data Export:</strong> Download all your data before canceling</li>
+                                    <li><strong>Downgrade Option:</strong> Switch to free plan instead of canceling</li>
+                                </ul>
+                                <div class="alert alert-success mt-3">
+                                    <i class="bi bi-shield-check-fill"></i> <strong>Risk-Free:</strong> Try FiCore for 30 days. If it doesn't increase your profits, get your money back!
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FINAL CTA SECTION -->
+<div class="bg-primary text-white py-5">
+    <div class="container text-center">
+        <div class="reveal">
+            <h2 class="fw-bold mb-4">{{ t('landing_ready_stop_losing_money', default='Ready to Stop Losing Money?') | e }}</h2>
+            <p class="lead mb-4">{{ t('landing_join_entrepreneurs', default='Join Nigerian entrepreneurs who increased their profits with FiCore') | e }}</p>
+            
+            <div class="cta-buttons mb-4">
+                <a href="https://play.google.com/apps/internaltest/4700871616841758723" target="_blank" class="btn btn-warning btn-lg px-5 py-3 me-3 fw-bold shadow-lg">
+                    <i class="bi bi-download"></i> {{ t('landing_start_free_trial_now', default='Start FREE Trial Now') | e }}
+                </a>
+                <a href="https://wa.me/2348108309309?text=Hi%20FiCore%2C%20I%27d%20like%20to%20learn%20more%20about%20the%20app" target="_blank" class="btn btn-outline-light btn-lg px-5 py-3">
+                    <i class="bi bi-whatsapp"></i> <span class="text-white">{{ t('landing_chat_with_us', default='Chat with Us') | e }}</span>
+                </a>
+            </div>
+            
+            <div class="guarantees">
+                <small class="d-block mb-2">
+                    <i class="bi bi-shield-check"></i> {{ t('landing_30_day_guarantee', default='30-Day Money-Back Guarantee') | e }}
+                </small>
+                <small class="d-block mb-2">
+                    <i class="bi bi-clock"></i> {{ t('landing_setup_5_minutes', default='Setup in Under 5 Minutes') | e }}
+                </small>
+                <small class="d-block">
+                    <i class="bi bi-headset"></i> {{ t('landing_free_nigerian_support', default='Free Nigerian Customer Support') | e }}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ENHANCED QR CODE & DOWNLOAD SECTION -->
+<div class="py-5 bg-white border-top">
+    <div class="container">
+        <div class="text-center mb-5 reveal">
+            <h2 class="fw-bold">{{ t('landing_download_mobile_app', default='Download FiCore Mobile App') | e }}</h2>
+            <p class="text-muted">{{ t('landing_get_started_5_minutes', default='Get started in under 5 minutes') | e }}</p>
+        </div>
+        
+        <div class="row align-items-center justify-content-center g-5">
+            <!-- QR Code Section -->
+            <div class="col-lg-6 text-center reveal">
+                <div class="qr-download-card p-4 bg-light rounded-4 shadow-sm">
+                    <h4 class="fw-bold mb-3">
+                        <i class="bi bi-qr-code-scan text-primary"></i> {{ t('landing_scan_to_download', default='Scan to Download') | e }}
+                    </h4>
+                    
+                    <!-- Enhanced QR Code with proper URL -->
+                    <div class="qr-code-container mb-4">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://play.google.com/store/apps/details?id=com.ficoreafrica.app&format=png&margin=10" 
+                             alt="{{ t('landing_qr_code_alt', default='Download FiCore App QR Code') | e }}"
+                             class="qr-code shadow-sm p-3 bg-white rounded-4"
+                             style="max-width: 200px;">
+                    </div>
+                    
+                    <div class="download-instructions">
+                        <div class="instruction-step d-flex align-items-center justify-content-center mb-2">
+                            <span class="step-number bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; font-size: 0.9rem;">1</span>
+                            <span>{{ t('landing_open_camera_app', default='Open your phone\'s camera app') | e }}</span>
+                        </div>
+                        <div class="instruction-step d-flex align-items-center justify-content-center mb-2">
+                            <span class="step-number bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; font-size: 0.9rem;">2</span>
+                            <span>{{ t('landing_point_qr_code', default='Point at the QR code above') | e }}</span>
+                        </div>
+                        <div class="instruction-step d-flex align-items-center justify-content-center mb-3">
+                            <span class="step-number bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; font-size: 0.9rem;">3</span>
+                            <span>{{ t('landing_tap_notification', default='Tap the notification to download') | e }}</span>
+                        </div>
+                    </div>
+                    
+                    <small class="text-muted">
+                        <i class="bi bi-android2 text-success"></i> {{ t('landing_android_required', default='Android 5.0+ required') | e }} • 
+                        <i class="bi bi-download"></i> {{ t('landing_download_size', default='15MB download') | e }}
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Alternative Download Methods -->
+            <div class="col-lg-6 reveal">
+                <div class="download-options">
+                    <h4 class="fw-bold mb-4">{{ t('landing_alternative_download_methods', default='Alternative Download Methods') | e }}</h4>
+                    
+                    <!-- Google Play Store -->
+                    <div class="download-option p-3 bg-light rounded-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="option-icon bg-success text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                <i class="bi bi-google-play"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="fw-bold mb-1">{{ t('landing_google_play_store', default='Google Play Store') | e }}</h6>
+                                <small class="text-muted">{{ t('landing_official_store_download', default='Official store download (recommended)') | e }}</small>
+                            </div>
+                            <a href="https://play.google.com/store/apps/details?id=com.ficoreafrica.app" 
+                               class="btn btn-success btn-sm" target="_blank">
+                                <i class="bi bi-download"></i> {{ t('general_download', default='Download') | e }}
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Direct APK -->
+                    <div class="download-option p-3 bg-light rounded-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="option-icon bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                <i class="bi bi-file-earmark-zip"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="fw-bold mb-1">{{ t('landing_direct_apk_download', default='Direct APK Download') | e }}</h6>
+                                <small class="text-muted">{{ t('landing_for_advanced_users', default='For advanced users (enable unknown sources)') | e }}</small>
+                            </div>
+                            <a href="https://ficoreafrica.com/download/ficore-latest.apk" 
+                               class="btn btn-primary btn-sm">
+                                <i class="bi bi-download"></i> APK
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- WhatsApp Share -->
+                    <div class="download-option p-3 bg-light rounded-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="option-icon bg-success text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                <i class="bi bi-whatsapp"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="fw-bold mb-1">{{ t('landing_send_to_whatsapp', default='Send to WhatsApp') | e }}</h6>
+                                <small class="text-muted">{{ t('landing_share_download_link', default='Share download link with yourself') | e }}</small>
+                            </div>
+                            <a href="https://wa.me/?text=Download%20FiCore%20App:%20https://play.google.com/store/apps/details?id=com.ficoreafrica.app" 
+                               class="btn btn-success btn-sm" target="_blank">
+                                <i class="bi bi-share"></i> {{ t('general_share', default='Share') | e }}
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- iOS Waitlist -->
+                    <div class="download-option p-3 bg-warning bg-opacity-10 rounded-3 border border-warning">
+                        <div class="d-flex align-items-center">
+                            <div class="option-icon bg-warning text-dark rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                <i class="bi bi-apple"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="fw-bold mb-1">{{ t('landing_iphone_ios_version', default='iPhone (iOS) Version') | e }}</h6>
+                                <small class="text-muted">{{ t('landing_coming_soon_waitlist', default='Coming Soon - Join waitlist') | e }}</small>
+                            </div>
+                            <a href="#ios-waitlist" class="btn btn-warning btn-sm" data-bs-toggle="modal">
+                                <i class="bi bi-bell"></i> {{ t('landing_notify_me', default='Notify Me') | e }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- System Requirements -->
+                <div class="system-requirements mt-4 p-3 bg-info bg-opacity-10 rounded-3">
+                    <h6 class="fw-bold text-info mb-2">
+                        <i class="bi bi-info-circle-fill"></i> {{ t('landing_system_requirements', default='System Requirements') | e }}
+                    </h6>
+                    <div class="row">
+                        <div class="col-6">
+                            <small class="text-muted d-block">
+                                <strong>{{ t('landing_android', default='Android:') | e }}</strong> {{ t('landing_android_version', default='5.0+ (API 21)') | e }}
+                            </small>
+                            <small class="text-muted d-block">
+                                <strong>{{ t('landing_storage', default='Storage:') | e }}</strong> {{ t('landing_storage_space', default='50MB free space') | e }}
+                            </small>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted d-block">
+                                <strong>{{ t('landing_ram', default='RAM:') | e }}</strong> {{ t('landing_ram_minimum', default='2GB minimum') | e }}
+                            </small>
+                            <small class="text-muted d-block">
+                                <strong>{{ t('landing_internet', default='Internet:') | e }}</strong> {{ t('landing_internet_optional', default='Optional (offline mode)') | e }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- iOS Waitlist Modal -->
+<div class="modal fade" id="ios-waitlist" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-apple text-primary"></i> {{ t('landing_join_ios_waitlist', default='Join iOS Waitlist') | e }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">{{ t('landing_first_to_know_ios', default='Be the first to know when FiCore launches on iPhone!') | e }}</p>
+                <form id="ios-waitlist-form">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ t('general_full_name', default='Full Name') | e }}</label>
+                        <input type="text" name="full_name" class="form-control" placeholder="{{ t('general_full_name', default='Your full name') | e }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ t('general_email', default='Email Address') | e }}</label>
+                        <input type="email" name="email" class="form-control" placeholder="{{ t('landing_email_placeholder', default='your@email.com') | e }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ t('landing_phone_optional', default='Phone Number (Optional)') | e }}</label>
+                        <input type="tel" name="whatsapp_number" class="form-control" placeholder="{{ t('landing_phone_placeholder', default='+234 xxx xxx xxxx') | e }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ t('landing_business_type', default='Business Type') | e }}</label>
+                        <select name="business_type" class="form-select" required>
+                            <option value="">{{ t('general_select', default='Select...') | e }}</option>
+                            <option value="retail">{{ t('landing_retail_trading', default='Retail/Trading') | e }}</option>
+                            <option value="food_beverage">{{ t('landing_food_beverage', default='Food & Beverage') | e }}</option>
+                            <option value="fashion_beauty">{{ t('landing_fashion_beauty', default='Fashion & Beauty') | e }}</option>
+                            <option value="services">{{ t('general_services', default='Services') | e }}</option>
+                            <option value="manufacturing">{{ t('general_manufacturing', default='Manufacturing') | e }}</option>
+                            <option value="other">{{ t('general_other', default='Other') | e }}</option>
+                        </select>
+                    </div>
+                    <div id="ios-waitlist-message" class="alert" style="display: none;"></div>
+                </form>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-primary fw-bold px-4" onclick="submitIOSWaitlist()">
+                    <i class="bi bi-bell-fill"></i> {{ t('landing_notify_when_ready', default='Notify Me When Ready') | e }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Enhanced CSS with FiCore brand colors */
+:root {
+    --brand-blue: #004aad;
+    --brand-dark: #002d6a;
+    --primary-light: #eef4ff;
+    --success-light: #e6fcf5;
+    --warning-light: #fff9db;
+    --danger-light: #ffebee;
+    --button-primary-bg: #007bff;
+    --vibrant-green: #00ff88;
+    --success-vibrant: #28a745;
+}
+
+body { 
+    font-family: 'Inter', sans-serif; 
+    line-height: 1.6;
+}
+
+/* Modern professional text styling - minimal shadows */
+h1, h2, h3, h4, h5, h6 {
+    text-shadow: none; /* Remove global text shadows for cleaner look */
+}
+
+/* Standardize fw-bold to be less aggressive */
+.fw-bold {
+    font-weight: 600 !important; /* Reduced from Bootstrap's default 700 */
+}
+
+.fw-bold {
+    font-weight: 600 !important; /* Reduced from 700 for better balance */
+}
+
+/* Enhance text vibrancy */
+.text-primary {
+    color: var(--brand-blue) !important;
+    font-weight: 600;
+}
+
+.text-success {
+    color: var(--success-vibrant) !important;
+    font-weight: 600;
+}
+
+.text-warning {
+    color: #ffc107 !important;
+    font-weight: 600;
+}
+
+.text-info {
+    color: #17a2b8 !important;
+    font-weight: 600;
+}
+
+/* Hero Section - Use brand blue background */
+.hero-edge-to-edge {
+    background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-dark) 100%);
+    padding: 80px 0;
+    margin-top: -1px;
+    position: relative;
+}
+
+/* Final CTA Section - Use brand blue with white text */
+.bg-primary {
+    background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-dark) 100%) !important;
+}
+
+.bg-primary h2, .bg-primary p, .bg-primary .text-white {
+    color: white !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* Subtle depth shadow */
+    font-weight: 500; /* Reduced from 600 */
+}
+
+.hero-edge-to-edge::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="rgba(255,255,255,0.1)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+    opacity: 0.3;
+}
+
+.hero-edge-to-edge > .container {
+    position: relative;
+    z-index: 1;
+}
+
+/* Benefits List - Make more vibrant */
+.benefit-item {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.benefit-item i {
+    font-size: 1.2rem;
+    filter: drop-shadow(0 0 8px rgba(40, 167, 69, 0.6));
+}
+
+/* Make all white text in hero more vibrant */
+.hero-edge-to-edge .text-white {
+    color: rgba(255, 255, 255, 0.98) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* Much subtler shadow */
+}
+
+.hero-edge-to-edge h1 {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Reduced from 0.4 opacity */
+    font-weight: 700 !important; /* Reduced from 800 */
+    letter-spacing: -1px; /* Tighter letter spacing for premium look */
+}
+
+.hero-edge-to-edge .lead {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* Reduced from 0.2 opacity */
+    font-weight: 500;
+}
+
+/* Color-specific text - reduced shadows and weights */
+.text-primary.fw-bold {
+    color: var(--brand-blue) !important;
+    text-shadow: none; /* Remove shadow for cleaner look */
+    font-weight: 700 !important; /* Reduced from 800 */
+}
+
+.text-success.fw-bold {
+    color: var(--success-vibrant) !important;
+    text-shadow: none; /* Remove shadow for cleaner look */
+    font-weight: 700 !important; /* Reduced from 800 */
+}
+
+.text-warning.fw-bold {
+    color: #ff8c00 !important;
+    text-shadow: none; /* Remove shadow for cleaner look */
+    font-weight: 700 !important; /* Reduced from 800 */
+}
+
+.text-info.fw-bold {
+    color: #0dcaf0 !important;
+    text-shadow: none; /* Remove shadow for cleaner look */
+    font-weight: 700 !important; /* Reduced from 800 */
+}
+
+/* Headings - cleaner styling */
+h2.fw-bold, h3.fw-bold, h4.fw-bold, h5.fw-bold {
+    text-shadow: none; /* Remove shadows for modern look */
+    font-weight: 700 !important; /* Keep at 700 for good hierarchy */
+}
+
+/* Problem Cards */
+.problem-card {
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.problem-card:hover {
+    border-color: #dc3545;
+    transform: translateY(-5px);
+}
+
+.cost-highlight {
+    background: rgba(220, 53, 69, 0.05);
+    padding: 10px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+/* CTA Buttons Enhancement - professional styling */
+.btn-warning {
+    background: linear-gradient(135deg, #ffc107 0%, #ffb300 100%);
+    border-color: #ffc107;
+    color: #000;
+    font-weight: 600; /* Reduced from 700 */
+    transition: all 0.3s ease;
+    text-shadow: none; /* Remove shadow for cleaner look */
+    box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
+}
+
+.btn-warning:hover {
+    background: linear-gradient(135deg, #ffb300 0%, #ff8f00 100%);
+    border-color: #ffb300;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(255, 193, 7, 0.4);
+}
+
+/* Make badge text more vibrant */
+.badge.bg-success {
+    background: linear-gradient(135deg, var(--success-vibrant) 0%, #20c997 100%) !important;
+    text-shadow: none; /* Remove shadow for cleaner look */
+    font-weight: 500; /* Reduced from 600 */
+}
+
+.cost-highlight {
+    background: rgba(220, 53, 69, 0.1);
+    padding: 10px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+/* Feature Cards Enhancement */
+.consolidated-card {
+    border-radius: 24px;
+    background: #ffffff;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 2px solid transparent;
+}
+
+.consolidated-card:hover {
+    transform: translateY(-10px);
+    background: var(--brand-blue);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
+    border-color: var(--brand-blue);
+}
+
+.consolidated-card:hover h4, 
+.consolidated-card:hover p, 
+.consolidated-card:hover .text-muted {
+    color: white !important;
+}
+
+.consolidated-card:hover .feature-benefits small {
+    color: rgba(255,255,255,0.9) !important;
+}
+
+.feature-benefits small {
+    margin-bottom: 5px;
+}
+
+/* Testimonial Cards */
+.testimonial-card {
+    transition: all 0.3s ease;
+}
+
+.testimonial-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.1) !important;
+}
+
+.stars i {
+    margin-right: 2px;
+}
+
+/* Pricing Comparison */
+.pricing-comparison {
+    border: 2px solid #e9ecef;
+}
+
+.cost-item {
+    border-bottom: 1px solid #e9ecef;
+}
+
+.cost-item:last-child {
+    border-bottom: none;
+}
+
+.savings-highlight {
+    animation: pulse 2s infinite;
+    background: linear-gradient(135deg, var(--success-vibrant) 0%, #20c997 100%) !important;
+}
+
+.savings-highlight h4, .savings-highlight small {
+    color: white !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); /* Much subtler shadow */
+    font-weight: 600 !important; /* Reduced from 700 */
+}
+
+/* Mockup Balance - toned down for professional look */
+.mockup-balance h2 {
+    color: var(--vibrant-green) !important;
+    text-shadow: 0 0 4px rgba(0, 255, 136, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2); /* Much softer glow */
+    font-weight: 700 !important; /* Reduced from 900 */
+    letter-spacing: -0.5px;
+}
+
+.mockup-balance .text-success {
+    color: var(--vibrant-green) !important;
+    text-shadow: 0 0 4px rgba(0, 255, 136, 0.3), 0 1px 2px rgba(0, 0, 0, 0.15); /* Softer glow */
+    font-weight: 600 !important; /* Reduced from 700 */
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+
+/* Glass Mockup Enhancement */
+.glass-mockup {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 32px;
+    color: white;
+}
+
+.feature-item {
+    font-size: 0.9rem;
+}
+
+/* Icon Wrapper */
+.icon-wrap {
+    width: 65px;
+    height: 65px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+}
+
+/* Scroll Reveal */
+.reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.8s ease-out;
+}
+
+.reveal.active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Language Switcher */
+.lang-switcher-fixed {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+/* Footer Styling */
+.footer-section {
+    margin-top: 3rem;
+}
+
+.footer-section ul li {
+    margin-bottom: 8px;
+}
+
+.footer-section a:hover {
+    color: var(--brand-blue) !important;
+    transition: color 0.3s ease;
+}
+
+.social-icons a:hover {
+    color: var(--brand-blue) !important;
+    transform: translateX(5px);
+    transition: all 0.3s ease;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .hero-edge-to-edge { 
+        padding: 40px 20px; 
+    }
+    
+    .display-3 {
+        font-size: 2.5rem;
+    }
+    
+    .consolidated-card { 
+        margin-bottom: 20px; 
+        border-radius: 16px; 
+    }
+    
+    .btn-lg {
+        padding: 12px 24px;
+        font-size: 1rem;
+    }
+    
+    .footer-section .col-md-3 {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    .social-icons {
+        justify-content: center !important;
+    }
+}
+
+/* Utility Classes */
+.transition-transform:hover { 
+    transform: scale(1.05); 
+}
+
+.bg-primary-light { background: var(--primary-light); }
+.bg-success-light { background: var(--success-light); }
+.bg-warning-light { background: var(--warning-light); }
+.bg-danger-light { background: var(--danger-light); }
+
+/* Solution Arrow */
+.solution-arrow {
+    animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-10px); }
+    60% { transform: translateY(-5px); }
+}
+
+/* FAQ Section Styling */
+.accordion-button {
+    background: white;
+    border: none;
+    box-shadow: none;
+    padding: 1.25rem;
+}
+
+.accordion-button:not(.collapsed) {
+    background: var(--primary-light);
+    color: var(--brand-blue);
+}
+
+.accordion-button:focus {
+    box-shadow: none;
+    border: none;
+}
+
+.accordion-body {
+    padding: 1.25rem;
+    background: #fafafa;
+}
+
+.accordion-item {
+    transition: all 0.3s ease;
+}
+
+.accordion-item:hover {
+    transform: translateY(-2px);
+}
+
+/* Download Options Styling */
+.download-option {
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.download-option:hover {
+    border-color: var(--brand-blue);
+    transform: translateY(-2px);
+}
+
+.option-icon {
+    transition: all 0.3s ease;
+}
+
+.download-option:hover .option-icon {
+    transform: scale(1.1);
+}
+
+.qr-download-card {
+    transition: all 0.3s ease;
+}
+
+.qr-download-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.1) !important;
+}
+
+.instruction-step {
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+}
+
+.step-number {
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.system-requirements {
+    border: 1px solid rgba(13, 202, 240, 0.2);
+}
+
+/* Modal Enhancements */
+.modal-content {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+}
+
+.modal-header {
+    padding: 1.5rem 1.5rem 0;
+}
+
+.modal-body {
+    padding: 1rem 1.5rem;
+}
+
+.modal-footer {
+    padding: 0 1.5rem 1.5rem;
+}
+</style>
+
+{% block extra_scripts %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Scroll reveal animation
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('active');
+            }
+        });
+    }, { threshold: 0.1 });
+    
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    
+    // Initialize Bootstrap tooltips
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(tooltipTriggerEl => {
+        new bootstrap.Tooltip(tooltipTriggerEl, {
+            trigger: 'hover focus',
+            container: 'body'
+        });
+    });
+    
+    // Initialize Bootstrap accordion
+    const accordionElements = document.querySelectorAll('.accordion');
+    accordionElements.forEach(accordion => {
+        new bootstrap.Collapse(accordion, { toggle: false });
+    });
+    
+    // Add click tracking for CTAs
+    document.querySelectorAll('.btn-warning, .btn-outline-light, .btn-success').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            // Add analytics tracking here
+            console.log('CTA clicked:', this.textContent.trim());
+        });
+    });
+    
+    // WhatsApp click tracking
+    document.querySelectorAll('a[href*="wa.me"]').forEach(link => {
+        link.addEventListener('click', function() {
+            console.log('WhatsApp contact initiated');
+        });
+    });
+});
+
+// iOS Waitlist Form Submission
+function submitIOSWaitlist() {
+    const form = document.getElementById('ios-waitlist-form');
+    const messageDiv = document.getElementById('ios-waitlist-message');
+    const submitBtn = document.querySelector('#ios-waitlist .btn-primary');
+    
+    // Get form data
+    const formData = new FormData(form);
+    const data = {
+        full_name: formData.get('full_name'),
+        email: formData.get('email'),
+        whatsapp_number: formData.get('whatsapp_number'),
+        business_type: formData.get('business_type')
+    };
+    
+    // Basic validation
+    if (!data.full_name || !data.email || !data.business_type) {
+        showMessage('Please fill in all required fields', 'danger');
+        return;
+    }
+    
+    // Disable button and show loading
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting...';
+    
+    // Submit to backend
+    fetch('/general/ios-waitlist', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name=csrf-token]').getAttribute('content')
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            showMessage(result.message, 'success');
+            form.reset();
+            setTimeout(() => {
+                bootstrap.Modal.getInstance(document.getElementById('ios-waitlist')).hide();
+            }, 2000);
+        } else {
+            showMessage(result.message, 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('An error occurred. Please try again.', 'danger');
+    })
+    .finally(() => {
+        // Re-enable button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-bell-fill"></i> {{ t("landing_notify_when_ready", default="Notify Me When Ready") | e }}';
+    });
+    
+    function showMessage(message, type) {
+        messageDiv.className = `alert alert-${type}`;
+        messageDiv.textContent = message;
+        messageDiv.style.display = 'block';
+        
+        if (type === 'success') {
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 3000);
+        }
+    }
+}
+</script>
+<!--Start of Tawk.to Script-->
+<script type="text/javascript">
+var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+(function(){
+var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+s1.async=true;
+s1.src='https://embed.tawk.to/68b6b42c8b5f3419254f3506/1j44qvjhm';
+s1.charset='UTF-8';
+s1.setAttribute('crossorigin','*');
+s0.parentNode.insertBefore(s1,s0);
+})();
+</script>
+<!--End of Tawk.to Script-->
+{% endblock %}
+
+{% endblock %}

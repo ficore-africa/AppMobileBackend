@@ -237,7 +237,27 @@ Your registered tax profile remains <b>{profile_name}</b>.
         
         return watermark_table
     
-    def generate_financial_report(self, user_data, export_data, data_type='all'):
+
+    
+    def _get_filter_disclaimer(self, tag_filter):
+        """
+        Generate filter disclaimer text for reports
+        
+        Args:
+            tag_filter: 'business', 'personal', 'all', or 'untagged'
+        
+        Returns:
+            Formatted disclaimer text
+        """
+        disclaimers = {
+            'business': '📊 <b>Filter Applied:</b> This report includes BUSINESS-TAGGED entries only',
+            'personal': '📊 <b>Filter Applied:</b> This report includes PERSONAL-TAGGED entries only',
+            'all': '📊 <b>Filter Applied:</b> This report includes ALL entries (business, personal, and untagged)',
+            'untagged': '📊 <b>Filter Applied:</b> This report includes UNTAGGED entries only'
+        }
+        return disclaimers.get(tag_filter, disclaimers['all'])
+
+    def generate_financial_report(self, user_data, export_data, data_type='all', tag_filter="all"):
         """Generate comprehensive financial report PDF"""
         # DISABLED FOR VAS FOCUS
         # print(f"DEBUG PDF GENERATOR: generate_financial_report called with data_type='{data_type}'")
@@ -274,6 +294,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         # Expenses Section
         if 'expenses' in export_data and export_data['expenses']:
@@ -492,7 +520,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
     
-    def generate_tax_report(self, user_data, tax_calculation):
+    def generate_tax_report(self, user_data, tax_calculation, tag_filter="all"):
         """Generate tax calculation report PDF with Nigerian 2025 tax bands"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -516,6 +544,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         # Income Summary
         story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
@@ -600,7 +636,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_cash_flow_report(self, user_data, transactions, start_date=None, end_date=None):
+    def generate_cash_flow_report(self, user_data, transactions, start_date=None, end_date=None, tag_filter="all"):
         """Generate Cash Flow statement PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -628,6 +664,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         # Calculate cash flows
         operating_inflows = sum(t.get('amount', 0) for t in transactions.get('incomes', []))
@@ -679,7 +723,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_tax_summary_report(self, user_data, tax_data, start_date=None, end_date=None, tax_type='PIT'):
+    def generate_tax_summary_report(self, user_data, tax_data, start_date=None, end_date=None, tax_type='PIT', tag_filter="all"):
         """
         Generate Tax Summary PDF with Nigerian tax formatting
         
@@ -721,6 +765,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         # Income Summary (3-Step P&L - aligned with SOA - Feb 25, 2026)
         story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
@@ -783,7 +835,11 @@ Your registered tax profile remains <b>{profile_name}</b>.
             income_data.append(['TAXABLE INCOME', format_currency(taxable_income)])
         else:
             # For CIT or PIT without statutory deductions
-            income_data.append(['TAXABLE INCOME', format_currency(operating_profit)])
+            taxable_income = operating_profit
+            income_data.append(['TAXABLE INCOME', format_currency(taxable_income)])
+        
+        # Store taxable_income for later use in tax calculations
+        net_income = taxable_income
         
         income_table = create_table(income_data, col_widths=[4*inch, 2*inch])
         
@@ -1044,7 +1100,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_debtors_report(self, user_data, debtors, start_date=None, end_date=None):
+    def generate_debtors_report(self, user_data, debtors, start_date=None, end_date=None, tag_filter="all"):
         """Generate Debtors/Accounts Receivable PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -1071,6 +1127,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         if not debtors:
             story.append(Paragraph("No outstanding debtors found.", self.styles['Normal']))
@@ -1145,7 +1209,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_creditors_report(self, user_data, creditors, start_date=None, end_date=None):
+    def generate_creditors_report(self, user_data, creditors, start_date=None, end_date=None, tag_filter="all"):
         """Generate Creditors/Accounts Payable PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -1172,6 +1236,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         if not creditors:
             story.append(Paragraph("No outstanding creditors found.", self.styles['Normal']))
@@ -1246,7 +1318,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_assets_report(self, user_data, assets, start_date=None, end_date=None):
+    def generate_assets_report(self, user_data, assets, start_date=None, end_date=None, tag_filter="all"):
         """Generate Assets Register PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -1268,6 +1340,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         if not assets:
             story.append(Paragraph("No assets found.", self.styles['Normal']))
@@ -1400,7 +1480,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_asset_depreciation_report(self, user_data, assets, start_date=None, end_date=None):
+    def generate_asset_depreciation_report(self, user_data, assets, start_date=None, end_date=None, tag_filter="all"):
         """Generate Asset Depreciation Schedule PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -1422,6 +1502,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         if not assets:
             story.append(Paragraph("No assets with depreciation found.", self.styles['Normal']))
@@ -1545,7 +1633,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_inventory_report(self, user_data, inventory_items, start_date=None, end_date=None):
+    def generate_inventory_report(self, user_data, inventory_items, start_date=None, end_date=None, tag_filter="all"):
         """Generate Inventory Report PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -1567,6 +1655,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         """
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         if not inventory_items:
             story.append(Paragraph("No inventory items found.", self.styles['Normal']))
@@ -1650,7 +1746,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_credit_transactions_report(self, user_data, credit_data, start_date=None, end_date=None):
+    def generate_credit_transactions_report(self, user_data, credit_data, start_date=None, end_date=None, tag_filter="all"):
         """Generate Credit Transactions Report PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
@@ -1684,6 +1780,14 @@ Your registered tax profile remains <b>{profile_name}</b>.
         
         story.append(Paragraph(user_info, self.styles['InfoText']))
         story.append(Spacer(1, 20))
+        
+        # Add filter disclaimer (Feb 26, 2026)
+        if tag_filter and tag_filter != 'all':
+            disclaimer_text = self._get_filter_disclaimer(tag_filter)
+            disclaimer = Paragraph(disclaimer_text, self.styles['InfoText'])
+            story.append(disclaimer)
+            story.append(Spacer(1, 12))
+
         
         # Current Balance Summary
         story.append(Paragraph("Account Summary", self.styles['SectionHeader']))
