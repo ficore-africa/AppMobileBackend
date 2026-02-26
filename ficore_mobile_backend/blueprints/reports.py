@@ -245,57 +245,85 @@ def init_reports_blueprint(mongo, token_required):
         
         return start_date, end_date
     
-    def calculate_cash_bank_balance(user_id):
+    def calculate_cash_bank_balance(user_id, end_date=None):
         """
-        Calculate current cash/bank balance using virtual double-entry system
-        Formula: Opening Balance + Total Income - Total Expenses - Total Drawings + Total Capital
+        Calculate cash/bank balance as of a specific date
+        Formula: Opening Balance + Total Income - Total Expenses - Total Drawings + Total Capital - Total Asset Purchases
         
         This integrates with the Cash/Bank Management System to provide accurate
         balance for Balance Sheet and other financial reports.
         
-        Returns: float - Current cash/bank balance
+        Args:
+            user_id: User ID
+            end_date: Calculate balance as of this date (None = current/all time)
+        
+        Returns: float - Cash/bank balance
         """
         try:
             # Get user's opening balance
             user = mongo.db.users.find_one({'_id': user_id})
             opening_balance = user.get('openingCashBalance', 0.0) if user else 0.0
             
-            # Get total income (active entries only)
-            total_income = 0.0
-            income_cursor = mongo.db.incomes.find({
+            # Build queries with optional date filter
+            income_query = {
                 'userId': user_id,
                 'status': 'active',
                 'isDeleted': False
-            })
+            }
+            expense_query = {
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            }
+            adjustment_query = {
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply date filter if provided
+            if end_date:
+                income_query['dateReceived'] = {'$lte': end_date}
+                expense_query['date'] = {'$lte': end_date}
+                adjustment_query['date'] = {'$lte': end_date}
+            
+            # Get total income (active entries only)
+            total_income = 0.0
+            income_cursor = mongo.db.incomes.find(income_query)
             for income in income_cursor:
                 total_income += income.get('amount', 0.0)
             
             # Get total expenses (active entries only)
             total_expenses = 0.0
-            expense_cursor = mongo.db.expenses.find({
-                'userId': user_id,
-                'status': 'active',
-                'isDeleted': False
-            })
+            expense_cursor = mongo.db.expenses.find(expense_query)
             for expense in expense_cursor:
                 total_expenses += expense.get('amount', 0.0)
             
-            # Get total drawings and capital deposits (active entries only)
+            # Get total drawings, capital deposits, and asset purchases (active entries only)
             total_drawings = 0.0
             total_capital = 0.0
-            adjustment_cursor = mongo.db.cash_adjustments.find({
-                'userId': user_id,
-                'status': 'active',
-                'isDeleted': False
-            })
+            total_asset_purchases = 0.0
+            adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
             for adjustment in adjustment_cursor:
-                if adjustment.get('type') == 'drawing':
-                    total_drawings += adjustment.get('amount', 0.0)
-                elif adjustment.get('type') == 'capital':
-                    total_capital += adjustment.get('amount', 0.0)
+                adj_type = adjustment.get('type')
+                amount = adjustment.get('amount', 0.0)
+                
+                if adj_type == 'drawing':
+                    total_drawings += amount
+                elif adj_type == 'capital':
+                    total_capital += amount
+                elif adj_type == 'asset_purchase':
+                    total_asset_purchases += amount
             
-            # Calculate current balance
-            current_balance = opening_balance + total_income - total_expenses - total_drawings + total_capital
+            # Calculate balance
+            current_balance = (
+                opening_balance 
+                + total_income 
+                - total_expenses 
+                - total_drawings 
+                + total_capital
+                - total_asset_purchases
+            )
             
             return current_balance
             
@@ -7223,7 +7251,8 @@ def init_reports_blueprint(mongo, token_required):
             # CRITICAL FIX (Feb 19, 2026): Use calculated Cash/Bank balance from Cash/Bank Management System
             # This replaces the old ficoreWalletBalance which was just the VAS wallet
             # New system uses: Opening Balance + Income - Expenses - Drawings + Capital
-            cash_balance = calculate_cash_bank_balance(current_user['_id'])
+            # CRITICAL FIX (Feb 26, 2026): Pass end_date to calculate balance as of that date
+            cash_balance = calculate_cash_bank_balance(current_user['_id'], end_date=end_date)
             
             # Get opening equity and drawings (if tracked)
             # CRITICAL FIX (Feb 19, 2026): Calculate opening equity from assets if not set
@@ -7520,7 +7549,7 @@ def init_reports_blueprint(mongo, token_required):
                     
                     # Calculate cash balance
                     print(f"🟢 SOA GENERATION: Calculating cash balance...")
-                    cash_balance = calculate_cash_bank_balance(current_user['_id'])
+                    cash_balance = calculate_cash_bank_balance(current_user['_id'], end_date=end_date)
                     print(f"✅ SOA GENERATION: Cash balance = ₦{cash_balance:,.2f}")
                     
                     # Calculate 3-Step P&L (align with SOA sync endpoint)
