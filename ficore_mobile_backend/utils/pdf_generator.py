@@ -2180,7 +2180,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_wallet_funding_report(self, user_data, export_data, start_date=None, end_date=None):
+    def generate_wallet_funding_report(self, user_data, export_data, start_date=None, end_date=None, tag_filter="all"):
         """Generate Wallet Funding Report PDF"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
@@ -2267,7 +2267,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_bill_payments_report(self, user_data, export_data, start_date=None, end_date=None):
+    def generate_bill_payments_report(self, user_data, export_data, start_date=None, end_date=None, tag_filter="all"):
         """
         Generate Bill Payments Report PDF with granular VAS breakdown
         
@@ -2406,7 +2406,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_airtime_purchases_report(self, user_data, export_data, start_date=None, end_date=None):
+    def generate_airtime_purchases_report(self, user_data, export_data, start_date=None, end_date=None, tag_filter="all"):
         """
         Generate Airtime Purchases Report PDF with network grouping
         
@@ -2535,7 +2535,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         buffer.seek(0)
         return buffer
 
-    def generate_full_wallet_report(self, user_data, export_data, start_date=None, end_date=None):
+    def generate_full_wallet_report(self, user_data, export_data, start_date=None, end_date=None, tag_filter="all"):
         """Generate Full Wallet Report PDF (all transaction types)"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
@@ -2626,7 +2626,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         return buffer
 
     def generate_statement_of_affairs(self, user_data, financial_data, tax_data, assets_data, 
-                                      start_date=None, end_date=None, tax_type='PIT', profile_tax_type='PIT'):
+                                      start_date=None, end_date=None, tax_type='PIT', profile_tax_type='PIT', tag_filter='business'):
         """
         Generate comprehensive Statement of Affairs PDF
         
