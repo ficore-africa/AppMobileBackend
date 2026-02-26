@@ -652,4 +652,219 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @assets_bp.route('/without-payment', methods=['GET'])
+    @token_required
+    def get_assets_without_payment(current_user):
+        """
+        Get all assets that don't have payment recorded
+        Used for recovery flow in Balance Adjustment screen
+        """
+        try:
+            # Find assets without payment recorded
+            assets = list(mongo.db.assets.find({
+                'userId': current_user['_id'],
+                'status': {'$ne': 'disposed'},
+                '$or': [
+                    {'paymentRecorded': False},
+                    {'paymentRecorded': {'$exists': False}},
+                    {'paymentMethod': 'manual'}
+                ]
+            }).sort('purchaseDate', -1))
+            
+            assets_list = []
+            for asset in assets:
+                assets_list.append({
+                    'id': str(asset['_id']),
+                    'name': asset.get('assetName', 'Unknown Asset'),
+                    'category': asset.get('category', 'Uncategorized'),
+                    'cost': float(asset.get('purchasePrice', 0.0)),
+                    'purchaseDate': asset.get('purchaseDate', datetime.utcnow()).isoformat() + 'Z',
+                    'paymentMethod': asset.get('paymentMethod', 'unknown'),
+                    'paymentRecorded': asset.get('paymentRecorded', False)
+                })
+            
+            return jsonify({
+                'success': True,
+                'assets': assets_list,
+                'count': len(assets_list),
+                'message': f'Found {len(assets_list)} assets without payment recorded'
+            }), 200
+
+        except Exception as e:
+            print(f"Error in get_assets_without_payment: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve assets without payment',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @assets_bp.route('/record-payment', methods=['POST'])
+    @token_required
+    def record_asset_payment(current_user):
+        """
+        Record payment for asset purchase
+        Creates appropriate entries to balance the accounting equation
+        """
+        try:
+            data = request.get_json()
+            
+            asset_id = data.get('assetId')
+            payment_method = data.get('paymentMethod')
+            amount = float(data.get('amount', 0))
+            description = data.get('description', 'Asset payment')
+            
+            # Validate required fields
+            if not asset_id or not payment_method:
+                return jsonify({
+                    'success': False,
+                    'message': 'Asset ID and payment method are required'
+                }), 400
+            
+            if not ObjectId.is_valid(asset_id):
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid asset ID'
+                }), 400
+            
+            # Validate asset exists and belongs to user
+            asset = mongo.db.assets.find_one({
+                '_id': ObjectId(asset_id),
+                'userId': current_user['_id']
+            })
+            
+            if not asset:
+                return jsonify({
+                    'success': False,
+                    'message': 'Asset not found'
+                }), 404
+            
+            # Handle different payment methods
+            if payment_method == 'business_cash':
+                # Create cash adjustment to reduce Cash & Bank
+                cash_adjustment = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'type': 'asset_purchase',
+                    'amount': amount,
+                    'description': description,
+                    'assetId': ObjectId(asset_id),
+                    'date': datetime.utcnow(),
+                    'status': 'active',
+                    'isDeleted': False,
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                
+                mongo.db.cash_adjustments.insert_one(cash_adjustment)
+                
+                # Update asset with payment reference
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'business_cash',
+                            'paymentRecorded': True,
+                            'cashAdjustmentId': cash_adjustment['_id'],
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Payment recorded - Cash & Bank reduced',
+                    'cashAdjustmentId': str(cash_adjustment['_id'])
+                }), 200
+            
+            elif payment_method == 'capital_contribution':
+                # Create capital contribution entry
+                capital_entry = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'type': 'capital',
+                    'amount': amount,
+                    'description': f'Capital contribution for {asset.get("assetName", "asset")}',
+                    'assetId': ObjectId(asset_id),
+                    'date': datetime.utcnow(),
+                    'status': 'active',
+                    'isDeleted': False,
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                
+                mongo.db.cash_adjustments.insert_one(capital_entry)
+                
+                # Update asset
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'capital_contribution',
+                            'paymentRecorded': True,
+                            'capitalEntryId': capital_entry['_id'],
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Capital contribution recorded',
+                    'capitalEntryId': str(capital_entry['_id'])
+                }), 200
+            
+            elif payment_method == 'existed_before':
+                # Mark asset as pre-existing
+                # User should adjust Opening Balance manually
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'existed_before',
+                            'paymentRecorded': True,
+                            'preExisting': True,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Asset marked as pre-existing. Please adjust Opening Balance in Settings.',
+                    'note': 'Opening Balance should include the value of pre-existing assets'
+                }), 200
+            
+            elif payment_method == 'manual':
+                # User will record payment separately
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'manual',
+                            'paymentRecorded': False,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Asset recorded. Remember to record the payment separately.',
+                    'warning': 'Your Cash & Bank balance may be incorrect until you record the payment'
+                }), 200
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid payment method. Must be: business_cash, capital_contribution, existed_before, or manual'
+                }), 400
+
+        except Exception as e:
+            print(f"Error in record_asset_payment: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to record asset payment',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     return assets_bp
