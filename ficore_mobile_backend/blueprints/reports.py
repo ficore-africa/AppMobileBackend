@@ -7251,8 +7251,11 @@ def init_reports_blueprint(mongo, token_required):
             # CRITICAL FIX (Feb 19, 2026): Use calculated Cash/Bank balance from Cash/Bank Management System
             # This replaces the old ficoreWalletBalance which was just the VAS wallet
             # New system uses: Opening Balance + Income - Expenses - Drawings + Capital
-            # CRITICAL FIX (Feb 26, 2026): Pass end_date to calculate balance as of that date
-            cash_balance = calculate_cash_bank_balance(current_user['_id'], end_date=end_date)
+            # CRITICAL FIX (Feb 27, 2026): Use OPENING cash balance for Balance Sheet
+            # The Balance Sheet shows position at a point in time (opening balances)
+            # Net profit is added to equity separately, so we don't double-count
+            # Formula: Assets (opening cash + fixed assets) = Liabilities + Equity (opening + net profit)
+            opening_cash_balance = user.get('openingCashBalance', 0.0) if user else 0.0
             
             # Get opening equity and drawings (if tracked)
             # CRITICAL FIX (Feb 19, 2026): Calculate opening equity from assets if not set
@@ -7339,7 +7342,7 @@ def init_reports_blueprint(mongo, token_required):
                 # Current Assets
                 'inventory_value': inventory_value,
                 'debtors_value': debtors_value,
-                'cash_balance': cash_balance,
+                'cash_balance': opening_cash_balance,  # CRITICAL: Opening balance, not current
                 
                 # Current Liabilities
                 'creditors_value': creditors_value,
