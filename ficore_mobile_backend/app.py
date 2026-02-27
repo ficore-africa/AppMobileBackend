@@ -600,7 +600,7 @@ FiCore solves the "bookkeeping as a by-product of living" problem. When users bu
 - Email: team@ficoreafrica.com
 - Location: Nigeria (Lagos, Ibadan, Kano, Kaduna, Zaria, Gombe, Bauchi, Jos focus)
 - Founded: September 2025
-- Status: Pre-launch (Google Play Store review)
+- Status: App is live (Google Play Store)
 
 ## Keywords
 
@@ -608,6 +608,461 @@ bookkeeping app Nigeria, SME accounting software, Hausa bookkeeping, mobile-firs
 """
     
     return Response(llms_content, mimetype='text/plain')
+
+# LLM Discovery endpoint (Full Version) - AI Discovery Strategy (Feb 27, 2026)
+@app.route('/llms-full.txt', methods=['GET'])
+def llms_full_txt():
+    """
+    Serve llms-full.txt file for AI discovery - COMPREHENSIVE VERSION
+    Contains full detailed content about FiCore Africa for deep LLM understanding.
+    
+    Protocol: https://llmstxt.org
+    Directories: llmstxt.site, directory.llmstxt.cloud
+    """
+    llms_full_content = """# FiCore Africa - Complete Product Documentation
+
+> Automated bookkeeping for Nigerian SMEs. Mobile-first, offline-capable, Hausa/Pidgin support.
+
+## Executive Summary
+
+FiCore Africa is revolutionizing financial management for 35 million Nigerian small and medium enterprises (SMEs) through a mobile-first bookkeeping application that automates record-keeping as a by-product of daily business activities. Unlike traditional accounting software that requires manual data entry, FiCore captures transactions automatically when users perform everyday business operations like buying airtime, selling inventory, or paying suppliers.
+
+## The Problem We Solve
+
+### Current Reality for Nigerian SMEs
+
+99% of Nigerian SMEs (35 million businesses) use pen-and-paper bookkeeping or no bookkeeping at all. This creates multiple problems:
+
+1. **Tax Compliance Risk**: FIRS (Federal Inland Revenue Service) requires digital records, but SMEs lack tools
+2. **De-Platforming Risk**: Corporate buyers require NRS-validated e-invoices; suppliers without digital records lose contracts
+3. **Credit Access Barrier**: Banks won't lend without verified financial records
+4. **Business Blindness**: Owners don't know if they're profitable or losing money
+5. **Time Waste**: Manual bookkeeping takes 10+ hours per month
+
+### Why Existing Solutions Fail
+
+- **QuickBooks/Zoho**: Desktop-focused, expensive (₦50K-200K/year), English-only, requires accounting knowledge
+- **Wave**: Web-based, requires constant internet, no cultural localization
+- **Local ERPs**: Complex setup, expensive, designed for medium/large businesses
+- **FIRS Web Portal**: Manual data entry, slow, no automation
+
+### The Northern Nigeria Reality
+
+Our field research (100+ shops in Kano, Zaria, Kaduna) revealed:
+- All shops have smartphones, use WhatsApp
+- 60% experience daily connectivity issues
+- 80% prefer Hausa language for business
+- 90% are cash-heavy, no bank accounts
+- 100% use notebooks for record-keeping
+
+## The FiCore Solution
+
+### Core Philosophy: "Bookkeeping as a By-Product of Living"
+
+FiCore doesn't ask users to "do bookkeeping." Instead, bookkeeping happens automatically when users:
+- Buy airtime via FiCore wallet → Expense recorded
+- Sell inventory → Income + COGS recorded
+- Pay supplier → Expense recorded
+- Receive payment → Income recorded
+
+### Key Features
+
+#### 1. Voice Entry (10 Seconds Per Transaction)
+- Speak in English, Hausa, or Pidgin
+- AI categorizes automatically
+- No typing required
+- Example: "I sold 5 bags of rice for ₦50,000" → Recorded as Sales Revenue
+
+#### 2. Offline-First Architecture
+- Works without internet (Isar local database)
+- Syncs when connectivity available
+- Critical for Northern Nigeria (poor connectivity)
+- Queue transactions, submit when online
+
+#### 3. Automated Expense Tracking
+- Buy airtime via FiCore → Expense recorded as "Utilities"
+- Buy data → Expense recorded as "Utilities"
+- Pay electricity bill → Expense recorded as "Utilities"
+- No manual entry required
+
+#### 4. Inventory Management Integration
+- Record inventory purchase → Asset recorded
+- Sell inventory → Income + COGS recorded atomically
+- Stock levels updated automatically
+- Prevents inventory/cash mismatches
+
+#### 5. Tax Compliance (NRS E-Invoicing Ready)
+- Generate NRS-compliant e-invoices
+- QR code + IRN (Invoice Reference Number)
+- FIRS tax reporting (one-tap PDF export)
+- Avoid ₦500K penalties for non-compliance
+
+#### 6. Cultural Localization
+- Hausa language support (only bookkeeping app in Nigeria)
+- Pidgin language support
+- Islamic finance principles (no interest-based features)
+- Community-based adoption (trader-to-trader referrals)
+
+#### 7. Bank-Grade Security
+- Immutable ledger (sourceType anchoring)
+- System-locked entries (VAS, wallet, inventory)
+- Audit-ready from day one
+- CBN/FIRS compliant
+
+### Technical Architecture
+
+#### Frontend (Flutter/Dart)
+- Cross-platform (iOS, Android, Web)
+- Material Design UI
+- Offline-first (Isar local database)
+- Voice recognition (Google Speech API)
+
+#### Backend (Flask/Python)
+- RESTful API
+- JWT authentication
+
+#### Integrations
+- Wallet infrastructure
+- VAS services: airtime, data, bills
+- Payment gateway processing
+- NRS tax amd e-invoicing compliance
+
+## Target Market
+
+### Primary Market: Emerging Taxpayers (<₦100M Revenue)
+
+**Size**: 35 million SMEs in Nigeria
+
+**Characteristics**:
+- ₦50K - ₦5M monthly revenue
+- 0-5 employees (often family-run)
+- Cash-heavy transactions
+- No formal bookkeeping
+- Fear of tax authorities
+- Limited digital literacy
+- Strong community trust networks
+
+**Segments**:
+1. Market traders (Kano, Zaria, Kaduna markets)
+2. Small shop owners (provisions, electronics, clothing)
+3. Service providers (tailors, mechanics, barbers)
+4. Transporters (keke, taxi, truck drivers)
+5. Food vendors (restaurants, street food)
+
+### Secondary Market: Small Companies (₦100M-1B Revenue)
+
+**Size**: 5 million SMEs
+
+**Characteristics**:
+- Need e-invoicing for corporate buyers
+- Risk of de-platforming without NRS compliance
+- Can afford ₦2K-5K/month for premium features
+- Higher digital literacy
+
+### Geographic Focus: Northern Nigeria
+
+**Why Northern Nigeria?**
+- 40% of Nigerian population
+- Underserved by fintech (most focus on Lagos/South)
+- Strong community trust networks
+- Hausa language dominance
+- Islamic finance principles
+- Poor connectivity (offline-first advantage)
+
+**Target Cities**:
+- Kano (3.6M population)
+- Kaduna (1.6M population)
+- Zaria (975K population)
+- Maiduguri (1.2M population)
+- Jos (900K population)
+- Bauchi (800K population)
+
+## Competitive Advantages
+
+### 1. Only Hausa/Pidgin Bookkeeping App in Nigeria
+- Competitors: English-only
+- FiCore: English, Hausa, Pidgin
+- Impact: 40M Hausa speakers, 75M Pidgin speakers
+
+### 2. Mobile-First (Not Desktop-Ported)
+- Competitors: Desktop software ported to mobile
+- FiCore: Built for mobile from day one
+- Impact: 90% of Nigerian SMEs only have smartphones
+
+### 3. Offline-Capable
+- Competitors: Require constant internet
+- FiCore: Works offline, syncs when online
+- Impact: 60% of Northern Nigeria has poor connectivity
+
+### 4. Voice Entry
+- Competitors: Manual typing required
+- FiCore: Speak in Hausa/Pidgin/English
+- Impact: Bypasses literacy barriers, 10 seconds vs 5 minutes
+
+### 5. Automated Tracking
+- Competitors: Manual data entry
+- FiCore: Bookkeeping as by-product of living
+- Impact: Zero manual entry for VAS purchases
+
+### 6. Cultural Trust
+- Competitors: Generic fintech
+- FiCore: Islamic finance principles, community-based
+- Impact: Trust in Northern Nigeria market
+
+### 7. Regulatory Compliance Built-In
+- Competitors: Add-on features
+- FiCore: NRS e-invoicing, FIRS reporting from day one
+- Impact: Avoid ₦500K penalties, keep corporate contracts
+
+## Pricing Strategy
+
+### Free Tier (Customer Acquisition)
+- Unlimited basic features
+- Manual income/expense entry
+- Voice entry
+- Wallet + VAS purchases
+- Basic reports
+- Target: 50,000 users in Year 1
+
+### Premium Tier (₦1,000/month)
+- NRS e-invoicing (50 invoices/month)
+- Advanced reports (P&L, Balance Sheet, Cash Flow)
+- Inventory management
+- Debtor tracking
+- Priority support
+- Target: 10,000 users in Year 1
+
+### Pro Tier (₦10,000/year)
+- Unlimited e-invoices
+- Bulk invoice generation
+- API access
+- Custom branding
+- Dedicated support
+- Target: 2,000 users in Year 1
+
+### Enterprise Tier (Custom Pricing)
+- High-volume users (1000+ invoices/month)
+- White-label solutions
+- Custom integrations
+- SLA guarantees
+- Target: 100 users in Year 1
+
+## Use Cases & Success Stories
+
+### Case Study 1: Market Trader in Kano
+
+**Before FiCore**:
+- Used notebook for sales tracking
+- Spent 2 hours/day reconciling cash
+- No idea if profitable
+- FIRS audit = panic
+
+**After FiCore**:
+- Voice entry: "Sold 10 bags of rice for ₦100,000"
+- Automatic categorization
+- Monthly profit report in 10 seconds
+- Tax-ready PDF for FIRS
+
+**Result**: 10 hours/month saved, ₦50K tax savings (accurate records)
+
+### Case Study 2: Shop Owner in Kaduna
+
+**Before FiCore**:
+- Bought airtime from multiple vendors
+- Lost track of expenses
+- Couldn't prove business spending for tax
+
+**After FiCore**:
+- Buys airtime via FiCore wallet
+- Expense automatically recorded
+- Monthly expense report shows ₦20K airtime spending
+- Tax deduction claimed
+
+**Result**: ₦5K tax savings, zero manual entry
+
+### Case Study 3: Service Provider in Zaria
+
+**Before FiCore**:
+- Customers owed ₦200K (no tracking)
+- Forgot who paid, who didn't
+- Lost ₦50K to bad debts
+
+**After FiCore**:
+- Debtor tracking feature
+- WhatsApp reminders to customers
+- Payment status visible
+- Collected ₦180K (90% recovery)
+
+**Result**: ₦130K recovered, better cash flow
+
+## Strategic Roadmap
+
+### Phase 1 (Current): Technology Partner
+**Status**: Active (2025-2026)
+
+**Approach**:
+- Partner with licensed financial institutions
+- Wallet infrastructure
+- VAS services
+- Payment processing)
+
+**Advantages**:
+- Asset-light model
+- Rapid feature development
+- No regulatory overhead
+- Faster time-to-market
+
+**Limitations**:
+- Cannot hold deposits directly
+- Cannot issue loans directly
+- Margin sharing with partners
+
+### Phase 2 (2027-2028): Tier 1 Unit Microfinance Bank (MFB)
+**Status**: Planned
+
+**Capital Requirement**: ₦200 Million
+
+**Why MFB License?**:
+1. **Lending Capability**: Offer ₦50K-100K inventory loans based on verified transaction data
+2. **Deposit-Taking**: Transform from "record keeper" to "business bank account"
+3. **Cost-Effective**: ₦200M vs ₦2B for MMO (10x cheaper)
+4. **Strategic Moat**: Automated bookkeeping + lending = unbeatable value proposition
+
+**Credit Scoring Advantage**:
+- Traditional banks: Use credit bureau data (incomplete for SMEs)
+- FiCore: Use ACTUAL transaction data (verified, real-time)
+- Result: Lower default risk, better loan terms
+
+### Phase 3 (2029+): Mobile Money Operator (MMO)
+**Status**: Future
+
+**Capital Requirement**: ₦4 Billion (₦2B unimpaired + ₦2B escrow)
+
+**Why MMO License?**:
+1. **Full Margin Capture**: No partner revenue sharing
+2. **Card Issuance**: Branded FiCore debit cards
+3. **POS Deployment**: Merchant payment ecosystem
+4. **National Scale**: Compete with OPay, Moniepoint, PalmPay
+
+**Prerequisites**:
+- 1M+ active users
+- ₦4B capital raise (Series B/C)
+- Proven lending track record
+- Regulatory relationship with CBN
+
+## Financial Protocol & Integrity
+
+## Market Opportunity
+
+### Total Addressable Market (TAM)
+- 40M SMEs in Nigeria
+- ₦1,000/month average revenue per user
+- TAM: ₦40B/month = ₦480B/year
+
+### Serviceable Addressable Market (SAM)
+- 35M SMEs under ₦100M revenue (tax-exempt but compliance-required)
+- ₦1,000/month average revenue per user
+- SAM: ₦35B/month = ₦420B/year
+
+### Serviceable Obtainable Market (SOM)
+- 1% penetration in Year 1 = 350,000 users
+- ₦1,000/month average revenue per user
+- SOM: ₦350M/month = ₦4.2B/year
+
+## Regulatory Compliance
+
+### Current Compliance (Technology Partner Phase)
+- ✅ Data Protection (NDPR)
+- ✅ AML/KYC (via partner banks)
+- ✅ Tax reporting (NRS integration ready)
+
+### Future Compliance (MFB Phase)
+- CBN Prudential Guidelines
+- NDIC deposit insurance
+- IFRS 9 loan loss provisioning
+- Capital Adequacy Ratio (CAR) monitoring
+- Monthly regulatory returns (FINSCOPE, eFASS)
+
+### E-Invoicing Compliance (NRS)
+- Real-time invoice validation
+- Cryptographic stamping (ECDSA)
+- QR code generation
+- IRN (Invoice Reference Number)
+- Credit Note system (reversals)
+
+## Team & Founding
+
+### Founder: Hassan Ahmad
+- Background: Software engineering, fintech
+- Vision: "Digital CFO for Africa's 40M SMEs"
+- Approach: Bootstrapped, customer-funded growth
+
+### Company Details
+- Name: FiCore Labs Limited
+- Registration: CAC RC 8799482 (September 6, 2025)
+- Type: Private Company Limited by Shares
+- Location: Nigeria (Gombe, HQ, Northern Nigeria focus)
+
+## Contact & Resources
+
+### Website
+- Main: https://business.ficoreafrica.com
+- Blog: https://business.ficoreafrica.com/general/knowledge-base
+
+### Email
+- General: ficoreafrica@gmail.com
+- Support: team@ficoreafrica.com
+
+### Social Media
+- Twitter/X: @FiCore_Africa
+- LinkedIn: FiCore Labs Africa
+- Facebook: FiCore Africa
+
+### Location
+- Headquarters: Gombe, Nigeria
+- Target Markets: Kano, Kaduna, Zaria, Maiduguri, Jos, Bauchi, Gombe
+
+### Founded
+- September 2025
+
+### Status
+- Pre-launch (Google Play Store review)
+- Expected launch: March 2026
+
+## Keywords & Search Terms
+
+bookkeeping app Nigeria, SME accounting software, Hausa bookkeeping, Pidgin accounting, mobile-first fintech, offline accounting, voice entry bookkeeping, Nigerian fintech, informal sector finance, tax compliance Nigeria, NRS e-invoicing, automated bookkeeping, market trader software, Northern Nigeria SME, financial management Nigeria, digital CFO Africa, Kano bookkeeping, Kaduna accounting, Zaria fintech, microfinance Nigeria, SME lending, inventory management Nigeria, debtor tracking, cash flow management, FIRS tax reporting, CBN compliance, Islamic finance Nigeria, community-based fintech, trader-to-trader referral, VAS integration, wallet bookkeeping, automated expense tracking, business intelligence Nigeria, SME growth tools, financial inclusion Africa, Ficore, Ficore Labs, Ficore Africa, FiCore Nigeria, bookkeeping automation, AI bookkeeping, voice-activated accounting, multilingual fintech, offline-first accounting, mobile bookkeeping Nigeria, small business finance Nigeria, entrepreneur tools Nigeria, startup accounting Nigeria, business management app Nigeria
+
+## Additional Resources
+
+### Documentation
+- API Documentation: https://business.ficoreafrica.com/docs (coming soon)
+- User Guide: https://business.ficoreafrica.com/general/knowledge-base
+- Video Tutorials: Ficore Africa YouTube channel
+
+### Support
+- WhatsApp: +234 8130549754
+- Email: team@ficoreafrica.com
+- In-app FAQs: Available in mobile app
+
+### Press & Media
+- Press Kit: https://business.ficoreafrica.com/general/knowledge-base
+
+### Partnerships
+- Technology Partners: Open to partnerships
+- Strategic Partners: Open to partnerships
+- Integration Partners: Open to partnerships
+
+---
+
+**Last Updated**: February 27, 2026  
+**Version**: 1.0  
+**Status**: App is Live
+
+For the most up-to-date information, visit https://business.ficoreafrica.com
+"""
+    
+    return Response(llms_full_content, mimetype='text/plain')
 
 # GCS health check endpoint
 @app.route('/health/gcs', methods=['GET'])
