@@ -23,7 +23,7 @@ class EmailService:
             raise ValueError('RESEND_API_KEY environment variable not set')
         
         resend.api_key = self.api_key
-        self.from_email = "FiCore <noreply@ficoreafrica.com>"
+        self.from_email = "FiCore <team@ficoreafrica.com>"
     
     def _log_email(self, to_email, subject, email_type, status, email_id=None, error=None, user_id=None):
         """
