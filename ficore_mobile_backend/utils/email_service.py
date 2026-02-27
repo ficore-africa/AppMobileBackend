@@ -114,9 +114,7 @@ class EmailService:
             <div style="background: #FFFFFF; padding: 40px 30px;">
                 <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
                 
-                <p style="color: #2E2E2E;">Welcome to FiCore Africa - your Digital CFO for business success!</p>
-                
-                <p style="color: #2E2E2E;">You've just joined thousands of Nigerian SMEs who are transforming their bookkeeping from a chore into a competitive advantage.</p>
+                <p style="color: #2E2E2E;">You've just joined thousands of Nigerian Entrepreneurs and SMEs on FiCore Africa who are transforming their bookkeeping from a chore into a competitive advantage.</p>
                 
                 <h3 style="color: #1E3A8A; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">What's Next?</h3>
                 <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
@@ -126,15 +124,19 @@ class EmailService:
                     <li>🎁 <strong>Your welcome bonus</strong> (10 FC Credits already added!)</li>
                 </ul>
                 
-                <!-- CTA Button with FiCore Golden -->
+                <!-- CTA Button with Play Store Link -->
                 <div style="text-align: center; margin: 40px 0;">
                     <p style="color: #2E2E2E; margin-bottom: 15px;">Open the FiCore mobile app to get started!</p>
+                    <a href="https://business.ficoreafrica.com/general/landing" style="display: inline-block; background: #1E3A8A; color: #FFFFFF; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.3);">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" alt="Get it on Google Play" style="height: 40px; vertical-align: middle;">
+                    </a>
+                    <p style="color: #6B7280; font-size: 12px; margin-top: 10px;">App launching soon on Google Play</p>
                 </div>
                 
                 <!-- Support Info -->
                 <div style="background: #FFF8F0; border-left: 4px solid #B88A44; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
                     <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
-                        <strong>Need help?</strong> Reply to this email or WhatsApp us at <a href="https://wa.me/2348012345678" style="color: #25D366; text-decoration: none; font-weight: 600;">+234 801 234 5678</a>
+                        <strong>Need help?</strong> Reply to this email or WhatsApp us at <a href="https://wa.me/2348130549754" style="color: #25D366; text-decoration: none; font-weight: 600;">+234 813 054 9754</a>
                     </p>
                 </div>
                 
@@ -147,10 +149,11 @@ class EmailService:
             <!-- Footer -->
             <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
                 <p style="margin: 0 0 10px 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
-                <p style="margin: 0 0 15px 0;">RC 8799482 | Lagos, Nigeria</p>
+                <p style="margin: 0 0 15px 0;">RC 8799482 | Nigeria</p>
                 <p style="margin: 0;">
-                    <a href="https://business.ficoreafrica.com/privacy" style="color: #1E3A8A; text-decoration: none; margin: 0 10px;">Privacy Policy</a> | 
-                    <a href="https://business.ficoreafrica.com/terms" style="color: #1E3A8A; text-decoration: none; margin: 0 10px;">Terms of Service</a>
+                    <a href="https://business.ficoreafrica.com/general/privacy" style="color: #1E3A8A; text-decoration: none; margin: 0 8px;">Privacy Policy</a> | 
+                    <a href="https://business.ficoreafrica.com/general/terms" style="color: #1E3A8A; text-decoration: none; margin: 0 8px;">Terms of Service</a> | 
+                    <a href="https://business.ficoreafrica.com/general/landing" style="color: #1E3A8A; text-decoration: none; margin: 0 8px;">Website</a>
                 </p>
             </div>
         </body>
