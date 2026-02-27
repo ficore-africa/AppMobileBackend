@@ -305,6 +305,24 @@ def signup():
             # Log but don't fail signup if email fails
             print(f'⚠️ Welcome email failed: {e}')
         
+        # 🆕 SYNC USER TO RESEND AUDIENCE (Feb 27, 2026)
+        try:
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=auth_bp.mongo.db)
+            sync_result = announcement_service.sync_user_to_audience(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                user_id=user_id
+            )
+            if sync_result['success']:
+                print(f'✅ User synced to Resend Audience: {email}')
+            else:
+                print(f'⚠️ Audience sync failed: {sync_result["error"]}')
+        except Exception as e:
+            # Log but don't fail signup if audience sync fails
+            print(f'⚠️ Audience sync failed: {e}')
+        
         # If referred, create referral tracking entry (NEW - Feb 4, 2026)
         if referrer:
             referral_doc = {

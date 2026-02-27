@@ -9076,4 +9076,294 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    # ===== ANNOUNCEMENT SYSTEM ENDPOINTS (NEW - Feb 27, 2026) =====
+
+    @admin_bp.route('/announcements/send', methods=['POST'])
+    @token_required
+    @admin_required
+    def send_announcement(current_user):
+        """
+        Send announcement to all users or test mode
+        
+        Body:
+            subject: Email subject line (required)
+            title: Announcement headline (required)
+            body: Main message content (required)
+            ctaText: Call-to-action button text (optional)
+            ctaLink: Call-to-action button link (optional)
+            imageUrl: Hero image URL (optional)
+            testMode: If true, send only to testEmail (default: false)
+            testEmail: Email address for test mode (required if testMode=true)
+            announcementType: Type of announcement (general, feature, update, promotional, educational)
+        """
+        try:
+            data = request.get_json()
+            
+            # Validate required fields
+            subject = data.get('subject', '').strip()
+            title = data.get('title', '').strip()
+            body = data.get('body', '').strip()
+            
+            if not subject:
+                return jsonify({
+                    'success': False,
+                    'message': 'Subject is required',
+                    'errors': {'subject': ['Subject is required']}
+                }), 400
+            
+            if not title:
+                return jsonify({
+                    'success': False,
+                    'message': 'Title is required',
+                    'errors': {'title': ['Title is required']}
+                }), 400
+            
+            if not body:
+                return jsonify({
+                    'success': False,
+                    'message': 'Body is required',
+                    'errors': {'body': ['Body is required']}
+                }), 400
+            
+            # Optional fields
+            cta_text = data.get('ctaText', '').strip() or None
+            cta_link = data.get('ctaLink', '').strip() or None
+            image_url = data.get('imageUrl', '').strip() or None
+            test_mode = data.get('testMode', False)
+            test_email = data.get('testEmail', '').strip() or None
+            announcement_type = data.get('announcementType', 'general')
+            
+            # Validate test mode
+            if test_mode and not test_email:
+                return jsonify({
+                    'success': False,
+                    'message': 'Test email is required for test mode',
+                    'errors': {'testEmail': ['Test email is required for test mode']}
+                }), 400
+            
+            # Get announcement service
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=mongo.db)
+            
+            # Send announcement
+            result = announcement_service.send_announcement(
+                subject=subject,
+                title=title,
+                body=body,
+                cta_text=cta_text,
+                cta_link=cta_link,
+                image_url=image_url,
+                test_mode=test_mode,
+                test_email=test_email,
+                announcement_type=announcement_type,
+                admin_id=str(current_user['_id'])
+            )
+            
+            if result['success']:
+                print(f"✅ Admin {current_user.get('email')} sent announcement: {subject}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': result['message'],
+                    'data': {
+                        'broadcastId': result.get('broadcast_id'),
+                        'recipientCount': result.get('recipient_count', 1 if test_mode else 0),
+                        'testMode': test_mode,
+                        'sentAt': datetime.utcnow().isoformat() + 'Z'
+                    }
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': result['message'],
+                    'errors': {'general': [result.get('error', 'Unknown error')]}
+                }), 500
+        
+        except Exception as e:
+            print(f"❌ Error sending announcement: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to send announcement',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/announcements/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_announcement_stats(current_user):
+        """
+        Get announcement statistics
+        
+        Query params:
+            days: Number of days to look back (default: 30)
+        """
+        try:
+            days = int(request.args.get('days', 30))
+            
+            # Get announcement service
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=mongo.db)
+            
+            # Get stats
+            stats = announcement_service.get_announcement_stats(days=days)
+            
+            if 'error' in stats:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to get announcement stats',
+                    'errors': {'general': [stats['error']]}
+                }), 500
+            
+            return jsonify({
+                'success': True,
+                'data': stats,
+                'message': f'Announcement stats for last {days} days'
+            })
+        
+        except Exception as e:
+            print(f"❌ Error getting announcement stats: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get announcement stats',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/announcements/audience-count', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_audience_count(current_user):
+        """
+        Get count of users in Resend audience
+        """
+        try:
+            # Count users with resendContactId (synced users)
+            synced_count = mongo.db.users.count_documents({'resendContactId': {'$exists': True}})
+            total_count = mongo.db.users.count_documents({})
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'syncedUsers': synced_count,
+                    'totalUsers': total_count,
+                    'unsyncedUsers': total_count - synced_count,
+                    'syncPercentage': round((synced_count / total_count * 100) if total_count > 0 else 0, 2)
+                },
+                'message': 'Audience count retrieved successfully'
+            })
+        
+        except Exception as e:
+            print(f"❌ Error getting audience count: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get audience count',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/announcements/sync-all-users', methods=['POST'])
+    @token_required
+    @admin_required
+    def sync_all_users_to_resend(current_user):
+        """
+        Manually sync all existing users to Resend Audience
+        This is a one-time operation for historical users
+        """
+        try:
+            # Get announcement service
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=mongo.db)
+            
+            # Test accounts to exclude
+            test_patterns = ['test', 'demo', 'example', 'fake', 'dummy', '@ficoreafrica.com']
+            test_emails = ['warpiiv@gmail.com']
+            
+            # Get all users that need syncing
+            users_to_sync = list(mongo.db.users.find(
+                {
+                    'resendContactId': {'$exists': False},
+                    'email': {'$exists': True}
+                },
+                {
+                    '_id': 1,
+                    'email': 1,
+                    'firstName': 1,
+                    'lastName': 1
+                }
+            ))
+            
+            # Filter out test accounts
+            real_users = []
+            for user in users_to_sync:
+                email = user.get('email', '').lower()
+                is_test = False
+                
+                # Check test email list
+                if email in [e.lower() for e in test_emails]:
+                    is_test = True
+                
+                # Check test patterns
+                for pattern in test_patterns:
+                    if pattern in email:
+                        is_test = True
+                        break
+                
+                if not is_test:
+                    real_users.append(user)
+            
+            print(f"📊 Found {len(real_users)} real users to sync (excluded {len(users_to_sync) - len(real_users)} test accounts)")
+            
+            # Sync users
+            success_count = 0
+            error_count = 0
+            errors = []
+            
+            for user in real_users:
+                try:
+                    result = announcement_service.sync_user_to_audience(
+                        email=user.get('email'),
+                        first_name=user.get('firstName', ''),
+                        last_name=user.get('lastName', ''),
+                        user_id=str(user.get('_id'))
+                    )
+                    
+                    if result['success']:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        errors.append({
+                            'email': user.get('email'),
+                            'error': result.get('error')
+                        })
+                except Exception as e:
+                    error_count += 1
+                    errors.append({
+                        'email': user.get('email'),
+                        'error': str(e)
+                    })
+            
+            print(f"✅ Sync complete: {success_count} success, {error_count} failed")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Synced {success_count} users to Resend Audience',
+                'data': {
+                    'totalUsers': len(real_users),
+                    'successCount': success_count,
+                    'errorCount': error_count,
+                    'errors': errors[:10]  # Return first 10 errors
+                }
+            })
+        
+        except Exception as e:
+            print(f"❌ Error syncing users: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to sync users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     return admin_bp
+
