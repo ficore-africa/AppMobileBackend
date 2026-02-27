@@ -2710,6 +2710,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
         creditors_count = tax_data.get('creditors_count', 0)
         
         # Cash/Bank balance (from wallet or user data)
+        # CRITICAL (Feb 27, 2026): This is the OPENING cash balance, not current balance
+        # Net profit is added to equity separately, so we don't double-count
+        # Formula: Assets (opening cash + fixed assets) = Liabilities + Equity (opening + net profit)
         cash_balance = tax_data.get('cash_balance', 0)
         
         # Opening equity and drawings
