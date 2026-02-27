@@ -1,0 +1,39 @@
+name: Expire Subscriptions Daily
+
+on:
+  schedule:
+    # Runs daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger from GitHub Actions tab
+
+jobs:
+  expire-subscriptions:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger Subscription Expiration Processing
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            https://mobilebackend.ficoreafrica.com/admin/subscriptions/process-expirations \
+            -H "Authorization: Bearer ${{ secrets.ADMIN_TOKEN }}" \
+            -H "Content-Type: application/json")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Failed to process expirations"
+            exit 1
+          fi
+          
+          echo "✅ Successfully processed expirations"
+      
+      - name: Send Notification on Failure
+        if: failure()
+        run: |
+          echo "⚠️ Subscription expiration job failed!"
+          echo "Check the logs above for details"
+          # TODO: Add Slack/Discord/Email notification here
