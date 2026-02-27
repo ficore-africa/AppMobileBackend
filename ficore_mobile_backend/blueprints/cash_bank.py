@@ -366,6 +366,26 @@ def init_cash_bank_blueprint(mongo, token_required):
             
             mongo.db.cash_adjustments.insert_one(adjustment)
             
+            # CRITICAL FIX (Feb 27, 2026): Sync user.drawings field when creating a drawing
+            # This ensures the drawings field stays in sync with cash_adjustments collection
+            if adjustment_type == 'drawing':
+                # Calculate total drawings from all active drawing adjustments
+                total_drawings = 0.0
+                all_drawings = mongo.db.cash_adjustments.find({
+                    'userId': current_user['_id'],
+                    'type': 'drawing',
+                    'status': 'active',
+                    'isDeleted': False
+                })
+                for drawing in all_drawings:
+                    total_drawings += drawing.get('amount', 0.0)
+                
+                # Update user.drawings field
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {'$set': {'drawings': total_drawings}}
+                )
+            
             # Convert ObjectId to string for response
             adjustment['_id'] = str(adjustment['_id'])
             adjustment['userId'] = str(adjustment['userId'])
@@ -416,6 +436,25 @@ def init_cash_bank_blueprint(mongo, token_required):
                     }
                 }
             )
+            
+            # CRITICAL FIX (Feb 27, 2026): Sync user.drawings field when deleting a drawing
+            if adjustment.get('type') == 'drawing':
+                # Recalculate total drawings from remaining active drawing adjustments
+                total_drawings = 0.0
+                all_drawings = mongo.db.cash_adjustments.find({
+                    'userId': current_user['_id'],
+                    'type': 'drawing',
+                    'status': 'active',
+                    'isDeleted': False
+                })
+                for drawing in all_drawings:
+                    total_drawings += drawing.get('amount', 0.0)
+                
+                # Update user.drawings field
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {'$set': {'drawings': total_drawings}}
+                )
             
             return jsonify({
                 'success': True,
