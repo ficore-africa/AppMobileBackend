@@ -65,51 +65,14 @@ class AnnouncementService:
             dict: {'success': bool, 'contact_id': str or None, 'error': str or None}
         """
         try:
-            # Try different API formats to find what works
-            # Based on Node.js example: resend.contacts.create({ email, firstName, lastName })
-            
-            print(f'🔍 DEBUG: Attempting to sync user: {email}')
-            print(f'🔍 DEBUG: first_name={first_name}, last_name={last_name}')
-            
-            # Try format 1: Direct parameters (Python SDK style)
-            try:
-                print(f'🔍 DEBUG: Trying format 1 - Direct dict parameter')
-                contact = resend.Contacts.create({
-                    'email': email,
-                    'first_name': first_name,
-                    'last_name': last_name
-                })
-                print(f'✅ DEBUG: Format 1 worked! Response: {contact}')
-            except Exception as e1:
-                print(f'❌ DEBUG: Format 1 failed: {e1}')
-                
-                # Try format 2: Keyword arguments
-                try:
-                    print(f'🔍 DEBUG: Trying format 2 - Keyword arguments')
-                    contact = resend.Contacts.create(
-                        email=email,
-                        first_name=first_name,
-                        last_name=last_name
-                    )
-                    print(f'✅ DEBUG: Format 2 worked! Response: {contact}')
-                except Exception as e2:
-                    print(f'❌ DEBUG: Format 2 failed: {e2}')
-                    
-                    # Try format 3: With audience_id
-                    try:
-                        print(f'🔍 DEBUG: Trying format 3 - With audience_id')
-                        contact = resend.Contacts.create({
-                            'audience_id': self.audience_id,
-                            'email': email,
-                            'first_name': first_name,
-                            'last_name': last_name
-                        })
-                        print(f'✅ DEBUG: Format 3 worked! Response: {contact}')
-                    except Exception as e3:
-                        print(f'❌ DEBUG: Format 3 failed: {e3}')
-                        
-                        # All formats failed
-                        raise Exception(f'All API formats failed. Last error: {e3}')
+            # Resend Contacts API requires audience_id in params dict
+            # Based on SDK source: path = f"/audiences/{params['audience_id']}/contacts"
+            contact = resend.Contacts.create({
+                'audience_id': self.audience_id,
+                'email': email,
+                'first_name': first_name,
+                'last_name': last_name
+            })
             
             print(f'✅ User synced to Resend: {email}')
             
@@ -135,13 +98,18 @@ class AnnouncementService:
             }
             
         except Exception as e:
-            print(f'❌ Failed to sync user to Resend: {e}')
-            import traceback
-            traceback.print_exc()
+            error_msg = str(e)
+            
+            # Check for API key permission error
+            if 'restricted to only send emails' in error_msg:
+                error_msg = 'API key lacks permissions. Please create a new Resend API key with "Full Access" (not just "Sending Access") in your Resend dashboard.'
+                print(f'🔑 PERMISSION ERROR: {error_msg}')
+            
+            print(f'❌ Failed to sync user to Resend: {error_msg}')
             return {
                 'success': False,
                 'contact_id': None,
-                'error': str(e)
+                'error': error_msg
             }
     
     def create_announcement_template(self, title, body, cta_text=None, cta_link=None, image_url=None):
