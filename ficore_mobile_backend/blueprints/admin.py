@@ -9270,6 +9270,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
         This is a one-time operation for historical users
         """
         try:
+            import time
+            
             # Get announcement service
             from services.announcement_service import get_announcement_service
             announcement_service = get_announcement_service(mongo_db=mongo.db)
@@ -9313,12 +9315,12 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             
             print(f"📊 Found {len(real_users)} real users to sync (excluded {len(users_to_sync) - len(real_users)} test accounts)")
             
-            # Sync users
+            # Sync users with rate limiting (2 requests/second max)
             success_count = 0
             error_count = 0
             errors = []
             
-            for user in real_users:
+            for i, user in enumerate(real_users):
                 try:
                     result = announcement_service.sync_user_to_audience(
                         email=user.get('email'),
@@ -9335,12 +9337,22 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                             'email': user.get('email'),
                             'error': result.get('error')
                         })
+                    
+                    # Rate limiting: Sleep 0.6 seconds between requests (1.67 requests/second)
+                    # This stays under the 2 requests/second limit
+                    if i < len(real_users) - 1:  # Don't sleep after last user
+                        time.sleep(0.6)
+                        
                 except Exception as e:
                     error_count += 1
                     errors.append({
                         'email': user.get('email'),
                         'error': str(e)
                     })
+                    
+                    # Still sleep to avoid rate limit on next request
+                    if i < len(real_users) - 1:
+                        time.sleep(0.6)
             
             print(f"✅ Sync complete: {success_count} success, {error_count} failed")
             
