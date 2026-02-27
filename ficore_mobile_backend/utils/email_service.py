@@ -6,8 +6,6 @@ Uses Resend API for transactional and marketing emails
 import os
 import resend
 from datetime import datetime
-from flask import current_app
-from extensions import mongo
 from bson import ObjectId
 
 
@@ -16,7 +14,7 @@ class EmailService:
     Centralized email service using Resend
     """
     
-    def __init__(self):
+    def __init__(self, mongo_db=None):
         """Initialize Resend with API key from environment"""
         self.api_key = os.getenv('RESEND_API_KEY')
         if not self.api_key:
@@ -24,11 +22,16 @@ class EmailService:
         
         resend.api_key = self.api_key
         self.from_email = "FiCore <team@ficoreafrica.com>"
+        self.mongo_db = mongo_db  # Optional MongoDB connection for logging
     
     def _log_email(self, to_email, subject, email_type, status, email_id=None, error=None, user_id=None):
         """
         Log email to database for tracking and debugging
         """
+        if not self.mongo_db:
+            print(f'⚠️ MongoDB not available for email logging')
+            return
+            
         try:
             log_entry = {
                 'toEmail': to_email,
@@ -40,7 +43,7 @@ class EmailService:
                 'sentAt': datetime.utcnow(),
                 'userId': ObjectId(user_id) if user_id else None
             }
-            mongo.db.email_logs.insert_one(log_entry)
+            self.mongo_db.email_logs.insert_one(log_entry)
         except Exception as e:
             print(f'Error logging email: {e}')
     
@@ -528,6 +531,14 @@ class EmailService:
 
 
 # Convenience function for quick access
-def get_email_service():
-    """Get EmailService instance"""
-    return EmailService()
+def get_email_service(mongo_db=None):
+    """
+    Get EmailService instance
+    
+    Args:
+        mongo_db: Optional MongoDB database connection for logging
+    
+    Returns:
+        EmailService instance
+    """
+    return EmailService(mongo_db=mongo_db)
