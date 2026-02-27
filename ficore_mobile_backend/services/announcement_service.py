@@ -32,7 +32,7 @@ class AnnouncementService:
         """
         Log announcement to database for tracking
         """
-        if not self.mongo_db:
+        if self.mongo_db is None:
             print(f'⚠️ MongoDB not available for announcement logging')
             return
             
@@ -65,18 +65,18 @@ class AnnouncementService:
             dict: {'success': bool, 'contact_id': str or None, 'error': str or None}
         """
         try:
-            # Add contact to Resend Audience
+            # Add contact to Resend (NO audience_id parameter!)
+            # Resend Contacts API doesn't use audience_id
             contact = resend.Contacts.create(
-                audience_id=self.audience_id,
                 email=email,
                 first_name=first_name,
                 last_name=last_name
             )
             
-            print(f'✅ User synced to Resend Audience: {email}')
+            print(f'✅ User synced to Resend: {email}')
             
             # Log sync to MongoDB
-            if self.mongo_db and user_id:
+            if self.mongo_db is not None and user_id:
                 try:
                     self.mongo_db.users.update_one(
                         {'_id': ObjectId(user_id)},
@@ -97,7 +97,7 @@ class AnnouncementService:
             }
             
         except Exception as e:
-            print(f'❌ Failed to sync user to Resend Audience: {e}')
+            print(f'❌ Failed to sync user to Resend: {e}')
             return {
                 'success': False,
                 'contact_id': None,
@@ -272,7 +272,7 @@ class AnnouncementService:
                 # Live mode: Send to all users via Broadcasts
                 # Resend Broadcasts automatically handle unsubscribe links
                 
-                if not self.mongo_db:
+                if self.mongo_db is None:
                     return {
                         'success': False,
                         'message': 'Database connection required for live announcements',
@@ -398,7 +398,7 @@ class AnnouncementService:
         Returns:
             dict: Statistics about announcements
         """
-        if not self.mongo_db:
+        if self.mongo_db is None:
             return {'error': 'Database connection required'}
         
         try:
