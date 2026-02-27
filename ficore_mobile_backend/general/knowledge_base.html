@@ -1,0 +1,610 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('general_knowledge_base', default='Knowledge Base') | e }}{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5 reveal">
+        <h1 class="display-4 fw-bold" style="color: #004aad;">{{ t('general_knowledge_base', default='Knowledge Base') | e }}</h1>
+        <p class="lead" style="color: #6c757d;">{{ t('general_knowledge_base_desc', default='Master your business finances with FiCore Africa guides.') | e }}</p>
+    </div>
+
+    <!-- App Transition Notice -->
+    <div class="alert border-0 mb-5 shadow-sm" style="background: linear-gradient(135deg, #e3f2fd, #f8f9fa); border-left: 5px solid #004aad !important;">
+        <div class="d-flex align-items-start p-2">
+            <i class="bi bi-phone-vibrate fs-3 me-3" style="color: #004aad;"></i>
+            <div class="text-start">
+                <h6 class="fw-bold mb-2">{{ t('kb_app_transition_title', default='App Transition Notice') | e }}</h6>
+                <p class="mb-2 small">{{ t('kb_app_transition_desc', default='FiCore has evolved from a web application to a mobile-first platform. For the full feature set including Voice Logging and Offline Mode, please use our Android app.') | e }}</p>
+                <p class="mb-2 small"><strong>{{ t('kb_existing_users', default='Existing Users:') | e }}</strong> <a href="{{ url_for('users.login') | e }}" class="text-decoration-none fw-bold" style="color: #004aad;">{{ t('kb_login_here', default='Login here') | e }}</a> {{ t('kb_to_access_data', default='to access your historical web data.') | e }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Feature Cards -->
+    <div class="row g-4 mb-5">
+        <!-- DIICE Method Card -->
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm p-4 text-center ficore-card">
+                <div class="icon-wrap mx-auto mb-3" style="background: #e3f2fd; color: #004aad;">
+                    <i class="bi bi-journal-check fs-2"></i>
+                </div>
+                <h5 class="fw-bold" style="color: #004aad;">DIICE Method</h5>
+                <p class="small text-muted">Learn our proprietary 5-step framework for error-free bookkeeping.</p>
+                <button class="btn btn-sm mt-auto" style="background: #004aad; color: white; border: none;" data-bs-toggle="collapse" data-bs-target="#diiceContent">Read Guide</button>
+            </div>
+        </div>
+
+        <!-- Liquidity Management Card -->
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm p-4 text-center ficore-card">
+                <div class="icon-wrap mx-auto mb-3" style="background: #d4edda; color: #28a745;">
+                    <i class="bi bi-wallet2 fs-2"></i>
+                </div>
+                <h5 class="fw-bold" style="color: #28a745;">Liquidity Management</h5>
+                <p class="small text-muted">How to use your FiCore wallet to save on business expenses.</p>
+                <button class="btn btn-sm mt-auto" style="background: #28a745; color: white; border: none;" data-bs-toggle="collapse" data-bs-target="#liquidityContent">Read Guide</button>
+            </div>
+        </div>
+
+        <!-- Tax Compliance Card -->
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm p-4 text-center ficore-card">
+                <div class="icon-wrap mx-auto mb-3" style="background: #f8d7da; color: #dc3545;">
+                    <i class="bi bi-shield-check fs-2"></i>
+                </div>
+                <h5 class="fw-bold" style="color: #dc3545;">Tax Compliance</h5>
+                <p class="small text-muted">Understanding the Nigeria 2025 Tax Act and how FiCore keeps you safe.</p>
+                <button class="btn btn-sm mt-auto" style="background: #dc3545; color: white; border: none;" data-bs-toggle="collapse" data-bs-target="#taxContent">Read Guide</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Visual User Guides Section -->
+    <div class="mb-5">
+        <h2 class="text-center fw-bold mb-4" style="color: #004aad;">Visual User Guides</h2>
+        <p class="text-center text-muted mb-4">Step-by-step tutorials to help you master FiCore Africa</p>
+        
+        <div class="row g-4">
+            <!-- Getting Started Guide -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm ficore-card">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="icon-wrap me-3" style="background: #e3f2fd; color: #004aad;">
+                                <i class="bi bi-play-circle fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0" style="color: #004aad;">Getting Started</h5>
+                        </div>
+                        <p class="small text-muted mb-3">New to FiCore? Start here to set up your account and record your first transaction.</p>
+                        <button class="btn btn-sm" style="background: #004aad; color: white; border: none;" data-bs-toggle="collapse" data-bs-target="#gettingStartedGuide">View Guide</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Voice Entry Guide -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm ficore-card">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="icon-wrap me-3" style="background: #fff3cd; color: #ffc107;">
+                                <i class="bi bi-mic-fill fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0" style="color: #ffc107;">Voice Entry</h5>
+                        </div>
+                        <p class="small text-muted mb-3">Record transactions in 10 seconds using voice commands in English, Hausa, or Pidgin.</p>
+                        <button class="btn btn-sm" style="background: #ffc107; color: #000; border: none;" data-bs-toggle="collapse" data-bs-target="#voiceEntryGuide">View Guide</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Wallet & VAS Guide -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm ficore-card">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="icon-wrap me-3" style="background: #d4edda; color: #28a745;">
+                                <i class="bi bi-credit-card fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0" style="color: #28a745;">Wallet & Purchases</h5>
+                        </div>
+                        <p class="small text-muted mb-3">Buy airtime, data, and pay bills while automatically tracking expenses.</p>
+                        <button class="btn btn-sm" style="background: #28a745; color: white; border: none;" data-bs-toggle="collapse" data-bs-target="#walletGuide">View Guide</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports & Tax Guide -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm ficore-card">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="icon-wrap me-3" style="background: #f8d7da; color: #dc3545;">
+                                <i class="bi bi-file-earmark-bar-graph fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0" style="color: #dc3545;">Reports & Tax</h5>
+                        </div>
+                        <p class="small text-muted mb-3">Generate tax-ready reports and export financial statements in one tap.</p>
+                        <button class="btn btn-sm" style="background: #dc3545; color: white; border: none;" data-bs-toggle="collapse" data-bs-target="#reportsGuide">View Guide</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Accordion Content -->
+    <div class="accordion shadow-sm" id="kbAccordion">
+        <!-- DIICE Method Content -->
+        <div class="collapse" id="diiceContent" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #004aad;">Mastering DIICE Bookkeeping</h3>
+                <p>DIICE stands for <strong>Daily Income, Inventory, Cost, and Expenses</strong>. It is designed for the busy African entrepreneur who doesn't have time for complex accounting.</p>
+                
+                <ul class="list-group list-group-flush mb-4">
+                    <li class="list-group-item border-0 px-0">
+                        <strong style="color: #004aad;">D - Daily:</strong> Log every sale immediately using Voice Logging or manual entry.
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong style="color: #004aad;">I - Income:</strong> Track cash vs. digital payments to avoid "missing money" at the end of the day.
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong style="color: #004aad;">I - Inventory:</strong> Automate stock alerts so you never run out of top-selling items.
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong style="color: #004aad;">C - Cost:</strong> Track the wholesale cost of goods to see your true margin.
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong style="color: #004aad;">E - Expenses:</strong> Categorize daily spending (transport, fuel, utilities) for tax deductions.
+                    </li>
+                </ul>
+
+                <div class="alert" style="background: #e3f2fd; border-left: 4px solid #004aad;">
+                    <strong style="color: #004aad;">Pro Tip:</strong> Use the mobile app's Voice Entry feature to log sales in real-time. Say "Sold 5 bags of rice for 50,000 naira" and FiCore does the rest.
+                </div>
+            </div>
+        </div>
+
+        <!-- Liquidity Management Content -->
+        <div class="collapse" id="liquidityContent" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #28a745;">Maximizing Business Liquidity</h3>
+                <p>Cash flow is the lifeblood of your business. FiCore's Liquidity Wallet isn't just a payment method; it's a cost-saving machine that automatically tracks your expenses.</p>
+                
+                <div class="row g-4 mt-2">
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #d4edda;">
+                            <h6 class="fw-bold" style="color: #28a745;">Automated Expense Tracking</h6>
+                            <p class="small mb-0">Every time you buy airtime, data, or pay bills via FiCore, it's automatically logged as an expense. Zero manual work.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #d4edda;">
+                            <h6 class="fw-bold" style="color: #28a745;">Business Spending Account</h6>
+                            <p class="small mb-0">Keep business funds separate from personal money. Track every naira spent on business operations.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #d4edda;">
+                            <h6 class="fw-bold" style="color: #28a745;">Instant Reconciliation</h6>
+                            <p class="small mb-0">No more end-of-month reconciliation headaches. Your books are always up-to-date.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #d4edda;">
+                            <h6 class="fw-bold" style="color: #28a745;">Tax-Ready Records</h6>
+                            <p class="small mb-0">All wallet transactions are categorized and ready for tax reporting. FIRS-compliant from day one.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert mt-4" style="background: #d4edda; border-left: 4px solid #28a745;">
+                    <strong style="color: #28a745;">Success Story:</strong> A shop owner in Kaduna saved 10 hours per month by using FiCore wallet for all business purchases. No more manual expense tracking!
+                </div>
+            </div>
+        </div>
+
+        <!-- Tax Compliance Content -->
+        <div class="collapse" id="taxContent" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #dc3545;">Nigeria Tax Act 2025 Compliance</h3>
+                <p>The new regulations require small businesses to keep digital records to benefit from tax exemptions and avoid penalties.</p>
+                
+                <div class="alert" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                    <strong style="color: #856404;">Important:</strong> Businesses under ₦100M annual revenue are tax-exempt BUT still need digital records to prove compliance.
+                </div>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #dc3545;">How FiCore Keeps You Compliant</h5>
+                <ul class="list-group list-group-flush mb-4">
+                    <li class="list-group-item border-0 px-0">
+                        <i class="bi bi-check-circle-fill me-2" style="color: #28a745;"></i>
+                        <strong>Automated Categorization:</strong> Every transaction is automatically categorized for tax purposes
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <i class="bi bi-check-circle-fill me-2" style="color: #28a745;"></i>
+                        <strong>One-Tap Reports:</strong> Generate tax-ready P&L, Balance Sheet, and Cash Flow statements instantly
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <i class="bi bi-check-circle-fill me-2" style="color: #28a745;"></i>
+                        <strong>Audit Trail:</strong> Immutable records that FIRS can verify
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <i class="bi bi-check-circle-fill me-2" style="color: #28a745;"></i>
+                        <strong>NRS E-Invoicing Ready:</strong> Prepared for future e-invoicing requirements
+                    </li>
+                </ul>
+
+                <div class="alert" style="background: #f8d7da; border-left: 4px solid #dc3545;">
+                    <strong style="color: #dc3545;">Pro Tip:</strong> Using FiCore to generate your monthly P&L makes you "Bank-Ready" for low-interest loans from commercial banks.
+                </div>
+
+                <p class="mt-3">Our reports are designed to be exported and handed directly to a tax official or bank manager without any modifications needed.</p>
+            </div>
+        </div>
+
+        <!-- Getting Started Guide -->
+        <div class="collapse" id="gettingStartedGuide" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #004aad;">Getting Started with FiCore</h3>
+                
+                <div class="row g-4">
+                    <div class="col-md-12">
+                        <div class="d-flex align-items-start mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: #004aad; color: white; font-weight: bold;">1</div>
+                            <div>
+                                <h5 class="fw-bold" style="color: #004aad;">Download the App</h5>
+                                <p class="mb-0">Get FiCore from Google Play Store. Search for "FiCore Africa" or visit our website for the download link.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: #004aad; color: white; font-weight: bold;">2</div>
+                            <div>
+                                <h5 class="fw-bold" style="color: #004aad;">Create Your Account</h5>
+                                <p class="mb-0">Sign up with your phone number and email. Choose your preferred language: English, Hausa, or Pidgin.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: #004aad; color: white; font-weight: bold;">3</div>
+                            <div>
+                                <h5 class="fw-bold" style="color: #004aad;">Set Up Your Business Profile</h5>
+                                <p class="mb-0">Enter your business name, type, and location. This helps FiCore provide relevant insights.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: #004aad; color: white; font-weight: bold;">4</div>
+                            <div>
+                                <h5 class="fw-bold" style="color: #004aad;">Record Your First Transaction</h5>
+                                <p class="mb-0">Tap the "+" button and choose Income or Expense. Use voice entry or manual input. FiCore automatically categorizes it.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: #004aad; color: white; font-weight: bold;">5</div>
+                            <div>
+                                <h5 class="fw-bold" style="color: #004aad;">Explore Features</h5>
+                                <p class="mb-0">Check out the Dashboard for insights, set up your Wallet for automated tracking, and explore Reports.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert mt-4" style="background: #e3f2fd; border-left: 4px solid #004aad;">
+                    <strong style="color: #004aad;">First-Time Tip:</strong> Start by recording yesterday's transactions to get comfortable with the app. Then make it a daily habit!
+                </div>
+            </div>
+        </div>
+
+        <!-- Voice Entry Guide -->
+        <div class="collapse" id="voiceEntryGuide" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #ffc107;">Voice Entry: Record Transactions in 10 Seconds</h3>
+                <p>Voice Entry is FiCore's fastest way to log transactions. Speak naturally in English, Hausa, or Pidgin, and our AI does the rest.</p>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #ffc107;">How to Use Voice Entry</h5>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #fff3cd;">
+                            <h6 class="fw-bold">Step 1: Tap the Mic Icon</h6>
+                            <p class="small mb-0">On the home screen, tap the microphone icon or the "+" button and select "Voice Entry".</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #fff3cd;">
+                            <h6 class="fw-bold">Step 2: Speak Your Transaction</h6>
+                            <p class="small mb-0">Say what happened: "Sold 10 bags of rice for 100,000 naira" or "Bought fuel for 5,000 naira".</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #fff3cd;">
+                            <h6 class="fw-bold">Step 3: Review & Confirm</h6>
+                            <p class="small mb-0">FiCore shows what it understood. Check the amount, category, and description. Tap "Save".</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #fff3cd;">
+                            <h6 class="fw-bold">Step 4: Done!</h6>
+                            <p class="small mb-0">Your transaction is recorded, categorized, and ready for reports. Total time: 10 seconds.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #ffc107;">Voice Entry Examples</h5>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item border-0 px-0">
+                        <strong>English:</strong> "Sold 5 phones for 250,000 naira"
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong>Hausa:</strong> "Na sayar da jakuna 10 akan naira 50,000"
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong>Pidgin:</strong> "I sell 20 bag of rice for 200,000 naira"
+                    </li>
+                    <li class="list-group-item border-0 px-0">
+                        <strong>Expense:</strong> "Bought fuel for 5,000 naira"
+                    </li>
+                </ul>
+
+                <div class="alert mt-4" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                    <strong style="color: #856404;">Pro Tip:</strong> Voice Entry works offline! Record transactions even without internet, and they'll sync when you're back online.
+                </div>
+            </div>
+        </div>
+
+        <!-- Wallet & VAS Guide -->
+        <div class="collapse" id="walletGuide" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #28a745;">Wallet & Automated Expense Tracking</h3>
+                <p>FiCore Wallet is your business spending account. Buy airtime, data, and pay bills while automatically tracking every expense.</p>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #28a745;">Setting Up Your Wallet</h5>
+                <div class="row g-4">
+                    <div class="col-md-12">
+                        <div class="d-flex align-items-start mb-3">
+                            <i class="bi bi-1-circle-fill me-3 fs-4" style="color: #28a745;"></i>
+                            <div>
+                                <h6 class="fw-bold">Fund Your Wallet</h6>
+                                <p class="small mb-0">Tap "Wallet" → "Add Money". Choose your payment method and amount. Funds appear instantly.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-3">
+                            <i class="bi bi-2-circle-fill me-3 fs-4" style="color: #28a745;"></i>
+                            <div>
+                                <h6 class="fw-bold">Buy Airtime or Data</h6>
+                                <p class="small mb-0">Tap "Buy Airtime" or "Buy Data". Select network, enter amount, confirm. Done in 30 seconds.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-3">
+                            <i class="bi bi-3-circle-fill me-3 fs-4" style="color: #28a745;"></i>
+                            <div>
+                                <h6 class="fw-bold">Automatic Expense Recording</h6>
+                                <p class="small mb-0">FiCore automatically records the purchase as an expense. No manual entry needed!</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start">
+                            <i class="bi bi-4-circle-fill me-3 fs-4" style="color: #28a745;"></i>
+                            <div>
+                                <h6 class="fw-bold">View Transaction History</h6>
+                                <p class="small mb-0">Check "Recent Activities" to see all wallet transactions. Export for tax reporting anytime.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #28a745;">What You Can Buy</h5>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="p-3 text-center rounded-3" style="background: #d4edda;">
+                            <i class="bi bi-phone fs-2 mb-2" style="color: #28a745;"></i>
+                            <h6 class="fw-bold">Airtime</h6>
+                            <p class="small mb-0">All networks supported</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 text-center rounded-3" style="background: #d4edda;">
+                            <i class="bi bi-wifi fs-2 mb-2" style="color: #28a745;"></i>
+                            <h6 class="fw-bold">Data</h6>
+                            <p class="small mb-0">All plans available</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 text-center rounded-3" style="background: #d4edda;">
+                            <i class="bi bi-lightning-charge fs-2 mb-2" style="color: #28a745;"></i>
+                            <h6 class="fw-bold">Bills</h6>
+                            <p class="small mb-0">Electricity & more</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert mt-4" style="background: #d4edda; border-left: 4px solid #28a745;">
+                    <strong style="color: #28a745;">Time Saver:</strong> A market trader in Kano saved 10 hours per month by using FiCore wallet for all business purchases. No more manual expense tracking!
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports & Tax Guide -->
+        <div class="collapse" id="reportsGuide" data-bs-parent="#kbAccordion">
+            <div class="card card-body border-0 mb-4 p-5">
+                <h3 class="fw-bold mb-4" style="color: #dc3545;">Reports & Tax Compliance</h3>
+                <p>Generate professional financial reports in one tap. Perfect for tax filing, bank loans, or business decisions.</p>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #dc3545;">Available Reports</h5>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #f8d7da;">
+                            <h6 class="fw-bold" style="color: #dc3545;"><i class="bi bi-file-earmark-text me-2"></i>Profit & Loss (P&L)</h6>
+                            <p class="small mb-0">Shows income, expenses, and net profit for any period. Essential for tax filing.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #f8d7da;">
+                            <h6 class="fw-bold" style="color: #dc3545;"><i class="bi bi-file-earmark-bar-graph me-2"></i>Balance Sheet</h6>
+                            <p class="small mb-0">Shows assets, liabilities, and equity. Required for bank loan applications.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #f8d7da;">
+                            <h6 class="fw-bold" style="color: #dc3545;"><i class="bi bi-cash-stack me-2"></i>Cash Flow Statement</h6>
+                            <p class="small mb-0">Tracks money in and out. Helps you manage liquidity and avoid cash shortages.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3" style="background: #f8d7da;">
+                            <h6 class="fw-bold" style="color: #dc3545;"><i class="bi bi-calendar-check me-2"></i>Monthly Summary</h6>
+                            <p class="small mb-0">Quick overview of the month's performance. Perfect for quick business reviews.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="fw-bold mt-4 mb-3" style="color: #dc3545;">How to Generate Reports</h5>
+                <div class="row g-4">
+                    <div class="col-md-12">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px; background: #dc3545; color: white; font-weight: bold; font-size: 14px;">1</div>
+                            <div>
+                                <p class="mb-0">Tap "Reports" from the main menu</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px; background: #dc3545; color: white; font-weight: bold; font-size: 14px;">2</div>
+                            <div>
+                                <p class="mb-0">Choose report type (P&L, Balance Sheet, Cash Flow)</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px; background: #dc3545; color: white; font-weight: bold; font-size: 14px;">3</div>
+                            <div>
+                                <p class="mb-0">Select date range (This Month, Last Month, Custom)</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px; background: #dc3545; color: white; font-weight: bold; font-size: 14px;">4</div>
+                            <div>
+                                <p class="mb-0">Tap "Generate" - Report appears in seconds</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-start">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px; background: #dc3545; color: white; font-weight: bold; font-size: 14px;">5</div>
+                            <div>
+                                <p class="mb-0">Export as PDF or share via WhatsApp/Email</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert mt-4" style="background: #f8d7da; border-left: 4px solid #dc3545;">
+                    <strong style="color: #dc3545;">Bank-Ready:</strong> FiCore reports are accepted by Nigerian banks for loan applications. No modifications needed!
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Custom Styles -->
+<style>
+    /* FiCore Branding Colors */
+    :root {
+        --ficore-primary: #004aad;
+        --ficore-primary-light: #e3f2fd;
+        --ficore-success: #28a745;
+        --ficore-success-light: #d4edda;
+        --ficore-warning: #ffc107;
+        --ficore-warning-light: #fff3cd;
+        --ficore-danger: #dc3545;
+        --ficore-danger-light: #f8d7da;
+    }
+
+    /* Icon Wrapper */
+    .icon-wrap {
+        width: 70px;
+        height: 70px;
+        display: flex;
+        align-items: center;
+        justify-content-center;
+        border-radius: 20px;
+    }
+
+    /* Card Hover Effect */
+    .ficore-card {
+        transition: all 0.3s ease;
+    }
+
+    .ficore-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0, 74, 173, 0.15) !important;
+    }
+
+    /* Smooth Reveal Animation */
+    .reveal {
+        animation: fadeInUp 0.6s ease-out;
+    }
+
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Button Hover Effects */
+    .btn {
+        transition: all 0.3s ease;
+    }
+
+    .btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Accordion Smooth Transition */
+    .collapse {
+        transition: height 0.35s ease;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+        width: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: var(--ficore-primary);
+        border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #003580;
+    }
+
+    /* Responsive Adjustments */
+    @media (max-width: 768px) {
+        .icon-wrap {
+            width: 50px;
+            height: 50px;
+        }
+
+        .display-4 {
+            font-size: 2rem;
+        }
+
+        .card-body {
+            padding: 1.5rem !important;
+        }
+    }
+</style>
+
+{% endblock %}
