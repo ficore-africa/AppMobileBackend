@@ -1,459 +1,533 @@
 """
 Email Service for FiCore Africa
-Professional Gmail SMTP service for OTP delivery and notifications
-Zero-cost communication strategy implementation
+Uses Resend API for transactional and marketing emails
 """
-import smtplib
-import os
-import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime
-from typing import Optional, Dict, Any
 
-logger = logging.getLogger(__name__)
+import os
+import resend
+from datetime import datetime
+from flask import current_app
+from extensions import mongo
+from bson import ObjectId
+
 
 class EmailService:
-    """Professional email service for OTP and notifications"""
+    """
+    Centralized email service using Resend
+    """
     
     def __init__(self):
-        self.sender_email = os.getenv('GMAIL_SENDER', 'ficore.africa@gmail.com')
-        self.sender_password = os.getenv('GMAIL_APP_PASSWORD')
-        self.sender_name = "FiCore Africa"
+        """Initialize Resend with API key from environment"""
+        self.api_key = os.getenv('RESEND_API_KEY')
+        if not self.api_key:
+            raise ValueError('RESEND_API_KEY environment variable not set')
         
-        if not self.sender_password:
-            logger.warning("Gmail App Password not configured. Email service will be disabled.")
-            self.enabled = False
-        else:
-            self.enabled = True
-            logger.info("Email service initialized successfully")
+        resend.api_key = self.api_key
+        self.from_email = "FiCore <noreply@ficoreafrica.com>"
     
-    def send_otp(self, to_email: str, otp_code: str, user_name: Optional[str] = None) -> Dict[str, Any]:
+    def _log_email(self, to_email, subject, email_type, status, email_id=None, error=None, user_id=None):
         """
-        Send OTP verification code via email
-        
-        Args:
-            to_email: Recipient email address
-            otp_code: 6-digit verification code
-            user_name: Optional user name for personalization
-            
-        Returns:
-            Dict with success status and details
-        """
-        if not self.enabled:
-            return {
-                'success': False,
-                'error': 'Email service not configured',
-                'method': 'disabled'
-            }
-        
-        try:
-            subject = f"{otp_code} is your FiCore verification code"
-            
-            # Professional HTML template
-            html_body = self._create_otp_template(otp_code, user_name)
-            
-            result = self._send_email(to_email, subject, html_body)
-            
-            if result['success']:
-                logger.info(f"OTP email sent successfully to {to_email}")
-                return {
-                    'success': True,
-                    'method': 'gmail_smtp',
-                    'to': to_email,
-                    'sent_at': datetime.utcnow().isoformat(),
-                    'message': 'OTP sent successfully'
-                }
-            else:
-                return result
-                
-        except Exception as e:
-            logger.error(f"OTP email send failed: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e),
-                'method': 'failed'
-            }
-    
-    def send_password_reset(self, to_email: str, reset_token: str, user_name: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Send password reset link via email
-        
-        Args:
-            to_email: Recipient email address
-            reset_token: Password reset token
-            user_name: Optional user name for personalization
-            
-        Returns:
-            Dict with success status and details
-        """
-        if not self.enabled:
-            return {
-                'success': False,
-                'error': 'Email service not configured',
-                'method': 'disabled'
-            }
-        
-        try:
-            subject = "Reset your FiCore password"
-            
-            # Professional HTML template for password reset
-            html_body = self._create_password_reset_template(reset_token, user_name)
-            
-            result = self._send_email(to_email, subject, html_body)
-            
-            if result['success']:
-                logger.info(f"Password reset email sent successfully to {to_email}")
-                return {
-                    'success': True,
-                    'method': 'gmail_smtp',
-                    'to': to_email,
-                    'sent_at': datetime.utcnow().isoformat(),
-                    'message': 'Password reset email sent successfully'
-                }
-            else:
-                return result
-                
-        except Exception as e:
-            logger.error(f"Password reset email send failed: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e),
-                'method': 'failed'
-            }
-    
-    def send_transaction_receipt(self, to_email: str, transaction_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send transaction receipt via email
-        
-        Args:
-            to_email: Recipient email address
-            transaction_data: Transaction details
-            
-        Returns:
-            Dict with success status and details
-        """
-        if not self.enabled:
-            return {
-                'success': False,
-                'error': 'Email service not configured',
-                'method': 'disabled'
-            }
-        
-        try:
-            subject = f"FiCore Transaction Receipt - ₦{transaction_data.get('amount', '0')}"
-            
-            # Professional HTML template for transaction receipt
-            html_body = self._create_transaction_receipt_template(transaction_data)
-            
-            result = self._send_email(to_email, subject, html_body)
-            
-            if result['success']:
-                logger.info(f"Transaction receipt sent successfully to {to_email}")
-                return {
-                    'success': True,
-                    'method': 'gmail_smtp',
-                    'to': to_email,
-                    'sent_at': datetime.utcnow().isoformat(),
-                    'message': 'Transaction receipt sent successfully'
-                }
-            else:
-                return result
-                
-        except Exception as e:
-            logger.error(f"Transaction receipt email send failed: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e),
-                'method': 'failed'
-            }
-    
-    def _send_email(self, to_email: str, subject: str, html_body: str) -> Dict[str, Any]:
-        """
-        Internal method to send email via Gmail SMTP
-        
-        Args:
-            to_email: Recipient email
-            subject: Email subject
-            html_body: HTML email content
-            
-        Returns:
-            Dict with success status
+        Log email to database for tracking and debugging
         """
         try:
-            # Create message
-            msg = MIMEMultipart('alternative')
-            msg['From'] = f"{self.sender_name} <{self.sender_email}>"
-            msg['To'] = to_email
-            msg['Subject'] = subject
-            
-            # Attach HTML content
-            html_part = MIMEText(html_body, 'html', 'utf-8')
-            msg.attach(html_part)
-            
-            # Send via Gmail SMTP
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(msg)
-            
-            return {
-                'success': True,
-                'message': 'Email sent successfully'
+            log_entry = {
+                'toEmail': to_email,
+                'subject': subject,
+                'emailType': email_type,
+                'status': status,  # 'sent', 'failed', 'queued'
+                'emailId': email_id,  # Resend email ID
+                'error': error,
+                'sentAt': datetime.utcnow(),
+                'userId': ObjectId(user_id) if user_id else None
             }
-            
-        except smtplib.SMTPAuthenticationError:
-            logger.error("Gmail authentication failed - check app password")
-            return {
-                'success': False,
-                'error': 'Email authentication failed',
-                'method': 'smtp_auth_error'
-            }
-        except smtplib.SMTPException as e:
-            logger.error(f"SMTP error: {str(e)}")
-            return {
-                'success': False,
-                'error': f'SMTP error: {str(e)}',
-                'method': 'smtp_error'
-            }
+            mongo.db.email_logs.insert_one(log_entry)
         except Exception as e:
-            logger.error(f"Email send error: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e),
-                'method': 'general_error'
-            }
+            print(f'Error logging email: {e}')
     
-    def _create_otp_template(self, otp_code: str, user_name: Optional[str] = None) -> str:
-        """Create professional OTP email template with FiCore brand colors"""
-        greeting = f"Hello {user_name}," if user_name else "Hello,"
-        
-        return f"""
+    def _send_email(self, to_email, subject, html_content, email_type, user_id=None):
+        """
+        Internal method to send email via Resend
+        """
+        try:
+            params = {
+                "from": self.from_email,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content
+            }
+            
+            # Send email
+            response = resend.Emails.send(params)
+            
+            # Log success
+            self._log_email(
+                to_email=to_email,
+                subject=subject,
+                email_type=email_type,
+                status='sent',
+                email_id=response.get('id'),
+                user_id=user_id
+            )
+            
+            print(f'✅ Email sent: {email_type} to {to_email}')
+            return {'success': True, 'email_id': response.get('id')}
+            
+        except Exception as e:
+            # Log failure
+            self._log_email(
+                to_email=to_email,
+                subject=subject,
+                email_type=email_type,
+                status='failed',
+                error=str(e),
+                user_id=user_id
+            )
+            
+            print(f'❌ Email failed: {email_type} to {to_email} - {e}')
+            return {'success': False, 'error': str(e)}
+    
+    # ==================== TRANSACTIONAL EMAILS ====================
+    
+    def send_welcome_email(self, to_email, user_name, user_id=None):
+        """
+        Send welcome email after user signup
+        """
+        subject = "Welcome to FiCore Africa! 🎉"
+        html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <meta charset="utf-8">
+            <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>FiCore Verification Code</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #FFF8F0;">
-            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                <h1 style="color: white; margin: 0; font-size: 28px; font-weight: bold;">FiCore Africa</h1>
-                <p style="color: #E8F0FE; margin: 5px 0 0 0; font-size: 16px;">Empowering Financial Freedom</p>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with FiCore Brand Colors -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%); padding: 40px 30px; text-align: center; border-radius: 0;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 28px; font-weight: 700;">Welcome to FiCore! 🎉</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">Your Digital CFO for Business Success</p>
             </div>
             
-            <div style="background: white; padding: 40px; border: 1px solid #E5E7EB; border-top: none; border-radius: 0 0 10px 10px;">
-                <p style="font-size: 16px; margin-bottom: 20px; color: #2E2E2E;">{greeting}</p>
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
                 
-                <p style="font-size: 16px; margin-bottom: 30px; color: #2E2E2E;">
-                    Your verification code is:
-                </p>
+                <p style="color: #2E2E2E;">Welcome to FiCore Africa - your Digital CFO for business success!</p>
                 
-                <div style="background: #F4F1EC; border: 2px solid #1E3A8A; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
-                    <h2 style="font-size: 32px; letter-spacing: 8px; color: #1E3A8A; margin: 0; font-weight: bold;">{otp_code}</h2>
+                <p style="color: #2E2E2E;">You've just joined thousands of Nigerian SMEs who are transforming their bookkeeping from a chore into a competitive advantage.</p>
+                
+                <h3 style="color: #1E3A8A; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">What's Next?</h3>
+                <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
+                    <li>📱 <strong>Record your first transaction</strong> (voice entry in 10 seconds)</li>
+                    <li>💰 <strong>Add cash to your wallet</strong> (buy airtime, data, pay bills)</li>
+                    <li>📊 <strong>View your dashboard</strong> (see your profit/loss instantly)</li>
+                    <li>🎁 <strong>Your welcome bonus</strong> (10 FC Credits already added!)</li>
+                </ul>
+                
+                <!-- CTA Button with FiCore Golden -->
+                <div style="text-align: center; margin: 40px 0;">
+                    <p style="color: #2E2E2E; margin-bottom: 15px;">Open the FiCore mobile app to get started!</p>
                 </div>
                 
-                <p style="font-size: 14px; color: #6B7280; margin-bottom: 20px;">
-                    This code expires in <strong>10 minutes</strong>. If you didn't request this verification, please ignore this email.
-                </p>
-                
-                <div style="background: #F4F1EC; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <p style="font-size: 14px; color: #B88A44; margin: 0; text-align: center;">
-                        <strong>💡 Pro Tip:</strong> Save time by enabling biometric login in your FiCore app settings!
+                <!-- Support Info -->
+                <div style="background: #FFF8F0; border-left: 4px solid #B88A44; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
+                    <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
+                        <strong>Need help?</strong> Reply to this email or WhatsApp us at <a href="https://wa.me/2348012345678" style="color: #25D366; text-decoration: none; font-weight: 600;">+234 801 234 5678</a>
                     </p>
                 </div>
                 
-                <div style="border-top: 1px solid #E5E7EB; padding-top: 20px; margin-top: 30px;">
-                    <p style="font-size: 12px; color: #6B7280; text-align: center; margin: 0;">
-                        <strong>FiCore Africa</strong> - Your trusted financial partner<br>
-                        This is an automated message, please do not reply.
-                    </p>
-                </div>
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
+                </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0 0 10px 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
+                <p style="margin: 0 0 15px 0;">RC 8799482 | Lagos, Nigeria</p>
+                <p style="margin: 0;">
+                    <a href="https://business.ficoreafrica.com/privacy" style="color: #1E3A8A; text-decoration: none; margin: 0 10px;">Privacy Policy</a> | 
+                    <a href="https://business.ficoreafrica.com/terms" style="color: #1E3A8A; text-decoration: none; margin: 0 10px;">Terms of Service</a>
+                </p>
             </div>
         </body>
         </html>
         """
-    
-    def _create_password_reset_template(self, reset_token: str, user_name: Optional[str] = None) -> str:
-        """Create professional password reset email template with FiCore brand colors"""
-        greeting = f"Hello {user_name}," if user_name else "Hello,"
-        reset_url = f"https://app.ficore.africa/reset-password?token={reset_token}"
         
-        return f"""
+        return self._send_email(to_email, subject, html_content, 'welcome', user_id)
+    
+    def send_password_reset_email(self, to_email, reset_token, user_name, user_id=None):
+        """
+        Send password reset email with reset code
+        Note: Mobile app handles password reset in-app using the reset code
+        """
+        subject = "Reset Your FiCore Password"
+        
+        html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <meta charset="utf-8">
+            <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Reset Your FiCore Password</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #FFF8F0;">
-            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                <h1 style="color: white; margin: 0; font-size: 28px; font-weight: bold;">FiCore Africa</h1>
-                <p style="color: #E8F0FE; margin: 5px 0 0 0; font-size: 16px;">Password Reset Request</p>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header -->
+            <div style="background: #1E3A8A; padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">Password Reset Request</h1>
             </div>
             
-            <div style="background: white; padding: 40px; border: 1px solid #E5E7EB; border-top: none; border-radius: 0 0 10px 10px;">
-                <p style="font-size: 16px; margin-bottom: 20px; color: #2E2E2E;">{greeting}</p>
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
                 
-                <p style="font-size: 16px; margin-bottom: 30px; color: #2E2E2E;">
-                    We received a request to reset your FiCore password. Click the button below to create a new password:
+                <p style="color: #2E2E2E;">We received a request to reset your FiCore password.</p>
+                
+                <p style="color: #2E2E2E;">Use the reset code below in the FiCore mobile app:</p>
+                
+                <!-- Reset Code Display -->
+                <div style="background: #F4F1EC; border: 2px dashed #1E3A8A; border-radius: 8px; padding: 30px; margin: 30px 0; text-align: center;">
+                    <p style="margin: 0; color: #6B7280; font-size: 14px;">Your Reset Code:</p>
+                    <h2 style="margin: 10px 0; color: #1E3A8A; font-size: 36px; font-weight: 700; letter-spacing: 4px; font-family: 'Courier New', monospace;">{reset_token[:8]}</h2>
+                    <p style="margin: 10px 0 0 0; color: #6B7280; font-size: 12px;">Enter this code in the FiCore app</p>
+                </div>
+                
+                <!-- Security Warning -->
+                <div style="background: #FFF8F0; border-left: 4px solid #F97316; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
+                    <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
+                        ⚠️ <strong>Security Notice:</strong> This code expires in 1 hour. If you didn't request this reset, please ignore this email and your password will remain unchanged.
+                    </p>
+                </div>
+                
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0 0 10px 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
+                <p style="margin: 0 0 15px 0;">RC 8799482 | Lagos, Nigeria</p>
+                <p style="margin: 0;">
+                    <a href="https://business.ficoreafrica.com/privacy" style="color: #1E3A8A; text-decoration: none; margin: 0 10px;">Privacy Policy</a> | 
+                    <a href="https://business.ficoreafrica.com/terms" style="color: #1E3A8A; text-decoration: none; margin: 0 10px;">Terms</a>
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return self._send_email(to_email, subject, html_content, 'password_reset', user_id)
+    
+    # ==================== SUBSCRIPTION EMAILS ====================
+    
+    def send_subscription_expiring_email(self, to_email, user_name, days_remaining, expiry_date, user_id=None):
+        """
+        Send reminder email before subscription expires
+        """
+        subject = f"Your FiCore Subscription Expires in {days_remaining} Days"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with Warning Orange -->
+            <div style="background: #F97316; padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">⏰ Subscription Expiring Soon</h1>
+            </div>
+            
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
+                
+                <p style="color: #2E2E2E;">Your FiCore Premium subscription will expire in <strong style="color: #F97316;">{days_remaining} days</strong> on {expiry_date.strftime('%B %d, %Y')}.</p>
+                
+                <h3 style="color: #1E3A8A; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">Don't lose access to:</h3>
+                <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
+                    <li>✅ Unlimited transactions</li>
+                    <li>✅ Advanced reports</li>
+                    <li>✅ Priority support</li>
+                    <li>✅ E-invoicing features</li>
+                </ul>
+                
+                <!-- CTA Button -->
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="https://business.ficoreafrica.com/subscription" style="background: #B88A44; color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(184, 138, 68, 0.3);">Renew Now</a>
+                </div>
+                
+                <!-- Support Info -->
+                <div style="background: #FFF8F0; border-left: 4px solid #B88A44; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
+                    <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
+                        Questions? Reply to this email or contact support.
+                    </p>
+                </div>
+                
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
+                </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong> | RC 8799482 | Lagos, Nigeria</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return self._send_email(to_email, subject, html_content, 'subscription_expiring', user_id)
+    
+    def send_subscription_expired_email(self, to_email, user_name, user_id=None):
+        """
+        Send notification email after subscription expires
+        """
+        subject = "Your FiCore Subscription Has Expired"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: #e74c3c; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+                <h1 style="color: white; margin: 0;">Subscription Expired</h1>
+            </div>
+            
+            <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+                <p style="font-size: 16px;">Hi {user_name},</p>
+                
+                <p>Your FiCore Premium subscription has expired. You've been moved to the Free tier.</p>
+                
+                <p><strong>What you still have:</strong></p>
+                <ul style="line-height: 2;">
+                    <li>✅ Your FC Credits (preserved)</li>
+                    <li>✅ Your transaction history</li>
+                    <li>✅ Basic features</li>
+                </ul>
+                
+                <p><strong>What you're missing:</strong></p>
+                <ul style="line-height: 2;">
+                    <li>❌ Unlimited transactions</li>
+                    <li>❌ Advanced reports</li>
+                    <li>❌ Priority support</li>
+                    <li>❌ E-invoicing features</li>
+                </ul>
                 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="{reset_url}" style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.2);">
-                        Reset Password
-                    </a>
+                    <a href="https://business.ficoreafrica.com/subscription" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Reactivate Premium</a>
                 </div>
                 
-                <div style="background: #F4F1EC; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #B88A44;">
-                    <p style="font-size: 14px; color: #B88A44; margin: 0;">
-                        <strong>🔒 Security Tip:</strong> This link expires in 1 hour for your protection.
-                    </p>
-                </div>
-                
-                <p style="font-size: 14px; color: #6B7280; margin-bottom: 20px;">
-                    If you didn't request this reset, please ignore this email and your password will remain unchanged.
+                <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong>The FiCore Team</strong>
                 </p>
-                
-                <p style="font-size: 12px; color: #6B7280; margin-bottom: 20px; background: #F4F1EC; padding: 10px; border-radius: 4px;">
-                    If the button doesn't work, copy and paste this link into your browser:<br>
-                    <span style="word-break: break-all; font-family: monospace;">{reset_url}</span>
-                </p>
-                
-                <div style="border-top: 1px solid #E5E7EB; padding-top: 20px; margin-top: 30px;">
-                    <p style="font-size: 12px; color: #6B7280; text-align: center; margin: 0;">
-                        <strong>FiCore Africa</strong> - Your trusted financial partner<br>
-                        This is an automated message, please do not reply.
-                    </p>
-                </div>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+                <p>FiCore Labs Limited | RC 8799482 | Lagos, Nigeria</p>
             </div>
         </body>
         </html>
         """
+        
+        return self._send_email(to_email, subject, html_content, 'subscription_expired', user_id)
     
-    def _create_transaction_receipt_template(self, transaction_data: Dict[str, Any]) -> str:
-        """Create professional transaction receipt email template with FiCore brand colors"""
+    # ==================== CREDIT EMAILS ====================
+    
+    def send_credit_approved_email(self, to_email, user_name, amount, new_balance, user_id=None):
+        """
+        Send notification when credit request is approved
+        """
+        subject = f"✅ Your ₦{amount:,.0f} Credit Request Approved!"
         
-        # Extract transaction details
-        transaction_type = transaction_data.get('type', 'Transaction')
-        amount = transaction_data.get('amount', '0')
-        fee = transaction_data.get('fee', '0')
-        total_paid = transaction_data.get('total_paid', amount)
-        new_balance = transaction_data.get('new_balance', 'N/A')
-        is_premium = transaction_data.get('is_premium', False)
-        
-        # Create fee display
-        fee_display = ""
-        if fee and fee != "0" and fee != "₦0 (Premium)":
-            fee_display = f"""
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #1E3A8A;">Transaction Fee:</td>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; text-align: right; color: #F97316;">₦{fee}</td>
-                        </tr>"""
-        
-        # Create balance display for wallet transactions
-        balance_display = ""
-        if new_balance and new_balance != 'N/A':
-            balance_display = f"""
-                        <tr>
-                            <td style="padding: 12px 0; font-weight: bold; color: #1E3A8A;">New Wallet Balance:</td>
-                            <td style="padding: 12px 0; text-align: right; font-size: 18px; font-weight: bold; color: #16A34A;">₦{new_balance}</td>
-                        </tr>"""
-        
-        # Premium user badge
-        premium_badge = ""
-        if is_premium:
-            premium_badge = """
-                <div style="background: linear-gradient(135deg, #B88A44 0%, #D4AF37 100%); color: white; padding: 8px 16px; border-radius: 20px; display: inline-block; font-size: 12px; font-weight: bold; margin-bottom: 20px;">
-                    ⭐ PREMIUM USER - NO FEES
-                </div>"""
-        
-        return f"""
+        html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <meta charset="utf-8">
+            <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>FiCore Transaction Receipt</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #FFF8F0;">
-            <div style="background: linear-gradient(135deg, #16A34A 0%, #4ADE80 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                <h1 style="color: white; margin: 0; font-size: 28px; font-weight: bold;">FiCore Africa</h1>
-                <p style="color: #E8F0FE; margin: 5px 0 0 0; font-size: 16px;">Transaction Receipt</p>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with Success Green -->
+            <div style="background: #16A34A; padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">✅ Credit Approved!</h1>
             </div>
             
-            <div style="background: white; padding: 40px; border: 1px solid #E5E7EB; border-top: none; border-radius: 0 0 10px 10px;">
-                <div style="text-align: center; margin-bottom: 30px;">
-                    {premium_badge}
-                    <div style="background: #16A34A; color: white; padding: 10px 20px; border-radius: 20px; display: inline-block; font-size: 14px; font-weight: bold;">
-                        ✅ Transaction Successful
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
+                
+                <p style="color: #2E2E2E;">Great news! Your credit request has been approved.</p>
+                
+                <!-- Amount Card -->
+                <div style="background: #FFF8F0; border: 2px solid #B88A44; border-radius: 8px; padding: 30px; margin: 30px 0; text-align: center;">
+                    <p style="margin: 0; color: #6B7280; font-size: 14px;">Amount Approved:</p>
+                    <h2 style="margin: 10px 0; color: #16A34A; font-size: 32px; font-weight: 700;">₦{amount:,.0f}</h2>
+                    <p style="margin: 15px 0 0 0; color: #6B7280; font-size: 14px;">New FC Credits Balance:</p>
+                    <h3 style="margin: 10px 0 0 0; color: #B88A44; font-size: 24px; font-weight: 600;">{new_balance:,.0f} FCs</h3>
+                </div>
+                
+                <p style="color: #2E2E2E;">Your FC Credits have been added to your account and are ready to use!</p>
+                
+                <!-- CTA Button -->
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="https://business.ficoreafrica.com" style="background: #1E3A8A; color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.3);">Open FiCore App</a>
+                </div>
+                
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
+                </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong> | RC 8799482 | Lagos, Nigeria</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return self._send_email(to_email, subject, html_content, 'credit_approved', user_id)
+    
+    # ==================== AUTOMATION EMAILS ====================
+    
+    def send_inactive_user_email(self, to_email, user_name, days_inactive, user_id=None):
+        """
+        Send re-engagement email to inactive users
+        """
+        subject = f"We Miss You at FiCore! 👋"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: #667eea; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+                <h1 style="color: white; margin: 0;">We Miss You! 👋</h1>
+            </div>
+            
+            <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+                <p style="font-size: 16px;">Hi {user_name},</p>
+                
+                <p>It's been {days_inactive} days since we last saw you in FiCore. We hope everything is going well!</p>
+                
+                <p>Your business data is waiting for you:</p>
+                <ul style="line-height: 2;">
+                    <li>📊 View your financial dashboard</li>
+                    <li>💰 Check your wallet balance</li>
+                    <li>📱 Buy airtime/data instantly</li>
+                    <li>📈 Generate tax reports</li>
+                </ul>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="https://business.ficoreafrica.com" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Welcome Back</a>
+                </div>
+                
+                <p style="color: #666; font-size: 14px;">
+                    Need help getting started again? Reply to this email and we'll assist you.
+                </p>
+                
+                <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong>The FiCore Team</strong>
+                </p>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+                <p>FiCore Labs Limited | RC 8799482 | Lagos, Nigeria</p>
+                <p>
+                    <a href="https://business.ficoreafrica.com/unsubscribe?email={to_email}" style="color: #999; text-decoration: none;">Unsubscribe</a>
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return self._send_email(to_email, subject, html_content, 'inactive_user', user_id)
+    
+    # ==================== TEST EMAIL ====================
+    
+    def send_test_email(self, to_email):
+        """
+        Send test email to verify Resend integration
+        """
+        subject = "🧪 FiCore Email Service Test"
+        
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with FiCore Brand Colors -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 28px; font-weight: 700;">✅ Email Service Working!</h1>
+            </div>
+            
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Congratulations!</p>
+                
+                <p style="color: #2E2E2E;">Your FiCore email service is configured correctly and working perfectly.</p>
+                
+                <h3 style="color: #1E3A8A; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">What's working:</h3>
+                <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
+                    <li>✅ Resend API integration</li>
+                    <li>✅ Domain verification (ficoreafrica.com)</li>
+                    <li>✅ Email delivery</li>
+                    <li>✅ HTML rendering</li>
+                    <li>✅ FiCore brand colors</li>
+                </ul>
+                
+                <!-- Success Box -->
+                <div style="background: #FFF8F0; border-left: 4px solid #16A34A; padding: 20px; margin: 30px 0; border-radius: 4px;">
+                    <p style="color: #2E2E2E; margin: 0; font-size: 15px;">
+                        ✅ <strong style="color: #16A34A;">Success!</strong> You can now send transactional and marketing emails to your users.
+                    </p>
+                </div>
+                
+                <!-- Brand Colors Reference -->
+                <div style="margin: 30px 0;">
+                    <h4 style="color: #1E3A8A; font-size: 16px; margin-bottom: 15px;">FiCore Brand Colors:</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <div style="background: #1E3A8A; color: #FFFFFF; padding: 10px 15px; border-radius: 4px; font-size: 12px; display: inline-block; margin: 5px;">Primary Blue #1E3A8A</div>
+                        <div style="background: #B88A44; color: #FFFFFF; padding: 10px 15px; border-radius: 4px; font-size: 12px; display: inline-block; margin: 5px;">Golden #B88A44</div>
+                        <div style="background: #F97316; color: #FFFFFF; padding: 10px 15px; border-radius: 4px; font-size: 12px; display: inline-block; margin: 5px;">Orange #F97316</div>
+                        <div style="background: #16A34A; color: #FFFFFF; padding: 10px 15px; border-radius: 4px; font-size: 12px; display: inline-block; margin: 5px;">Success #16A34A</div>
                     </div>
                 </div>
                 
-                <div style="background: #F4F1EC; padding: 25px; border-radius: 8px; margin-bottom: 30px; border-left: 4px solid #B88A44;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #1E3A8A;">Transaction Type:</td>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; text-align: right; color: #2E2E2E;">{transaction_type}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #1E3A8A;">Amount Credited:</td>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; text-align: right; font-size: 18px; font-weight: bold; color: #16A34A;">₦{amount}</td>
-                        </tr>{fee_display}
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #1E3A8A;">Total Paid:</td>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; text-align: right; font-weight: bold; color: #2E2E2E;">₦{total_paid}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #1E3A8A;">Date & Time:</td>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; text-align: right; color: #2E2E2E;">{transaction_data.get('date', datetime.now().strftime('%Y-%m-%d %H:%M'))}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #1E3A8A;">Reference:</td>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB; text-align: right; font-family: monospace; color: #6B7280; font-size: 12px;">{transaction_data.get('reference', 'N/A')}</td>
-                        </tr>{balance_display}
-                    </table>
-                </div>
-                
-                <div style="background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
-                    <p style="color: white; margin: 0; font-size: 16px;">
-                        <strong>💰 Your financial journey continues with FiCore!</strong>
-                    </p>
-                    <p style="color: #E8F0FE; margin: 10px 0 0 0; font-size: 14px;">
-                        Track expenses • Build wealth • Achieve your goals
-                    </p>
-                </div>
-                
-                <p style="font-size: 14px; color: #6B7280; text-align: center; margin: 20px 0;">
-                    Thank you for choosing FiCore Africa as your financial partner.
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    This is a test email from FiCore Africa.<br>
+                    <strong style="color: #1E3A8A;">Sent via Resend</strong>
                 </p>
-                
-                <div style="border-top: 1px solid #E5E7EB; padding-top: 20px; margin-top: 30px;">
-                    <p style="font-size: 12px; color: #6B7280; text-align: center; margin: 0;">
-                        <strong>FiCore Africa</strong> - Your trusted financial partner<br>
-                        This is an automated message, please do not reply.
-                    </p>
-                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong> | RC 8799482 | Lagos, Nigeria</p>
             </div>
         </body>
         </html>
         """
-    
-    def get_service_status(self) -> Dict[str, Any]:
-        """Get email service status"""
-        return {
-            'enabled': self.enabled,
-            'sender_email': self.sender_email if self.enabled else None,
-            'mode': 'production' if self.enabled else 'disabled'
-        }
+        
+        return self._send_email(to_email, subject, html_content, 'test')
 
 
-# Singleton instance
-_email_service = None
-
-def get_email_service() -> EmailService:
-    """Get or create email service singleton"""
-    global _email_service
-    if _email_service is None:
-        _email_service = EmailService()
-    return _email_service
+# Convenience function for quick access
+def get_email_service():
+    """Get EmailService instance"""
+    return EmailService()

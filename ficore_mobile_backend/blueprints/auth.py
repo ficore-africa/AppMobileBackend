@@ -292,6 +292,19 @@ def signup():
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
         
+        # 🆕 SEND WELCOME EMAIL (Feb 27, 2026)
+        try:
+            email_service = get_email_service()
+            email_service.send_welcome_email(
+                to_email=email,
+                user_name=user_data.get('displayName'),
+                user_id=user_id
+            )
+            print(f'✅ Welcome email sent to {email}')
+        except Exception as e:
+            # Log but don't fail signup if email fails
+            print(f'⚠️ Welcome email failed: {e}')
+        
         # If referred, create referral tracking entry (NEW - Feb 4, 2026)
         if referrer:
             referral_doc = {
@@ -496,15 +509,22 @@ def forgot_password():
             }}
         )
         
-        # ₦0 COMMUNICATION STRATEGY: Send email with reset link
+        # 🆕 SEND PASSWORD RESET EMAIL (Feb 27, 2026)
         email_service = get_email_service()
         user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
         
-        email_result = email_service.send_password_reset(
-            to_email=user['email'],
-            reset_token=reset_token,
-            user_name=user_name if user_name else None
-        )
+        try:
+            email_result = email_service.send_password_reset_email(
+                to_email=user['email'],
+                reset_token=reset_token,
+                user_name=user_name if user_name else 'User',
+                user_id=str(user['_id'])
+            )
+            print(f'✅ Password reset email sent to {email}')
+        except Exception as e:
+            # Log but don't fail - admin fallback still works
+            print(f'⚠️ Password reset email failed: {e}')
+            email_result = {'success': False, 'error': str(e)}
         
         # DUAL-TRACK APPROACH: Also create admin request for password reset
         # This allows admins to help users while email service is not ready
