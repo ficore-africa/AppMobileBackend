@@ -2717,6 +2717,12 @@ Your registered tax profile remains <b>{profile_name}</b>.
         opening_equity = tax_data.get('opening_equity', 0)
         drawings = tax_data.get('drawings', 0)
         
+        # CRITICAL FIX (Feb 27, 2026): Get capital contributions
+        capital = tax_data.get('capital', 0)
+        
+        # CRITICAL FIX (Feb 27, 2026): Get outstanding loans
+        loans_outstanding = tax_data.get('loans_outstanding', 0)
+        
         # If opening equity is 0 but we have assets, show a recommendation
         if opening_equity == 0 and total_assets_cost > 0:
             # This will be shown in recommendations section
@@ -2729,8 +2735,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Total liabilities including tax liability
         total_current_liabilities = creditors_value
         
-        # Calculate closing equity: Opening Equity + Net Profit - Drawings
-        closing_equity = opening_equity + net_profit - drawings
+        # CRITICAL FIX (Feb 27, 2026): Calculate closing equity with capital contributions
+        # Formula: Opening Equity + Net Profit - Drawings + Capital
+        closing_equity = opening_equity + net_profit - drawings + capital
         
         # Net assets (for verification: Assets - Liabilities should equal Equity)
         net_assets = total_all_assets - total_current_liabilities
@@ -2759,7 +2766,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Add estimated tax to current liabilities (unpaid tax obligation)
         tax_liability = tax_data.get('tax_paid', 0)  # If user has paid some tax
         unpaid_tax = max(0, estimated_tax - tax_liability)
-        total_current_liabilities = creditors_value + unpaid_tax
+        
+        # CRITICAL FIX (Feb 27, 2026): Include loans in total liabilities
+        total_current_liabilities = creditors_value + unpaid_tax + loans_outstanding
         
         # Period text
         period_text = f"{start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}" if start_date and end_date else "All Time"
@@ -2911,6 +2920,7 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         inventory_display = format_currency(inventory_value) if inventory_count > 0 else "N0.00 (Not tracked)"
         debtors_display = format_currency(debtors_value) if debtors_count > 0 else "N0.00 (Not tracked)"
         creditors_display = format_currency(creditors_value) if creditors_count > 0 else "N0.00 (Not tracked)"
+        loans_display = format_currency(loans_outstanding) if loans_outstanding > 0 else "N0.00 (Not tracked)"  # NEW (Feb 27, 2026)
         
         # CRITICAL FIX (Feb 19, 2026): Display helper for cash - show if tracked via Cash/Bank Management
         # If user has set opening balance OR has adjustments, consider it "tracked"
@@ -2927,6 +2937,7 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ['', '', ''],
             ['CURRENT LIABILITIES', '', ''],
             ['Accounts Payable (Creditors)', creditors_display, f'{creditors_count} vendors' if creditors_count > 0 else ''],
+            ['Loans Payable', loans_display, 'Outstanding loan balances'],  # NEW (Feb 27, 2026)
             ['Estimated Tax Payable', format_currency(unpaid_tax), 'Unpaid tax obligation'],
             ['Total Current Liabilities', format_currency(total_current_liabilities), ''],
             ['', '', ''],
@@ -2941,9 +2952,9 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT ASSETS
-            ('FONTNAME', (0, 6), (0, 6), 'Helvetica-Bold'),  # CURRENT LIABILITIES
-            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # NET CURRENT ASSETS
-            ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#E8F5E9')),
+            ('FONTNAME', (0, 7), (0, 7), 'Helvetica-Bold'),  # CURRENT LIABILITIES (was 6, now 7 due to loans row)
+            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # NET CURRENT ASSETS (was 10, now 12)
+            ('BACKGROUND', (0, 12), (-1, 12), colors.HexColor('#E8F5E9')),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
         
@@ -3080,12 +3091,14 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ['Category', 'Amount (N)'],
             ['CURRENT LIABILITIES', ''],
             ['Accounts Payable (Creditors)', creditors_display],
+            ['Loans Payable', loans_display],  # NEW (Feb 27, 2026)
             ['Estimated Tax Payable', format_currency(unpaid_tax)],
             ['Total Current Liabilities', format_currency(total_current_liabilities)],
             ['', ''],
             ['OWNER\'S EQUITY', ''],
             ['Opening Equity', format_currency(opening_equity)],
             ['Add: Net Profit/(Loss) for Period', format_currency(net_profit)],
+            ['Add: Capital Contributions', format_currency(capital)],  # NEW (Feb 27, 2026)
             ['Less: Drawings/Withdrawals', format_currency(drawings)],
             ['Closing Equity', format_currency(closing_equity)],
             ['', ''],
@@ -3100,11 +3113,11 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT LIABILITIES
-            ('FONTNAME', (0, 6), (0, 6), 'Helvetica-Bold'),  # OWNER'S EQUITY
-            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # Closing Equity
-            ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#E8F5E9')),  # Light green
-            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # TOTAL
-            ('BACKGROUND', (0, 12), (-1, 12), colors.HexColor('#FFEBEE')),
+            ('FONTNAME', (0, 7), (0, 7), 'Helvetica-Bold'),  # OWNER'S EQUITY (was 6, now 7 due to loans row)
+            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # Closing Equity (was 10, now 12 due to capital row)
+            ('BACKGROUND', (0, 12), (-1, 12), colors.HexColor('#E8F5E9')),  # Light green
+            ('FONTNAME', (0, 14), (-1, 14), 'Helvetica-Bold'),  # TOTAL (was 12, now 14)
+            ('BACKGROUND', (0, 14), (-1, 14), colors.HexColor('#FFEBEE')),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
         

@@ -386,6 +386,26 @@ def init_cash_bank_blueprint(mongo, token_required):
                     {'$set': {'drawings': total_drawings}}
                 )
             
+            # CRITICAL FIX (Feb 27, 2026): Sync user.capital field when creating a capital contribution
+            # This ensures the capital field stays in sync with cash_adjustments collection
+            elif adjustment_type == 'capital':
+                # Calculate total capital from all active capital adjustments
+                total_capital = 0.0
+                all_capital = mongo.db.cash_adjustments.find({
+                    'userId': current_user['_id'],
+                    'type': 'capital',
+                    'status': 'active',
+                    'isDeleted': False
+                })
+                for capital in all_capital:
+                    total_capital += capital.get('amount', 0.0)
+                
+                # Update user.capital field
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {'$set': {'capital': total_capital}}
+                )
+            
             # Convert ObjectId to string for response
             adjustment['_id'] = str(adjustment['_id'])
             adjustment['userId'] = str(adjustment['userId'])
@@ -454,6 +474,25 @@ def init_cash_bank_blueprint(mongo, token_required):
                 mongo.db.users.update_one(
                     {'_id': current_user['_id']},
                     {'$set': {'drawings': total_drawings}}
+                )
+            
+            # CRITICAL FIX (Feb 27, 2026): Sync user.capital field when deleting a capital contribution
+            elif adjustment.get('type') == 'capital':
+                # Recalculate total capital from remaining active capital adjustments
+                total_capital = 0.0
+                all_capital = mongo.db.cash_adjustments.find({
+                    'userId': current_user['_id'],
+                    'type': 'capital',
+                    'status': 'active',
+                    'isDeleted': False
+                })
+                for capital in all_capital:
+                    total_capital += capital.get('amount', 0.0)
+                
+                # Update user.capital field
+                mongo.db.users.update_one(
+                    {'_id': current_user['_id']},
+                    {'$set': {'capital': total_capital}}
                 )
             
             return jsonify({

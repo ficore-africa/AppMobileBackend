@@ -7273,6 +7273,36 @@ def init_reports_blueprint(mongo, token_required):
             
             drawings = user.get('drawings', 0) if user else 0
             
+            # CRITICAL FIX (Feb 27, 2026): Get capital contributions from user field (synced automatically)
+            capital = user.get('capital', 0) if user else 0
+            
+            # CRITICAL FIX (Feb 27, 2026): Get total outstanding loans
+            loans_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False
+            }
+            loans = list(mongo.db.loans.find(loans_query))
+            
+            # Calculate outstanding balance for each loan
+            total_loans_outstanding = 0.0
+            for loan in loans:
+                loan_id = loan['_id']
+                
+                # Get total principal repaid
+                repayments_query = {
+                    'userId': current_user['_id'],
+                    'loanId': loan_id,
+                    'status': 'completed',
+                    'isDeleted': False
+                }
+                repayments = list(mongo.db.loan_payments.find(repayments_query))
+                total_principal_repaid = sum([r.get('principalAmount', 0.0) for r in repayments])
+                
+                # Calculate outstanding
+                outstanding = loan.get('loanAmount', 0.0) - total_principal_repaid
+                total_loans_outstanding += outstanding
+            
             # Get tax paid (if tracked)
             tax_paid = user.get('taxPaid', 0) if user else 0
             
@@ -7322,6 +7352,10 @@ def init_reports_blueprint(mongo, token_required):
                 # Equity Components
                 'opening_equity': opening_equity,
                 'drawings': drawings,
+                'capital': capital,  # NEW (Feb 27, 2026): Capital contributions
+                
+                # Liabilities Components
+                'loans_outstanding': total_loans_outstanding,  # NEW (Feb 27, 2026): Outstanding loans
                 
                 # VAS Breakdown (Granular Utility Reporting)
                 'vas_breakdown': vas_totals,
