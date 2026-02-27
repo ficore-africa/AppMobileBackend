@@ -294,7 +294,7 @@ def signup():
         
         # 🆕 SEND WELCOME EMAIL (Feb 27, 2026)
         try:
-            email_service = get_email_service()
+            email_service = get_email_service(mongo_db=auth_bp.mongo.db)
             email_service.send_welcome_email(
                 to_email=email,
                 user_name=user_data.get('displayName'),
@@ -510,7 +510,7 @@ def forgot_password():
         )
         
         # 🆕 SEND PASSWORD RESET EMAIL (Feb 27, 2026)
-        email_service = get_email_service()
+        email_service = get_email_service(mongo_db=auth_bp.mongo.db)
         user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
         
         try:
