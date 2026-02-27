@@ -1,0 +1,103 @@
+# robots.txt for FiCore Mobile Backend
+# Last Updated: February 27, 2026
+
+# Allow all major LLM crawlers to access llms.txt files
+# These files are specifically designed for AI discovery
+
+# OpenAI GPTBot (ChatGPT)
+User-agent: GPTBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Google Extended (Bard/Gemini)
+User-agent: Google-Extended
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Anthropic Claude
+User-agent: anthropic-ai
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Perplexity AI
+User-agent: PerplexityBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Common Crawl (used by many AI systems)
+User-agent: CCBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Cohere AI
+User-agent: cohere-ai
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Meta AI
+User-agent: FacebookBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Disallow: /api/
+Disallow: /admin/
+
+# Google Search (for indexing)
+User-agent: Googlebot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Allow: /general/
+Disallow: /api/
+Disallow: /admin/
+Disallow: /users/
+
+# Bing Search
+User-agent: Bingbot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Allow: /general/
+Disallow: /api/
+Disallow: /admin/
+Disallow: /users/
+
+# Default rule for all other bots
+User-agent: *
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /health
+Allow: /general/knowledge-base
+Disallow: /api/
+Disallow: /admin/
+Disallow: /users/
+Disallow: /financial/
+Disallow: /vas/
+Disallow: /subscription/
+Disallow: /debtors/
+Disallow: /attachments/
+Disallow: /notifications/
+
+# Sitemap location (optional - create this later)
+# Sitemap: https://mobilebackend.ficoreafrica.com/sitemap.xml
+
+# Crawl delay (be nice to the server)
+Crawl-delay: 1
