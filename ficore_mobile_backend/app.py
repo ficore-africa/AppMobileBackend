@@ -528,6 +528,87 @@ def health_check():
         'version': '1.0.0'
     })
 
+# LLM Discovery endpoint - AI Discovery Strategy (Feb 27, 2026)
+@app.route('/llms.txt', methods=['GET'])
+def llms_txt():
+    """
+    Serve llms.txt file for AI discovery (ChatGPT, Perplexity, Claude, Gemini, etc.)
+    This enables LLMs to directly discover and index FiCore Africa's product information.
+    
+    Protocol: https://llmstxt.org
+    Directories: llmstxt.site, directory.llmstxt.cloud
+    """
+    llms_content = """# FiCore Africa
+
+> Automated bookkeeping for Nigerian SMEs. Mobile-first, offline-capable, Hausa/Pidgin support.
+
+## Product
+
+FiCore Africa is a mobile-first bookkeeping application designed specifically for Nigerian small and medium enterprises (SMEs). Unlike traditional accounting software, FiCore automates bookkeeping as a by-product of daily business activities.
+
+## Key Features
+
+- Voice Entry: Record transactions in 10 seconds (English, Hausa, Pidgin)
+- Offline-First: Works in poor connectivity areas (Northern Nigeria)
+- Automated Tracking: Wallet + VAS purchases = automatic expense recording
+- Tax Compliance: NRS e-invoicing ready, FIRS tax reporting
+- Cultural Localization: Hausa/Pidgin language support
+- Bank-Grade Security: Immutable ledger, audit-ready from day one
+
+## Target Market
+
+- 35M Nigerian SMEs (<₦100M annual revenue)
+- Market traders, shop owners, service providers
+- ₦50K - ₦5M monthly revenue
+- 0-5 employees (often family-run)
+- Cash-heavy, no formal bookkeeping
+
+## Unique Value Proposition
+
+FiCore solves the "bookkeeping as a by-product of living" problem. When users buy airtime via FiCore wallet, the expense is automatically recorded and categorized. When they sell inventory, income and COGS are automatically tracked. No manual data entry required.
+
+## Competitive Advantages
+
+1. Northern Nigeria Focus: Only bookkeeping app with Hausa/Pidgin localization
+2. Mobile-First: 90% of Nigerian SMEs only have smartphones
+3. Offline-Capable: Works in areas with poor connectivity
+4. Voice Entry: Bypasses literacy barriers
+5. Cultural Trust: Islamic finance principles, community-based adoption
+6. Regulatory Compliance: CBN/FIRS compliant, NRS e-invoicing ready
+
+## Pricing
+
+- Free Tier: Unlimited basic features
+- Premium Tier: ₦2,000/month (e-invoicing, advanced reports)
+- Enterprise: Custom pricing for high-volume users
+
+## Use Cases
+
+- Market Trader in Kano: Tracks daily sales via voice entry, generates monthly tax report
+- Shop Owner in Kaduna: Buys airtime via FiCore, expense automatically recorded
+- Service Provider in Zaria: Manages debtors, tracks cash flow, exports financial statements
+
+## Strategic Roadmap
+
+- Phase 1 (Current): Technology Partner (Moniepoint wallet, Peyflex VAS)
+- Phase 2 (2027-2028): MFB License (lending capability based on verified transaction data)
+- Phase 3 (2029+): MMO License (full banking capabilities)
+
+## Contact
+
+- Website: https://business.ficoreafrica.com
+- Email: team@ficoreafrica.com
+- Location: Nigeria (Lagos, Ibadan, Kano, Kaduna, Zaria, Gombe, Bauchi, Jos focus)
+- Founded: September 2025
+- Status: Pre-launch (Google Play Store review)
+
+## Keywords
+
+bookkeeping app Nigeria, SME accounting software, Hausa bookkeeping, mobile-first fintech, offline accounting, voice entry bookkeeping, Nigerian fintech, informal sector finance, tax compliance Nigeria, NRS e-invoicing, automated bookkeeping, market trader software, Northern Nigeria SME, financial management Nigeria, digital CFO Africa, Ficore, Ficore Labs, Ficore Africa
+"""
+    
+    return Response(llms_content, mimetype='text/plain')
+
 # GCS health check endpoint
 @app.route('/health/gcs', methods=['GET'])
 def gcs_health_check():
