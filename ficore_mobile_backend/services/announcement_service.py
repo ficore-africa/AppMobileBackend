@@ -5,6 +5,7 @@ Handles bulk announcements to users via Resend Broadcasts
 
 import os
 import resend
+import time
 from datetime import datetime
 from bson import ObjectId
 
@@ -25,8 +26,12 @@ class AnnouncementService:
         self.from_email = "FiCore Africa <team@ficoreafrica.com>"
         self.mongo_db = mongo_db
         
-        # Resend Audience ID (you'll need to get this from Resend dashboard)
-        self.audience_id = os.getenv('RESEND_AUDIENCE_ID', 'default_audience_id')
+        # Resend Audience ID - MUST be set in environment variables
+        self.audience_id = os.getenv('RESEND_AUDIENCE_ID')
+        if not self.audience_id or self.audience_id == 'default_audience_id':
+            print('⚠️ WARNING: RESEND_AUDIENCE_ID not set or invalid!')
+            print('   Please set RESEND_AUDIENCE_ID in Render environment variables')
+            print('   Get your Audience ID from: https://resend.com/audiences')
     
     def _log_announcement(self, subject, announcement_type, status, recipient_count=0, error=None, admin_id=None):
         """
@@ -65,6 +70,16 @@ class AnnouncementService:
             dict: {'success': bool, 'contact_id': str or None, 'error': str or None}
         """
         try:
+            # Check if audience_id is valid
+            if not self.audience_id or self.audience_id == 'default_audience_id':
+                error_msg = 'RESEND_AUDIENCE_ID not configured. Please set it in Render environment variables. Get your Audience ID from https://resend.com/audiences'
+                print(f'🔑 CONFIG ERROR: {error_msg}')
+                return {
+                    'success': False,
+                    'contact_id': None,
+                    'error': error_msg
+                }
+            
             # Resend Contacts API requires audience_id in params dict
             # Based on SDK source: path = f"/audiences/{params['audience_id']}/contacts"
             contact = resend.Contacts.create({
@@ -100,10 +115,16 @@ class AnnouncementService:
         except Exception as e:
             error_msg = str(e)
             
-            # Check for API key permission error
+            # Check for common errors
             if 'restricted to only send emails' in error_msg:
                 error_msg = 'API key lacks permissions. Please create a new Resend API key with "Full Access" (not just "Sending Access") in your Resend dashboard.'
                 print(f'🔑 PERMISSION ERROR: {error_msg}')
+            elif 'must be a valid UUID' in error_msg:
+                error_msg = 'Invalid RESEND_AUDIENCE_ID. Please set the correct Audience ID from https://resend.com/audiences in Render environment variables.'
+                print(f'🔑 CONFIG ERROR: {error_msg}')
+            elif 'Too many requests' in error_msg:
+                error_msg = 'Rate limit exceeded (2 requests/second). Please wait and try again.'
+                print(f'⏱️ RATE LIMIT: {error_msg}')
             
             print(f'❌ Failed to sync user to Resend: {error_msg}')
             return {
