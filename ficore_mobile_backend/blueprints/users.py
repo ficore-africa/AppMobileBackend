@@ -1853,20 +1853,28 @@ def get_tagging_statistics():
     @users_bp.token_required
     def _get_tagging_statistics(current_user):
         """Get tagging statistics for user"""
+        import time
+        start_time = time.time()
+        
         try:
+            print(f"🔍 [TaggingStats] Starting for user: {current_user['_id']}")
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             # Income stats
+            print(f"🔍 [TaggingStats] Querying income...")
             income_query = get_active_transactions_query(current_user['_id'])
             total_income = users_bp.mongo.db.incomes.count_documents(income_query)
+            print(f"🔍 [TaggingStats] Total income: {total_income}")
             
             business_income_query = income_query.copy()
             business_income_query['entryType'] = 'business'
             business_income = users_bp.mongo.db.incomes.count_documents(business_income_query)
+            print(f"🔍 [TaggingStats] Business income: {business_income}")
             
             personal_income_query = income_query.copy()
             personal_income_query['entryType'] = 'personal'
             personal_income = users_bp.mongo.db.incomes.count_documents(personal_income_query)
+            print(f"🔍 [TaggingStats] Personal income: {personal_income}")
             
             # CRITICAL FIX: Check for both None AND missing entryType field
             untagged_income_query = income_query.copy()
@@ -1876,18 +1884,23 @@ def get_tagging_statistics():
                 {'entryType': ''}  # Empty string
             ]
             untagged_income = users_bp.mongo.db.incomes.count_documents(untagged_income_query)
+            print(f"🔍 [TaggingStats] Untagged income: {untagged_income}")
             
             # Expense stats
+            print(f"🔍 [TaggingStats] Querying expenses...")
             expense_query = get_active_transactions_query(current_user['_id'])
             total_expenses = users_bp.mongo.db.expenses.count_documents(expense_query)
+            print(f"🔍 [TaggingStats] Total expenses: {total_expenses}")
             
             business_expenses_query = expense_query.copy()
             business_expenses_query['entryType'] = 'business'
             business_expenses = users_bp.mongo.db.expenses.count_documents(business_expenses_query)
+            print(f"🔍 [TaggingStats] Business expenses: {business_expenses}")
             
             personal_expenses_query = expense_query.copy()
             personal_expenses_query['entryType'] = 'personal'
             personal_expenses = users_bp.mongo.db.expenses.count_documents(personal_expenses_query)
+            print(f"🔍 [TaggingStats] Personal expenses: {personal_expenses}")
             
             # CRITICAL FIX: Check for both None AND missing entryType field
             untagged_expenses_query = expense_query.copy()
@@ -1897,6 +1910,7 @@ def get_tagging_statistics():
                 {'entryType': ''}  # Empty string
             ]
             untagged_expenses = users_bp.mongo.db.expenses.count_documents(untagged_expenses_query)
+            print(f"🔍 [TaggingStats] Untagged expenses: {untagged_expenses}")
             
             # Calculate totals
             total_entries = total_income + total_expenses
@@ -1904,6 +1918,10 @@ def get_tagging_statistics():
             untagged_entries = untagged_income + untagged_expenses
             
             tagging_percentage = (tagged_entries / total_entries * 100) if total_entries > 0 else 0
+            
+            elapsed_time = (time.time() - start_time) * 1000  # Convert to ms
+            print(f"✅ [TaggingStats] Completed in {elapsed_time:.2f}ms")
+            print(f"✅ [TaggingStats] Total: {total_entries}, Tagged: {tagged_entries}, Untagged: {untagged_entries}")
             
             return jsonify({
                 'success': True,
@@ -1928,7 +1946,11 @@ def get_tagging_statistics():
             })
             
         except Exception as e:
-            print(f"Error in get_tagging_statistics: {e}")
+            elapsed_time = (time.time() - start_time) * 1000
+            print(f"❌ [TaggingStats] Error after {elapsed_time:.2f}ms: {e}")
+            import traceback
+            print(f"❌ [TaggingStats] Stack trace:\n{traceback.format_exc()}")
+            
             return jsonify({
                 'success': False,
                 'message': 'Failed to get tagging statistics',
