@@ -329,6 +329,13 @@ def create_expense():
             # TASK 4 PART 3B (Feb 28, 2026): Handle excludeFromProfitLoss field for CAPEX
             # Capital expenditures are excluded from P&L but included in Balance Sheet
             exclude_from_pl = data.get('exclude_from_profit_loss', False)
+            
+            # NEW (Feb 28, 2026): Handle "Drawings" category specially
+            # Drawings are owner withdrawals - excluded from P&L, affect Owner's Equity
+            if category_value == 'Drawings':
+                exclude_from_pl = True
+                print(f"✅ Drawings category detected - will exclude from P&L and create drawing entry")
+            
             print(f"Exclude from P&L: {exclude_from_pl}")
             
             # ✅ CRITICAL FIX: Mark if entry was created during premium period
@@ -418,6 +425,30 @@ def create_expense():
                 else:
                     print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
                 print(f"{'🏷️ '*40}\n")
+                
+                # NEW (Feb 28, 2026): If category is "Drawings", create a drawing entry
+                if category_value == 'Drawings':
+                    print(f"\n{'💰 '*40}")
+                    print(f"💰 CREATING DRAWING ENTRY (Owner Withdrawal)")
+                    print(f"{'💰 '*40}")
+                    
+                    drawing_data = {
+                        '_id': ObjectId(),
+                        'userId': current_user['_id'],
+                        'amount': float(data['amount']),
+                        'description': data['description'],
+                        'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
+                        'linkedExpenseId': result.inserted_id,  # Link to the expense entry
+                        'status': 'active',
+                        'isDeleted': False,
+                        'createdAt': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow()
+                    }
+                    
+                    drawing_result = expenses_bp.mongo.db.drawings.insert_one(drawing_data)
+                    print(f"✅ Drawing entry created with ID: {drawing_result.inserted_id}")
+                    print(f"💰 Linked to expense ID: {expense_id}")
+                    print(f"{'💰 '*40}\n")
                 
                 # 🔍 DUPLICATE DETECTION: Check if similar expense already exists
                 print(f"\n{'🔍 '*40}")
