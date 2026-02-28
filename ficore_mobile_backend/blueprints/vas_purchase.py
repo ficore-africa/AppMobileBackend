@@ -3378,7 +3378,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         print(f'   Marking as SUCCESS and logging for admin review')
                         
                         # Log mismatch for admin review (don't fail transaction)
-                        log_plan_mismatch(user_id, 'monnify', {
+                        log_plan_mismatch(mongo.db, user_id, 'monnify', {
                             'transaction_id': str(transaction_id),
                             'requested_plan_id': data_plan_id,
                             'requested_plan_name': data_plan_name,
@@ -4097,9 +4097,15 @@ def check_plan_name_similarity(requested_name, delivered_name):
     except Exception:
         return False
 
-def log_plan_mismatch(user_id, provider, mismatch_details):
+def log_plan_mismatch(mongo_db, user_id, provider, mismatch_details):
     """
     Log plan mismatch incidents for investigation and recovery
+    
+    Args:
+        mongo_db: MongoDB database instance
+        user_id: User ID
+        provider: Provider name (monnify, peyflex)
+        mismatch_details: Dictionary with mismatch details
     """
     try:
         from datetime import datetime
@@ -4107,9 +4113,6 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         
         # Import standardized reconciliation marker
         from utils.reconciliation_marker import mark_plan_mismatch_for_reconciliation
-        
-        # mongo is available from the blueprint closure scope
-        # No need to import it - it's passed to init_vas_purchase_blueprint
         
         # Optional notification import - don't fail if not available
         try:
@@ -4138,7 +4141,7 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         }
         
         # Store in MongoDB for investigation
-        mongo.db.plan_mismatch_logs.insert_one(mismatch_log)
+        mongo_db.plan_mismatch_logs.insert_one(mismatch_log)
         
         print(f'📝 PLAN MISMATCH LOGGED: {str(mismatch_log["_id"])}')
         print(f'   User: {user_id}')
@@ -4150,7 +4153,7 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         if transaction_id:
             try:
                 success = mark_plan_mismatch_for_reconciliation(
-                    mongo_db=mongo.db,
+                    mongo_db=mongo_db,
                     transaction_id=transaction_id,
                     requested_plan=mismatch_details.get('requested_plan_name'),
                     requested_amount=mismatch_details.get('requested_amount'),
@@ -4170,7 +4173,7 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         if notification_available:
             try:
                 create_user_notification(
-                    mongo=mongo.db,
+                    mongo=mongo_db,
                     user_id=user_id,
                     category='system',
                     title='⚠️ Data Plan Issue Detected',
