@@ -361,7 +361,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
             total_income = 0
             
             for income in export_data['incomes']:
-                date_obj = parse_date_safe(income.get('dateReceived'))
+                date_obj = parse_date_safe(income.get('date'))
                 date_str = date_obj.strftime('%Y-%m-%d')
                 # Use description if available, otherwise fall back to source
                 description = income.get('description') or income.get('source', 'N/A')
@@ -1975,7 +1975,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Process incomes
         for income in transactions.get('incomes', []):
             all_transactions.append({
-                'date': parse_date_safe(income.get('dateReceived')),
+                'date': parse_date_safe(income.get('date')),
                 'type': 'INCOME',
                 'description': income.get('description') or income.get('source', 'Income'),
                 'amount': income.get('amount', 0),

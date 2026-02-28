@@ -234,6 +234,7 @@ def init_creditors_blueprint(mongo, token_required, serialize_doc):
                 'paidAmount': 0.0,
                 'remainingOwed': 0.0,
                 'status': 'active',
+                'isDeleted': False,  # CRITICAL FIX (Feb 28, 2026): Always initialize isDeleted field
                 'paymentTerms': payment_terms,
                 'customPaymentDays': custom_payment_days,
                 'lastPaymentDate': None,

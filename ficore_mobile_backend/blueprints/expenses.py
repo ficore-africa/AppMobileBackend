@@ -92,6 +92,89 @@ def get_expenses():
    
     return _get_expenses()
 
+@expenses_bp.route('/capital-expenditures', methods=['GET'])
+def get_capital_expenditures():
+    @expenses_bp.token_required
+    def _get_capital_expenditures(current_user):
+        """
+        Get all capital expenditures (expenses with excludeFromProfitLoss: True)
+        These are asset purchases that don't reduce profit but do reduce cash.
+        
+        CAPEX TRACKING: Part of Task 4 implementation (Feb 28, 2026)
+        - Excludes from P&L calculations
+        - Includes in Balance Sheet (reduces cash, increases assets)
+        - Tracks asset purchases separately from operating expenses
+        """
+        try:
+            limit = min(int(request.args.get('limit', 50)), 100)
+            offset = max(int(request.args.get('offset', 0)), 0)
+            start_date = request.args.get('start_date')
+            end_date = request.args.get('end_date')
+            sort_by = request.args.get('sort_by', 'date')
+            sort_order = request.args.get('sort_order', 'desc')
+            
+            query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                'excludeFromProfitLoss': True  # CAPEX filter
+            }
+            
+            if start_date or end_date:
+                date_query = {}
+                if start_date:
+                    date_query['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
+                if end_date:
+                    date_query['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
+                query['date'] = date_query
+            
+            sort_direction = -1 if sort_order == 'desc' else 1
+            sort_field = sort_by if sort_by in ['date', 'amount', 'category', 'createdAt'] else 'date'
+            
+            capex = list(expenses_bp.mongo.db.expenses.find(query)
+                        .sort(sort_field, sort_direction)
+                        .skip(offset).limit(limit))
+            total = expenses_bp.mongo.db.expenses.count_documents(query)
+            
+            capex_list = []
+            for expense in capex:
+                expense_data = expenses_bp.serialize_doc(expense.copy())
+                if not expense_data.get('title'):
+                    expense_data['title'] = expense_data.get('description', 'Capital Expenditure')
+                expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+                expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
+                capex_list.append(expense_data)
+            
+            has_more = offset + limit < total
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'capitalExpenditures': capex_list,
+                    'pagination': {
+                        'total': total,
+                        'limit': limit,
+                        'offset': offset,
+                        'hasMore': has_more,
+                        'page': (offset // limit) + 1,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': 'Capital expenditures retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error in get_capital_expenditures: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve capital expenditures',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_capital_expenditures()
+
 @expenses_bp.route('/<expense_id>', methods=['GET'])
 def get_expense(expense_id):
     @expenses_bp.token_required
@@ -243,6 +326,11 @@ def create_expense():
                     'errors': {'source': ['Invalid value']}
                 }), 400
             
+            # TASK 4 PART 3B (Feb 28, 2026): Handle excludeFromProfitLoss field for CAPEX
+            # Capital expenditures are excluded from P&L but included in Balance Sheet
+            exclude_from_pl = data.get('exclude_from_profit_loss', False)
+            print(f"Exclude from P&L: {exclude_from_pl}")
+            
             # ✅ CRITICAL FIX: Mark if entry was created during premium period
             # This prevents premium entries from counting against free tier limit after subscription expires
             user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
@@ -281,6 +369,8 @@ def create_expense():
                 'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
                 'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
                 'sourceType': entry_source,  # SOURCE TRACKING: 'manual', 'voice', or 'wallet_auto'
+                'excludeFromProfitLoss': exclude_from_pl,  # TASK 4 PART 3B: CAPEX flag
+                'isCapitalExpenditure': exclude_from_pl,  # Additional flag for clarity
                 'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()

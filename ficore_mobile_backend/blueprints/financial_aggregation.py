@@ -427,12 +427,12 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
             
             # Get earliest and latest transaction dates for period info
             try:
-                earliest_income = self.db.incomes.find_one({'userId': user_id}, sort=[('dateReceived', 1)])
+                earliest_income = self.db.incomes.find_one({'userId': user_id}, sort=[('date', 1)])
                 earliest_expense = self.db.expenses.find_one({'userId': user_id}, sort=[('date', 1)])
                 
                 earliest_date = None
                 if earliest_income and earliest_expense:
-                    income_date = earliest_income.get('dateReceived')
+                    income_date = earliest_income.get('date')
                     expense_date = earliest_expense.get('date')
                     if income_date and expense_date:
                         earliest_date = min(income_date, expense_date)
@@ -441,7 +441,7 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
                     elif expense_date:
                         earliest_date = expense_date
                 elif earliest_income:
-                    earliest_date = earliest_income.get('dateReceived')
+                    earliest_date = earliest_income.get('date')
                 elif earliest_expense:
                     earliest_date = earliest_expense.get('date')
             except Exception as date_error:
@@ -507,7 +507,7 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
                     {
                         '$match': {
                             'userId': user_id,
-                            'dateReceived': {
+                            'date': {
                                 '$gte': start_of_month,
                                 '$lte': end_of_month
                             },
@@ -658,7 +658,7 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
                     {
                         '$match': {
                             'userId': user_id,
-                            'dateReceived': {
+                            'date': {
                                 '$gte': start_of_year,
                                 '$lte': end_of_year
                             },

@@ -609,6 +609,49 @@ bookkeeping app Nigeria, SME accounting software, Hausa bookkeeping, mobile-firs
     
     return Response(llms_content, mimetype='text/plain')
 
+# Robots.txt endpoint - AI Discovery Strategy (Feb 27, 2026)
+@app.route('/robots.txt', methods=['GET'])
+def robots_txt():
+    """
+    Serve robots.txt file to control crawler access.
+    Allows LLM crawlers (GPTBot, Google-Extended, anthropic-ai, etc.) to access llms.txt files.
+    Disallows crawlers from sensitive endpoints (/api/, /admin/, /users/).
+    """
+    try:
+        # Serve the robots.txt file from static directory
+        return send_from_directory('static', 'robots.txt', mimetype='text/plain')
+    except Exception as e:
+        # Fallback: Return inline robots.txt if file not found
+        fallback_content = """# robots.txt for FiCore Mobile Backend
+
+# Allow LLM crawlers to access llms.txt files
+User-agent: GPTBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /admin/
+
+User-agent: Google-Extended
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /admin/
+
+User-agent: anthropic-ai
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /admin/
+
+User-agent: *
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /admin/
+Disallow: /users/
+"""
+        return Response(fallback_content, mimetype='text/plain')
+
 # LLM Discovery endpoint (Full Version) - AI Discovery Strategy (Feb 27, 2026)
 @app.route('/llms-full.txt', methods=['GET'])
 def llms_full_txt():
@@ -622,6 +665,10 @@ def llms_full_txt():
     llms_full_content = """# FiCore Africa - Complete Product Documentation
 
 > Automated bookkeeping for Nigerian SMEs. Mobile-first, offline-capable, Hausa/Pidgin support.
+
+## Product
+
+FiCore Africa is a mobile-first bookkeeping application designed specifically for Nigerian small and medium enterprises (SMEs). Unlike traditional accounting software that requires manual data entry, FiCore automates record-keeping as a by-product of daily business activities - when users buy airtime, sell inventory, or pay suppliers, the bookkeeping happens automatically in the background.
 
 ## Executive Summary
 
@@ -1255,7 +1302,7 @@ def get_dashboard(current_user):
         
         # Get income data
         incomes = list(mongo.db.incomes.find({'userId': current_user['_id']}))
-        total_income_this_month = sum(inc['amount'] for inc in incomes if inc['dateReceived'] >= start_of_month)
+        total_income_this_month = sum(inc['amount'] for inc in incomes if inc['date'] >= start_of_month)
         
         # Get expense data
         expenses = list(mongo.db.expenses.find({'userId': current_user['_id']}))
@@ -1266,14 +1313,15 @@ def get_dashboard(current_user):
         savings_rate = (net_income / total_income_this_month * 100) if total_income_this_month > 0 else 0
         
         # Recent transactions (combined income and expenses)
-        recent_incomes = sorted(incomes, key=lambda x: x['dateReceived'], reverse=True)[:3]
+        recent_incomes = sorted(incomes, key=lambda x: x['date'], reverse=True)[:3]
         recent_expenses = sorted(expenses, key=lambda x: x['date'], reverse=True)[:3]
         
         # Serialize recent transactions
         recent_income_data = []
         for income in recent_incomes:
             income_data = serialize_doc(income.copy())
-            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+            income_data['dateReceived'] = income_data.get('date', income_data.get('dateReceived', datetime.utcnow())).isoformat() + 'Z'  # Backward compatibility
             income_data['type'] = 'income'
             recent_income_data.append(income_data)
         
@@ -1294,7 +1342,7 @@ def get_dashboard(current_user):
         # Income sources breakdown
         income_sources = {}
         for income in incomes:
-            if income['dateReceived'] >= start_of_month:
+            if income['date'] >= start_of_month:
                 source = income['source']
                 income_sources[source] = income_sources.get(source, 0) + income['amount']
         
@@ -1352,7 +1400,7 @@ def get_analytics(current_user):
             month_start = (now - timedelta(days=30*i)).replace(day=1)
             month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
             
-            month_incomes = [inc for inc in incomes if month_start <= inc['dateReceived'] <= month_end]
+            month_incomes = [inc for inc in incomes if month_start <= inc['date'] <= month_end]
             month_expenses = [exp for exp in expenses if month_start <= exp['date'] <= month_end]
             
             trends.append({
@@ -1413,7 +1461,7 @@ def get_analytics_overview(current_user):
         expenses = list(mongo.db.expenses.find({'userId': user_id}))
         
         # Current month data
-        current_month_incomes = [inc for inc in incomes if inc['dateReceived'] >= month_start]
+        current_month_incomes = [inc for inc in incomes if inc['date'] >= month_start]
         current_month_expenses = [exp for exp in expenses if exp['date'] >= month_start]
         
         current_month_income_total = sum(inc['amount'] for inc in current_month_incomes)

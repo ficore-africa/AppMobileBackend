@@ -27,7 +27,7 @@ PDF_PROJECTIONS = {
     'incomes': {
         'source': 1,
         'amount': 1,
-        'dateReceived': 1,
+        'date': 1,
         'description': 1,
         'category': 1,
         'tags': 1,
@@ -283,7 +283,7 @@ def init_reports_blueprint(mongo, token_required):
             
             # Apply date filter if provided
             if end_date:
-                income_query['dateReceived'] = {'$lte': end_date}
+                income_query['date'] = {'$lte': end_date}
                 expense_query['date'] = {'$lte': end_date}
                 adjustment_query['date'] = {'$lte': end_date}
             
@@ -484,13 +484,13 @@ def init_reports_blueprint(mongo, token_required):
                     {'entryType': None}
                 ]
             if start_date or end_date:
-                query['dateReceived'] = {}
+                query['date'] = {}
                 if start_date:
-                    query['dateReceived']['$gte'] = start_date
+                    query['date']['$gte'] = start_date
                 if end_date:
-                    query['dateReceived']['$lte'] = end_date
+                    query['date']['$lte'] = end_date
             
-            incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1))
+            incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1))
             
             # Check data size - recommend background generation for large reports
             if len(incomes) > 100:
@@ -527,7 +527,7 @@ def init_reports_blueprint(mongo, token_required):
                 export_data['incomes'].append({
                     'source': income.get('source', ''),
                     'amount': income.get('amount', 0),
-                    'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
                 })
             
             # Generate PDF
@@ -652,14 +652,14 @@ def init_reports_blueprint(mongo, token_required):
                     ]
                 
                 if start_date or end_date:
-                    query['dateReceived'] = {}
+                    query['date'] = {}
                     if start_date:
-                        query['dateReceived']['$gte'] = start_date
+                        query['date']['$gte'] = start_date
                     if end_date:
-                        query['dateReceived']['$lte'] = end_date
+                        query['date']['$lte'] = end_date
                 
                 # Fetch data
-                incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1))
+                incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1))
                 
                 # Prepare user data
                 user = mongo.db.users.find_one({'_id': current_user['_id']})
@@ -677,7 +677,7 @@ def init_reports_blueprint(mongo, token_required):
                     export_data['incomes'].append({
                         'source': income.get('source', ''),
                         'amount': income.get('amount', 0),
-                        'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                        'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
                     })
                 
                 # Generate PDF
@@ -780,13 +780,13 @@ def init_reports_blueprint(mongo, token_required):
                     {'entryType': None}
                 ]
             if start_date or end_date:
-                query['dateReceived'] = {}
+                query['date'] = {}
                 if start_date:
-                    query['dateReceived']['$gte'] = start_date
+                    query['date']['$gte'] = start_date
                 if end_date:
-                    query['dateReceived']['$lte'] = end_date
+                    query['date']['$lte'] = end_date
             
-            incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1))
+            incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1))
             
             if not incomes:
                 return jsonify({
@@ -804,7 +804,7 @@ def init_reports_blueprint(mongo, token_required):
             # Write data
             total_amount = 0
             for income in incomes:
-                date_str = income.get('dateReceived', datetime.utcnow()).strftime('%Y-%m-%d')
+                date_str = income.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
                 source = income.get('source', '')
                 category = income.get('category', {}).get('name', 'Other')
                 amount = income.get('amount', 0)
@@ -1376,10 +1376,10 @@ def init_reports_blueprint(mongo, token_required):
             
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
@@ -1422,7 +1422,7 @@ def init_reports_blueprint(mongo, token_required):
                 export_data['incomes'].append({
                     'source': income.get('source', ''),
                     'amount': income.get('amount', 0),
-                    'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
                 })
             
             for expense in expenses:
@@ -1599,10 +1599,10 @@ def init_reports_blueprint(mongo, token_required):
                 
                 if start_date or end_date:
                     if start_date:
-                        income_query['dateReceived'] = {'$gte': start_date}
+                        income_query['date'] = {'$gte': start_date}
                         expense_query['date'] = {'$gte': start_date}
                     if end_date:
-                        income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                        income_query.setdefault('date', {})['$lte'] = end_date
                         expense_query.setdefault('date', {})['$lte'] = end_date
                 
                 # Fetch data in parallel
@@ -1631,7 +1631,7 @@ def init_reports_blueprint(mongo, token_required):
                     export_data['incomes'].append({
                         'source': income.get('source', ''),
                         'amount': income.get('amount', 0),
-                        'dateReceived': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                        'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
                     })
                 
                 for expense in expenses:
@@ -1730,10 +1730,10 @@ def init_reports_blueprint(mongo, token_required):
             
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
@@ -1781,7 +1781,7 @@ def init_reports_blueprint(mongo, token_required):
             for income in incomes:
                 transactions['incomes'].append({
                     'amount': income.get('amount', 0),
-                    'date': income.get('dateReceived', datetime.utcnow())
+                    'date': income.get('date', datetime.utcnow())
                 })
             
             for expense in expenses:
@@ -1896,10 +1896,10 @@ def init_reports_blueprint(mongo, token_required):
                 
                 if start_date or end_date:
                     if start_date:
-                        income_query['dateReceived'] = {'$gte': start_date}
+                        income_query['date'] = {'$gte': start_date}
                         expense_query['date'] = {'$gte': start_date}
                     if end_date:
-                        income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                        income_query.setdefault('date', {})['$lte'] = end_date
                         expense_query.setdefault('date', {})['$lte'] = end_date
                 
                 # Fetch data in parallel
@@ -1930,7 +1930,7 @@ def init_reports_blueprint(mongo, token_required):
                 for income in incomes:
                     transactions['incomes'].append({
                         'amount': income.get('amount', 0),
-                        'date': income.get('dateReceived', datetime.utcnow())
+                        'date': income.get('date', datetime.utcnow())
                     })
                 
                 for expense in expenses:
@@ -2078,10 +2078,10 @@ def init_reports_blueprint(mongo, token_required):
             
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
@@ -2492,10 +2492,10 @@ def init_reports_blueprint(mongo, token_required):
                 
                 if start_date or end_date:
                     if start_date:
-                        income_query['dateReceived'] = {'$gte': start_date}
+                        income_query['date'] = {'$gte': start_date}
                         expense_query['date'] = {'$gte': start_date}
                     if end_date:
-                        income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                        income_query.setdefault('date', {})['$lte'] = end_date
                         expense_query.setdefault('date', {})['$lte'] = end_date
                 
                 # Fetch data in parallel
@@ -3450,10 +3450,10 @@ def init_reports_blueprint(mongo, token_required):
             
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
@@ -3505,7 +3505,7 @@ def init_reports_blueprint(mongo, token_required):
             if sales_revenue_items:
                 writer.writerow(['--- Sales Revenue ---'])
                 for income in sales_revenue_items:
-                    date_str = income.get('dateReceived', datetime.utcnow()).strftime('%Y-%m-%d')
+                    date_str = income.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
                     writer.writerow([
                         date_str,
                         income.get('source', 'N/A'),
@@ -3520,7 +3520,7 @@ def init_reports_blueprint(mongo, token_required):
             if other_income_items:
                 writer.writerow(['--- Other Income ---'])
                 for income in other_income_items:
-                    date_str = income.get('dateReceived', datetime.utcnow()).strftime('%Y-%m-%d')
+                    date_str = income.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
                     writer.writerow([
                         date_str,
                         income.get('source', 'N/A'),
@@ -3639,10 +3639,10 @@ def init_reports_blueprint(mongo, token_required):
             
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
@@ -3758,10 +3758,10 @@ def init_reports_blueprint(mongo, token_required):
             
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # OPTIMIZATION: Fetch incomes and expenses in parallel (2-3x faster)
@@ -4743,14 +4743,14 @@ def init_reports_blueprint(mongo, token_required):
         """Preview income records"""
         query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
         if start_date or end_date:
-            query['dateReceived'] = {}
+            query['date'] = {}
             if start_date:
-                query['dateReceived']['$gte'] = start_date
+                query['date']['$gte'] = start_date
             if end_date:
-                query['dateReceived']['$lte'] = end_date
+                query['date']['$lte'] = end_date
         
         total_count = mongo.db.incomes.count_documents(query)
-        incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit))
+        incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1).limit(limit))
         
         # Calculate summary
         all_incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']))
@@ -4761,7 +4761,7 @@ def init_reports_blueprint(mongo, token_required):
         for income in incomes:
             data.append({
                 'id': str(income['_id']),
-                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
                 'category': income.get('category', {}).get('name', 'Other') if isinstance(income.get('category'), dict) else income.get('category', 'Other'),
                 'amount': income.get('amount', 0),
@@ -4885,10 +4885,10 @@ def init_reports_blueprint(mongo, token_required):
         # Apply date filters
         if start_date or end_date:
             if start_date:
-                income_query['dateReceived'] = {'$gte': start_date}
+                income_query['date'] = {'$gte': start_date}
                 expense_query['date'] = {'$gte': start_date}
             if end_date:
-                income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                income_query.setdefault('date', {})['$lte'] = end_date
                 expense_query.setdefault('date', {})['$lte'] = end_date
         
         # STEP 1: Get all business incomes
@@ -4942,7 +4942,7 @@ def init_reports_blueprint(mongo, token_required):
         net_profit = operating_profit
         
         # Get limited data for preview
-        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
+        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('date', -1).limit(limit // 2))
         expenses_preview = (cogs_expenses + operating_expenses)[:limit // 2]
         
         # Format data
@@ -4955,7 +4955,7 @@ def init_reports_blueprint(mongo, token_required):
             category_raw = income.get('category', '')
             category = normalize_category(category_raw)  # ✅ Normalize for display
             data['incomes'].append({
-                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
                 'category': category,  # ✅ Always string now
                 'amount': income.get('amount', 0),
@@ -5051,10 +5051,10 @@ def init_reports_blueprint(mongo, token_required):
         # Apply date filters
         if start_date or end_date:
             if start_date:
-                income_query['dateReceived'] = {'$gte': start_date}
+                income_query['date'] = {'$gte': start_date}
                 expense_query['date'] = {'$gte': start_date}
             if end_date:
-                income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                income_query.setdefault('date', {})['$lte'] = end_date
                 expense_query.setdefault('date', {})['$lte'] = end_date
         
         # Get all business incomes and expenses
@@ -5099,7 +5099,7 @@ def init_reports_blueprint(mongo, token_required):
         net_cash_flow = net_cash_operating + net_cash_investing + net_cash_financing
         
         # Get limited transactions for preview
-        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
+        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('date', -1).limit(limit // 2))
         expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit // 2))
         
         # Format data
@@ -5110,7 +5110,7 @@ def init_reports_blueprint(mongo, token_required):
         
         for income in incomes:
             data['incomes'].append({
-                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
                 'category': income.get('category', 'other'),
                 'amount': income.get('amount', 0),
@@ -5176,6 +5176,11 @@ def init_reports_blueprint(mongo, token_required):
         - Only includes business income (taxable)
         - Only includes business expenses (tax-deductible)
         - Excludes personal transactions from tax calculations
+        
+        ENHANCEMENT (Feb 28, 2026):
+        - Includes PIT statutory deductions (rent, pension, insurance, NHIS, HMO)
+        - Shows tax savings from deductions
+        - Matches full PDF report calculations
         """
         # BUSINESS-ONLY QUERIES: Only business transactions are taxable/deductible
         income_query = {
@@ -5203,10 +5208,10 @@ def init_reports_blueprint(mongo, token_required):
         # Apply date filters
         if start_date or end_date:
             if start_date:
-                income_query['dateReceived'] = {'$gte': start_date}
+                income_query['date'] = {'$gte': start_date}
                 expense_query['date'] = {'$gte': start_date}
             if end_date:
-                income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                income_query.setdefault('date', {})['$lte'] = end_date
                 expense_query.setdefault('date', {})['$lte'] = end_date
         
         # Get all business incomes and expenses
@@ -5216,26 +5221,99 @@ def init_reports_blueprint(mongo, token_required):
         # Calculate totals
         total_income = sum(inc.get('amount', 0) for inc in all_incomes)
         total_expenses = sum(exp.get('amount', 0) for exp in all_expenses)
-        taxable_income = total_income - total_expenses
+        gross_taxable_income = total_income - total_expenses
         
         # Get user's tax profile
         user = mongo.db.users.find_one({'_id': current_user['_id']})
         tax_profile = user.get('taxProfile', {})
         tax_type = tax_profile.get('taxType', 'PIT')  # PIT or CIT
         
+        # Calculate PIT statutory deductions (only for PIT users)
+        statutory_deductions = {
+            'rent_relief': 0,
+            'pension_contributions': 0,
+            'life_insurance': 0,
+            'nhis_contributions': 0,
+            'hmo_premiums': 0,
+            'total': 0
+        }
+        
+        if tax_type == 'PIT':
+            # 1. Rent Relief (20% of annual rent, capped at ₦500,000)
+            rent_keywords = ['rent', 'housing', 'accommodation']
+            rent_expenses = [exp for exp in all_expenses 
+                            if any(keyword in exp.get('category', '').lower() 
+                                   for keyword in rent_keywords)]
+            annual_rent = sum(exp.get('amount', 0) for exp in rent_expenses)
+            rent_relief = min(annual_rent * 0.20, 500000)  # 20% capped at ₦500k
+            statutory_deductions['rent_relief'] = rent_relief
+            
+            # 2. Pension Contributions (fully deductible)
+            pension_keywords = ['pension', 'retirement']
+            pension_expenses = [exp for exp in all_expenses 
+                               if any(keyword in exp.get('category', '').lower() 
+                                      for keyword in pension_keywords)]
+            pension_contributions = sum(exp.get('amount', 0) for exp in pension_expenses)
+            statutory_deductions['pension_contributions'] = pension_contributions
+            
+            # 3. Life Insurance Premiums (fully deductible)
+            insurance_keywords = ['insurance', 'life insurance']
+            insurance_expenses = [exp for exp in all_expenses 
+                                 if any(keyword in exp.get('category', '').lower() 
+                                        for keyword in insurance_keywords)]
+            life_insurance = sum(exp.get('amount', 0) for exp in insurance_expenses)
+            statutory_deductions['life_insurance'] = life_insurance
+            
+            # 4. NHIS contributions (fully deductible)
+            nhis_keywords = ['nhis', 'health insurance']
+            nhis_expenses = [exp for exp in all_expenses 
+                            if any(keyword in exp.get('category', '').lower() 
+                                   for keyword in nhis_keywords)]
+            nhis_contributions = sum(exp.get('amount', 0) for exp in nhis_expenses)
+            statutory_deductions['nhis_contributions'] = nhis_contributions
+            
+            # 5. HMO premiums (fully deductible)
+            hmo_keywords = ['hmo', 'health maintenance']
+            hmo_expenses = [exp for exp in all_expenses 
+                           if any(keyword in exp.get('category', '').lower() 
+                                  for keyword in hmo_keywords)]
+            hmo_premiums = sum(exp.get('amount', 0) for exp in hmo_expenses)
+            statutory_deductions['hmo_premiums'] = hmo_premiums
+            
+            # Total statutory deductions
+            statutory_deductions['total'] = (
+                rent_relief + 
+                pension_contributions + 
+                life_insurance + 
+                nhis_contributions + 
+                hmo_premiums
+            )
+        
+        # Adjust taxable income for PIT deductions
+        taxable_income = gross_taxable_income - statutory_deductions['total']
+        
         # Calculate estimated tax based on tax type
         estimated_tax = 0
+        tax_without_deductions = 0
         tax_rate_display = ''
         
-        if taxable_income > 0:
+        if gross_taxable_income > 0:
             if tax_type == 'CIT':
                 # Corporate Income Tax: 30% flat rate
                 # Small company exemption: Revenue ≤₦100M AND Assets ≤₦250M
                 estimated_tax = taxable_income * 0.30
+                tax_without_deductions = estimated_tax  # CIT has no statutory deductions
                 tax_rate_display = '30% (CIT)'
             else:
                 # Personal Income Tax: Progressive rates
-                # First ₦800,000 is tax-exempt
+                # Calculate tax WITHOUT deductions (for comparison)
+                if gross_taxable_income <= 800000:
+                    tax_without_deductions = 0
+                else:
+                    taxable_without = gross_taxable_income - 800000
+                    tax_without_deductions = taxable_without * 0.15  # Simplified rate
+                
+                # Calculate tax WITH deductions (actual tax)
                 if taxable_income <= 800000:
                     estimated_tax = 0
                     tax_rate_display = '0% (Below threshold)'
@@ -5246,9 +5324,10 @@ def init_reports_blueprint(mongo, token_required):
                     tax_rate_display = 'Progressive (PIT)'
         
         effective_rate = (estimated_tax / taxable_income * 100) if taxable_income > 0 else 0
+        tax_savings = tax_without_deductions - estimated_tax
         
         # Get limited transactions for preview
-        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('dateReceived', -1).limit(limit // 2))
+        incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']).sort('date', -1).limit(limit // 2))
         expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']).sort('date', -1).limit(limit // 2))
         
         # Format data
@@ -5259,7 +5338,7 @@ def init_reports_blueprint(mongo, token_required):
         
         for income in incomes:
             data['incomes'].append({
-                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
                 'category': income.get('category', 'other'),
                 'amount': income.get('amount', 0),
@@ -5286,16 +5365,21 @@ def init_reports_blueprint(mongo, token_required):
             'summary': {
                 'total_income': total_income,
                 'total_expenses': total_expenses,
-                'taxable_income': taxable_income,
+                'gross_taxable_income': gross_taxable_income,  # Before deductions
+                'statutory_deductions': statutory_deductions,  # NEW: Deduction breakdown
+                'taxable_income': taxable_income,  # After deductions
                 'estimated_tax': estimated_tax,
+                'tax_without_deductions': tax_without_deductions,  # NEW: For comparison
+                'tax_savings': tax_savings,  # NEW: Savings from deductions
                 'effective_rate': round(effective_rate, 2),
                 'tax_type': tax_type,
                 'tax_rate_display': tax_rate_display
             },
             'metadata': {
-                'calculation_method': 'business_only_tax',
+                'calculation_method': 'business_only_tax_with_deductions',
                 'excludes_personal_transactions': True,
-                'note': 'Only business income is taxable and only business expenses are deductible'
+                'includes_statutory_deductions': tax_type == 'PIT',  # NEW
+                'note': 'Only business income is taxable and only business expenses are deductible. PIT users benefit from statutory deductions (rent, pension, insurance, NHIS, HMO).'
             }
         })
     
@@ -5649,13 +5733,13 @@ def init_reports_blueprint(mongo, token_required):
             expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
             
             if start_date or end_date:
-                income_query['dateReceived'] = {}
+                income_query['date'] = {}
                 expense_query['date'] = {}
                 if start_date:
-                    income_query['dateReceived']['$gte'] = start_date
+                    income_query['date']['$gte'] = start_date
                     expense_query['date']['$gte'] = start_date
                 if end_date:
-                    income_query['dateReceived']['$lte'] = end_date
+                    income_query['date']['$lte'] = end_date
                     expense_query['date']['$lte'] = end_date
             
             incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
@@ -5713,7 +5797,7 @@ def init_reports_blueprint(mongo, token_required):
                             'id': str(inc['_id']),
                             'source': inc.get('source', ''),
                             'amount': inc.get('amount', 0),
-                            'dateReceived': inc.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',
+                            'date': inc.get('date', datetime.utcnow()).isoformat() + 'Z',
                             'category': normalize_category(inc.get('category', 'Other'))  # ✅ Normalize here
                         }
                         for inc in preview_incomes
@@ -7139,11 +7223,11 @@ def init_reports_blueprint(mongo, token_required):
             #                       Income Statement = Period summary (start_date to end_date)
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                     # ❌ REMOVED: asset_query['purchaseDate'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
                     # ❌ REMOVED: asset_query.setdefault('purchaseDate', {})['$lte'] = end_date
             
@@ -7536,10 +7620,10 @@ def init_reports_blueprint(mongo, token_required):
                     if start_date or end_date:
                         print(f"🟢 SOA GENERATION: Applying date filter...")
                         if start_date:
-                            income_query['dateReceived'] = {'$gte': start_date}
+                            income_query['date'] = {'$gte': start_date}
                             expense_query['date'] = {'$gte': start_date}
                         if end_date:
-                            income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                            income_query.setdefault('date', {})['$lte'] = end_date
                             expense_query.setdefault('date', {})['$lte'] = end_date
                     
                     # Fetch all data in parallel
@@ -7785,10 +7869,10 @@ def init_reports_blueprint(mongo, token_required):
             # Apply date filtering
             if start_date or end_date:
                 if start_date:
-                    income_query['dateReceived'] = {'$gte': start_date}
+                    income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
                 if end_date:
-                    income_query.setdefault('dateReceived', {})['$lte'] = end_date
+                    income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
             
             # Fetch all data
@@ -7820,7 +7904,7 @@ def init_reports_blueprint(mongo, token_required):
             writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)'])
             for inc in results['incomes']:
                 writer.writerow([
-                    inc.get('dateReceived', '').strftime('%Y-%m-%d') if isinstance(inc.get('dateReceived'), datetime) else str(inc.get('dateReceived', '')),
+                    inc.get('date', '').strftime('%Y-%m-%d') if isinstance(inc.get('date'), datetime) else str(inc.get('date', '')),
                     inc.get('source', ''),
                     inc.get('category', ''),
                     inc.get('amount', 0)

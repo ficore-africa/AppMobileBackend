@@ -1305,7 +1305,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 activities.append({
                     'action': 'Income recorded',
                     'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
-                    'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
+                    'transactionDate': income.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                     'details': f'{income["amount"]} NGN - {income.get("description", income.get("source", ""))}'
                 })
 
@@ -4457,9 +4457,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     date_filter['$gte'] = start_date
                 if end_date:
                     date_filter['$lte'] = end_date
-                income_query['dateReceived'] = date_filter
+                income_query['date'] = date_filter
             
-            incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', 1))
+            incomes = list(mongo.db.incomes.find(income_query).sort('date', 1))
             
             # Get all expenses
             expense_query = query.copy()
@@ -8120,18 +8120,18 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             if entry_type in ['income', 'both']:
                 income_query = base_query.copy()
                 if date_filter:
-                    income_query['dateReceived'] = date_filter
+                    income_query['date'] = date_filter
                 if search:
                     income_query.update(search_filter)
                 
-                incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', -1))
+                incomes = list(mongo.db.incomes.find(income_query).sort('date', -1))
                 for income in incomes:
                     # Get user info
                     user = mongo.db.users.find_one({'_id': income['userId']})
                     
                     entry = serialize_doc(income)
                     entry['entryType'] = 'income'
-                    entry['date'] = income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    entry['date'] = income.get('date', datetime.utcnow()).isoformat() + 'Z'
                     entry['version'] = income.get('version', 1)
                     entry['user'] = {
                         'id': str(user['_id']) if user else '',
@@ -8450,7 +8450,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             if entry_type in ['income', 'both']:
                 income_query = base_query.copy()
                 if date_filter:
-                    income_query['dateReceived'] = date_filter
+                    income_query['date'] = date_filter
                 
                 incomes = list(mongo.db.incomes.find(income_query))
                 for income in incomes:
@@ -8492,7 +8492,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                                 'severity': severity_level,
                                 'amount': income.get('amount', 0),
                                 'category': income.get('category', ''),
-                                'date': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                                'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
                             })
             
             # Check expense entries
@@ -8658,7 +8658,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             if entry_type in ['income', 'both']:
                 income_query = base_query.copy()
                 if date_filter:
-                    income_query['dateReceived'] = date_filter
+                    income_query['date'] = date_filter
                 
                 incomes = list(mongo.db.incomes.find(income_query))
                 for income in incomes:
@@ -8680,7 +8680,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                             data.get('amount', ''),
                             data.get('category', ''),
                             data.get('description', ''),
-                            data.get('dateReceived', ''),
+                            data.get('date', ''),
                             income.get('status', 'active'),
                             version.get('changedBy', 'user'),
                             version.get('reason', ''),

@@ -279,18 +279,21 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                     pass  # ignore invalid disposal date
 
             now = datetime.utcnow()
+            purchase_price = float(data['purchasePrice'])
             asset_doc = {
                 'userId': current_user['_id'],
                 'assetName': data['assetName'].strip(),
                 'assetCode': data.get('assetCode').strip() if data.get('assetCode') else None,
                 'description': data.get('description').strip() if data.get('description') else None,
                 'category': data['category'],
-                'purchasePrice': float(data['purchasePrice']),
+                'purchasePrice': purchase_price,
+                'originalCost': purchase_price,  # CRITICAL FIX (Feb 28, 2026): Always set originalCost = purchasePrice
                 'currentValue': float(data['currentValue']),
                 'purchaseDate': purchase_date,
                 'supplier': data.get('supplier').strip() if data.get('supplier') else None,
                 'location': data.get('location').strip() if data.get('location') else None,
                 'status': data['status'],
+                'isDeleted': False,  # CRITICAL FIX (Feb 28, 2026): Always initialize isDeleted field
                 'depreciationRate': float(data['depreciationRate']) if data.get('depreciationRate') else None,
                 'depreciationMethod': data['depreciationMethod'],
                 'usefulLifeYears': int(data['usefulLifeYears']) if data.get('usefulLifeYears') else None,
@@ -308,6 +311,58 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
 
             result = mongo.db.assets.insert_one(asset_doc)
             asset_doc['_id'] = result.inserted_id
+            
+            # ✅ AUTO-CREATE CAPITAL EXPENDITURE EXPENSE (Feb 28, 2026)
+            # This supersedes the old manual payment recording flow
+            # Expense is created automatically, user is informed via response message
+            expense_created = False
+            expense_id = None
+            
+            try:
+                expense_entry = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'amount': purchase_price,
+                    'category': 'Capital Expenditure',
+                    'description': f'Asset Purchase - {data["assetName"]}',
+                    'title': f'Asset Purchase - {data["assetName"]}',
+                    'date': purchase_date,
+                    'budgetId': None,
+                    'tags': ['asset_purchase', 'capital_expenditure'],
+                    'paymentMethod': 'cash',
+                    'location': '',
+                    'notes': f'Auto-generated from asset creation: {data["assetName"]}',
+                    'status': 'active',  # CRITICAL: Required for immutability (Golden Rule #20, #43)
+                    'isDeleted': False,  # CRITICAL: Required for immutability (Golden Rule #20, #43)
+                    'excludeFromProfitLoss': True,  # ✅ CRITICAL: Exclude from P&L (CAPEX)
+                    'isCapitalExpenditure': True,  # Additional flag for clarity
+                    'linkedAssetId': str(result.inserted_id),  # Link to asset
+                    'sourceType': 'asset_purchase',  # Source tracking (Golden Rule #1)
+                    'createdAt': now,
+                    'updatedAt': now
+                }
+                
+                mongo.db.expenses.insert_one(expense_entry)
+                expense_id = str(expense_entry['_id'])
+                expense_created = True
+                print(f'✅ Auto-created capital expenditure expense {expense_id} for asset {result.inserted_id}')
+                
+                # Update asset with expense tracking info
+                mongo.db.assets.update_one(
+                    {'_id': result.inserted_id},
+                    {
+                        '$set': {
+                            'expenseAutoCreated': True,  # ✅ NEW: Flag for UI display
+                            'linkedExpenseId': expense_id,  # Link back to expense
+                            'updatedAt': now
+                        }
+                    }
+                )
+                
+            except Exception as e:
+                # Don't fail asset creation if expense creation fails
+                expense_created = False
+                print(f'⚠️ Failed to create capital expenditure expense (non-critical): {e}')
 
             asset_data = serialize_doc(asset_doc)
             asset_data['purchaseDate'] = asset_data['purchaseDate'].isoformat() + 'Z'
@@ -315,11 +370,21 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             asset_data['updatedAt'] = asset_data['updatedAt'].isoformat() + 'Z'
             if asset_data.get('disposalDate'):
                 asset_data['disposalDate'] = asset_data['disposalDate'].isoformat() + 'Z'
+            
+            # Add expense creation info to response
+            asset_data['expenseAutoCreated'] = expense_created
+            if expense_id:
+                asset_data['linkedExpenseId'] = expense_id
 
             return jsonify({
                 'success': True,
                 'data': asset_data,
-                'message': 'Asset created successfully'
+                'message': 'Asset created successfully' + (' (expense auto-recorded)' if expense_created else ''),
+                'expenseInfo': {
+                    'autoCreated': expense_created,
+                    'expenseId': expense_id,
+                    'message': 'Capital expenditure expense automatically created and excluded from P&L' if expense_created else 'Expense creation failed (non-critical)'
+                }
             }), 201
 
         except Exception as e:

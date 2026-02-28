@@ -193,7 +193,7 @@ def init_loans_blueprint(mongo, token_required):
                     'description': f'🏦 Auto-generated from Loan: {data.get("purpose", "Loan proceeds")}',
                     'category': 'Loan Proceeds',
                     'frequency': 'one_time',
-                    'dateReceived': start_date,
+                    'date': start_date,
                     'isRecurring': False,
                     'sourceType': 'loan_proceeds',  # System-generated marker
                     'loanId': str(loan['_id']),  # Link to loan

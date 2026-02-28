@@ -293,10 +293,22 @@ def init_cash_bank_blueprint(mongo, token_required):
                 sort=[('date', -1)]
             ))
             
-            # Convert ObjectId to string for JSON serialization
+            # Convert ALL ObjectId fields to string for JSON serialization
             for adjustment in adjustments:
                 adjustment['_id'] = str(adjustment['_id'])
                 adjustment['userId'] = str(adjustment['userId'])
+                
+                # CRITICAL FIX (Feb 28, 2026): Convert assetId if present
+                if 'assetId' in adjustment and adjustment['assetId']:
+                    adjustment['assetId'] = str(adjustment['assetId'])
+                
+                # CRITICAL FIX (Feb 28, 2026): Convert cashAdjustmentId if present
+                if 'cashAdjustmentId' in adjustment and adjustment['cashAdjustmentId']:
+                    adjustment['cashAdjustmentId'] = str(adjustment['cashAdjustmentId'])
+                
+                # CRITICAL FIX (Feb 28, 2026): Convert capitalEntryId if present
+                if 'capitalEntryId' in adjustment and adjustment['capitalEntryId']:
+                    adjustment['capitalEntryId'] = str(adjustment['capitalEntryId'])
             
             # CRITICAL FIX: Wrap data in 'data' field for DioApiClient compatibility
             return jsonify({

@@ -519,6 +519,7 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
                 'paidAmount': 0.0,
                 'remainingDebt': 0.0,
                 'status': 'active',
+                'isDeleted': False,  # CRITICAL FIX (Feb 28, 2026): Always initialize isDeleted field
                 'creditLimit': float(data.get('creditLimit', 0)) if data.get('creditLimit') else None,
                 'paymentTerms': payment_terms,
                 'customPaymentDays': custom_payment_days,

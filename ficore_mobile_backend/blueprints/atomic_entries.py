@@ -537,7 +537,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             "description": string (optional),
             "frequency": string (optional),
             "category": string (required),
-            "dateReceived": ISO datetime string (optional),
+            "date": ISO datetime string (optional),
             "isRecurring": bool (optional),
             "nextRecurringDate": ISO datetime string (optional),
             "metadata": object (optional)
@@ -673,7 +673,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'description': data.get('description', ''),
                 'frequency': data.get('frequency', 'one_time'),
                 'category': data['category'],
-                'dateReceived': datetime.fromisoformat(data.get('dateReceived', datetime.utcnow().isoformat()).replace('Z', '')),
+                'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
                 'isRecurring': data.get('isRecurring', False),
                 'nextRecurringDate': datetime.fromisoformat(data['nextRecurringDate'].replace('Z', '')) if data.get('nextRecurringDate') else None,
                 'status': 'active',  # CRITICAL: Required for immutability system
@@ -912,7 +912,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             # STEP 10: Prepare response
             created_income = atomic_entries_bp.serialize_doc(income_data.copy())
             created_income['id'] = income_id
-            created_income['dateReceived'] = created_income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            # Keep both 'date' (new standard) and 'dateReceived' (backward compatibility) for now
+            created_income['date'] = created_income.get('date', datetime.utcnow()).isoformat() + 'Z'
+            created_income['dateReceived'] = created_income.get('date', datetime.utcnow()).isoformat() + 'Z'  # Backward compatibility
             created_income['createdAt'] = created_income.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_income['updatedAt'] = created_income.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             if created_income.get('nextRecurringDate'):

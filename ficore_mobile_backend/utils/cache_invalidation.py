@@ -79,7 +79,7 @@ class CacheInvalidationService:
         # Check if amount or date changed (affects aggregations)
         amount_changed = old_transaction.get('amount') != new_transaction.get('amount')
         date_changed = old_transaction.get('date') != new_transaction.get('date') or \
-                      old_transaction.get('dateReceived') != new_transaction.get('dateReceived')
+                      old_transaction.get('date') != new_transaction.get('date')
         category_changed = old_transaction.get('category') != new_transaction.get('category')
         
         if amount_changed or date_changed or category_changed:
@@ -90,8 +90,8 @@ class CacheInvalidationService:
             current_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             current_year_start = datetime.utcnow().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
             
-            old_date = old_transaction.get('date') or old_transaction.get('dateReceived')
-            new_date = new_transaction.get('date') or new_transaction.get('dateReceived')
+            old_date = old_transaction.get('date')
+            new_date = new_transaction.get('date')
             
             # Invalidate monthly data if either date is in current month
             if (old_date and old_date >= current_month) or (new_date and new_date >= current_month):
@@ -123,7 +123,7 @@ class CacheInvalidationService:
         invalidation_results['user_data'] = self.cache.invalidate_by_pattern('user_data', user_id)
         
         # Check if deletion affects current month/year
-        transaction_date = transaction.get('date') or transaction.get('dateReceived')
+        transaction_date = transaction.get('date')
         
         if transaction_date:
             current_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)

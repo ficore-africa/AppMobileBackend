@@ -111,6 +111,7 @@ class DatabaseSchema:
             # Equity Tracking Fields (NEW - Feb 18, 2026 - for Statement of Affairs)
             'openingEquity': Optional[float],  # Owner's capital at start of period, default: 0.0
             'drawings': Optional[float],  # Owner withdrawals during period, default: 0.0
+            'capital': Optional[float],  # NEW (Feb 27, 2026): Owner capital contributions during period, default: 0.0
             'taxPaid': Optional[float],  # Tax payments made during period, default: 0.0
             'lastEquityUpdate': Optional[datetime],  # Last time equity fields were updated
             
@@ -195,7 +196,7 @@ class DatabaseSchema:
             'category': str,  # Required, income category
             'frequency': str,  # Required: 'one_time', 'daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'
             'salesType': Optional[str],  # Optional: 'cash' or 'credit' for sales incomes
-            'dateReceived': datetime,  # Required, date income was received
+            'date': datetime,  # Required, date income was received
             'isRecurring': bool,  # Legacy field - always False now (simplified)
             'nextRecurringDate': Optional[datetime],  # Legacy field - always None now (simplified)
             'metadata': Optional[Dict[str, Any]],  # Additional metadata
@@ -228,7 +229,7 @@ class DatabaseSchema:
     def get_income_indexes() -> List[Dict[str, Any]]:
         """Define indexes for incomes collection."""
         return [
-            {'keys': [('userId', 1), ('dateReceived', -1)], 'name': 'user_date_desc'},
+            {'keys': [('userId', 1), ('date', -1)], 'name': 'user_date_desc'},
             {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
             {'keys': [('userId', 1), ('frequency', 1)], 'name': 'user_frequency'},
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
@@ -1329,6 +1330,113 @@ class DatabaseSchema:
             {'keys': [('referralId', 1)], 'name': 'referral_id_index'},
         ]
 
+    # ==================== LOANS COLLECTION ====================
+    
+    @staticmethod
+    def get_loan_schema() -> Dict[str, Any]:
+        """
+        Schema for loans collection.
+        Stores long-term debt tracking (separate from creditors which are short-term trade payables).
+        
+        NEW (Feb 25, 2026): Part of Opening Balances redesign for complete liability tracking.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'lenderName': str,  # Required, name of lender (bank, person, institution)
+            'loanAmount': float,  # Required, total loan amount (must be > 0)
+            'interestRate': float,  # Annual interest rate percentage, default: 0.0
+            'startDate': datetime,  # Required, when loan was received
+            'maturityDate': Optional[datetime],  # When loan is due (optional)
+            'purpose': Optional[str],  # Purpose of loan (equipment, working capital, etc.)
+            'collateral': Optional[str],  # Collateral description (if any)
+            'status': str,  # 'active', 'paid_off', 'defaulted', default: 'active'
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_loan_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for loans collection."""
+        return [
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('userId', 1), ('startDate', -1)], 'name': 'user_start_date_desc'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+            {'keys': [('startDate', -1)], 'name': 'start_date_desc'},
+            {'keys': [('maturityDate', 1)], 'name': 'maturity_date', 'sparse': True},
+        ]
+
+    # ==================== LOAN_PAYMENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_loan_payment_schema() -> Dict[str, Any]:
+        """
+        Schema for loan_payments collection.
+        Tracks individual loan repayment transactions (principal + interest split).
+        
+        NEW (Feb 25, 2026): Part of loans management system.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'loanId': ObjectId,  # Required, reference to loans._id
+            'paymentAmount': float,  # Required, total payment amount (must be > 0)
+            'principalAmount': float,  # Required, portion applied to principal
+            'interestAmount': float,  # Required, portion applied to interest
+            'paymentDate': datetime,  # Required, when payment was made
+            'paymentMethod': Optional[str],  # How paid: 'cash', 'bank_transfer', 'wallet'
+            'notes': Optional[str],  # Optional payment notes
+            'status': str,  # 'completed', 'pending', 'failed', default: 'completed'
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_loan_payment_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for loan_payments collection."""
+        return [
+            {'keys': [('userId', 1), ('loanId', 1)], 'name': 'user_loan'},
+            {'keys': [('loanId', 1), ('paymentDate', -1)], 'name': 'loan_payment_date_desc'},
+            {'keys': [('userId', 1), ('paymentDate', -1)], 'name': 'user_payment_date_desc'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+        ]
+
+    # ==================== CASH_ADJUSTMENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_cash_adjustment_schema() -> Dict[str, Any]:
+        """
+        Schema for cash_adjustments collection.
+        Tracks drawings (owner withdrawals) and capital contributions.
+        
+        NEW (Feb 25, 2026): Part of Opening Balances redesign for equity tracking.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'type': str,  # Required: 'drawing' or 'capital'
+            'amount': float,  # Required, adjustment amount (must be > 0)
+            'description': str,  # Required, description of adjustment
+            'date': datetime,  # Required, when adjustment occurred
+            'status': str,  # 'active', 'voided', default: 'active'
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+            'deletedAt': Optional[datetime],  # When soft deleted (if applicable)
+        }
+    
+    @staticmethod
+    def get_cash_adjustment_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for cash_adjustments collection."""
+        return [
+            {'keys': [('userId', 1), ('type', 1)], 'name': 'user_type'},
+            {'keys': [('userId', 1), ('date', -1)], 'name': 'user_date_desc'},
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('type', 1), ('status', 1)], 'name': 'type_status'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -1380,6 +1488,10 @@ class DatabaseInitializer:
             'referrals': self.schema.get_referral_indexes(),
             'referral_payouts': self.schema.get_referral_payout_indexes(),
             'idempotency_keys': self.schema.get_idempotency_key_indexes(),
+            # Opening Balances & Financial Setup Hub collections (NEW - Feb 25-26, 2026)
+            'loans': self.schema.get_loan_indexes(),
+            'loan_payments': self.schema.get_loan_payment_indexes(),
+            'cash_adjustments': self.schema.get_cash_adjustment_indexes(),
         }
         
         results = {

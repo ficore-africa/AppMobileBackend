@@ -80,14 +80,27 @@ class AnnouncementService:
                     'error': error_msg
                 }
             
-            # Resend Contacts API requires audience_id in params dict
-            # Based on SDK source: path = f"/audiences/{params['audience_id']}/contacts"
-            contact = resend.Contacts.create({
-                'audience_id': self.audience_id,
-                'email': email,
-                'first_name': first_name,
-                'last_name': last_name
-            })
+            # Resend Contacts API - try both formats (camelCase and snake_case)
+            # JavaScript SDK uses camelCase, Python SDK might use snake_case
+            # Based on blog: audienceId (camelCase) is used in JavaScript
+            # Let's try snake_case first (Python convention), then camelCase if it fails
+            try:
+                # Try snake_case (Python convention)
+                contact = resend.Contacts.create({
+                    'audience_id': self.audience_id,
+                    'email': email,
+                    'first_name': first_name,
+                    'last_name': last_name
+                })
+            except Exception as snake_error:
+                # If snake_case fails, try camelCase (JavaScript convention)
+                print(f'⚠️ snake_case failed, trying camelCase: {snake_error}')
+                contact = resend.Contacts.create({
+                    'audienceId': self.audience_id,
+                    'email': email,
+                    'firstName': first_name,
+                    'lastName': last_name
+                })
             
             print(f'✅ User synced to Resend: {email}')
             

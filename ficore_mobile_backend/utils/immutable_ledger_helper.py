@@ -98,7 +98,7 @@ def soft_delete_transaction(db, collection_name, transaction_id, user_id):
         reversal['description'] = f"Reversal of deleted income: {original.get('description', '')}"
         reversal['category'] = original.get('category', 'other')
         reversal['frequency'] = 'one_time'
-        reversal['dateReceived'] = datetime.utcnow()
+        reversal['date'] = datetime.utcnow()
         reversal['isRecurring'] = False
         reversal['nextRecurringDate'] = None
     elif collection_name == 'expenses':
@@ -187,7 +187,7 @@ def supersede_transaction(db, collection_name, transaction_id, user_id, update_d
         # Add collection-specific fields to snapshot
         if collection_name == 'incomes':
             version_entry['data']['source'] = current.get('source')
-            version_entry['data']['dateReceived'] = current.get('dateReceived')
+            version_entry['data']['date'] = current.get('date')
         elif collection_name == 'expenses':
             version_entry['data']['title'] = current.get('title')
             version_entry['data']['date'] = current.get('date')
@@ -486,7 +486,7 @@ def get_version_comparison(db, collection_name, transaction_id, version1, versio
             
             if collection_name == 'incomes':
                 v2_data['source'] = transaction.get('source')
-                v2_data['dateReceived'] = transaction.get('dateReceived')
+                v2_data['date'] = transaction.get('date')
             elif collection_name == 'expenses':
                 v2_data['title'] = transaction.get('title')
                 v2_data['date'] = transaction.get('date')

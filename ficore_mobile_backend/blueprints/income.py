@@ -55,7 +55,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # This prevents voice entries from being hidden when device time is ahead of server time
             now = datetime.utcnow() + timedelta(hours=2)
             query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
-            query['dateReceived'] = {'$lte': now}  # Only past and present incomes (with clock drift tolerance)
+            query['date'] = {'$lte': now}  # Only past and present incomes (with clock drift tolerance)
             
             print(f"🔍 [Income API] Base query (after active filter): {query}")
             
@@ -64,18 +64,18 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if frequency:
                 query['frequency'] = frequency
             if start_date or end_date:
-                date_query = query.get('dateReceived', {})
+                date_query = query.get('date', {})
                 if start_date:
                     date_query['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
                 if end_date:
                     date_query['$lte'] = min(datetime.fromisoformat(end_date.replace('Z', '')), now)
-                query['dateReceived'] = date_query
+                query['date'] = date_query
             
             print(f"🔍 [Income API] Final MongoDB query: {query}")
             
             # FIXED: Proper sorting
             sort_direction = -1 if sort_order == 'desc' else 1
-            sort_field = sort_by if sort_by in ['dateReceived', 'amount', 'source', 'createdAt'] else 'dateReceived'
+            sort_field = sort_by if sort_by in ['date', 'amount', 'source', 'createdAt'] else 'date'
             
             # Get incomes with pagination
             incomes = list(mongo.db.incomes.find(query).sort(sort_field, sort_direction).skip(offset).limit(limit))
@@ -91,7 +91,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 print(f"  - ID: {sample.get('_id')}")
                 print(f"  - Source: {sample.get('source')}")
                 print(f"  - Amount: {sample.get('amount')}")
-                print(f"  - DateReceived: {sample.get('dateReceived')}")
+                print(f"  - Date: {sample.get('date')}")
                 print(f"  - Status: {sample.get('status', 'NO STATUS FIELD')}")
                 print(f"  - IsDeleted: {sample.get('isDeleted', 'NO FIELD')}")
                 print(f"  - EntryType: {sample.get('entryType', 'NO TAG')}")
@@ -111,7 +111,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 income_data = serialize_doc(income.copy())
                 # FIXED: Map source to title for frontend compatibility
                 income_data['title'] = income_data.get('source', income_data.get('title', 'Income'))
-                income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
                 income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
                 # ENTRY TAGGING FIELDS: Format tagging fields for frontend
@@ -177,7 +178,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 }), 404
             
             income_data = serialize_doc(income.copy())
-            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
             income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
@@ -313,7 +315,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'category': category_value,  # ✅ ALWAYS STRING - normalized above
                 'salesType': normalized_sales_type,
                 'frequency': 'one_time',  # Always one-time now
-                'dateReceived': datetime.fromisoformat((data.get('dateReceived') or data.get('date_received') or datetime.utcnow().isoformat()).replace('Z', '')),
+                'date': datetime.fromisoformat((data.get('date') or data.get('dateReceived') or data.get('date_received') or datetime.utcnow().isoformat()).replace('Z', '')),
                 'isRecurring': False,  # Always false now
                 'nextRecurringDate': None,  # Always null now
                 'status': 'active',  # CRITICAL: Required for immutability system
@@ -461,7 +463,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             created_income = serialize_doc(income_data.copy())
             created_income['id'] = income_id
             created_income['title'] = created_income.get('source', 'Income')  # Map for frontend
-            created_income['dateReceived'] = created_income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            created_income['date'] = created_income.get('date', datetime.utcnow()).isoformat() + 'Z'
+            created_income['dateReceived'] = created_income['date']  # Backward compatibility
             created_income['createdAt'] = created_income.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_income['updatedAt'] = created_income.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             created_income['nextRecurringDate'] = None
@@ -526,7 +529,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 total_this_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': start_of_month, '$lte': now}
+                        'date': {'$gte': start_of_month, '$lte': now}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
@@ -538,16 +541,16 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 # Let's also check what entries match the query
                 matching_entries = list(mongo.db.incomes.find({
                     **base_query,
-                    'dateReceived': {'$gte': start_of_month, '$lte': now}
+                    'date': {'$gte': start_of_month, '$lte': now}
                 }))
                 print(f"DEBUG: Found {len(matching_entries)} matching entries:")
                 for entry in matching_entries:
-                    print(f"  - {entry.get('source')}: ₦{entry.get('amount')} on {entry.get('dateReceived')}")
+                    print(f"  - {entry.get('source')}: ₦{entry.get('amount')} on {entry.get('date')}")
                 
                 total_last_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': start_of_last_month, '$lt': start_of_month}
+                        'date': {'$gte': start_of_last_month, '$lt': start_of_month}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
                 ]))
@@ -557,7 +560,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 year_to_date_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': start_of_year, '$lte': now}
+                        'date': {'$gte': start_of_year, '$lte': now}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
@@ -578,21 +581,22 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 monthly_totals = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': twelve_months_ago, '$lte': now}
+                        'date': {'$gte': twelve_months_ago, '$lte': now}
                     }},
                     {'$group': {
-                        '_id': {'year': {'$year': '$dateReceived'}, 'month': {'$month': '$dateReceived'}},
+                        '_id': {'year': {'$year': '$date'}, 'month': {'$month': '$date'}},
                         'total': {'$sum': '$amount'}
                     }}
                 ]))
                 average_monthly = sum(item['total'] for item in monthly_totals) / max(len(monthly_totals), 1) if monthly_totals else 0
                 
-                recent_incomes = list(mongo.db.incomes.find(base_query).sort('dateReceived', -1).limit(5))
+                recent_incomes = list(mongo.db.incomes.find(base_query).sort('date', -1).limit(5))
                 
                 recent_incomes_data = []
                 for income in recent_incomes:
                     income_data = serialize_doc(income.copy())
-                    income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
                     income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                     recent_incomes_data.append(income_data)
                 
@@ -678,7 +682,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             ytd_count = mongo.db.incomes.count_documents({
                 **base_query,
-                'dateReceived': {'$gte': start_of_year, '$lte': now}
+                'date': {'$gte': start_of_year, '$lte': now}
             })
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG: YTD count = {ytd_count}")
@@ -689,7 +693,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             this_month_count = mongo.db.incomes.count_documents({
                 **base_query,
-                'dateReceived': {'$gte': start_of_month, '$lte': now}
+                'date': {'$gte': start_of_month, '$lte': now}
             })
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG: This month count = {this_month_count}")
@@ -721,7 +725,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             now = datetime.utcnow()
             base_query = get_active_transactions_query(current_user['_id'])
-            base_query['dateReceived'] = {'$lte': now}
+            base_query['date'] = {'$lte': now}
             
             incomes = list(mongo.db.incomes.find(base_query))
             
@@ -744,10 +748,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
             
-            current_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and inc['dateReceived'] >= start_of_month]
+            current_month_incomes = [inc for inc in incomes if inc.get('date') and inc['date'] >= start_of_month]
             current_month_total = sum(inc.get('amount', 0) for inc in current_month_incomes)
             
-            last_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and start_of_last_month <= inc['dateReceived'] < start_of_month]
+            last_month_incomes = [inc for inc in incomes if inc.get('date') and start_of_last_month <= inc['date'] < start_of_month]
             last_month_total = sum(inc.get('amount', 0) for inc in last_month_incomes)
             
             if last_month_total > 0:
@@ -795,7 +799,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 })
             
             twelve_months_ago = now - timedelta(days=365)
-            recent_incomes = [inc for inc in incomes if inc['dateReceived'] >= twelve_months_ago]
+            recent_incomes = [inc for inc in incomes if inc['date'] >= twelve_months_ago]
             if recent_incomes:
                 avg_monthly = sum(inc['amount'] for inc in recent_incomes) / 12
                 insights.append({
@@ -810,7 +814,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             for i in range(6):
                 month_start = (now - timedelta(days=30*i)).replace(day=1)
                 month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-                month_incomes = [inc for inc in incomes if month_start <= inc['dateReceived'] <= month_end]
+                month_incomes = [inc for inc in incomes if month_start <= inc['date'] <= month_end]
                 monthly_totals.append(sum(inc['amount'] for inc in month_incomes))
             
             if len(monthly_totals) >= 3:
@@ -925,8 +929,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 update_data['category'] = data['category']
             if 'frequency' in data:
                 update_data['frequency'] = data['frequency']
-            if 'dateReceived' in data:
-                update_data['dateReceived'] = datetime.fromisoformat(data['dateReceived'].replace('Z', ''))
+            if 'date' in data or 'dateReceived' in data:
+                # Support both 'date' (new) and 'dateReceived' (legacy) for backward compatibility
+                date_value = data.get('date') or data.get('dateReceived')
+                update_data['date'] = datetime.fromisoformat(date_value.replace('Z', ''))
             if 'metadata' in data:
                 update_data['metadata'] = data['metadata']
 
@@ -956,7 +962,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Serialize the new version for response
             new_version = result['new_version']
             income_data = serialize_doc(new_version.copy())
-            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             next_recurring = income_data.get('nextRecurringDate')
@@ -1108,7 +1115,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 end_date = now
             
             query = get_active_transactions_query(current_user['_id'])
-            query['dateReceived'] = {'$gte': start_date, '$lte': end_date}
+            query['date'] = {'$gte': start_date, '$lte': end_date}
             
             incomes = list(mongo.db.incomes.find(query))
             
@@ -1148,7 +1155,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             monthly = {}
             for income in incomes:
-                date = income.get('dateReceived', datetime.utcnow())
+                date = income.get('date', datetime.utcnow())
                 month_key = date.strftime('%Y-%m')
                 monthly[month_key] = monthly.get(month_key, 0) + income.get('amount', 0)
             
@@ -1197,15 +1204,15 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             now = datetime.utcnow()
             query = get_active_transactions_query(current_user['_id'])
-            query['dateReceived'] = {'$lte': now}
+            query['date'] = {'$lte': now}
             
             if start_date or end_date:
-                date_query = query.get('dateReceived', {})
+                date_query = query.get('date', {})
                 if start_date:
                     date_query['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
                 if end_date:
                     date_query['$lte'] = min(datetime.fromisoformat(end_date.replace('Z', '')), now)
-                query['dateReceived'] = date_query
+                query['date'] = date_query
             
             incomes = list(mongo.db.incomes.find(query))
             source_totals = {}
@@ -1331,7 +1338,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     income_data = serialize_doc(updated_income.copy())
                     
                     # Ensure date fields are properly formatted
-                    income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
                     income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                     income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
                     income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
@@ -1550,10 +1558,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 }), 404
             
             # Serialize dates
-            if result['version1_data'].get('dateReceived'):
-                result['version1_data']['dateReceived'] = result['version1_data']['dateReceived'].isoformat() + 'Z'
-            if result['version2_data'].get('dateReceived'):
-                result['version2_data']['dateReceived'] = result['version2_data']['dateReceived'].isoformat() + 'Z'
+            if result['version1_data'].get('date'):
+                result['version1_data']['date'] = result['version1_data']['date'].isoformat() + 'Z'
+                result['version1_data']['dateReceived'] = result['version1_data']['date']  # Backward compatibility
+            if result['version2_data'].get('date'):
+                result['version2_data']['date'] = result['version2_data']['date'].isoformat() + 'Z'
+                result['version2_data']['dateReceived'] = result['version2_data']['date']  # Backward compatibility
             
             return jsonify({
                 'success': True,
@@ -1756,8 +1766,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 rollback_data['description'] = target_data['description']
             if 'category' in target_data:
                 rollback_data['category'] = target_data['category']
-            if 'dateReceived' in target_data:
-                rollback_data['dateReceived'] = target_data['dateReceived']
+            if 'date' in target_data:
+                rollback_data['date'] = target_data['date']
             
             print(f"Rollback data prepared: {list(rollback_data.keys())}")
             
@@ -1805,7 +1815,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Serialize the restored version for response
             restored_income = result['new_version']
             income_data = serialize_doc(restored_income.copy())
-            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             

@@ -63,10 +63,10 @@ class MonthlyEntryTracker:
         # This prevents premium entries from consuming free tier quota after subscription expires
         
         # CRITICAL FIX: Use correct date fields with comprehensive fallback
-        # Strategy 1: Try primary date field (dateReceived for income, date for expense)
+        # Strategy 1: Try primary date field (date for both income and expense)
         income_count = self.mongo.db.incomes.count_documents({
             'userId': user_id,
-            'dateReceived': {
+            'date': {
                 '$gte': month_start,
                 '$lt': month_end
             },
@@ -121,7 +121,7 @@ class MonthlyEntryTracker:
         if income_count == 0:
             income_count = self.mongo.db.incomes.count_documents({
                 'userId': str(user_id),
-                'dateReceived': {
+                'date': {
                     '$gte': month_start,
                     '$lt': month_end
                 },
@@ -398,13 +398,13 @@ class MonthlyEntryTracker:
                 
                 try:
                     # Strategy 1: Try primary date fields first (dateReceived for income, date for expense)
-                    # For income: try 'dateReceived' field
-                    if 'dateReceived' in entry and entry['dateReceived']:
-                        if isinstance(entry['dateReceived'], datetime):
-                            entry_time = entry['dateReceived']
-                        elif isinstance(entry['dateReceived'], str):
+                    # For income: try 'date' field
+                    if 'date' in entry and entry['date']:
+                        if isinstance(entry['date'], datetime):
+                            entry_time = entry['date']
+                        elif isinstance(entry['date'], str):
                             try:
-                                entry_time = datetime.fromisoformat(entry['dateReceived'].replace('Z', ''))
+                                entry_time = datetime.fromisoformat(entry['date'].replace('Z', ''))
                             except:
                                 pass
                     

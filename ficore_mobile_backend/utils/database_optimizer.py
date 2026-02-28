@@ -45,44 +45,44 @@ class DatabaseOptimizer:
         # Enhanced optimized indexes for financial aggregation queries
         aggregation_indexes = {
             'incomes': [
-                # Primary compound index for monthly totals (userId + dateReceived)
+                # Primary compound index for monthly totals (userId + date)
                 {
-                    'keys': [('userId', 1), ('dateReceived', -1)],
-                    'name': 'userId_dateReceived_desc_agg',
+                    'keys': [('userId', 1), ('date', -1)],
+                    'name': 'userId_date_desc_agg',
                     'background': True
                 },
-                # Enhanced compound index for category aggregations (userId + category + dateReceived)
+                # Enhanced compound index for category aggregations (userId + category + date)
                 {
-                    'keys': [('userId', 1), ('category', 1), ('dateReceived', -1)],
-                    'name': 'userId_category_dateReceived_agg',
+                    'keys': [('userId', 1), ('category', 1), ('date', -1)],
+                    'name': 'userId_category_date_agg',
                     'background': True
                 },
                 # Optimized index for amount-based aggregations with sparse option
                 {
-                    'keys': [('userId', 1), ('amount', -1), ('dateReceived', -1)],
-                    'name': 'userId_amount_dateReceived_agg',
+                    'keys': [('userId', 1), ('amount', -1), ('date', -1)],
+                    'name': 'userId_amount_date_agg',
                     'background': True,
                     'sparse': True  # Skip documents with null amounts
                 },
                 # New: Year-based index for YTD queries optimization
                 {
-                    'keys': [('userId', 1), ('dateReceived', 1)],  # Ascending for range queries
-                    'name': 'userId_dateReceived_asc_ytd',
+                    'keys': [('userId', 1), ('date', 1)],  # Ascending for range queries
+                    'name': 'userId_date_asc_ytd',
                     'background': True,
                     'partialFilterExpression': {
-                        'dateReceived': {'$type': 'date'}  # Only index valid dates
+                        'date': {'$type': 'date'}  # Only index valid dates
                     }
                 },
                 # New: Frequency-based index for recurring income analysis
                 {
-                    'keys': [('userId', 1), ('frequency', 1), ('dateReceived', -1)],
-                    'name': 'userId_frequency_dateReceived_agg',
+                    'keys': [('userId', 1), ('frequency', 1), ('date', -1)],
+                    'name': 'userId_frequency_date_agg',
                     'background': True
                 },
                 # New: Source-based aggregation index
                 {
-                    'keys': [('userId', 1), ('source', 1), ('dateReceived', -1)],
-                    'name': 'userId_source_dateReceived_agg',
+                    'keys': [('userId', 1), ('source', 1), ('date', -1)],
+                    'name': 'userId_source_date_agg',
                     'background': True
                 }
             ],
@@ -182,7 +182,7 @@ class DatabaseOptimizer:
         Get optimized aggregation pipeline for monthly totals.
         Uses compound indexes and efficient query patterns with enhanced performance.
         CRITICAL FIX: Ensures amount field is properly converted to numeric type before aggregation.
-        CRITICAL FIX: For incomes, only include past/present (dateReceived <= now) to match Recent Activity behavior.
+        CRITICAL FIX: For incomes, only include past/present (date <= now) to match Recent Activity behavior.
         CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query to filter out voided/deleted entries.
         
         Args:
@@ -198,7 +198,7 @@ class DatabaseOptimizer:
         from utils.immutable_ledger_helper import get_active_transactions_query
         
         # Use appropriate date field based on collection type
-        date_field = 'dateReceived' if collection_type == 'income' else 'date'
+        date_field = 'date'  # Both income and expense use 'date' field
         
         # Get base query with active transactions filter
         base_query = get_active_transactions_query(user_id)
@@ -286,7 +286,7 @@ class DatabaseOptimizer:
         from utils.immutable_ledger_helper import get_active_transactions_query
         
         # Use appropriate date field based on collection type
-        date_field = 'dateReceived' if collection_type == 'income' else 'date'
+        date_field = 'date'  # Both income and expense use 'date' field
         
         # Get base query with active transactions filter
         base_query = get_active_transactions_query(user_id)
@@ -383,12 +383,12 @@ class DatabaseOptimizer:
         
         if start_date:
             match_stage['$or'] = [
-                {'dateReceived': {'$gte': start_date}},
+                {'date': {'$gte': start_date}},
                 {'date': {'$gte': start_date}}
             ]
         
         return [
-            # Use compound index: userId + category + dateReceived/date
+            # Use compound index: userId + category + date
             {'$match': match_stage},
             # Group by category with efficient aggregation
             {

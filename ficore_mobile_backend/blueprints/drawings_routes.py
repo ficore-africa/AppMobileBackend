@@ -46,9 +46,10 @@ def init_drawings_blueprint(mongo, token_required, serialize_doc):
                 if end_date:
                     query['date']['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
             
-            # Get drawings
-            drawings = list(mongo.db.drawings.find(query).sort('date', -1).skip(skip).limit(limit))
-            total = mongo.db.drawings.count_documents(query)
+            # Get drawings from cash_adjustments collection (type='drawing')
+            query['type'] = 'drawing'
+            drawings = list(mongo.db.cash_adjustments.find(query).sort('date', -1).skip(skip).limit(limit))
+            total = mongo.db.cash_adjustments.count_documents(query)
             
             # Serialize
             drawings_list = []
@@ -103,9 +104,10 @@ def init_drawings_blueprint(mongo, token_required, serialize_doc):
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             total_drawings = user.get('drawings', 0) if user else 0
             
-            # Count active drawings
-            count = mongo.db.drawings.count_documents({
+            # Count active drawings from cash_adjustments collection
+            count = mongo.db.cash_adjustments.count_documents({
                 'userId': current_user['_id'],
+                'type': 'drawing',
                 'status': 'active',
                 'isDeleted': False
             })
