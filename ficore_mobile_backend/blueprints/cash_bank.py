@@ -378,9 +378,14 @@ def init_cash_bank_blueprint(mongo, token_required):
             
             mongo.db.cash_adjustments.insert_one(adjustment)
             
-            # CRITICAL FIX (Feb 27, 2026): Sync user.drawings field when creating a drawing
-            # This ensures the drawings field stays in sync with cash_adjustments collection
+            # NEW (Feb 28, 2026): Also save to dedicated collections for clarity
+            # This avoids naming confusion and provides redundancy
             if adjustment_type == 'drawing':
+                # Save to drawings collection
+                drawing_entry = adjustment.copy()
+                mongo.db.drawings.insert_one(drawing_entry)
+                print(f'✓ Drawing saved to both cash_adjustments and drawings collections')
+                
                 # Calculate total drawings from all active drawing adjustments
                 total_drawings = 0.0
                 all_drawings = mongo.db.cash_adjustments.find({
@@ -398,9 +403,12 @@ def init_cash_bank_blueprint(mongo, token_required):
                     {'$set': {'drawings': total_drawings}}
                 )
             
-            # CRITICAL FIX (Feb 27, 2026): Sync user.capital field when creating a capital contribution
-            # This ensures the capital field stays in sync with cash_adjustments collection
             elif adjustment_type == 'capital':
+                # Save to capital_contributions collection
+                capital_entry = adjustment.copy()
+                mongo.db.capital_contributions.insert_one(capital_entry)
+                print(f'✓ Capital contribution saved to both cash_adjustments and capital_contributions collections')
+                
                 # Calculate total capital from all active capital adjustments
                 total_capital = 0.0
                 all_capital = mongo.db.cash_adjustments.find({
@@ -469,8 +477,23 @@ def init_cash_bank_blueprint(mongo, token_required):
                 }
             )
             
-            # CRITICAL FIX (Feb 27, 2026): Sync user.drawings field when deleting a drawing
-            if adjustment.get('type') == 'drawing':
+            # NEW (Feb 28, 2026): Also soft delete from dedicated collections
+            adjustment_type = adjustment.get('type')
+            
+            if adjustment_type == 'drawing':
+                # Soft delete from drawings collection
+                mongo.db.drawings.update_one(
+                    {'_id': ObjectId(adjustment_id)},
+                    {
+                        '$set': {
+                            'status': 'voided',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                print(f'✓ Drawing soft deleted from both cash_adjustments and drawings collections')
+                
                 # Recalculate total drawings from remaining active drawing adjustments
                 total_drawings = 0.0
                 all_drawings = mongo.db.cash_adjustments.find({
@@ -488,8 +511,20 @@ def init_cash_bank_blueprint(mongo, token_required):
                     {'$set': {'drawings': total_drawings}}
                 )
             
-            # CRITICAL FIX (Feb 27, 2026): Sync user.capital field when deleting a capital contribution
-            elif adjustment.get('type') == 'capital':
+            elif adjustment_type == 'capital':
+                # Soft delete from capital_contributions collection
+                mongo.db.capital_contributions.update_one(
+                    {'_id': ObjectId(adjustment_id)},
+                    {
+                        '$set': {
+                            'status': 'voided',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                print(f'✓ Capital contribution soft deleted from both cash_adjustments and capital_contributions collections')
+                
                 # Recalculate total capital from remaining active capital adjustments
                 total_capital = 0.0
                 all_capital = mongo.db.cash_adjustments.find({

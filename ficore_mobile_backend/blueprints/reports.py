@@ -7342,11 +7342,15 @@ def init_reports_blueprint(mongo, token_required):
             opening_cash_balance = user.get('openingCashBalance', 0.0) if user else 0.0
             
             # Get opening equity and drawings (if tracked)
-            # CRITICAL FIX (Feb 19, 2026): Calculate opening equity from assets if not set
-            # Opening Equity = Total Assets (Original Cost) - Liabilities
-            # This prevents "assets born out of thin air" accounting error
+            # CRITICAL FIX (Feb 28, 2026): Always use stored opening equity if set
+            # Only calculate from assets if opening equity is NOT set
             opening_equity_stored = user.get('openingEquity', 0) if user else 0
-            if opening_equity_stored == 0 and len(assets) > 0:
+            
+            if opening_equity_stored > 0:
+                # User has explicitly set opening equity - use it
+                opening_equity = opening_equity_stored
+            elif len(assets) > 0:
+                # Opening equity not set but assets exist
                 # Calculate opening equity from fixed assets (capital injected to buy assets)
                 total_assets_original_cost = sum(
                     asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0) 
@@ -7356,7 +7360,8 @@ def init_reports_blueprint(mongo, token_required):
                 # Assuming no opening liabilities for simplicity
                 opening_equity = total_assets_original_cost
             else:
-                opening_equity = opening_equity_stored
+                # No opening equity set and no assets
+                opening_equity = 0
             
             drawings = user.get('drawings', 0) if user else 0
             
@@ -7747,8 +7752,11 @@ def init_reports_blueprint(mongo, token_required):
                         'inventory_count': len(comprehensive_data['inventory']),
                         'debtors_count': len(comprehensive_data['debtors']),
                         'creditors_count': len(comprehensive_data['creditors']),
-                        'opening_equity': 0,
-                        'drawings': 0
+                        # CRITICAL FIX (Feb 28, 2026): Get actual opening equity and drawings from user
+                        'opening_equity': user.get('openingEquity', 0) if user else 0,
+                        'drawings': user.get('drawings', 0) if user else 0,
+                        'capital': user.get('capital', 0) if user else 0,  # Capital contributions
+                        'loans_outstanding': 0  # TODO: Calculate outstanding loans
                     }
                     
                     assets_data = comprehensive_data['assets']
