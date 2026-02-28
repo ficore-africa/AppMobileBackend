@@ -298,6 +298,16 @@ def init_cash_bank_blueprint(mongo, token_required):
                 adjustment['_id'] = str(adjustment['_id'])
                 adjustment['userId'] = str(adjustment['userId'])
                 
+                # CRITICAL FIX (Feb 28, 2026): Convert datetime fields to ISO format strings
+                if 'date' in adjustment and adjustment['date']:
+                    adjustment['date'] = adjustment['date'].isoformat()
+                if 'createdAt' in adjustment and adjustment['createdAt']:
+                    adjustment['createdAt'] = adjustment['createdAt'].isoformat()
+                if 'updatedAt' in adjustment and adjustment['updatedAt']:
+                    adjustment['updatedAt'] = adjustment['updatedAt'].isoformat()
+                if 'deletedAt' in adjustment and adjustment['deletedAt']:
+                    adjustment['deletedAt'] = adjustment['deletedAt'].isoformat()
+                
                 # CRITICAL FIX (Feb 28, 2026): Convert assetId if present
                 if 'assetId' in adjustment and adjustment['assetId']:
                     adjustment['assetId'] = str(adjustment['assetId'])
