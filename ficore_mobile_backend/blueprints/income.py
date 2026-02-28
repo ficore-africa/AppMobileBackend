@@ -596,7 +596,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 for income in recent_incomes:
                     income_data = serialize_doc(income.copy())
                     income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
-                income_data['dateReceived'] = income_data['date']  # Backward compatibility
+                    income_data['dateReceived'] = income_data['date']  # Backward compatibility
                     income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                     recent_incomes_data.append(income_data)
                 
@@ -1844,5 +1844,6 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             }), 500
 
     return income_bp
+
 
 
