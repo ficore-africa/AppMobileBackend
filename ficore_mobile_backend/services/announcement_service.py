@@ -152,7 +152,7 @@ class AnnouncementService:
         
         Args:
             title: Announcement headline
-            body: Main message content
+            body: Main message content (supports line breaks and paragraphs)
             cta_text: Call-to-action button text (optional)
             cta_link: Call-to-action button link (optional)
             image_url: Hero image URL (optional)
@@ -160,6 +160,25 @@ class AnnouncementService:
         Returns:
             str: HTML email content
         """
+        
+        # Convert line breaks to HTML paragraphs
+        # Split by double line breaks (paragraphs) and single line breaks
+        body_html = body.replace('\r\n', '\n')  # Normalize line endings
+        
+        # Split into paragraphs (double line breaks)
+        paragraphs = body_html.split('\n\n')
+        
+        # Process each paragraph
+        formatted_paragraphs = []
+        for para in paragraphs:
+            if para.strip():
+                # Replace single line breaks with <br> tags
+                para_with_breaks = para.replace('\n', '<br>')
+                # Wrap in paragraph tag
+                formatted_paragraphs.append(f'<p style="margin: 0 0 15px 0;">{para_with_breaks}</p>')
+        
+        # Join all paragraphs
+        formatted_body = '\n'.join(formatted_paragraphs)
         
         # Build CTA button HTML if provided
         cta_html = ""
@@ -205,7 +224,7 @@ class AnnouncementService:
                 
                 <!-- Announcement Body -->
                 <div style="color: #2E2E2E; font-size: 16px; line-height: 1.8;">
-                    {body}
+                    {formatted_body}
                 </div>
                 
                 <!-- CTA Button (if provided) -->
