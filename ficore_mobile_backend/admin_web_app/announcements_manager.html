@@ -422,6 +422,166 @@
                 flex-direction: column;
             }
         }
+
+        /* Recipient Manager Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow: auto;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 50px auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            padding: 25px 30px;
+            border-bottom: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1.5rem;
+        }
+
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .modal-body {
+            padding: 30px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-box {
+            margin-bottom: 20px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .recipient-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .recipient-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+
+        .recipient-item:hover {
+            border-color: #3498db;
+            background: #f8f9fa;
+        }
+
+        .recipient-item.excluded {
+            opacity: 0.5;
+            border-color: #e74c3c;
+            background: #fee;
+        }
+
+        .recipient-info {
+            flex: 1;
+        }
+
+        .recipient-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .recipient-email {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .recipient-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-exclude {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+
+        .btn-exclude:hover {
+            background: #c0392b;
+        }
+
+        .btn-include {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+
+        .btn-include:hover {
+            background: #229954;
+        }
+
+        .excluded-count {
+            color: #e74c3c;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -542,6 +702,13 @@
                             <small>Announcement will only be sent to this email</small>
                         </div>
 
+                        <div class="form-group">
+                            <button type="button" class="btn btn-primary" onclick="showRecipientManager()" style="width: 100%;">
+                                <i class="fas fa-users"></i> Manage Recipients (<span id="recipientCount">-</span> users)
+                            </button>
+                            <small>Click to view and exclude specific users from this announcement</small>
+                        </div>
+
                         <div class="btn-group">
                             <button type="button" class="btn btn-warning" onclick="previewAnnouncement()">
                                 <i class="fas fa-eye"></i> Preview
@@ -606,12 +773,47 @@
         </div>
     </div>
 
+    <!-- Recipient Manager Modal -->
+    <div id="recipientModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-users"></i> Manage Recipients</h2>
+                <span class="close" onclick="closeRecipientManager()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="search-box">
+                    <input type="text" id="recipientSearch" placeholder="Search by name or email..." onkeyup="filterRecipients()">
+                </div>
+                <div class="alert info" style="display: block; margin-bottom: 20px;">
+                    <i class="fas fa-info-circle"></i> Click "Exclude" to remove specific users from this announcement. Test accounts are automatically excluded.
+                </div>
+                <div id="recipientListContainer" class="recipient-list">
+                    <p style="text-align: center; color: #666;">Loading recipients...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div>
+                    <span id="totalRecipients">0</span> total recipients
+                    <span class="excluded-count">(<span id="excludedCount">0</span> excluded)</span>
+                </div>
+                <button class="btn btn-primary" onclick="closeRecipientManager()">
+                    <i class="fas fa-check"></i> Done
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Global variables for recipient management
+        let allRecipients = [];
+        let excludedUserIds = new Set();
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
             loadHistory();
             setupFormListeners();
+            loadRecipientCount();  // Load initial recipient count
         });
 
         function getAdminToken() {
@@ -653,12 +855,33 @@
 
         function updatePreview() {
             const title = document.getElementById('title').value || 'Your Announcement Title';
-            const body = document.getElementById('body').value || '<p>Your announcement message will appear here...</p>';
+            const bodyRaw = document.getElementById('body').value || 'Your announcement message will appear here...';
             const ctaText = document.getElementById('ctaText').value;
             const ctaLink = document.getElementById('ctaLink').value;
 
+            // Format body text with proper paragraph breaks
+            // Split by double line breaks (paragraphs) and single line breaks
+            let bodyFormatted = bodyRaw.replace(/\r\n/g, '\n');  // Normalize line endings
+            
+            // Split into paragraphs (double line breaks)
+            const paragraphs = bodyFormatted.split('\n\n');
+            
+            // Process each paragraph
+            const formattedParagraphs = paragraphs.map(para => {
+                if (para.trim()) {
+                    // Replace single line breaks with <br> tags
+                    const paraWithBreaks = para.replace(/\n/g, '<br>');
+                    // Wrap in paragraph tag
+                    return `<p style="margin: 0 0 15px 0;">${paraWithBreaks}</p>`;
+                }
+                return '';
+            }).filter(p => p);  // Remove empty paragraphs
+            
+            // Join all paragraphs
+            const bodyHtml = formattedParagraphs.join('\n');
+
             document.getElementById('previewTitle').textContent = title;
-            document.getElementById('previewBody').innerHTML = body;
+            document.getElementById('previewBody').innerHTML = bodyHtml;
 
             const previewCta = document.getElementById('previewCta');
             const previewCtaBtn = document.getElementById('previewCtaBtn');
@@ -729,7 +952,8 @@
                         ctaLink: ctaLink || null,
                         imageUrl: null,  // Removed to avoid broken images
                         testMode,
-                        testEmail: testMode ? testEmail : null
+                        testEmail: testMode ? testEmail : null,
+                        excludedUserIds: Array.from(excludedUserIds)  // Send excluded user IDs
                     })
                 });
 
@@ -882,6 +1106,153 @@
             setTimeout(() => {
                 alert.style.display = 'none';
             }, 5000);
+        }
+    </script>
+</body>
+</html>
+
+
+        // ===== RECIPIENT MANAGEMENT FUNCTIONS =====
+
+        async function loadRecipientCount() {
+            const token = getAdminToken();
+            if (!token) return;
+
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/recipient-list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('recipientCount').textContent = data.data.totalCount;
+                }
+            } catch (error) {
+                console.error('Error loading recipient count:', error);
+            }
+        }
+
+        async function showRecipientManager() {
+            const token = getAdminToken();
+            if (!token) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+
+            // Show modal
+            document.getElementById('recipientModal').style.display = 'block';
+
+            // Load recipients
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/recipient-list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    allRecipients = data.data.recipients;
+                    renderRecipientList();
+                    updateRecipientCounts();
+                } else {
+                    document.getElementById('recipientListContainer').innerHTML = 
+                        '<p style="text-align: center; color: #e74c3c;">Failed to load recipients</p>';
+                }
+            } catch (error) {
+                console.error('Error loading recipients:', error);
+                document.getElementById('recipientListContainer').innerHTML = 
+                    '<p style="text-align: center; color: #e74c3c;">Network error. Please try again.</p>';
+            }
+        }
+
+        function closeRecipientManager() {
+            document.getElementById('recipientModal').style.display = 'none';
+        }
+
+        function renderRecipientList(searchTerm = '') {
+            const container = document.getElementById('recipientListContainer');
+            
+            // Filter recipients by search term
+            let filteredRecipients = allRecipients;
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase();
+                filteredRecipients = allRecipients.filter(r => 
+                    r.email.toLowerCase().includes(term) ||
+                    r.displayName.toLowerCase().includes(term) ||
+                    r.firstName.toLowerCase().includes(term) ||
+                    r.lastName.toLowerCase().includes(term)
+                );
+            }
+
+            if (filteredRecipients.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666;">No recipients found</p>';
+                return;
+            }
+
+            // Render recipient items
+            container.innerHTML = filteredRecipients.map(recipient => {
+                const isExcluded = excludedUserIds.has(recipient.id);
+                const displayName = recipient.displayName || `${recipient.firstName} ${recipient.lastName}`.trim() || 'Unknown User';
+                
+                return `
+                    <div class="recipient-item ${isExcluded ? 'excluded' : ''}" data-id="${recipient.id}">
+                        <div class="recipient-info">
+                            <div class="recipient-name">${displayName}</div>
+                            <div class="recipient-email">${recipient.email}</div>
+                        </div>
+                        <div class="recipient-actions">
+                            ${isExcluded ? 
+                                `<button class="btn-include" onclick="includeRecipient('${recipient.id}')">
+                                    <i class="fas fa-check"></i> Include
+                                </button>` :
+                                `<button class="btn-exclude" onclick="excludeRecipient('${recipient.id}')">
+                                    <i class="fas fa-times"></i> Exclude
+                                </button>`
+                            }
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function excludeRecipient(userId) {
+            excludedUserIds.add(userId);
+            renderRecipientList(document.getElementById('recipientSearch').value);
+            updateRecipientCounts();
+        }
+
+        function includeRecipient(userId) {
+            excludedUserIds.delete(userId);
+            renderRecipientList(document.getElementById('recipientSearch').value);
+            updateRecipientCounts();
+        }
+
+        function filterRecipients() {
+            const searchTerm = document.getElementById('recipientSearch').value;
+            renderRecipientList(searchTerm);
+        }
+
+        function updateRecipientCounts() {
+            const totalCount = allRecipients.length;
+            const excludedCount = excludedUserIds.size;
+            const finalCount = totalCount - excludedCount;
+            
+            document.getElementById('totalRecipients').textContent = finalCount;
+            document.getElementById('excludedCount').textContent = excludedCount;
+            document.getElementById('recipientCount').textContent = finalCount;
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('recipientModal');
+            if (event.target == modal) {
+                closeRecipientManager();
+            }
         }
     </script>
 </body>
