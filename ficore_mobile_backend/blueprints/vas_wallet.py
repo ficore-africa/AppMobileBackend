@@ -154,10 +154,69 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                                 print(f'⚠️ AUTO-RECOVERY: Monnify returned no accounts')
                         else:
                             print(f'⚠️ AUTO-RECOVERY: Monnify error: {fetch_data.get("responseMessage")}')
+                    elif fetch_response.status_code == 404:
+                        # Account doesn't exist in Monnify - try to create it
+                        print(f'⚠️ AUTO-RECOVERY: Account not found in Monnify (404)')
+                        
+                        # Check if user has BVN/NIN in profile
+                        user = mongo.db.users.find_one({'_id': wallet['userId']})
+                        user_bvn = user.get('bvn', '').strip() if user else ''
+                        user_nin = user.get('nin', '').strip() if user else ''
+                        
+                        if user_bvn or user_nin:
+                            print(f'   User has BVN/NIN, attempting to CREATE account...')
+                            
+                            # Create account with BVN/NIN
+                            account_data = {
+                                'accountReference': str(wallet['userId']),
+                                'accountName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()[:50],
+                                'currencyCode': 'NGN',
+                                'contractCode': MONNIFY_CONTRACT_CODE,
+                                'customerEmail': user.get('email', ''),
+                                'customerName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()[:50],
+                                'bvn': user_bvn,
+                                'nin': user_nin,
+                                'getAllAvailableBanks': True
+                            }
+                            
+                            create_response = requests.post(
+                                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                                headers={
+                                    'Authorization': f'Bearer {access_token}',
+                                    'Content-Type': 'application/json'
+                                },
+                                json=account_data,
+                                timeout=30
+                            )
+                            
+                            if create_response.status_code == 200:
+                                create_data = create_response.json()['responseBody']
+                                monnify_accounts = create_data.get('accounts', [])
+                                
+                                if monnify_accounts:
+                                    # Update wallet with new accounts
+                                    mongo.db.vas_wallets.update_one(
+                                        {'_id': wallet['_id']},
+                                        {'$set': {
+                                            'accounts': monnify_accounts,
+                                            'accountReference': create_data['accountReference'],
+                                            'accountName': create_data['accountName'],
+                                            'updatedAt': datetime.utcnow(),
+                                            'accountsAutoCreatedAt': datetime.utcnow()
+                                        }}
+                                    )
+                                    wallet['accounts'] = monnify_accounts  # Update in-memory
+                                    print(f'✅ AUTO-RECOVERY: Created {len(monnify_accounts)} accounts')
+                                else:
+                                    print(f'⚠️ AUTO-RECOVERY: Monnify returned no accounts after creation')
+                            else:
+                                print(f'⚠️ AUTO-RECOVERY: Account creation failed: {create_response.text}')
+                        else:
+                            print(f'   User has no BVN/NIN - needs internal KYC submission')
                     else:
                         print(f'⚠️ AUTO-RECOVERY: Monnify fetch failed (status {fetch_response.status_code})')
                 except Exception as e:
-                    print(f'⚠️ AUTO-RECOVERY: Failed to fetch accounts: {str(e)}')
+                    print(f'⚠️ AUTO-RECOVERY: Failed to fetch/create accounts: {str(e)}')
         
         return wallet
     
