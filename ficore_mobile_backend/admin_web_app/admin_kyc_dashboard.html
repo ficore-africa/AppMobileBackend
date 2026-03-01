@@ -679,11 +679,16 @@
         
         // Update stats
         function updateStats(submissions) {
-            document.getElementById('pendingCount').textContent = submissions.length;
-            // TODO: Fetch verified/rejected today counts from backend
-            document.getElementById('verifiedTodayCount').textContent = '-';
-            document.getElementById('rejectedTodayCount').textContent = '-';
-            document.getElementById('totalProcessedCount').textContent = '-';
+            // Defensive checks: Ensure elements exist before setting textContent
+            const pendingCountEl = document.getElementById('pendingCount');
+            const verifiedTodayCountEl = document.getElementById('verifiedTodayCount');
+            const rejectedTodayCountEl = document.getElementById('rejectedTodayCount');
+            const totalProcessedCountEl = document.getElementById('totalProcessedCount');
+            
+            if (pendingCountEl) pendingCountEl.textContent = submissions.length;
+            if (verifiedTodayCountEl) verifiedTodayCountEl.textContent = '-';
+            if (rejectedTodayCountEl) rejectedTodayCountEl.textContent = '-';
+            if (totalProcessedCountEl) totalProcessedCountEl.textContent = '-';
         }
         
         // Verify submission
@@ -780,7 +785,12 @@
                 
                 if (data.success) {
                     displayFailedVerifications(data.data.failedVerifications);
-                    document.getElementById('failedVerificationsCount').textContent = data.data.totalCount;
+                    
+                    // Defensive check: Ensure element exists before setting textContent
+                    const countElement = document.getElementById('failedVerificationsCount');
+                    if (countElement) {
+                        countElement.textContent = data.data.totalCount || 0;
+                    }
                 } else {
                     showError(data.message || 'Failed to load failed verifications');
                 }
