@@ -1437,6 +1437,49 @@ class DatabaseSchema:
             {'keys': [('type', 1), ('status', 1)], 'name': 'type_status'},
         ]
 
+    # ==================== FAILED_KYC_VERIFICATIONS COLLECTION ====================
+    
+    @staticmethod
+    def get_failed_kyc_verification_schema() -> Dict[str, Any]:
+        """
+        Schema for failed_kyc_verifications collection.
+        Tracks KYC verification failures from Monnify for admin review.
+        
+        NEW (Mar 1, 2026): Part of wallet auto-recovery enhancement.
+        Created when Monnify rejects BVN/NIN during account creation.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'userEmail': str,  # User's email for admin reference
+            'userName': str,  # User's full name
+            'bvnMasked': str,  # Masked BVN (e.g., "2214****016")
+            'ninMasked': str,  # Masked NIN (e.g., "2512****111")
+            'monnifyError': str,  # Error message from Monnify
+            'monnifyErrorCode': str,  # Error code from Monnify (e.g., "99")
+            'failedAt': datetime,  # When verification failed
+            'source': str,  # 'auto_recovery', 'manual_creation', 'wallet_creation'
+            'status': str,  # 'pending_review', 'notified', 'resolved', 'ignored'
+            'notified': bool,  # Whether user was notified, default: False
+            'notifiedAt': Optional[datetime],  # When user was notified
+            'resolvedAt': Optional[datetime],  # When issue was resolved
+            'resolvedBy': Optional[ObjectId],  # Admin who resolved it
+            'resolutionNotes': Optional[str],  # Admin notes on resolution
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_failed_kyc_verification_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for failed_kyc_verifications collection."""
+        return [
+            {'keys': [('userId', 1), ('failedAt', -1)], 'name': 'user_failed_at_desc'},
+            {'keys': [('status', 1), ('failedAt', -1)], 'name': 'status_failed_at_desc'},
+            {'keys': [('notified', 1)], 'name': 'notified_index'},
+            {'keys': [('source', 1)], 'name': 'source_index'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -1492,6 +1535,8 @@ class DatabaseInitializer:
             'loans': self.schema.get_loan_indexes(),
             'loan_payments': self.schema.get_loan_payment_indexes(),
             'cash_adjustments': self.schema.get_cash_adjustment_indexes(),
+            # KYC Management collections (NEW - Mar 1, 2026)
+            'failed_kyc_verifications': self.schema.get_failed_kyc_verification_indexes(),
         }
         
         results = {
