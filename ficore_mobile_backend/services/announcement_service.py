@@ -264,7 +264,7 @@ class AnnouncementService:
         return html_content
     
     def send_announcement(self, subject, title, body, cta_text=None, cta_link=None, image_url=None, 
-                         test_mode=False, test_email=None, announcement_type='general', admin_id=None):
+                         test_mode=False, test_email=None, announcement_type='general', admin_id=None, excluded_user_ids=None):
         """
         Send announcement to users
         
@@ -279,6 +279,7 @@ class AnnouncementService:
             test_email: Email address for test mode
             announcement_type: Type of announcement (general, feature, update, promotional, educational)
             admin_id: ID of admin sending the announcement
+            excluded_user_ids: List of user IDs to exclude from announcement (optional)
         
         Returns:
             dict: {'success': bool, 'message': str, 'broadcast_id': str or None, 'error': str or None}
@@ -360,10 +361,17 @@ class AnnouncementService:
                 real_users = filter_test_accounts_from_list(users)
                 test_count = len(users) - len(real_users)
                 
+                # Filter out excluded users if provided
+                if excluded_user_ids:
+                    excluded_ids_set = set(str(uid) for uid in excluded_user_ids)
+                    real_users = [u for u in real_users if str(u['_id']) not in excluded_ids_set]
+                    excluded_count = len(users) - test_count - len(real_users)
+                    print(f'📊 Excluded {excluded_count} users by admin selection')
+                
                 if not real_users:
                     return {
                         'success': False,
-                        'message': f'No real users found (all {len(users)} are test accounts)',
+                        'message': f'No real users found (all {len(users)} are test accounts or excluded)',
                         'broadcast_id': None,
                         'error': 'Only test accounts in audience'
                     }
@@ -390,9 +398,11 @@ class AnnouncementService:
                     # This is more reliable than Broadcasts API for free tier
                     batch_size = 50  # Smaller batches to avoid rate limits
                     total_sent = 0
+                    batch_count = (len(recipient_emails) + batch_size - 1) // batch_size
                     
                     for i in range(0, len(recipient_emails), batch_size):
                         batch = recipient_emails[i:i + batch_size]
+                        batch_number = i // batch_size + 1
                         
                         params = {
                             "from": self.from_email,
@@ -408,7 +418,13 @@ class AnnouncementService:
                         response = resend.Emails.send(params)
                         total_sent += len(batch)
                         
-                        print(f'✅ Sent announcement to {len(batch)} users (batch {i//batch_size + 1}/{(len(recipient_emails) + batch_size - 1)//batch_size})')
+                        print(f'✅ Sent announcement to {len(batch)} users (batch {batch_number}/{batch_count})')
+                        
+                        # Rate limiting: Wait 2 seconds between batches (Resend limit: 2 requests/second)
+                        # Using 2 seconds to be safe and avoid rate limit errors
+                        if batch_number < batch_count:
+                            print(f'⏱️  Rate limit: Waiting 2 seconds before next batch...')
+                            time.sleep(2)
                     
                     # Log announcement
                     self._log_announcement(
