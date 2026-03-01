@@ -9125,12 +9125,12 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'errors': {'body': ['Body is required']}
                 }), 400
             
-            # Optional fields
-            cta_text = data.get('ctaText', '').strip() or None
-            cta_link = data.get('ctaLink', '').strip() or None
-            image_url = data.get('imageUrl', '').strip() or None
+            # Optional fields - handle None values safely
+            cta_text = (data.get('ctaText') or '').strip() or None
+            cta_link = (data.get('ctaLink') or '').strip() or None
+            image_url = (data.get('imageUrl') or '').strip() or None
             test_mode = data.get('testMode', False)
-            test_email = data.get('testEmail', '').strip() or None
+            test_email = (data.get('testEmail') or '').strip() or None
             announcement_type = data.get('announcementType', 'general')
             
             # Validate test mode
