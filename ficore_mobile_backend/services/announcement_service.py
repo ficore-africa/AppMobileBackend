@@ -355,9 +355,24 @@ class AnnouncementService:
                         'error': 'Empty audience'
                     }
                 
+                # Filter out test accounts
+                from utils.test_account_filter import filter_test_accounts_from_list
+                real_users = filter_test_accounts_from_list(users)
+                test_count = len(users) - len(real_users)
+                
+                if not real_users:
+                    return {
+                        'success': False,
+                        'message': f'No real users found (all {len(users)} are test accounts)',
+                        'broadcast_id': None,
+                        'error': 'Only test accounts in audience'
+                    }
+                
+                print(f'📊 Filtered users: {len(real_users)} real users, {test_count} test accounts excluded')
+                
                 # Send to all users using Broadcasts API
                 # Note: Resend Broadcasts API handles unsubscribe automatically
-                recipient_emails = [user['email'] for user in users]
+                recipient_emails = [user['email'] for user in real_users]
                 
                 try:
                     # Use Broadcasts API (handles unsubscribe automatically)
