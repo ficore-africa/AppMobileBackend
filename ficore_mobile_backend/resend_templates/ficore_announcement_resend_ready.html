@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+    
+    <!-- Header with FiCore Brand Colors -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%);">
+        <tr>
+            <td style="padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 28px; font-weight: 700;">📢 FiCore News</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">Your Digital CFO for Business Success</p>
+            </td>
+        </tr>
+    </table>
+    
+    <!-- Main Content -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #FFFFFF;">
+        <tr>
+            <td style="padding: 40px 30px;">
+                
+                <!-- Announcement Title -->
+                <h2 style="color: #1E3A8A; font-size: 24px; margin-top: 0; margin-bottom: 20px; text-align: center;">{{title}}</h2>
+                
+                <!-- Hero Image (Optional - Remove if not needed) -->
+                {{#if imageUrl}}
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 30px 0;">
+                    <tr>
+                        <td style="text-align: center;">
+                            <img src="{{imageUrl}}" alt="Announcement" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); display: block; margin: 0 auto;">
+                        </td>
+                    </tr>
+                </table>
+                {{/if}}
+                
+                <!-- Announcement Body -->
+                <div style="color: #2E2E2E; font-size: 16px; line-height: 1.8;">
+                    {{{body}}}
+                </div>
+                
+                <!-- CTA Button (Optional - Remove if not needed) -->
+                {{#if ctaText}}
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 40px 0;">
+                    <tr>
+                        <td style="text-align: center;">
+                            <a href="{{ctaLink}}" style="display: inline-block; background: #B88A44; color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(184, 138, 68, 0.3);">
+                                {{ctaText}}
+                            </a>
+                        </td>
+                    </tr>
+                </table>
+                {{/if}}
+                
+                <!-- Support Info -->
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #FFF8F0; border-left: 4px solid #B88A44; margin: 30px 0; border-radius: 4px;">
+                    <tr>
+                        <td style="padding: 15px 20px;">
+                            <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
+                                <strong>Need help?</strong> Reply to this email or WhatsApp us at <a href="https://wa.me/2348130549754" style="color: #25D366; text-decoration: none; font-weight: 600;">+234 813 054 9754</a>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Best regards,<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
+                </p>
+                
+            </td>
+        </tr>
+    </table>
+    
+    <!-- Footer -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #F4F1EC;">
+        <tr>
+            <td style="text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0 0 10px 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
+                <p style="margin: 0 0 15px 0;">RC 8799482 | Nigeria</p>
+                <p style="margin: 0 0 15px 0;">
+                    <a href="https://business.ficoreafrica.com/general/privacy" style="color: #1E3A8A; text-decoration: none; margin: 0 8px;">Privacy Policy</a> | 
+                    <a href="https://business.ficoreafrica.com/general/terms" style="color: #1E3A8A; text-decoration: none; margin: 0 8px;">Terms of Service</a> | 
+                    <a href="https://business.ficoreafrica.com/general/landing" style="color: #1E3A8A; text-decoration: none; margin: 0 8px;">Website</a>
+                </p>
+                <!-- Unsubscribe Link (MANDATORY for announcements) -->
+                <p style="margin: 15px 0 0 0;">
+                    <a href="{{unsubscribe_url}}" style="color: #6B7280; text-decoration: underline; font-size: 11px;">Unsubscribe from announcements</a>
+                </p>
+            </td>
+        </tr>
+    </table>
+    
+</body>
+</html>
