@@ -334,6 +334,39 @@
         .backend-indicator.dev {
             background: #F59E0B;
         }
+        
+        /* Tab Styles */
+        .tab-btn {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            color: #6B7280;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .tab-btn:hover {
+            color: #1E3A8A;
+        }
+        
+        .tab-btn.active {
+            color: #1E3A8A;
+            border-bottom-color: #1E3A8A;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -376,13 +409,25 @@
                 <div class="stat-number" id="rejectedTodayCount">-</div>
             </div>
             <div class="stat-card">
-                <h3>Total Processed</h3>
-                <div class="stat-number" id="totalProcessedCount">-</div>
+                <h3>Failed Verifications</h3>
+                <div class="stat-number" id="failedVerificationsCount" style="color: #DC2626;">-</div>
             </div>
         </div>
         
-        <!-- Submissions Section -->
-        <div class="submissions-section">
+        <!-- Tab Navigation -->
+        <div style="background: white; padding: 20px 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
+            <div style="display: flex; gap: 20px; border-bottom: 2px solid #E5E7EB;">
+                <button class="tab-btn active" onclick="switchTab('pending')" id="pendingTab">
+                    <i class="fas fa-clock"></i> Pending Submissions
+                </button>
+                <button class="tab-btn" onclick="switchTab('failed')" id="failedTab">
+                    <i class="fas fa-exclamation-triangle"></i> Failed Verifications
+                </button>
+            </div>
+        </div>
+        
+        <!-- Pending Submissions Tab -->
+        <div class="submissions-section tab-content active" id="pendingContent">
             <div class="section-header">
                 <h2>Pending KYC Submissions</h2>
                 <button class="btn btn-primary" onclick="loadSubmissions()">
@@ -394,6 +439,28 @@
                 <div class="loading">
                     <i class="fas fa-spinner fa-spin"></i>
                     <p>Loading KYC submissions...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Failed Verifications Tab -->
+        <div class="submissions-section tab-content" id="failedContent">
+            <div class="section-header">
+                <h2>Failed KYC Verifications</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="exportFailedVerifications()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="loadFailedVerifications()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <div id="failedVerificationsContainer">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading failed verifications...</p>
                 </div>
             </div>
         </div>
@@ -427,7 +494,19 @@
             if (!checkAuth()) return;
             updateBackendSwitcherUI();
             loadSubmissions();
+            loadFailedVerifications();
         });
+        
+        // Tab switching
+        function switchTab(tab) {
+            // Update tab buttons
+            document.getElementById('pendingTab').classList.toggle('active', tab === 'pending');
+            document.getElementById('failedTab').classList.toggle('active', tab === 'failed');
+            
+            // Update tab content
+            document.getElementById('pendingContent').classList.toggle('active', tab === 'pending');
+            document.getElementById('failedContent').classList.toggle('active', tab === 'failed');
+        }
         
         // Load KYC submissions
         async function loadSubmissions() {
@@ -686,6 +765,163 @@
                 hour: '2-digit',
                 minute: '2-digit'
             });
+        }
+        
+        // Load failed verifications
+        async function loadFailedVerifications() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/kyc/failed-verifications?status=pending_review`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayFailedVerifications(data.data.failedVerifications);
+                    document.getElementById('failedVerificationsCount').textContent = data.data.totalCount;
+                } else {
+                    showError(data.message || 'Failed to load failed verifications');
+                }
+            } catch (error) {
+                showError('Error loading failed verifications: ' + error.message);
+            }
+        }
+        
+        // Display failed verifications
+        function displayFailedVerifications(verifications) {
+            const container = document.getElementById('failedVerificationsContainer');
+            
+            if (verifications.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-check-circle"></i>
+                        <h3>No Failed Verifications</h3>
+                        <p>All KYC verifications are successful</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = verifications.map(fv => `
+                <div class="kyc-card status-rejected">
+                    <div class="kyc-header">
+                        <div>
+                            <div class="kyc-title">${fv.userName}</div>
+                            <div class="kyc-email">${fv.userEmail}</div>
+                        </div>
+                        <span class="badge badge-rejected">FAILED</span>
+                    </div>
+                    
+                    <div class="kyc-details">
+                        <div class="detail-item">
+                            <div class="detail-label">BVN (Masked)</div>
+                            <div class="detail-value">${fv.bvnMasked}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">NIN (Masked)</div>
+                            <div class="detail-value">${fv.ninMasked}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Monnify Error</div>
+                            <div class="detail-value" style="color: #DC2626;">${fv.monnifyError}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Error Code</div>
+                            <div class="detail-value">${fv.monnifyErrorCode}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Failed At</div>
+                            <div class="detail-value">${formatDate(fv.failedAt)}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Source</div>
+                            <div class="detail-value">${fv.source}</div>
+                        </div>
+                    </div>
+                    
+                    <div style="background: #FEE2E2; border: 1px solid #FCA5A5; border-radius: 6px; padding: 12px; margin-top: 15px; font-size: 13px;">
+                        <i class="fas fa-info-circle" style="color: #DC2626;"></i>
+                        <strong>Action Required:</strong> User submitted invalid BVN/NIN. Contact user to resubmit correct information.
+                    </div>
+                    
+                    <div class="actions">
+                        ${!fv.notified ? `
+                            <button class="btn btn-primary" onclick="markAsNotified('${fv._id}')">
+                                <i class="fas fa-envelope"></i> Mark as Notified
+                            </button>
+                        ` : `
+                            <span class="badge badge-verified">
+                                <i class="fas fa-check"></i> Notified ${formatDate(fv.notifiedAt)}
+                            </span>
+                        `}
+                        <button class="btn btn-secondary" onclick="viewUserDetails('${fv.userId}')">
+                            <i class="fas fa-user"></i> View User
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Mark failed verification as notified
+        async function markAsNotified(verificationId) {
+            if (!confirm('Mark this failed verification as notified?\n\nThis indicates you have contacted the user about their invalid BVN/NIN.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/kyc/failed-verifications/${verificationId}/notify`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Marked as notified successfully');
+                    loadFailedVerifications(); // Refresh list
+                } else {
+                    showError(data.message || 'Failed to mark as notified');
+                }
+            } catch (error) {
+                showError('Error marking as notified: ' + error.message);
+            }
+        }
+        
+        // Export failed verifications as CSV
+        async function exportFailedVerifications() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/kyc/failed-verifications/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${getAdminToken()}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `failed_kyc_verifications_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    showSuccess('CSV exported successfully');
+                } else {
+                    showError('Failed to export CSV');
+                }
+            } catch (error) {
+                showError('Error exporting CSV: ' + error.message);
+            }
+        }
+        
+        // View user details
+        function viewUserDetails(userId) {
+            window.location.href = `user_management.html?userId=${userId}`;
         }
     </script>
 </body>
