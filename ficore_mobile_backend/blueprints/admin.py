@@ -9132,6 +9132,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             test_mode = data.get('testMode', False)
             test_email = (data.get('testEmail') or '').strip() or None
             announcement_type = data.get('announcementType', 'general')
+            excluded_user_ids = data.get('excludedUserIds', [])  # List of user IDs to exclude
             
             # Validate test mode
             if test_mode and not test_email:
@@ -9156,7 +9157,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 test_mode=test_mode,
                 test_email=test_email,
                 announcement_type=announcement_type,
-                admin_id=str(current_user['_id'])
+                admin_id=str(current_user['_id']),
+                excluded_user_ids=excluded_user_ids
             )
             
             if result['success']:
@@ -9258,6 +9260,65 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to get audience count',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/announcements/recipient-list', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_recipient_list(current_user):
+        """
+        Get list of all users who will receive announcements
+        Returns real users (excluding test accounts) with their details
+        """
+        try:
+            # Get all users with resendContactId (synced users)
+            users = list(mongo.db.users.find(
+                {'resendContactId': {'$exists': True}},
+                {
+                    '_id': 1,
+                    'email': 1,
+                    'firstName': 1,
+                    'lastName': 1,
+                    'displayName': 1,
+                    'createdAt': 1,
+                    'lastLogin': 1
+                }
+            ).sort('email', 1))
+            
+            # Filter out test accounts
+            from utils.test_account_filter import filter_test_accounts_from_list
+            real_users = filter_test_accounts_from_list(users)
+            test_count = len(users) - len(real_users)
+            
+            # Format user data
+            recipient_list = []
+            for user in real_users:
+                recipient_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'displayName': user.get('displayName', ''),
+                    'createdAt': user.get('createdAt').isoformat() + 'Z' if user.get('createdAt') else None,
+                    'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'recipients': recipient_list,
+                    'totalCount': len(recipient_list),
+                    'testAccountsExcluded': test_count
+                },
+                'message': 'Recipient list retrieved successfully'
+            })
+        
+        except Exception as e:
+            print(f"❌ Error getting recipient list: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get recipient list',
                 'errors': {'general': [str(e)]}
             }), 500
 
