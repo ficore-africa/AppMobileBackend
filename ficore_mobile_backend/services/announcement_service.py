@@ -476,12 +476,27 @@ class AnnouncementService:
             total_failed = len([log for log in logs if log.get('status') == 'failed'])
             total_tests = len([log for log in logs if log.get('status') == 'test'])
             
+            # Convert ObjectIds to strings for JSON serialization
+            recent_announcements = []
+            for log in logs[:10]:  # Last 10 announcements
+                announcement = {
+                    'id': str(log['_id']),
+                    'subject': log.get('subject'),
+                    'announcementType': log.get('announcementType'),
+                    'status': log.get('status'),
+                    'recipientCount': log.get('recipientCount', 0),
+                    'error': log.get('error'),
+                    'sentAt': log.get('sentAt').isoformat() if log.get('sentAt') else None,
+                    'sentBy': str(log['sentBy']) if log.get('sentBy') else None
+                }
+                recent_announcements.append(announcement)
+            
             return {
                 'total_announcements': len(logs),
                 'total_recipients': total_sent,
                 'total_failed': total_failed,
                 'total_tests': total_tests,
-                'recent_announcements': logs[:10]  # Last 10 announcements
+                'recent_announcements': recent_announcements
             }
             
         except Exception as e:
