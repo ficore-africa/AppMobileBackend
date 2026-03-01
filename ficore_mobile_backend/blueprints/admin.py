@@ -6661,7 +6661,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     @token_required
     @admin_required
     def get_user_wallet(current_user, user_id):
-        """Get user's liquid wallet information with auto-recovery"""
+        """Get user's liquid wallet information"""
         try:
             # Validate user exists
             user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
@@ -6671,10 +6671,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'message': 'User not found'
                 }), 404
             
-            # Get wallet data with auto-recovery enabled
-            # This will automatically fetch/create accounts from Monnify if empty
-            from .vas_wallet import get_wallet_by_user_id
-            wallet = get_wallet_by_user_id(user_id, auto_fetch_accounts=True)
+            # Get wallet data directly from database
+            # Note: Auto-recovery happens automatically when user accesses wallet via mobile app
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             
             if not wallet:
                 return jsonify({
