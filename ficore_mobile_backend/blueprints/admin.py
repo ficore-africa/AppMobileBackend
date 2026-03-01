@@ -9276,9 +9276,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             from services.announcement_service import get_announcement_service
             announcement_service = get_announcement_service(mongo_db=mongo.db)
             
-            # Test accounts to exclude
-            test_patterns = ['test', 'demo', 'example', 'fake', 'dummy', '@ficoreafrica.com']
-            test_emails = ['warpiiv@gmail.com']
+            # Import test account filter
+            from utils.test_account_filter import filter_test_accounts_from_list
             
             # Get all users that need syncing
             users_to_sync = list(mongo.db.users.find(
@@ -9294,26 +9293,11 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             ))
             
-            # Filter out test accounts
-            real_users = []
-            for user in users_to_sync:
-                email = user.get('email', '').lower()
-                is_test = False
-                
-                # Check test email list
-                if email in [e.lower() for e in test_emails]:
-                    is_test = True
-                
-                # Check test patterns
-                for pattern in test_patterns:
-                    if pattern in email:
-                        is_test = True
-                        break
-                
-                if not is_test:
-                    real_users.append(user)
+            # Filter out test accounts using existing utility
+            real_users = filter_test_accounts_from_list(users_to_sync)
+            test_count = len(users_to_sync) - len(real_users)
             
-            print(f"📊 Found {len(real_users)} real users to sync (excluded {len(users_to_sync) - len(real_users)} test accounts)")
+            print(f"📊 Found {len(real_users)} real users to sync (excluded {test_count} test accounts)")
             
             # Sync users with rate limiting (2 requests/second max)
             success_count = 0
