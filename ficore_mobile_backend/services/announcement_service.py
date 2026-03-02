@@ -395,8 +395,8 @@ class AnnouncementService:
                         print(f'⚠️ Warning: {len(recipient_emails)} users exceeds free tier daily limit (100)')
                         print(f'   Using batch sending with List-Unsubscribe header')
                     
-                    # Use batch sending with proper unsubscribe headers
-                    # This is more reliable than Broadcasts API for free tier
+                    # Use BCC for privacy - each recipient doesn't see other recipients
+                    # Send individual emails to protect user privacy
                     batch_size = 50  # Smaller batches to avoid rate limits
                     total_sent = 0
                     batch_count = (len(recipient_emails) + batch_size - 1) // batch_size
@@ -405,9 +405,12 @@ class AnnouncementService:
                         batch = recipient_emails[i:i + batch_size]
                         batch_number = i // batch_size + 1
                         
+                        # CRITICAL: Use BCC instead of TO for privacy
+                        # Each recipient receives email without seeing other recipients
                         params = {
                             "from": self.from_email,
-                            "to": batch,
+                            "to": ["team@ficoreafrica.com"],  # Dummy "to" address (required by Resend)
+                            "bcc": batch,  # BCC protects recipient privacy
                             "subject": subject,
                             "html": html_content,
                             "headers": {
@@ -419,7 +422,7 @@ class AnnouncementService:
                         response = resend.Emails.send(params)
                         total_sent += len(batch)
                         
-                        print(f'✅ Sent announcement to {len(batch)} users (batch {batch_number}/{batch_count})')
+                        print(f'✅ Sent announcement to {len(batch)} users via BCC (batch {batch_number}/{batch_count})')
                         
                         # Rate limiting: Wait 2 seconds between batches (Resend limit: 2 requests/second)
                         # Using 2 seconds to be safe and avoid rate limit errors
