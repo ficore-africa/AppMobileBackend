@@ -42,6 +42,7 @@ TEST_ACCOUNT_EMAILS = [
     'makesaisai@gmail.com',
     'mokomali@gmail.com',
     'mustaphakaka@gmail.com',
+    'admin@ficore.com',
     'nagin@gmail.com',
     'newtest@gmail.com',
     'nhooksapp@gmail.com',
@@ -315,3 +316,4 @@ stats = get_test_account_stats(mongo)
 print(f"Test accounts: {stats['testAccountCount']}")
 print(f"Test spending: ₦{stats['totalSpending']:,.2f}")
 """
+
