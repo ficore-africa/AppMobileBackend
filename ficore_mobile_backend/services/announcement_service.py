@@ -343,9 +343,10 @@ class AnnouncementService:
                     }
                 
                 # Get all users with resendContactId (synced users)
+                # Include _id for exclusion filtering
                 users = list(self.mongo_db.users.find(
                     {'resendContactId': {'$exists': True}},
-                    {'email': 1, '_id': 0}
+                    {'email': 1, '_id': 1}
                 ))
                 
                 if not users:
