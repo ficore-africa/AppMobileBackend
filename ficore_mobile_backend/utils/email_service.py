@@ -21,14 +21,14 @@ class EmailService:
             raise ValueError('RESEND_API_KEY environment variable not set')
         
         resend.api_key = self.api_key
-        self.from_email = "FiCore <team@ficoreafrica.com>"
+        self.from_email = "FiCore Africa <team@mail.ficoreafrica.com>"
         self.mongo_db = mongo_db  # Optional MongoDB connection for logging
     
     def _log_email(self, to_email, subject, email_type, status, email_id=None, error=None, user_id=None):
         """
         Log email to database for tracking and debugging
         """
-        if self.mongo_db is None:
+        if not self.mongo_db:
             print(f'⚠️ MongoDB not available for email logging')
             return
             
@@ -146,6 +146,15 @@ class EmailService:
                 </p>
             </div>
             
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 New to FiCore?</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); transition: transform 0.2s;">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
+            </div>
+            
             <!-- Footer -->
             <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
                 <p style="margin: 0 0 10px 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
@@ -208,6 +217,15 @@ class EmailService:
                     Best regards,<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
+            </div>
+            
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 Need Help?</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
             </div>
             
             <!-- Footer -->
@@ -276,6 +294,15 @@ class EmailService:
                     Best regards,<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
+            </div>
+            
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 Need Help?</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
             </div>
             
             <!-- Footer -->
@@ -391,6 +418,15 @@ class EmailService:
                     Best regards,<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
+            </div>
+            
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 Need Help?</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
             </div>
             
             <!-- Footer -->
@@ -520,6 +556,15 @@ class EmailService:
                     This is a test email from FiCore Africa.<br>
                     <strong style="color: #1E3A8A;">Sent via Resend</strong>
                 </p>
+            </div>
+            
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 Learn More</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
             </div>
             
             <!-- Footer -->
