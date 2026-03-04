@@ -28,7 +28,7 @@ class EmailService:
         """
         Log email to database for tracking and debugging
         """
-        if not self.mongo_db:
+        if self.mongo_db is None:
             print(f'⚠️ MongoDB not available for email logging')
             return
             
