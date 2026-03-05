@@ -419,19 +419,27 @@
         <!-- Update Balance Section -->
         <div class="update-balance-section">
             <h2 style="text-align: center; margin-bottom: 30px;">
-                <i class="fas fa-wallet"></i> Update Peyflex Balance
+                <i class="fas fa-wallet"></i> Update Provider Balance
             </h2>
             <div id="updateMessage"></div>
             <form class="update-form" id="updateBalanceForm">
                 <div class="form-group">
+                    <label for="provider">Select Provider</label>
+                    <select id="provider" name="provider" required style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem;">
+                        <option value="">-- Choose Provider --</option>
+                        <option value="peyflex">Peyflex</option>
+                        <option value="monnify">Monnify</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label for="balance">Current Balance (₦)</label>
                     <input type="number" id="balance" name="balance" step="0.01" required 
-                           placeholder="Enter balance from Peyflex dashboard">
+                           placeholder="Enter balance from provider dashboard">
                 </div>
                 <div class="form-group">
                     <label for="adminEmail">Your Email</label>
                     <input type="email" id="adminEmail" name="adminEmail" required 
-                           placeholder="admin@ficore.africa">
+                           placeholder="hassanahmad@ficoreafrica.com">
                 </div>
                 <div class="form-group">
                     <label for="notes">Notes (optional)</label>
@@ -562,8 +570,12 @@
                     return;
                 }
 
-                const [balanceRes, failuresRes, successRatesRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/admin/provider-health/peyflex/balance`, {
+                // Fetch data for both providers
+                const [peyflexBalanceRes, monnifyBalanceRes, failuresRes, successRatesRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/admin/provider-health/balance/peyflex`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${API_BASE_URL}/api/admin/provider-health/balance/monnify`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     }),
                     fetch(`${API_BASE_URL}/api/admin/provider-health/failed-transactions?hours=24`, {
@@ -575,45 +587,75 @@
                 ]);
 
                 // Check for auth failures
-                if (balanceRes.status === 401 || failuresRes.status === 401 || successRatesRes.status === 401) {
+                if (peyflexBalanceRes.status === 401 || monnifyBalanceRes.status === 401 || 
+                    failuresRes.status === 401 || successRatesRes.status === 401) {
                     window.location.href = 'admin_login.html';
                     return;
                 }
 
-                const balanceData = await balanceRes.json();
+                const peyflexBalanceData = await peyflexBalanceRes.json();
+                const monnifyBalanceData = await monnifyBalanceRes.json();
                 const failuresData = await failuresRes.json();
                 const successRatesData = await successRatesRes.json();
 
                 const statsGrid = document.getElementById('statsGrid');
 
                 // Peyflex balance card
-                const balanceColor = balanceData.balance < 5000 ? '#e74c3c' : 
-                                    balanceData.balance < 10000 ? '#f39c12' : '#27ae60';
+                const peyflexBalance = peyflexBalanceData.balance || 0;
+                const peyflexColor = peyflexBalance < 5000 ? '#e74c3c' : 
+                                    peyflexBalance < 10000 ? '#f39c12' : '#27ae60';
                 
-                const lastUpdated = balanceData.lastUpdated ? 
-                    `${balanceData.hoursSinceUpdate}h ago by ${balanceData.updatedBy}` : 
+                const peyflexLastUpdated = peyflexBalanceData.lastUpdated ? 
+                    `${peyflexBalanceData.hoursSinceUpdate}h ago by ${peyflexBalanceData.updatedBy}` : 
+                    'Never updated';
+
+                // Monnify balance card
+                const monnifyBalance = monnifyBalanceData.balance || 0;
+                const monnifyColor = monnifyBalance < 5000 ? '#e74c3c' : 
+                                    monnifyBalance < 10000 ? '#f39c12' : '#27ae60';
+                
+                const monnifyLastUpdated = monnifyBalanceData.lastUpdated ? 
+                    `${monnifyBalanceData.hoursSinceUpdate}h ago by ${monnifyBalanceData.updatedBy}` : 
                     'Never updated';
 
                 // Failed transactions card
                 const failedCount = failuresData.summary?.totalFailed || 0;
                 const lostRevenue = failuresData.summary?.totalLostRevenue || 0;
 
-                // Success rate card (Peyflex)
+                // Success rates for both providers
                 const peyflexStats = successRatesData.providers?.peyflex || {};
-                const successRate = peyflexStats.successRate || 0;
-                const successColor = successRate >= 95 ? '#27ae60' : 
-                                    successRate >= 85 ? '#f39c12' : '#e74c3c';
+                const monnifyStats = successRatesData.providers?.monnify || {};
+                
+                const peyflexSuccessRate = peyflexStats.successRate || 0;
+                const monnifySuccessRate = monnifyStats.successRate || 0;
+                
+                const peyflexSuccessColor = peyflexSuccessRate >= 95 ? '#27ae60' : 
+                                           peyflexSuccessRate >= 85 ? '#f39c12' : '#e74c3c';
+                const monnifySuccessColor = monnifySuccessRate >= 95 ? '#27ae60' : 
+                                           monnifySuccessRate >= 85 ? '#f39c12' : '#e74c3c';
 
                 statsGrid.innerHTML = `
                     <div class="stat-card balance">
                         <div class="icon"><i class="fas fa-wallet"></i></div>
-                        <div class="number" style="color: ${balanceColor}">
-                            ₦${balanceData.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}
+                        <div class="number" style="color: ${peyflexColor}">
+                            ₦${peyflexBalance.toLocaleString('en-NG', {minimumFractionDigits: 2})}
                         </div>
                         <div class="label">Peyflex Balance</div>
                         <div class="meta">
-                            <i class="fas fa-clock"></i> ${lastUpdated}
-                            ${balanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : ''}
+                            <i class="fas fa-clock"></i> ${peyflexLastUpdated}
+                            ${peyflexBalanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : ''}
+                        </div>
+                    </div>
+
+                    <div class="stat-card balance">
+                        <div class="icon"><i class="fas fa-wallet"></i></div>
+                        <div class="number" style="color: ${monnifyColor}">
+                            ₦${monnifyBalance.toLocaleString('en-NG', {minimumFractionDigits: 2})}
+                        </div>
+                        <div class="label">Monnify Balance</div>
+                        <div class="meta">
+                            <i class="fas fa-clock"></i> ${monnifyLastUpdated}
+                            ${monnifyBalanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : ''}
                         </div>
                     </div>
 
@@ -628,12 +670,23 @@
 
                     <div class="stat-card success-rate">
                         <div class="icon"><i class="fas fa-chart-line"></i></div>
-                        <div class="number" style="color: ${successColor}">
-                            ${successRate.toFixed(1)}%
+                        <div class="number" style="color: ${peyflexSuccessColor}">
+                            ${peyflexSuccessRate.toFixed(1)}%
                         </div>
                         <div class="label">Peyflex Success Rate (24h)</div>
                         <div class="meta">
                             <i class="fas fa-check"></i> ${peyflexStats.success || 0} / ${peyflexStats.total || 0} transactions
+                        </div>
+                    </div>
+
+                    <div class="stat-card success-rate">
+                        <div class="icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="number" style="color: ${monnifySuccessColor}">
+                            ${monnifySuccessRate.toFixed(1)}%
+                        </div>
+                        <div class="label">Monnify Success Rate (24h)</div>
+                        <div class="meta">
+                            <i class="fas fa-check"></i> ${monnifyStats.success || 0} / ${monnifyStats.total || 0} transactions
                         </div>
                     </div>
                 `;
@@ -738,6 +791,16 @@
                 return;
             }
 
+            const provider = document.getElementById('provider').value;
+            if (!provider) {
+                document.getElementById('updateMessage').innerHTML = `
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i> Please select a provider
+                    </div>
+                `;
+                return;
+            }
+
             const formData = {
                 balance: parseFloat(document.getElementById('balance').value),
                 adminEmail: document.getElementById('adminEmail').value,
@@ -745,7 +808,7 @@
             };
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/admin/provider-health/peyflex/balance`, {
+                const response = await fetch(`${API_BASE_URL}/api/admin/provider-health/balance/${provider}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -766,11 +829,14 @@
 
                 const messageDiv = document.getElementById('updateMessage');
                 if (data.success) {
-                    messageDiv.innerHTML = `
-                        <div class="success-message">
-                            <i class="fas fa-check-circle"></i> Balance updated successfully!
-                        </div>
-                    `;
+                    let message = `<i class="fas fa-check-circle"></i> ${provider.charAt(0).toUpperCase() + provider.slice(1)} balance updated successfully!`;
+                    
+                    if (data.alertSent) {
+                        message += `<br><i class="fas fa-envelope"></i> ${data.alertType.toUpperCase()} email alert sent to admin`;
+                    }
+                    
+                    messageDiv.innerHTML = `<div class="success-message">${message}</div>`;
+                    
                     // Reload data
                     await loadAllData();
                     // Clear form
