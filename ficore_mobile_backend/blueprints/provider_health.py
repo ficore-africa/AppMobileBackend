@@ -136,7 +136,8 @@ def init_provider_health_blueprint(mongo, token_required):
                 'notes': notes,
                 'updatedAt': datetime.utcnow()
             }
-            mongo.db.provider_balance_history.insert_one(history_entry)
+            history_result = mongo.db.provider_balance_history.insert_one(history_entry)
+            print(f"📝 Balance history saved: {history_result.inserted_id} - {provider_lower} from ₦{previous_balance:,.2f} to ₦{balance:,.2f}")
             
             print(f"✅ {provider.capitalize()} balance updated: ₦{balance:,.2f} by {admin_email}")
             
@@ -440,12 +441,17 @@ def init_provider_health_blueprint(mongo, token_required):
         """
         Get balance update history for all providers or specific provider
         Supports filtering by provider and date range
+        
+        FALLBACK: If provider_balance_history collection is empty, 
+        constructs history from provider_balances collection
         """
         try:
             # Get query parameters
             provider = request.args.get('provider')  # Optional: filter by provider
             days = int(request.args.get('days', 30))  # Default: last 30 days
             limit = int(request.args.get('limit', 100))  # Default: 100 records
+            
+            print(f"📊 Balance history request - Provider: {provider}, Days: {days}, Limit: {limit}")
             
             # Build query
             query = {}
@@ -456,15 +462,53 @@ def init_provider_health_blueprint(mongo, token_required):
             cutoff_date = datetime.utcnow() - timedelta(days=days)
             query['updatedAt'] = {'$gte': cutoff_date}
             
-            # Get history entries
+            print(f"📊 Query: {query}")
+            
+            # Try to get history from dedicated history collection
             history = list(mongo.db.provider_balance_history.find(
                 query,
                 {'_id': 0}  # Exclude MongoDB _id from response
             ).sort('updatedAt', -1).limit(limit))
             
+            print(f"📊 Found {len(history)} entries in provider_balance_history collection")
+            
+            # FALLBACK: If no history found, construct from provider_balances collection
+            if len(history) == 0:
+                print(f"⚠️ No history in dedicated collection, using fallback from provider_balances")
+                
+                # Get current balances for all providers (or specific provider)
+                balance_query = {}
+                if provider:
+                    balance_query['provider'] = provider.lower()
+                
+                balances = list(mongo.db.provider_balances.find(balance_query))
+                
+                print(f"📊 Found {len(balances)} entries in provider_balances collection")
+                
+                # Convert to history format
+                for balance_entry in balances:
+                    # Only include if it has been updated (has lastUpdated field)
+                    if balance_entry.get('lastUpdated'):
+                        history.append({
+                            'provider': balance_entry.get('provider', 'unknown'),
+                            'previousBalance': 0.0,  # We don't have previous balance in fallback
+                            'newBalance': float(balance_entry.get('balance', 0)),
+                            'change': float(balance_entry.get('balance', 0)),  # Assume all is change
+                            'updatedBy': balance_entry.get('updatedBy', 'unknown'),
+                            'notes': balance_entry.get('notes', 'Current balance (no history available)'),
+                            'updatedAt': balance_entry.get('lastUpdated', balance_entry.get('updatedAt')),
+                            'isFallback': True  # Flag to indicate this is from fallback
+                        })
+                
+                # Sort by date
+                history.sort(key=lambda x: x.get('updatedAt', datetime.min), reverse=True)
+                history = history[:limit]  # Apply limit
+                
+                print(f"📊 Constructed {len(history)} history entries from fallback")
+            
             # Format dates for JSON serialization
             for entry in history:
-                if 'updatedAt' in entry:
+                if 'updatedAt' in entry and isinstance(entry['updatedAt'], datetime):
                     entry['updatedAt'] = entry['updatedAt'].isoformat()
             
             return jsonify({
@@ -475,11 +519,14 @@ def init_provider_health_blueprint(mongo, token_required):
                     'provider': provider,
                     'days': days,
                     'limit': limit
-                }
+                },
+                'usingFallback': any(entry.get('isFallback') for entry in history)
             }), 200
             
         except Exception as e:
             print(f"❌ Error getting balance history: {e}")
+            import traceback
+            traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)}), 500
 
 
