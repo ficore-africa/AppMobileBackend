@@ -6,22 +6,17 @@ Tracks VAS provider balance, success rates, and liquidity issues
 from flask import Blueprint, jsonify, request
 from datetime import datetime, timedelta
 from bson import ObjectId
-import sys
-import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from extensions import mongo
-
-provider_health_bp = Blueprint('provider_health', __name__, url_prefix='/api/admin/provider-health')
-
-# ============================================================================
-# PEYFLEX BALANCE TRACKING (Manual Entry + Automated Monitoring)
-# ============================================================================
-
-@provider_health_bp.route('/peyflex/balance', methods=['GET'])
-def get_peyflex_balance():
+def init_provider_health_blueprint(mongo, token_required):
+    """Initialize the provider health blueprint with database and auth decorator"""
+    provider_health_bp = Blueprint('provider_health', __name__, url_prefix='/api/admin/provider-health')
+    
+    # ============================================================================
+    # PEYFLEX BALANCE TRACKING (Manual Entry + Automated Monitoring)
+    # ============================================================================
+    
+    @provider_health_bp.route('/peyflex/balance', methods=['GET'])
+    def get_peyflex_balance():
     """
     Get current Peyflex balance (manually entered by admin)
     Since Peyflex has no API for balance checking, admins must update this manually
@@ -336,3 +331,6 @@ def get_liquidity_alerts():
     except Exception as e:
         print(f"❌ Error getting liquidity alerts: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+    # Return the initialized blueprint
+    return provider_health_bp
