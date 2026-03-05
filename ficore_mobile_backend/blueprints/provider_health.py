@@ -6,8 +6,13 @@ Tracks VAS provider balance, success rates, and liquidity issues
 from flask import Blueprint, jsonify, request
 from datetime import datetime, timedelta
 from bson import ObjectId
-from extensions import mongo
+import sys
 import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from extensions import mongo
 
 provider_health_bp = Blueprint('provider_health', __name__, url_prefix='/api/admin/provider-health')
 
