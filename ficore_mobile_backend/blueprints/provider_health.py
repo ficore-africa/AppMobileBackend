@@ -1,37 +1,48 @@
 """
 Provider Health Monitoring Blueprint
 Tracks VAS provider balance, success rates, and liquidity issues
+Supports multiple providers: Peyflex, Monnify
+Sends automatic email alerts when balances are critically low
 """
 
 from flask import Blueprint, jsonify, request
 from datetime import datetime, timedelta
 from bson import ObjectId
+from utils.email_service import get_email_service
 
 def init_provider_health_blueprint(mongo, token_required):
     """Initialize the provider health blueprint with database and auth decorator"""
     provider_health_bp = Blueprint('provider_health', __name__, url_prefix='/api/admin/provider-health')
     
     # ============================================================================
-    # PEYFLEX BALANCE TRACKING (Manual Entry + Automated Monitoring)
+    # PROVIDER BALANCE TRACKING (Multi-Provider Support)
+    # Supports: Peyflex, Monnify
     # ============================================================================
     
-    @provider_health_bp.route('/peyflex/balance', methods=['GET'])
-    def get_peyflex_balance():
+    @provider_health_bp.route('/balance/<provider>', methods=['GET'])
+    def get_provider_balance(provider):
         """
-        Get current Peyflex balance (manually entered by admin)
-        Since Peyflex has no API for balance checking, admins must update this manually
+        Get current provider balance (manually entered by admin)
+        Supports: peyflex, monnify
         """
         try:
+            provider_lower = provider.lower()
+            if provider_lower not in ['peyflex', 'monnify']:
+                return jsonify({
+                    'success': False,
+                    'error': f'Unsupported provider: {provider}. Supported: peyflex, monnify'
+                }), 400
+            
             # Get latest balance entry
             balance_entry = mongo.db.provider_balances.find_one(
-                {'provider': 'peyflex'},
+                {'provider': provider_lower},
                 sort=[('updatedAt', -1)]
             )
             
             if not balance_entry:
                 # No balance entry yet - create default
                 balance_entry = {
-                    'provider': 'peyflex',
+                    'provider': provider_lower,
                     'balance': 0.0,
                     'lastUpdated': None,
                     'updatedBy': 'system',
@@ -49,7 +60,7 @@ def init_provider_health_blueprint(mongo, token_required):
             
             # Get recent failed transactions due to insufficient balance
             failed_count = mongo.db.vas_transactions.count_documents({
-                'provider': 'peyflex',
+                'provider': provider_lower,
                 'status': 'FAILED',
                 'errorMessage': {'$regex': 'Insufficient wallet balance', '$options': 'i'},
                 'createdAt': {'$gte': datetime.utcnow() - timedelta(hours=24)}
@@ -57,6 +68,7 @@ def init_provider_health_blueprint(mongo, token_required):
             
             return jsonify({
                 'success': True,
+                'provider': provider_lower,
                 'balance': float(balance_entry.get('balance', 0)),
                 'lastUpdated': last_updated.isoformat() if last_updated else None,
                 'hoursSinceUpdate': round(hours_since_update, 1) if hours_since_update else None,
@@ -67,16 +79,25 @@ def init_provider_health_blueprint(mongo, token_required):
             }), 200
             
         except Exception as e:
-            print(f"❌ Error getting Peyflex balance: {e}")
+            print(f"❌ Error getting {provider} balance: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
 
-    @provider_health_bp.route('/peyflex/balance', methods=['POST'])
-    def update_peyflex_balance():
+    @provider_health_bp.route('/balance/<provider>', methods=['POST'])
+    def update_provider_balance(provider):
         """
-        Update Peyflex balance (admin manually enters after checking Peyflex dashboard)
+        Update provider balance (admin manually enters after checking provider dashboard)
+        Automatically sends email alert if balance is critically low
+        Supports: peyflex, monnify
         """
         try:
+            provider_lower = provider.lower()
+            if provider_lower not in ['peyflex', 'monnify']:
+                return jsonify({
+                    'success': False,
+                    'error': f'Unsupported provider: {provider}. Supported: peyflex, monnify'
+                }), 400
+            
             data = request.get_json()
             balance = float(data.get('balance', 0))
             admin_email = data.get('adminEmail', 'unknown')
@@ -84,7 +105,7 @@ def init_provider_health_blueprint(mongo, token_required):
             
             # Update or create balance entry
             result = mongo.db.provider_balances.update_one(
-                {'provider': 'peyflex'},
+                {'provider': provider_lower},
                 {
                     '$set': {
                         'balance': balance,
@@ -94,24 +115,68 @@ def init_provider_health_blueprint(mongo, token_required):
                         'updatedAt': datetime.utcnow()
                     },
                     '$setOnInsert': {
-                        'provider': 'peyflex',
+                        'provider': provider_lower,
                         'createdAt': datetime.utcnow()
                     }
                 },
                 upsert=True
             )
             
-            print(f"✅ Peyflex balance updated: ₦{balance:,.2f} by {admin_email}")
+            print(f"✅ {provider.capitalize()} balance updated: ₦{balance:,.2f} by {admin_email}")
             
-            return jsonify({
+            # Check if balance is critically low and send email alert
+            failed_count = mongo.db.vas_transactions.count_documents({
+                'provider': provider_lower,
+                'status': 'FAILED',
+                'errorMessage': {'$regex': 'Insufficient wallet balance', '$options': 'i'},
+                'createdAt': {'$gte': datetime.utcnow() - timedelta(hours=1)}
+            })
+            
+            alert_sent = False
+            alert_type = None
+            
+            if balance < 5000:
+                # Critical alert
+                alert_type = 'critical'
+                print(f'🚨 CRITICAL: {provider.capitalize()} balance below ₦5,000! Sending email alert...')
+                email_service = get_email_service(mongo.db)
+                email_result = email_service.send_provider_alert_email(
+                    provider_name=provider.capitalize(),
+                    balance=balance,
+                    failed_count=failed_count,
+                    alert_type='critical'
+                )
+                alert_sent = email_result.get('success', False)
+            elif balance < 10000:
+                # Warning alert
+                alert_type = 'warning'
+                print(f'⚠️ WARNING: {provider.capitalize()} balance below ₦10,000! Sending email alert...')
+                email_service = get_email_service(mongo.db)
+                email_result = email_service.send_provider_alert_email(
+                    provider_name=provider.capitalize(),
+                    balance=balance,
+                    failed_count=failed_count,
+                    alert_type='warning'
+                )
+                alert_sent = email_result.get('success', False)
+            
+            response_data = {
                 'success': True,
-                'message': 'Peyflex balance updated successfully',
+                'message': f'{provider.capitalize()} balance updated successfully',
+                'provider': provider_lower,
                 'balance': balance,
                 'updatedBy': admin_email
-            }), 200
+            }
+            
+            if alert_sent:
+                response_data['alertSent'] = True
+                response_data['alertType'] = alert_type
+                response_data['alertMessage'] = f'Email alert sent to admin ({alert_type})'
+            
+            return jsonify(response_data), 200
             
         except Exception as e:
-            print(f"❌ Error updating Peyflex balance: {e}")
+            print(f"❌ Error updating {provider} balance: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -214,7 +279,11 @@ def init_provider_health_blueprint(mongo, token_required):
             # Group by provider
             provider_stats = {}
             for txn in all_txns:
-                provider = txn.get('provider', 'unknown')
+                provider = txn.get('provider')
+                # Skip transactions without provider field or with None/empty provider
+                if not provider:
+                    provider = 'unknown'
+                
                 status = txn.get('status', 'UNKNOWN')
                 
                 if provider not in provider_stats:
@@ -256,71 +325,72 @@ def init_provider_health_blueprint(mongo, token_required):
             return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ============================================================================
-    # LIQUIDITY ALERTS
+    # ============================================================================
+    # LIQUIDITY ALERTS (Multi-Provider Support)
     # ============================================================================
 
     @provider_health_bp.route('/liquidity-alerts', methods=['GET'])
     def get_liquidity_alerts():
         """
-        Get active liquidity alerts
+        Get active liquidity alerts for all providers
         Warns admins when provider balance is low or failures are increasing
         """
         try:
             alerts = []
             
-            # Check Peyflex balance
-            peyflex_balance = mongo.db.provider_balances.find_one({'provider': 'peyflex'})
-            if peyflex_balance:
-                balance = float(peyflex_balance.get('balance', 0))
-                last_updated = peyflex_balance.get('lastUpdated')
-                
-                # Alert if balance is low
-                if balance < 5000:
-                    alerts.append({
-                        'severity': 'critical',
-                        'provider': 'peyflex',
-                        'type': 'low_balance',
-                        'message': f'Peyflex balance critically low: ₦{balance:,.2f}',
-                        'action': 'Fund Peyflex wallet immediately'
-                    })
-                elif balance < 10000:
-                    alerts.append({
-                        'severity': 'warning',
-                        'provider': 'peyflex',
-                        'type': 'low_balance',
-                        'message': f'Peyflex balance low: ₦{balance:,.2f}',
-                        'action': 'Consider funding Peyflex wallet soon'
-                    })
-                
-                # Alert if balance hasn't been updated in 24 hours
-                if last_updated:
-                    hours_since_update = (datetime.utcnow() - last_updated).total_seconds() / 3600
-                    if hours_since_update > 24:
+            # Check all providers (Peyflex and Monnify)
+            for provider_name in ['peyflex', 'monnify']:
+                provider_balance = mongo.db.provider_balances.find_one({'provider': provider_name})
+                if provider_balance:
+                    balance = float(provider_balance.get('balance', 0))
+                    last_updated = provider_balance.get('lastUpdated')
+                    
+                    # Alert if balance is low
+                    if balance < 5000:
+                        alerts.append({
+                            'severity': 'critical',
+                            'provider': provider_name,
+                            'type': 'low_balance',
+                            'message': f'{provider_name.capitalize()} balance critically low: ₦{balance:,.2f}',
+                            'action': f'Fund {provider_name.capitalize()} wallet immediately'
+                        })
+                    elif balance < 10000:
                         alerts.append({
                             'severity': 'warning',
-                            'provider': 'peyflex',
-                            'type': 'stale_balance',
-                            'message': f'Peyflex balance not updated in {int(hours_since_update)} hours',
-                            'action': 'Check Peyflex dashboard and update balance'
+                            'provider': provider_name,
+                            'type': 'low_balance',
+                            'message': f'{provider_name.capitalize()} balance low: ₦{balance:,.2f}',
+                            'action': f'Consider funding {provider_name.capitalize()} wallet soon'
                         })
-            
-            # Check for recent failures
-            recent_failures = mongo.db.vas_transactions.count_documents({
-                'provider': 'peyflex',
-                'status': 'FAILED',
-                'errorMessage': {'$regex': 'Insufficient wallet balance', '$options': 'i'},
-                'createdAt': {'$gte': datetime.utcnow() - timedelta(hours=1)}
-            })
-            
-            if recent_failures > 0:
-                alerts.append({
-                    'severity': 'critical',
-                    'provider': 'peyflex',
-                    'type': 'active_failures',
-                    'message': f'{recent_failures} transactions failed in last hour due to insufficient balance',
-                    'action': 'Fund Peyflex wallet NOW - users are being affected'
+                    
+                    # Alert if balance hasn't been updated in 24 hours
+                    if last_updated:
+                        hours_since_update = (datetime.utcnow() - last_updated).total_seconds() / 3600
+                        if hours_since_update > 24:
+                            alerts.append({
+                                'severity': 'warning',
+                                'provider': provider_name,
+                                'type': 'stale_balance',
+                                'message': f'{provider_name.capitalize()} balance not updated in {int(hours_since_update)} hours',
+                                'action': f'Check {provider_name.capitalize()} dashboard and update balance'
+                            })
+                
+                # Check for recent failures
+                recent_failures = mongo.db.vas_transactions.count_documents({
+                    'provider': provider_name,
+                    'status': 'FAILED',
+                    'errorMessage': {'$regex': 'Insufficient wallet balance', '$options': 'i'},
+                    'createdAt': {'$gte': datetime.utcnow() - timedelta(hours=1)}
                 })
+                
+                if recent_failures > 0:
+                    alerts.append({
+                        'severity': 'critical',
+                        'provider': provider_name,
+                        'type': 'active_failures',
+                        'message': f'{recent_failures} {provider_name.capitalize()} transactions failed in last hour due to insufficient balance',
+                        'action': f'Fund {provider_name.capitalize()} wallet NOW - users are being affected'
+                    })
             
             return jsonify({
                 'success': True,
