@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Provider Health Dashboard - FiCore Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #2c3e50 0%, #e74c3c 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .alerts-section {
+            padding: 30px;
+            background: #fff3cd;
+            border-bottom: 3px solid #ffc107;
+        }
+
+        .alert {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 5px solid;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .alert.critical {
+            border-left-color: #e74c3c;
+            background: #ffebee;
+        }
+
+        .alert.warning {
+            border-left-color: #f39c12;
+            background: #fff3e0;
+        }
+
+        .alert.info {
+            border-left-color: #3498db;
+            background: #e3f2fd;
+        }
+
+        .alert-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .alert-icon {
+            font-size: 1.5rem;
+            margin-right: 15px;
+        }
+
+        .alert.critical .alert-icon {
+            color: #e74c3c;
+        }
+
+        .alert.warning .alert-icon {
+            color: #f39c12;
+        }
+
+        .alert-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .alert-message {
+            margin-left: 45px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .alert-action {
+            margin-left: 45px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--card-color);
+        }
+
+        .stat-card.balance { --card-color: #27ae60; }
+        .stat-card.failures { --card-color: #e74c3c; }
+        .stat-card.success-rate { --card-color: #3498db; }
+
+        .stat-card .icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            color: var(--card-color);
+        }
+
+        .stat-card .number {
+            font-size: 2.2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+
+        .stat-card .meta {
+            font-size: 0.85rem;
+            color: #999;
+            margin-top: 10px;
+        }
+
+        .update-balance-section {
+            padding: 30px;
+            background: white;
+            border-top: 1px solid #eee;
+        }
+
+        .update-form {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #27ae60;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #229954;
+            transform: translateY(-2px);
+        }
+
+        .failed-transactions-section {
+            padding: 30px;
+            background: white;
+        }
+
+        .error-group {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #e74c3c;
+        }
+
+        .error-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .error-category {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .error-count {
+            background: #e74c3c;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+
+        .error-examples {
+            margin-top: 15px;
+        }
+
+        .error-example {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .error-example-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .error-example-details {
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+
+        .loading i {
+            font-size: 3rem;
+            color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .refresh-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #27ae60;
+            color: white;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #229954;
+            transform: scale(1.1);
+        }
+
+        .logout-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+            z-index: 1000;
+        }
+
+        .logout-btn:hover {
+            background: #c0392b;
+        }
+
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+            z-index: 1000;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-btn:hover {
+            background: #2980b9;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <a href="admin_dashboard.html" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Dashboard
+    </a>
+
+    <button class="logout-btn" onclick="logout()">
+        <i class="fas fa-sign-out-alt"></i> Logout
+    </button>
+
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-heartbeat"></i> Provider Health Dashboard</h1>
+            <p>Real-time monitoring of VAS provider liquidity and performance</p>
+        </div>
+
+        <!-- Alerts Section -->
+        <div class="alerts-section" id="alertsSection">
+            <div class="loading">
+                <i class="fas fa-spinner"></i>
+                <p>Loading alerts...</p>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="loading">
+                <i class="fas fa-spinner"></i>
+                <p>Loading stats...</p>
+            </div>
+        </div>
+
+        <!-- Update Balance Section -->
+        <div class="update-balance-section">
+            <h2 style="text-align: center; margin-bottom: 30px;">
+                <i class="fas fa-wallet"></i> Update Peyflex Balance
+            </h2>
+            <div id="updateMessage"></div>
+            <form class="update-form" id="updateBalanceForm">
+                <div class="form-group">
+                    <label for="balance">Current Balance (₦)</label>
+                    <input type="number" id="balance" name="balance" step="0.01" required 
+                           placeholder="Enter balance from Peyflex dashboard">
+                </div>
+                <div class="form-group">
+                    <label for="adminEmail">Your Email</label>
+                    <input type="email" id="adminEmail" name="adminEmail" required 
+                           placeholder="admin@ficore.africa">
+                </div>
+                <div class="form-group">
+                    <label for="notes">Notes (optional)</label>
+                    <textarea id="notes" name="notes" rows="3" 
+                              placeholder="e.g., Funded ₦50,000 via bank transfer"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Update Balance
+                </button>
+            </form>
+        </div>
+
+        <!-- Failed Transactions Section -->
+        <div class="failed-transactions-section" id="failedTransactionsSection">
+            <h2 style="margin-bottom: 30px;">
+                <i class="fas fa-exclamation-triangle"></i> Recent Failed Transactions
+            </h2>
+            <div class="loading">
+                <i class="fas fa-spinner"></i>
+                <p>Loading failed transactions...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refresh Button -->
+    <button class="refresh-btn" onclick="loadAllData()" title="Refresh Data">
+        <i class="fas fa-sync-alt"></i>
+    </button>
+
+    <script>
+        // Configuration
+        let API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
+
+        // Get admin token
+        function getAdminToken() {
+            return localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken');
+        }
+
+        // Check authentication on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            const token = getAdminToken();
+            if (!token) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+            
+            loadAllData();
+            // Auto-refresh every 60 seconds
+            setInterval(loadAllData, 60000);
+        });
+
+        async function loadAllData() {
+            await Promise.all([
+                loadAlerts(),
+                loadStats(),
+                loadFailedTransactions()
+            ]);
+        }
+
+        async function loadAlerts() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const response = await fetch(`${API_BASE_URL}/api/admin/provider-health/liquidity-alerts`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = 'admin_login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                const alertsSection = document.getElementById('alertsSection');
+
+                if (data.alertCount === 0) {
+                    alertsSection.innerHTML = `
+                        <div class="alert info">
+                            <div class="alert-header">
+                                <i class="fas fa-check-circle alert-icon"></i>
+                                <div class="alert-title">All Systems Operational</div>
+                            </div>
+                            <div class="alert-message">
+                                No liquidity alerts at this time. All providers are healthy.
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                data.alerts.forEach(alert => {
+                    const icon = alert.severity === 'critical' ? 'fa-exclamation-circle' : 'fa-exclamation-triangle';
+                    html += `
+                        <div class="alert ${alert.severity}">
+                            <div class="alert-header">
+                                <i class="fas ${icon} alert-icon"></i>
+                                <div class="alert-title">${alert.type.replace(/_/g, ' ').toUpperCase()}</div>
+                            </div>
+                            <div class="alert-message">${alert.message}</div>
+                            <div class="alert-action">
+                                <i class="fas fa-arrow-right"></i> ${alert.action}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                alertsSection.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading alerts:', error);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const [balanceRes, failuresRes, successRatesRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/admin/provider-health/peyflex/balance`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${API_BASE_URL}/api/admin/provider-health/failed-transactions?hours=24`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${API_BASE_URL}/api/admin/provider-health/success-rates?hours=24`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                ]);
+
+                // Check for auth failures
+                if (balanceRes.status === 401 || failuresRes.status === 401 || successRatesRes.status === 401) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const balanceData = await balanceRes.json();
+                const failuresData = await failuresRes.json();
+                const successRatesData = await successRatesRes.json();
+
+                const statsGrid = document.getElementById('statsGrid');
+
+                // Peyflex balance card
+                const balanceColor = balanceData.balance < 5000 ? '#e74c3c' : 
+                                    balanceData.balance < 10000 ? '#f39c12' : '#27ae60';
+                
+                const lastUpdated = balanceData.lastUpdated ? 
+                    `${balanceData.hoursSinceUpdate}h ago by ${balanceData.updatedBy}` : 
+                    'Never updated';
+
+                // Failed transactions card
+                const failedCount = failuresData.summary?.totalFailed || 0;
+                const lostRevenue = failuresData.summary?.totalLostRevenue || 0;
+
+                // Success rate card (Peyflex)
+                const peyflexStats = successRatesData.providers?.peyflex || {};
+                const successRate = peyflexStats.successRate || 0;
+                const successColor = successRate >= 95 ? '#27ae60' : 
+                                    successRate >= 85 ? '#f39c12' : '#e74c3c';
+
+                statsGrid.innerHTML = `
+                    <div class="stat-card balance">
+                        <div class="icon"><i class="fas fa-wallet"></i></div>
+                        <div class="number" style="color: ${balanceColor}">
+                            ₦${balanceData.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}
+                        </div>
+                        <div class="label">Peyflex Balance</div>
+                        <div class="meta">
+                            <i class="fas fa-clock"></i> ${lastUpdated}
+                            ${balanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : ''}
+                        </div>
+                    </div>
+
+                    <div class="stat-card failures">
+                        <div class="icon"><i class="fas fa-times-circle"></i></div>
+                        <div class="number">${failedCount}</div>
+                        <div class="label">Failed Transactions (24h)</div>
+                        <div class="meta">
+                            <i class="fas fa-money-bill-wave"></i> ₦${lostRevenue.toLocaleString('en-NG')} lost revenue
+                        </div>
+                    </div>
+
+                    <div class="stat-card success-rate">
+                        <div class="icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="number" style="color: ${successColor}">
+                            ${successRate.toFixed(1)}%
+                        </div>
+                        <div class="label">Peyflex Success Rate (24h)</div>
+                        <div class="meta">
+                            <i class="fas fa-check"></i> ${peyflexStats.success || 0} / ${peyflexStats.total || 0} transactions
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadFailedTransactions() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const response = await fetch(`${API_BASE_URL}/api/admin/provider-health/failed-transactions?hours=24`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = 'admin_login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                const section = document.getElementById('failedTransactionsSection');
+
+                if (!data.errorGroups || Object.keys(data.errorGroups).length === 0) {
+                    section.innerHTML = `
+                        <h2 style="margin-bottom: 30px;">
+                            <i class="fas fa-exclamation-triangle"></i> Recent Failed Transactions
+                        </h2>
+                        <div class="alert info">
+                            <div class="alert-header">
+                                <i class="fas fa-check-circle alert-icon"></i>
+                                <div class="alert-title">No Failed Transactions</div>
+                            </div>
+                            <div class="alert-message">
+                                No failed transactions in the last 24 hours. Great job!
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = `
+                    <h2 style="margin-bottom: 30px;">
+                        <i class="fas fa-exclamation-triangle"></i> Recent Failed Transactions
+                    </h2>
+                `;
+
+                Object.entries(data.errorGroups).forEach(([category, group]) => {
+                    html += `
+                        <div class="error-group">
+                            <div class="error-group-header">
+                                <div class="error-category">${category}</div>
+                                <div class="error-count">${group.count} failures</div>
+                            </div>
+                            <div style="color: #666; margin-bottom: 10px;">
+                                Total Amount: ₦${group.totalAmount.toLocaleString('en-NG')}
+                            </div>
+                            <div class="error-examples">
+                                ${group.examples.map(ex => `
+                                    <div class="error-example">
+                                        <div class="error-example-header">
+                                            <span>${ex.type.toUpperCase()} - ₦${ex.amount.toLocaleString('en-NG')}</span>
+                                            <span>${ex.phone}</span>
+                                        </div>
+                                        <div class="error-example-details">
+                                            ${ex.error}
+                                        </div>
+                                        <div class="error-example-details" style="margin-top: 5px;">
+                                            <i class="fas fa-clock"></i> ${new Date(ex.timestamp).toLocaleString()}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                section.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading failed transactions:', error);
+            }
+        }
+
+        // Handle balance update form submission
+        document.getElementById('updateBalanceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const token = getAdminToken();
+            if (!token) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+
+            const formData = {
+                balance: parseFloat(document.getElementById('balance').value),
+                adminEmail: document.getElementById('adminEmail').value,
+                notes: document.getElementById('notes').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/provider-health/peyflex/balance`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = 'admin_login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                const messageDiv = document.getElementById('updateMessage');
+                if (data.success) {
+                    messageDiv.innerHTML = `
+                        <div class="success-message">
+                            <i class="fas fa-check-circle"></i> Balance updated successfully!
+                        </div>
+                    `;
+                    // Reload data
+                    await loadAllData();
+                    // Clear form
+                    document.getElementById('updateBalanceForm').reset();
+                } else {
+                    messageDiv.innerHTML = `
+                        <div class="error-message">
+                            <i class="fas fa-exclamation-circle"></i> Error: ${data.error}
+                        </div>
+                    `;
+                }
+
+                // Clear message after 5 seconds
+                setTimeout(() => {
+                    messageDiv.innerHTML = '';
+                }, 5000);
+            } catch (error) {
+                console.error('Error updating balance:', error);
+                document.getElementById('updateMessage').innerHTML = `
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i> Error: ${error.message}
+                    </div>
+                `;
+            }
+        });
+
+        // Logout function
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('adminToken');
+                sessionStorage.removeItem('adminToken');
+                window.location.href = 'admin_login.html';
+            }
+        }
+    </script>
+</body>
+</html>
