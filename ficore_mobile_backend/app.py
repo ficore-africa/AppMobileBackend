@@ -503,6 +503,11 @@ admin_user_transactions_blueprint = init_admin_user_transactions_blueprint(mongo
 app.register_blueprint(admin_user_transactions_blueprint, url_prefix='/api/admin')
 print("✓ Admin User Transactions blueprint registered at /api/admin")
 
+# Register provider health monitoring blueprint (NEW - Mar 5, 2026)
+from blueprints.provider_health import provider_health_bp
+app.register_blueprint(provider_health_bp)
+print("✓ Provider Health blueprint registered at /api/admin/provider-health")
+
 # Root redirect to admin login
 @app.route('/', methods=['GET', 'HEAD'])
 def index():
