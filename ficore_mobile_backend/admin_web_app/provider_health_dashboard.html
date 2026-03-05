@@ -462,6 +462,36 @@
                 <p>Loading failed transactions...</p>
             </div>
         </div>
+
+        <!-- Balance Update History Section -->
+        <div class="balance-history-section" style="padding: 30px; background: #f8f9fa; margin-top: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                <h2 style="margin: 0;">
+                    <i class="fas fa-history"></i> Balance Update History
+                </h2>
+                <div style="display: flex; gap: 10px;">
+                    <select id="historyProviderFilter" style="padding: 10px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.9rem;">
+                        <option value="">All Providers</option>
+                        <option value="peyflex">Peyflex</option>
+                        <option value="monnify">Monnify</option>
+                    </select>
+                    <select id="historyDaysFilter" style="padding: 10px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.9rem;">
+                        <option value="7">Last 7 Days</option>
+                        <option value="30" selected>Last 30 Days</option>
+                        <option value="90">Last 90 Days</option>
+                    </select>
+                    <button onclick="exportBalanceHistory()" class="btn btn-secondary" style="padding: 10px 20px; background: #16A34A; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+            <div id="balanceHistoryTable">
+                <div class="loading">
+                    <i class="fas fa-spinner"></i>
+                    <p>Loading balance history...</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Refresh Button -->
@@ -495,7 +525,8 @@
             await Promise.all([
                 loadAlerts(),
                 loadStats(),
-                loadFailedTransactions()
+                loadFailedTransactions(),
+                loadBalanceHistory()
             ]);
         }
 
@@ -871,6 +902,156 @@
                 window.location.href = 'admin_login.html';
             }
         }
+
+        // Load balance history
+        async function loadBalanceHistory() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const provider = document.getElementById('historyProviderFilter').value;
+                const days = document.getElementById('historyDaysFilter').value;
+
+                let url = `${API_BASE_URL}/api/admin/provider-health/balance-history?days=${days}`;
+                if (provider) {
+                    url += `&provider=${provider}`;
+                }
+
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = 'admin_login.html';
+                        return;
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const historyTable = document.getElementById('balanceHistoryTable');
+
+                if (data.count === 0) {
+                    historyTable.innerHTML = `
+                        <div style="text-align: center; padding: 40px; color: #6B7280;">
+                            <i class="fas fa-inbox" style="font-size: 3rem; margin-bottom: 15px; opacity: 0.5;"></i>
+                            <p>No balance updates found for the selected period.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = `
+                    <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                        <thead style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%); color: white;">
+                            <tr>
+                                <th style="padding: 15px; text-align: left;">Date/Time</th>
+                                <th style="padding: 15px; text-align: left;">Provider</th>
+                                <th style="padding: 15px; text-align: right;">Previous Balance</th>
+                                <th style="padding: 15px; text-align: right;">New Balance</th>
+                                <th style="padding: 15px; text-align: right;">Change</th>
+                                <th style="padding: 15px; text-align: left;">Updated By</th>
+                                <th style="padding: 15px; text-align: left;">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                data.history.forEach((entry, index) => {
+                    const bgColor = index % 2 === 0 ? '#F9FAFB' : 'white';
+                    const changeColor = entry.change >= 0 ? '#16A34A' : '#DC2626';
+                    const changeIcon = entry.change >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                    const date = new Date(entry.updatedAt);
+                    const formattedDate = date.toLocaleString('en-NG', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    html += `
+                        <tr style="background: ${bgColor}; border-bottom: 1px solid #E5E7EB;">
+                            <td style="padding: 15px;">${formattedDate}</td>
+                            <td style="padding: 15px;">
+                                <span style="background: #1E3A8A; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
+                                    ${entry.provider.charAt(0).toUpperCase() + entry.provider.slice(1)}
+                                </span>
+                            </td>
+                            <td style="padding: 15px; text-align: right; font-family: monospace;">₦${entry.previousBalance.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td style="padding: 15px; text-align: right; font-family: monospace; font-weight: 600;">₦${entry.newBalance.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td style="padding: 15px; text-align: right; font-family: monospace; color: ${changeColor}; font-weight: 600;">
+                                <i class="fas ${changeIcon}"></i> ₦${Math.abs(entry.change).toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                            </td>
+                            <td style="padding: 15px; font-size: 0.9rem;">${entry.updatedBy}</td>
+                            <td style="padding: 15px; font-size: 0.9rem; color: #6B7280;">${entry.notes || '-'}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                        </tbody>
+                    </table>
+                    <div style="text-align: center; margin-top: 20px; color: #6B7280; font-size: 0.9rem;">
+                        Showing ${data.count} update${data.count !== 1 ? 's' : ''} from the last ${days} days
+                    </div>
+                `;
+
+                historyTable.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading balance history:', error);
+                document.getElementById('balanceHistoryTable').innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #DC2626;">
+                        <i class="fas fa-exclamation-circle" style="font-size: 3rem; margin-bottom: 15px;"></i>
+                        <p>Error loading balance history: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Export balance history as CSV
+        async function exportBalanceHistory() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    window.location.href = 'admin_login.html';
+                    return;
+                }
+
+                const provider = document.getElementById('historyProviderFilter').value;
+                const days = document.getElementById('historyDaysFilter').value;
+
+                let url = `${API_BASE_URL}/api/admin/provider-health/balance-history/export?days=${days}`;
+                if (provider) {
+                    url += `&provider=${provider}`;
+                }
+
+                // Create a temporary link and trigger download
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `provider_balance_history_${new Date().toISOString().split('T')[0]}.csv`;
+                
+                // Add authorization header by opening in new window with token
+                window.open(url + `&token=${token}`, '_blank');
+                
+            } catch (error) {
+                console.error('Error exporting balance history:', error);
+                alert('Error exporting balance history: ' + error.message);
+            }
+        }
+
+        // Add event listeners for history filters
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('historyProviderFilter').addEventListener('change', loadBalanceHistory);
+            document.getElementById('historyDaysFilter').addEventListener('change', loadBalanceHistory);
+            
+            // Load balance history on page load
+            loadBalanceHistory();
+        });
     </script>
 </body>
 </html>
