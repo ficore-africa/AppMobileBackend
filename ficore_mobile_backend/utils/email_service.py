@@ -498,6 +498,120 @@ class EmailService:
         
         return self._send_email(to_email, subject, html_content, 'inactive_user', user_id)
     
+    # ==================== PROVIDER HEALTH ALERTS ====================
+    
+    def send_provider_alert_email(self, provider_name, balance, failed_count, alert_type='critical'):
+        """
+        Send email alert to admin when provider balance is critically low
+        
+        Args:
+            provider_name: Name of the provider (e.g., 'Peyflex', 'Monnify')
+            balance: Current balance amount
+            failed_count: Number of recent failed transactions
+            alert_type: 'critical' or 'warning'
+        
+        Returns:
+            dict: {'success': bool, 'email_id': str} or {'success': False, 'error': str}
+        """
+        # Admin email addresses
+        admin_emails = [
+            'hassanahmadabdullahi@gmail.com',
+            'hassanahmad@ficoreafrica.com'
+        ]
+        
+        # Determine severity
+        severity_emoji = '🚨' if alert_type == 'critical' else '⚠️'
+        severity_text = 'CRITICAL' if alert_type == 'critical' else 'WARNING'
+        severity_color = '#e74c3c' if alert_type == 'critical' else '#f39c12'
+        bg_color = '#ffebee' if alert_type == 'critical' else '#fff3e0'
+        text_color = '#c0392b' if alert_type == 'critical' else '#e67e22'
+        
+        # Create email subject
+        subject = f'{severity_emoji} {severity_text}: {provider_name} Balance Low - ₦{balance:,.2f}'
+        
+        # Create email body
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with Alert Color -->
+            <div style="background: {severity_color}; padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">{severity_emoji} {severity_text}: {provider_name} Balance Alert</h1>
+            </div>
+            
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <h3 style="color: #1E3A8A; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Current Status:</h3>
+                
+                <!-- Status Card -->
+                <div style="background: #F4F1EC; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                    <div style="padding: 10px 0; border-bottom: 1px solid #ddd;">
+                        <strong>Provider:</strong> {provider_name}
+                    </div>
+                    <div style="padding: 10px 0; border-bottom: 1px solid #ddd;">
+                        <strong>Current Balance:</strong> <span style="color: {severity_color}; font-size: 1.3em; font-weight: 700;">₦{balance:,.2f}</span>
+                    </div>
+                    <div style="padding: 10px 0; border-bottom: 1px solid #ddd;">
+                        <strong>Failed Transactions (Last Hour):</strong> {failed_count}
+                    </div>
+                    <div style="padding: 10px 0;">
+                        <strong>Alert Time:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+                    </div>
+                </div>
+                
+                <!-- Action Required Box -->
+                <div style="background: {bg_color}; border-left: 4px solid {severity_color}; padding: 20px; margin: 30px 0; border-radius: 4px;">
+                    <h3 style="margin-top: 0; color: {text_color};">
+                        {'⚡ IMMEDIATE ACTION REQUIRED' if alert_type == 'critical' else '⏰ Action Recommended'}
+                    </h3>
+                    <p style="color: #2E2E2E; margin: 10px 0;">
+                        {'Users are currently being affected by failed transactions. Fund the provider wallet immediately to restore service.' if alert_type == 'critical' else 'Consider funding the provider wallet soon to prevent service disruption.'}
+                    </p>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div style="background: #e3f2fd; border-radius: 8px; padding: 20px; margin: 30px 0;">
+                    <h4 style="color: #1E3A8A; margin-top: 0;">Quick Actions:</h4>
+                    <ol style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
+                        <li>Log in to {provider_name} dashboard</li>
+                        <li>Fund the wallet with sufficient balance</li>
+                        <li>Update balance in FiCore Provider Health Dashboard</li>
+                        <li>Monitor for successful transactions</li>
+                    </ol>
+                </div>
+                
+                <!-- Dashboard Link -->
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="https://mobilebackend.ficoreafrica.com/admin_web_app/provider_health_dashboard.html" style="background: #1E3A8A; color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.3);">Open Provider Health Dashboard</a>
+                </div>
+                
+                <p style="color: #6B7280; font-size: 12px; margin-top: 30px;">
+                    This is an automated alert from FiCore Provider Health Monitoring System.
+                </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong> | RC 8799482 | Nigeria</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Send to all admin emails
+        results = []
+        for admin_email in admin_emails:
+            result = self._send_email(admin_email, subject, html_content, 'provider_alert')
+            results.append(result)
+        
+        # Return success if at least one email was sent
+        success = any(r.get('success') for r in results)
+        return {'success': success, 'results': results}
+    
     # ==================== TEST EMAIL ====================
     
     def send_test_email(self, to_email):
