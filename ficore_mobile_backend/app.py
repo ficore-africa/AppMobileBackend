@@ -504,8 +504,9 @@ app.register_blueprint(admin_user_transactions_blueprint, url_prefix='/api/admin
 print("✓ Admin User Transactions blueprint registered at /api/admin")
 
 # Register provider health monitoring blueprint (NEW - Mar 5, 2026)
-from blueprints.provider_health import provider_health_bp
-app.register_blueprint(provider_health_bp)
+from blueprints.provider_health import init_provider_health_blueprint
+provider_health_blueprint = init_provider_health_blueprint(mongo, token_required)
+app.register_blueprint(provider_health_blueprint)
 print("✓ Provider Health blueprint registered at /api/admin/provider-health")
 
 # Root redirect to admin login
