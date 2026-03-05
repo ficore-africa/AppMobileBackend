@@ -103,6 +103,10 @@ def init_provider_health_blueprint(mongo, token_required):
             admin_email = data.get('adminEmail', 'unknown')
             notes = data.get('notes', '')
             
+            # Get previous balance for history tracking
+            previous_entry = mongo.db.provider_balances.find_one({'provider': provider_lower})
+            previous_balance = float(previous_entry.get('balance', 0)) if previous_entry else 0.0
+            
             # Update or create balance entry
             result = mongo.db.provider_balances.update_one(
                 {'provider': provider_lower},
@@ -122,6 +126,18 @@ def init_provider_health_blueprint(mongo, token_required):
                 upsert=True
             )
             
+            # Save to balance update history
+            history_entry = {
+                'provider': provider_lower,
+                'previousBalance': previous_balance,
+                'newBalance': balance,
+                'change': balance - previous_balance,
+                'updatedBy': admin_email,
+                'notes': notes,
+                'updatedAt': datetime.utcnow()
+            }
+            mongo.db.provider_balance_history.insert_one(history_entry)
+            
             print(f"✅ {provider.capitalize()} balance updated: ₦{balance:,.2f} by {admin_email}")
             
             # Check if balance is critically low and send email alert
@@ -139,26 +155,38 @@ def init_provider_health_blueprint(mongo, token_required):
                 # Critical alert
                 alert_type = 'critical'
                 print(f'🚨 CRITICAL: {provider.capitalize()} balance below ₦5,000! Sending email alert...')
-                email_service = get_email_service(mongo.db)
-                email_result = email_service.send_provider_alert_email(
-                    provider_name=provider.capitalize(),
-                    balance=balance,
-                    failed_count=failed_count,
-                    alert_type='critical'
-                )
-                alert_sent = email_result.get('success', False)
+                try:
+                    # Pass None for mongo_db to avoid database object comparison issues
+                    email_service = get_email_service(mongo_db=None)
+                    email_result = email_service.send_provider_alert_email(
+                        provider_name=provider.capitalize(),
+                        balance=balance,
+                        failed_count=failed_count,
+                        alert_type='critical'
+                    )
+                    alert_sent = email_result.get('success', False)
+                    print(f'✅ Critical alert email sent: {alert_sent}')
+                except Exception as email_error:
+                    print(f'❌ Email alert failed: {email_error}')
+                    alert_sent = False
             elif balance < 10000:
                 # Warning alert
                 alert_type = 'warning'
                 print(f'⚠️ WARNING: {provider.capitalize()} balance below ₦10,000! Sending email alert...')
-                email_service = get_email_service(mongo.db)
-                email_result = email_service.send_provider_alert_email(
-                    provider_name=provider.capitalize(),
-                    balance=balance,
-                    failed_count=failed_count,
-                    alert_type='warning'
-                )
-                alert_sent = email_result.get('success', False)
+                try:
+                    # Pass None for mongo_db to avoid database object comparison issues
+                    email_service = get_email_service(mongo_db=None)
+                    email_result = email_service.send_provider_alert_email(
+                        provider_name=provider.capitalize(),
+                        balance=balance,
+                        failed_count=failed_count,
+                        alert_type='warning'
+                    )
+                    alert_sent = email_result.get('success', False)
+                    print(f'✅ Warning alert email sent: {alert_sent}')
+                except Exception as email_error:
+                    print(f'❌ Email alert failed: {email_error}')
+                    alert_sent = False
             
             response_data = {
                 'success': True,
@@ -400,6 +428,123 @@ def init_provider_health_blueprint(mongo, token_required):
             
         except Exception as e:
             print(f"❌ Error getting liquidity alerts: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+
+    # ============================================================================
+    # BALANCE UPDATE HISTORY
+    # ============================================================================
+
+    @provider_health_bp.route('/balance-history', methods=['GET'])
+    def get_balance_history():
+        """
+        Get balance update history for all providers or specific provider
+        Supports filtering by provider and date range
+        """
+        try:
+            # Get query parameters
+            provider = request.args.get('provider')  # Optional: filter by provider
+            days = int(request.args.get('days', 30))  # Default: last 30 days
+            limit = int(request.args.get('limit', 100))  # Default: 100 records
+            
+            # Build query
+            query = {}
+            if provider:
+                query['provider'] = provider.lower()
+            
+            # Add date filter
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            query['updatedAt'] = {'$gte': cutoff_date}
+            
+            # Get history entries
+            history = list(mongo.db.provider_balance_history.find(
+                query,
+                {'_id': 0}  # Exclude MongoDB _id from response
+            ).sort('updatedAt', -1).limit(limit))
+            
+            # Format dates for JSON serialization
+            for entry in history:
+                if 'updatedAt' in entry:
+                    entry['updatedAt'] = entry['updatedAt'].isoformat()
+            
+            return jsonify({
+                'success': True,
+                'count': len(history),
+                'history': history,
+                'filters': {
+                    'provider': provider,
+                    'days': days,
+                    'limit': limit
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error getting balance history: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+
+    @provider_health_bp.route('/balance-history/export', methods=['GET'])
+    def export_balance_history():
+        """
+        Export balance update history as CSV
+        """
+        try:
+            from flask import make_response
+            import csv
+            from io import StringIO
+            
+            # Get query parameters
+            provider = request.args.get('provider')
+            days = int(request.args.get('days', 30))
+            
+            # Build query
+            query = {}
+            if provider:
+                query['provider'] = provider.lower()
+            
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            query['updatedAt'] = {'$gte': cutoff_date}
+            
+            # Get history entries
+            history = list(mongo.db.provider_balance_history.find(query).sort('updatedAt', -1))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Date/Time',
+                'Provider',
+                'Previous Balance',
+                'New Balance',
+                'Change',
+                'Updated By',
+                'Notes'
+            ])
+            
+            # Write data
+            for entry in history:
+                writer.writerow([
+                    entry.get('updatedAt', '').strftime('%Y-%m-%d %H:%M:%S') if entry.get('updatedAt') else '',
+                    entry.get('provider', '').capitalize(),
+                    f"₦{entry.get('previousBalance', 0):,.2f}",
+                    f"₦{entry.get('newBalance', 0):,.2f}",
+                    f"₦{entry.get('change', 0):,.2f}",
+                    entry.get('updatedBy', ''),
+                    entry.get('notes', '')
+                ])
+            
+            # Create response
+            output.seek(0)
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=provider_balance_history_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            
+            return response
+            
+        except Exception as e:
+            print(f"❌ Error exporting balance history: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
 
     # Return the initialized blueprint
