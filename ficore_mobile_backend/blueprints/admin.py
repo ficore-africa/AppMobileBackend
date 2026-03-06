@@ -214,6 +214,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'Phone',
                 'Role',
                 'Credit Balance',
+                'Login Count',
                 'Is Active',
                 'Is Subscribed',
                 'Subscription Type',
@@ -234,6 +235,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     user.get('phone', ''),
                     user.get('role', 'personal'),
                     user.get('ficoreCreditBalance', 0.0),
+                    user.get('loginCount', 0),
                     'Yes' if user.get('isActive', True) else 'No',
                     'Yes' if user.get('isSubscribed', False) else 'No',
                     user.get('subscriptionType', 'None'),
@@ -3186,6 +3188,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'User ID',
                 'Email',
                 'Display Name',
+                'Login Count',
                 'Business Name',
                 'Business Type',
                 'Business Type Other',
@@ -3211,6 +3214,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     str(user['_id']),
                     user.get('email', ''),
                     user.get('displayName', ''),
+                    user.get('loginCount', 0),
                     user.get('businessName', ''),
                     user.get('businessType', ''),
                     user.get('businessTypeOther', ''),
@@ -5454,46 +5458,55 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'totalRevenue': round(total_sub_revenue, 2)
                 })
 
-            # ===== TAB 3: MOST ACTIVE USERS (Login Frequency) =====
-            # Get users with recent activity (last login)
-            active_users_query = {
-                'lastLoginAt': {'$gte': start_date},
-                '_id': {'$nin': test_user_ids}
-            }
+            # ===== TAB 3: MOST ACTIVE USERS (Analytics Events) =====
+            # Get users with most analytics events (real activity tracking)
+            activity_pipeline = [
+                {'$match': {
+                    'timestamp': {'$gte': start_date}
+                }},
+                {'$group': {
+                    '_id': '$userId',
+                    'eventCount': {'$sum': 1},
+                    'lastActivity': {'$max': '$timestamp'}
+                }},
+                {'$sort': {'eventCount': -1}},
+                {'$limit': 10}
+            ]
 
-            active_users = list(mongo.db.users.find(active_users_query, {
-                'email': 1,
-                'fullName': 1,
-                'displayName': 1,
-                'lastLoginAt': 1,
-                'loginCount': 1,
-                'createdAt': 1
-            }).sort('loginCount', -1).limit(10))
+            active_users_raw = list(mongo.db.analytics_events.aggregate(activity_pipeline))
 
             most_active = []
-            for user in active_users:
-                # Calculate days since signup
-                signup_date = user.get('createdAt', datetime.utcnow())
-                days_since_signup = (datetime.utcnow() - signup_date).days or 1
-
-                # Calculate average logins per day
-                login_count = user.get('loginCount', 0)
-                avg_logins_per_day = login_count / days_since_signup if days_since_signup > 0 else 0
-
-                # Get last login
-                last_login = user.get('lastLoginAt')
-                hours_since_login = (datetime.utcnow() - last_login).total_seconds() / 3600 if last_login else None
-
-                most_active.append({
-                    'userId': str(user['_id']),
-                    'email': user.get('email', 'N/A'),
-                    'displayName': user.get('displayName') or user.get('fullName', 'N/A'),
-                    'loginCount': login_count,
-                    'daysSinceSignup': days_since_signup,
-                    'avgLoginsPerDay': round(avg_logins_per_day, 2),
-                    'lastLoginAt': last_login.isoformat() if last_login else None,
-                    'hoursSinceLogin': round(hours_since_login, 1) if hours_since_login else None
+            for activity in active_users_raw:
+                user = mongo.db.users.find_one({'_id': activity['_id']}, {
+                    'email': 1,
+                    'fullName': 1,
+                    'displayName': 1,
+                    'createdAt': 1
                 })
+                
+                if user:
+                    # Calculate days since signup
+                    signup_date = user.get('createdAt', datetime.utcnow())
+                    days_since_signup = (datetime.utcnow() - signup_date).days or 1
+
+                    # Calculate average events per day
+                    event_count = activity['eventCount']
+                    avg_events_per_day = event_count / days_since_signup if days_since_signup > 0 else 0
+
+                    # Get last activity
+                    last_activity = activity.get('lastActivity')
+                    hours_since_activity = (datetime.utcnow() - last_activity).total_seconds() / 3600 if last_activity else None
+
+                    most_active.append({
+                        'userId': str(user['_id']),
+                        'email': user.get('email', 'N/A'),
+                        'displayName': user.get('displayName') or user.get('fullName', 'N/A'),
+                        'eventCount': event_count,
+                        'daysSinceSignup': days_since_signup,
+                        'avgEventsPerDay': round(avg_events_per_day, 2),
+                        'lastActivityAt': last_activity.isoformat() if last_activity else None,
+                        'hoursSinceActivity': round(hours_since_activity, 1) if hours_since_activity else None
+                    })
 
             # ===== FORMAT RESPONSE =====
             return jsonify({
