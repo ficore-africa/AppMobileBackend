@@ -1651,6 +1651,11 @@
                     const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
                     const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
                     
+                    // Handle both loginCount (from users collection) and eventCount (from analytics_events)
+                    const activityCount = user.loginCount || user.eventCount || 0;
+                    const avgActivity = user.avgLoginsPerDay || user.avgEventsPerDay || 0;
+                    const lastActivity = user.hoursSinceLogin || user.hoursSinceActivity || 'N/A';
+                    
                     return `
                         <div class="leaderboard-item">
                             <div class="leaderboard-rank ${rankClass}">
@@ -1662,16 +1667,16 @@
                             </div>
                             <div class="leaderboard-stats">
                                 <div class="leaderboard-stat">
-                                    <div class="leaderboard-stat-value">${user.loginCount}</div>
-                                    <div class="leaderboard-stat-label">Total Logins</div>
+                                    <div class="leaderboard-stat-value">${activityCount}</div>
+                                    <div class="leaderboard-stat-label">Total Activity</div>
                                 </div>
                                 <div class="leaderboard-stat">
-                                    <div class="leaderboard-stat-value">${user.avgLoginsPerDay}</div>
-                                    <div class="leaderboard-stat-label">Logins/Day</div>
+                                    <div class="leaderboard-stat-value">${avgActivity.toFixed(1)}</div>
+                                    <div class="leaderboard-stat-label">Activity/Day</div>
                                 </div>
                                 <div class="leaderboard-stat">
-                                    <div class="leaderboard-stat-value">${user.hoursSinceLogin ? user.hoursSinceLogin + 'h' : 'N/A'}</div>
-                                    <div class="leaderboard-stat-label">Last Login</div>
+                                    <div class="leaderboard-stat-value">${typeof lastActivity === 'number' ? lastActivity.toFixed(1) + 'h' : lastActivity}</div>
+                                    <div class="leaderboard-stat-label">Last Activity</div>
                                 </div>
                             </div>
                         </div>
@@ -1682,6 +1687,7 @@
                     <div class="empty-leaderboard">
                         <i class="fas fa-fire"></i>
                         <p>No active users in this period</p>
+                        <p style="font-size: 0.9rem; color: #999; margin-top: 10px;">Try selecting "All Time" or a longer period</p>
                     </div>
                 `;
             }
