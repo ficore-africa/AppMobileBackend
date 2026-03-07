@@ -2477,12 +2477,14 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # ==================== TEST MODE CHECK ====================
             # For Google Play review test accounts, simulate successful purchase
             if is_test_account(user_email):
-                print(f'[TEST MODE] Simulating airtime purchase for {user_email}')
-                print(f'[TEST MODE] Network: {network}, Amount: ₦{amount}, Phone: {phone_number}')
+                print(f'🧪 [TEST MODE - STEP 1] Request received for {user_email}')
+                print(f'🧪 [TEST MODE - STEP 1] Network: {network}, Amount: ₦{amount}, Phone: {phone_number}')
                 
                 # Check wallet balance
+                print(f'🧪 [TEST MODE - STEP 2] Checking wallet for user_id: {user_id}')
                 wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
                 if not wallet:
+                    print(f'❌ [TEST MODE - STEP 2] FAILED: Wallet not found for user_id: {user_id}')
                     return jsonify({
                         'success': False,
                         'message': 'Wallet not found. Please create a wallet first.',
@@ -2490,27 +2492,37 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     }), 404
                 
                 current_balance = wallet.get('balance', 0)
+                print(f'✅ [TEST MODE - STEP 2] Wallet found. Balance: ₦{current_balance:,.2f}')
+                
                 if current_balance < amount:
+                    print(f'❌ [TEST MODE - STEP 3] FAILED: Insufficient balance. Have: ₦{current_balance:,.2f}, Need: ₦{amount:,.2f}')
                     return jsonify({
                         'success': False,
                         'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
                         'errors': {'wallet': ['Insufficient balance']}
                     }), 400
                 
+                print(f'✅ [TEST MODE - STEP 3] Balance sufficient. Proceeding with deduction.')
+                
                 # Deduct from wallet
-                mongo.db.vas_wallets.update_one(
+                print(f'🧪 [TEST MODE - STEP 4] Deducting ₦{amount} from wallet...')
+                wallet_update = mongo.db.vas_wallets.update_one(
                     {'userId': ObjectId(user_id)},
                     {
                         '$inc': {'balance': -amount},
                         '$set': {'updatedAt': datetime.utcnow()}
                     }
                 )
+                print(f'✅ [TEST MODE - STEP 4] Wallet updated. Modified count: {wallet_update.modified_count}')
                 
                 # Simulate successful purchase
+                print(f'🧪 [TEST MODE - STEP 5] Simulating airtime purchase...')
                 result = simulate_airtime_purchase(mongo, user_id, network, amount, phone_number)
+                print(f'✅ [TEST MODE - STEP 5] Purchase simulated. Transaction ID: {result["transactionId"]}')
                 
-                print(f'[TEST MODE] Purchase successful: {result["transactionId"]}')
-                print(f'[TEST MODE] New wallet balance: ₦{current_balance - amount:,.2f}')
+                new_balance = current_balance - amount
+                print(f'✅ [TEST MODE - STEP 6] SUCCESS! New wallet balance: ₦{new_balance:,.2f}')
+                print(f'🧪 [TEST MODE - STEP 6] Returning success response to frontend')
                 
                 return jsonify({
                     'success': True,
@@ -2521,7 +2533,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'amount': amount,
                         'network': network,
                         'phoneNumber': phone_number,
-                        'newBalance': current_balance - amount,
+                        'newBalance': new_balance,
                         'testMode': True
                     }
                 }), 200
@@ -2638,22 +2650,25 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             api_response = None
             
             try:
-                # Try Monnify first (primary provider)
+                # AIRTIME ROUTING: Monnify FIRST (3% commission), Peyflex fallback (1% commission)
+                # Strategy: Try best commission first, but don't fail users if Monnify is down
+                print(f'🎯 AIRTIME ROUTING: Monnify PRIMARY (3% commission), Peyflex FALLBACK (1% commission)')
                 api_response = call_monnify_airtime(network, amount, phone_number, request_id)
                 success = True
                 print(f'SUCCESS: Monnify airtime purchase successful: {request_id}')
             except Exception as monnify_error:
-                print(f'WARNING: Monnify failed: {str(monnify_error)}')
+                print(f'WARNING: Monnify airtime failed: {str(monnify_error)}')
                 error_message = str(monnify_error)
                 
                 try:
-                    # Fallback to Peyflex
+                    # Fallback to Peyflex - 1% commission is better than 0% (failed transaction)
+                    print(f'🔄 FALLBACK: Trying Peyflex (1% commission better than failing user)')
                     api_response = call_peyflex_airtime(network, amount, phone_number, request_id)
                     provider = 'peyflex'
                     success = True
                     print(f'SUCCESS: Peyflex airtime purchase successful (fallback): {request_id}')
                 except Exception as peyflex_error:
-                    print(f'ERROR: Peyflex failed: {str(peyflex_error)}')
+                    print(f'ERROR: Peyflex airtime also failed: {str(peyflex_error)}')
                     error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
@@ -3050,12 +3065,14 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # ==================== TEST MODE CHECK ====================
             # For Google Play review test accounts, simulate successful purchase
             if is_test_account(user_email):
-                print(f'[TEST MODE] Simulating data purchase for {user_email}')
-                print(f'[TEST MODE] Network: {network}, Plan: {data_plan_name}, Amount: ₦{amount}')
+                print(f'🧪 [TEST MODE - STEP 1] Data purchase request received for {user_email}')
+                print(f'🧪 [TEST MODE - STEP 1] Network: {network}, Plan: {data_plan_name}, Amount: ₦{amount}')
                 
                 # Check wallet balance
+                print(f'🧪 [TEST MODE - STEP 2] Checking wallet for user_id: {user_id}')
                 wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
                 if not wallet:
+                    print(f'❌ [TEST MODE - STEP 2] FAILED: Wallet not found for user_id: {user_id}')
                     return jsonify({
                         'success': False,
                         'message': 'Wallet not found. Please create a wallet first.',
@@ -3063,26 +3080,37 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     }), 404
                 
                 current_balance = wallet.get('balance', 0)
+                print(f'✅ [TEST MODE - STEP 2] Wallet found. Balance: ₦{current_balance:,.2f}')
+                
                 if current_balance < amount:
+                    print(f'❌ [TEST MODE - STEP 3] FAILED: Insufficient balance. Have: ₦{current_balance:,.2f}, Need: ₦{amount:,.2f}')
                     return jsonify({
                         'success': False,
                         'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
                         'errors': {'wallet': ['Insufficient balance']}
                     }), 400
                 
+                print(f'✅ [TEST MODE - STEP 3] Balance sufficient. Proceeding with deduction.')
+                
                 # Deduct from wallet
-                mongo.db.vas_wallets.update_one(
+                print(f'🧪 [TEST MODE - STEP 4] Deducting ₦{amount} from wallet...')
+                wallet_update = mongo.db.vas_wallets.update_one(
                     {'userId': ObjectId(user_id)},
                     {
                         '$inc': {'balance': -amount},
                         '$set': {'updatedAt': datetime.utcnow()}
                     }
                 )
+                print(f'✅ [TEST MODE - STEP 4] Wallet updated. Modified count: {wallet_update.modified_count}')
                 
                 # Simulate successful purchase
+                print(f'🧪 [TEST MODE - STEP 5] Simulating data purchase...')
                 result = simulate_data_purchase(mongo, user_id, network, data_plan_id, phone_number, amount, data_plan_name)
+                print(f'✅ [TEST MODE - STEP 5] Purchase simulated. Transaction ID: {result["transactionId"]}')
                 
-                print(f'[TEST MODE] Purchase successful: {result["transactionId"]}')
+                new_balance = current_balance - amount
+                print(f'✅ [TEST MODE - STEP 6] SUCCESS! New wallet balance: ₦{new_balance:,.2f}')
+                print(f'🧪 [TEST MODE - STEP 6] Returning success response to frontend')
                 print(f'[TEST MODE] New wallet balance: ₦{current_balance - amount:,.2f}')
                 
                 return jsonify({
