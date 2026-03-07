@@ -210,7 +210,64 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                                 else:
                                     print(f'⚠️ AUTO-RECOVERY: Monnify returned no accounts after creation')
                             else:
+                                # Account creation failed - log for admin review
                                 print(f'⚠️ AUTO-RECOVERY: Account creation failed: {create_response.text}')
+                                
+                                # Parse Monnify error
+                                try:
+                                    error_data = create_response.json()
+                                    error_message = error_data.get('responseMessage', 'Unknown error')
+                                    error_code = error_data.get('responseCode', '99')
+                                    
+                                    # Check if error is BVN/NIN verification failure
+                                    if any(keyword in error_message.upper() for keyword in ['BVN', 'NIN', 'INVALID', 'VERIFICATION', 'FAILED']):
+                                        print(f'   Detected BVN/NIN verification failure - logging for admin')
+                                        
+                                        # Log failed verification for admin review
+                                        failed_verification = {
+                                            '_id': ObjectId(),
+                                            'userId': wallet['userId'],
+                                            'userEmail': user.get('email', 'unknown'),
+                                            'userName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip(),
+                                            'bvnMasked': user_bvn[:4] + '****' + user_bvn[-3:] if user_bvn and len(user_bvn) >= 7 else 'N/A',
+                                            'ninMasked': user_nin[:4] + '****' + user_nin[-3:] if user_nin and len(user_nin) >= 7 else 'N/A',
+                                            'monnifyError': error_message,
+                                            'monnifyErrorCode': error_code,
+                                            'failedAt': datetime.utcnow(),
+                                            'source': 'auto_recovery',
+                                            'status': 'pending_review',
+                                            'notified': False
+                                        }
+                                        
+                                        mongo.db.failed_kyc_verifications.insert_one(failed_verification)
+                                        
+                                        # Update KYC submission status to rejected
+                                        mongo.db.kyc_submissions.update_one(
+                                            {'userId': wallet['userId']},
+                                            {
+                                                '$set': {
+                                                    'status': 'rejected',
+                                                    'rejectionReason': f'Monnify verification failed: {error_message}',
+                                                    'rejectedAt': datetime.utcnow(),
+                                                    'rejectedBy': 'auto_recovery_system'
+                                                }
+                                            }
+                                        )
+                                        
+                                        # Update user KYC status
+                                        mongo.db.users.update_one(
+                                            {'_id': wallet['userId']},
+                                            {
+                                                '$set': {
+                                                    'kycStatus': 'rejected',
+                                                    'kycRejectionReason': error_message
+                                                }
+                                            }
+                                        )
+                                        
+                                        print(f'   ✅ Logged failed verification for admin review')
+                                except Exception as parse_error:
+                                    print(f'   ⚠️ Failed to parse error: {str(parse_error)}')
                         else:
                             print(f'   User has no BVN/NIN - needs internal KYC submission')
                     else:
@@ -3404,21 +3461,19 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     # These routes point to the same handlers as /api/vas/wallet/pin/*
     
     @vas_wallet_alias_bp.route('/pin/status', methods=['GET'])
-    @token_required
-    def get_pin_status_alias(current_user):
+    def get_pin_status_alias():
         """Alias for /api/vas/wallet/pin/status - called by frontend without /api prefix"""
-        return get_pin_status(current_user)
+        # Call the original decorated function - it handles authentication
+        return get_pin_status()
     
     @vas_wallet_alias_bp.route('/pin/validate', methods=['POST'])
-    @token_required
-    def validate_vas_pin_alias(current_user):
+    def validate_vas_pin_alias():
         """Alias for /api/vas/wallet/pin/validate - called by frontend without /api prefix"""
-        return validate_vas_pin(current_user)
+        return validate_vas_pin()
     
     @vas_wallet_alias_bp.route('/pin/change', methods=['POST'])
-    @token_required
-    def change_vas_pin_alias(current_user):
+    def change_vas_pin_alias():
         """Alias for /api/vas/wallet/pin/change - called by frontend without /api prefix"""
-        return change_vas_pin(current_user)
+        return change_vas_pin()
     
     return vas_wallet_bp, vas_wallet_alias_bp
