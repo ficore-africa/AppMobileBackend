@@ -944,6 +944,78 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                     'errors': {'amount': ['Amount must be greater than zero']}
                 }), 400
             
+            user_id = str(current_user['_id'])
+            user_email = current_user.get('email', '')
+            
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate successful purchase
+            from ficore_mobile_backend.utils.test_account_filter import is_test_account
+            from ficore_mobile_backend.utils.test_mode_vas import simulate_electricity_purchase
+            
+            if is_test_account(user_email):
+                print(f'🧪 [TEST MODE - STEP 1] Electricity purchase request received for {user_email}')
+                print(f'🧪 [TEST MODE - STEP 1] Provider: {provider}, Amount: ₦{amount}, Meter: {account_number}')
+                
+                # Check wallet balance
+                print(f'🧪 [TEST MODE - STEP 2] Checking wallet for user_id: {user_id}')
+                wallet = mongo.db.vas_wallets.find_one({'userId': current_user["_id"]})
+                if not wallet:
+                    print(f'❌ [TEST MODE - STEP 2] FAILED: Wallet not found for user_id: {user_id}')
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet not found. Please create a wallet first.',
+                        'errors': {'wallet': ['Wallet not found']}
+                    }), 404
+                
+                current_balance = wallet.get('balance', 0)
+                print(f'✅ [TEST MODE - STEP 2] Wallet found. Balance: ₦{current_balance:,.2f}')
+                
+                if current_balance < amount:
+                    print(f'❌ [TEST MODE - STEP 3] FAILED: Insufficient balance. Have: ₦{current_balance:,.2f}, Need: ₦{amount:,.2f}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
+                        'errors': {'wallet': ['Insufficient balance']}
+                    }), 400
+                
+                print(f'✅ [TEST MODE - STEP 3] Balance sufficient. Proceeding with deduction.')
+                
+                # Deduct from wallet
+                print(f'🧪 [TEST MODE - STEP 4] Deducting ₦{amount} from wallet...')
+                wallet_update = mongo.db.vas_wallets.update_one(
+                    {'userId': current_user["_id"]},
+                    {
+                        '$inc': {'balance': -amount},
+                        '$set': {'updatedAt': datetime.utcnow()}
+                    }
+                )
+                print(f'✅ [TEST MODE - STEP 4] Wallet updated. Modified count: {wallet_update.modified_count}')
+                
+                # Simulate successful purchase
+                print(f'🧪 [TEST MODE - STEP 5] Simulating electricity purchase...')
+                result = simulate_electricity_purchase(mongo, user_id, provider, amount, account_number)
+                print(f'✅ [TEST MODE - STEP 5] Purchase simulated. Transaction ID: {result["transactionId"]}')
+                
+                new_balance = current_balance - amount
+                print(f'✅ [TEST MODE - STEP 6] SUCCESS! New wallet balance: ₦{new_balance:,.2f}')
+                print(f'🧪 [TEST MODE - STEP 6] Returning success response to frontend')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'₦{amount} {provider} electricity purchased successfully (TEST MODE)',
+                    'data': {
+                        'transactionId': result['transactionId'],
+                        'reference': result['reference'],
+                        'token': result['token'],
+                        'amount': amount,
+                        'provider': provider,
+                        'meterNumber': account_number,
+                        'newBalance': new_balance,
+                        'testMode': True
+                    }
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
+            
             # Check wallet balance
             wallet = mongo.db.vas_wallets.find_one({'userId': current_user['_id']})
             if not wallet:
