@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from datetime import datetime, timezone, timedelta
 import io
+from .decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in calculations
 
 
 # CRITICAL FIX (Feb 19, 2026): Naira symbol rendering
@@ -2696,8 +2697,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
         vas_breakdown = tax_data.get('vas_breakdown', {})
         
         # Asset metrics
-        total_assets_cost = sum(asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0) for asset in assets_data)
-        total_assets_nbv = sum(asset.get('currentValue', 0) for asset in assets_data)
+        # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+        total_assets_cost = sum(safe_float(asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)) for asset in assets_data)
+        total_assets_nbv = sum(safe_float(asset.get('currentValue', 0)) for asset in assets_data)
         total_depreciation = total_assets_cost - total_assets_nbv
         asset_count = len(assets_data)
         
