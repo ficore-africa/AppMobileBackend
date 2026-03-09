@@ -26,13 +26,15 @@ def format_currency(amount):
     CRITICAL FIX (Feb 19, 2026): The ₦ symbol renders as a black square in PDFs
     because Helvetica font doesn't support it. Use "N" with proper spacing instead.
     
+    CRITICAL FIX (Mar 9, 2026): Handle Decimal128 values from MongoDB
+    
     Args:
-        amount: Numeric amount to format
+        amount: Numeric amount to format (may be Decimal128)
     
     Returns:
         Formatted string like "N1,234,567.89"
     """
-    return f"{NAIRA_SYMBOL}{amount:,.2f}"
+    return f"{NAIRA_SYMBOL}{safe_float(amount):,.2f}"
 
 
 def format_tin_display(tin_value):
@@ -418,7 +420,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
                     date_str,
                     transaction.get('type', 'N/A'),
                     transaction.get('description', 'N/A'),
-                    f"{transaction.get('amount', 0):,.2f}"
+                    f"{safe_float(transaction.get('amount', 0)):,.2f}"
                 ])
             
             credit_table = create_table(credit_data, col_widths=[1.5*inch, 1.5*inch, 2.5*inch, 1*inch])
@@ -706,9 +708,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Summary
         story.append(Paragraph("Summary", self.styles['SectionHeader']))
         summary_text = f"""
-        <b>Total Cash Inflows:</b> ₦{operating_inflows:,.2f}<br/>
-        <b>Total Cash Outflows:</b> ₦{operating_outflows:,.2f}<br/>
-        <b>Net Cash Flow:</b> ₦{net_operating:,.2f}
+        <b>Total Cash Inflows:</b> ₦{safe_float(operating_inflows):,.2f}<br/>
+        <b>Total Cash Outflows:</b> ₦{safe_float(operating_outflows):,.2f}<br/>
+        <b>Net Cash Flow:</b> ₦{safe_float(net_operating):,.2f}
         """
         story.append(Paragraph(summary_text, self.styles['Normal']))
         
@@ -993,12 +995,12 @@ Your registered tax profile remains <b>{profile_name}</b>.
             <br/>
             <b>Criterion 1: Annual Turnover</b><br/>
             • Threshold: Below ₦100,000,000<br/>
-            • Your Turnover: ₦{turnover:,.2f}<br/>
+            • Your Turnover: ₦{safe_float(turnover):,.2f}<br/>
             • Status: {turnover_status}<br/>
             <br/>
             <b>Criterion 2: Fixed Assets Net Book Value</b><br/>
             • Threshold: Below ₦250,000,000<br/>
-            • Your Fixed Assets NBV: ₦{fixed_assets_nbv:,.2f}<br/>
+            • Your Fixed Assets NBV: ₦{safe_float(fixed_assets_nbv):,.2f}<br/>
             • Status: {assets_status}<br/>
             <br/>
             <b>CRITICAL: Exemption Rule</b><br/>
@@ -1073,9 +1075,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
         
         story.append(Paragraph("Tax Summary", self.styles['SectionHeader']))
         summary_text = f"""
-        <b>Total Tax Liability:</b> ₦{total_tax:,.2f}<br/>
+        <b>Total Tax Liability:</b> ₦{safe_float(total_tax):,.2f}<br/>
         <b>Effective Tax Rate:</b> {effective_rate:.2f}%<br/>
-        <b>Net Income After Tax:</b> ₦{net_after_tax:,.2f}
+        <b>Net Income After Tax:</b> ₦{safe_float(net_after_tax):,.2f}
         """
         story.append(Paragraph(summary_text, self.styles['Normal']))
         
@@ -1192,8 +1194,8 @@ Your registered tax profile remains <b>{profile_name}</b>.
             # Summary
             story.append(Paragraph("Summary", self.styles['SectionHeader']))
             summary_text = f"""
-            <b>Total Outstanding:</b> ₦{total_outstanding:,.2f}<br/>
-            <b>Overdue Amount:</b> ₦{overdue_amount:,.2f}<br/>
+            <b>Total Outstanding:</b> ₦{safe_float(total_outstanding):,.2f}<br/>
+            <b>Overdue Amount:</b> ₦{safe_float(overdue_amount):,.2f}<br/>
             <b>Number of Debtors:</b> {len(debtors)}
             """
             story.append(Paragraph(summary_text, self.styles['Normal']))
@@ -1301,8 +1303,8 @@ Your registered tax profile remains <b>{profile_name}</b>.
             # Summary
             story.append(Paragraph("Summary", self.styles['SectionHeader']))
             summary_text = f"""
-            <b>Total Outstanding:</b> ₦{total_outstanding:,.2f}<br/>
-            <b>Overdue Amount:</b> ₦{overdue_amount:,.2f}<br/>
+            <b>Total Outstanding:</b> ₦{safe_float(total_outstanding):,.2f}<br/>
+            <b>Overdue Amount:</b> ₦{safe_float(overdue_amount):,.2f}<br/>
             <b>Number of Creditors:</b> {len(creditors)}
             """
             story.append(Paragraph(summary_text, self.styles['Normal']))
@@ -1462,9 +1464,9 @@ Your registered tax profile remains <b>{profile_name}</b>.
             total_depreciation = total_cost - total_value
             story.append(Paragraph("Summary", self.styles['SectionHeader']))
             summary_text = f"""
-            <b>Total Asset Cost:</b> ₦{total_cost:,.2f}<br/>
-            <b>Total Current Value:</b> ₦{total_value:,.2f}<br/>
-            <b>Total Depreciation:</b> ₦{total_depreciation:,.2f}<br/>
+            <b>Total Asset Cost:</b> ₦{safe_float(total_cost):,.2f}<br/>
+            <b>Total Current Value:</b> ₦{safe_float(total_value):,.2f}<br/>
+            <b>Total Depreciation:</b> ₦{safe_float(total_depreciation):,.2f}<br/>
             <b>Number of Assets:</b> {len(assets)}
             """
             story.append(Paragraph(summary_text, self.styles['Normal']))
@@ -1614,10 +1616,10 @@ Your registered tax profile remains <b>{profile_name}</b>.
             # Summary
             story.append(Paragraph("Depreciation Summary", self.styles['SectionHeader']))
             summary_text = f"""
-            <b>Total Asset Cost:</b> ₦{total_cost:,.2f}<br/>
-            <b>Total Annual Depreciation:</b> ₦{total_annual_dep:,.2f}<br/>
-            <b>Total Accumulated Depreciation:</b> ₦{total_accumulated:,.2f}<br/>
-            <b>Total Book Value:</b> ₦{total_book_value:,.2f}<br/>
+            <b>Total Asset Cost:</b> ₦{safe_float(total_cost):,.2f}<br/>
+            <b>Total Annual Depreciation:</b> ₦{safe_float(total_annual_dep):,.2f}<br/>
+            <b>Total Accumulated Depreciation:</b> ₦{safe_float(total_accumulated):,.2f}<br/>
+            <b>Total Book Value:</b> ₦{safe_float(total_book_value):,.2f}<br/>
             <b>Depreciation Method:</b> Straight-Line
             """
             story.append(Paragraph(summary_text, self.styles['Normal']))
@@ -1730,7 +1732,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
             summary_text = f"""
             <b>Total Items:</b> {len(inventory_items)}<br/>
             <b>Total Quantity:</b> {total_quantity}<br/>
-            <b>Total Inventory Value:</b> ₦{total_value:,.2f}<br/>
+            <b>Total Inventory Value:</b> ₦{safe_float(total_value):,.2f}<br/>
             <b>Low Stock Items:</b> {low_stock_count}
             """
             story.append(Paragraph(summary_text, self.styles['Normal']))
@@ -2252,8 +2254,8 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Summary
         summary_text = f"""
         <b>Summary:</b><br/>
-        Total Funded: ₦{total_amount:,.2f}<br/>
-        Total Fees: ₦{total_fees:,.2f}<br/>
+        Total Funded: ₦{safe_float(total_amount):,.2f}<br/>
+        Total Fees: ₦{safe_float(total_fees):,.2f}<br/>
         Number of Transactions: {len(export_data.get('transactions', []))}
         """
         story.append(Paragraph(summary_text, self.styles['InfoText']))
@@ -2389,7 +2391,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Summary
         summary_text = f"""
         <b>Summary:</b><br/>
-        Total Spent: ₦{total_amount:,.2f}<br/>
+        Total Spent: ₦{safe_float(total_amount):,.2f}<br/>
         Number of Transactions: {len(export_data.get('transactions', []))}<br/>
         <br/>
         <i>Note: This report shows bills paid through FiCore's Value Added Services (VAS) platform.
@@ -2518,7 +2520,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Summary
         summary_text = f"""
         <b>Summary:</b><br/>
-        Total Spent: ₦{total_amount:,.2f}<br/>
+        Total Spent: ₦{safe_float(total_amount):,.2f}<br/>
         Number of Transactions: {len(export_data.get('transactions', []))}<br/>
         <br/>
         <i>Note: This report shows airtime purchases made through FiCore's Value Added Services (VAS) platform.
@@ -2610,8 +2612,8 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Summary
         summary_text = f"""
         <b>Summary:</b><br/>
-        Total Amount: ₦{total_amount:,.2f}<br/>
-        Total Fees: ₦{total_fees:,.2f}<br/>
+        Total Amount: ₦{safe_float(total_amount):,.2f}<br/>
+        Total Fees: ₦{safe_float(total_fees):,.2f}<br/>
         Number of Transactions: {len(export_data.get('transactions', []))}
         """
         story.append(Paragraph(summary_text, self.styles['InfoText']))
@@ -3130,7 +3132,7 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         
         # Accounting equation verification
         accounting_balance = total_all_assets - (total_current_liabilities + closing_equity)
-        balance_status = "✓ Balanced" if abs(accounting_balance) < 0.01 else f"⚠ Difference: ₦{accounting_balance:,.2f}"
+        balance_status = "✓ Balanced" if abs(accounting_balance) < 0.01 else f"⚠ Difference: ₦{safe_float(accounting_balance):,.2f}"
         
         # Note about tracking, accounting equation, and Drawings education
         note_text = f"""
@@ -3142,7 +3144,7 @@ but recommended for a complete financial picture.<br/>
 These are NOT business expenses and do NOT reduce profit. Instead, they reduce Owner's Equity.
 Example: If you take ₦50,000 from the business for personal shopping, this is a Drawing, not an expense.<br/>
 <br/>
-<b>Accounting Equation Check:</b> Assets (₦{total_all_assets:,.2f}) = Liabilities (₦{total_current_liabilities:,.2f}) + Equity (₦{closing_equity:,.2f}) [{balance_status}]<br/>
+<b>Accounting Equation Check:</b> Assets (₦{safe_float(total_all_assets):,.2f}) = Liabilities (₦{safe_float(total_current_liabilities):,.2f}) + Equity (₦{safe_float(closing_equity):,.2f}) [{balance_status}]<br/>
 <br/>
 <b>Important:</b> This Statement of Affairs is calculated as of {end_date.strftime('%B %d, %Y') if end_date else 'the current date'}.
 Asset depreciation and all values reflect the position at that specific date.</i>
@@ -3170,9 +3172,9 @@ Asset depreciation and all values reflect the position at that specific date.</i
    • Fixed assets NBV ≤ ₦250,000,000<br/>
 <br/>
 <b>Your Business Status:</b><br/>
-• Revenue: ₦{total_income:,.2f} ({('≤' if total_income <= 100000000 else '>')} ₦100M)<br/>
-• Assets NBV: ₦{total_assets_nbv:,.2f} ({('≤' if total_assets_nbv <= 250000000 else '>')} ₦250M)<br/>
-• Estimated Tax: ₦{estimated_tax:,.2f}
+• Revenue: ₦{safe_float(total_income):,.2f} ({('≤' if total_income <= 100000000 else '>')} ₦100M)<br/>
+• Assets NBV: ₦{safe_float(total_assets_nbv):,.2f} ({('≤' if total_assets_nbv <= 250000000 else '>')} ₦250M)<br/>
+• Estimated Tax: ₦{safe_float(estimated_tax):,.2f}
 """
         else:
             tax_requirements = f"""
@@ -3182,7 +3184,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
 2. <b>Tax-Free Threshold:</b> First ₦800,000 is tax-exempt<br/>
 3. <b>Progressive Rates:</b> 0% to 25% based on income bands<br/>
 <br/>
-<b>Your Estimated Tax:</b> ₦{estimated_tax:,.2f}
+<b>Your Estimated Tax:</b> ₦{safe_float(estimated_tax):,.2f}
 """
         
         story.append(Paragraph(tax_requirements, self.styles['Normal']))
