@@ -1,4 +1,3 @@
-from app import safe_float, safe_sum
 """
 Income Blueprint
 Handles income tracking with monthly entry limits and credit deductions
@@ -8,6 +7,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import csv
 import io
+from utils.decimal_helpers import safe_float, safe_sum
 from collections import defaultdict
 from utils.payment_utils import normalize_sales_type, validate_sales_type
 from utils.monthly_entry_tracker import MonthlyEntryTracker

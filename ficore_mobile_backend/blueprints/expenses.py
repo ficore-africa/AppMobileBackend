@@ -1,9 +1,9 @@
-from app import safe_float, safe_sum
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
 from utils.payment_utils import normalize_payment_method, validate_payment_method
 from utils.monthly_entry_tracker import MonthlyEntryTracker
+from utils.decimal_helpers import safe_float, safe_sum
 
 expenses_bp = Blueprint('expenses', __name__, url_prefix='/expenses')
 

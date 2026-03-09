@@ -1,4 +1,3 @@
-from app import safe_float, safe_sum
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
@@ -8,6 +7,7 @@ import logging
 from utils.database_optimizer import DatabaseOptimizer, aggregation_cache
 from utils.enhanced_cache import enhanced_cache, CacheWarmer
 from utils.cache_invalidation import get_cache_invalidation_service
+from utils.decimal_helpers import safe_float, safe_sum
 from utils.performance_monitor import performance_monitor, performance_logger
 
 logger = logging.getLogger(__name__)
