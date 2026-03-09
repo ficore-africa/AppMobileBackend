@@ -710,15 +710,30 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation (non-blocking)
-            bg_generator.start_generation(job_id, generate_income_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_income_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 INCOME PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ INCOME PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ INCOME PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately (user committed to export)
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
+            # Start background generation with wrapper (non-blocking)
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
             # Return job_id immediately (user doesn't wait!)
             return jsonify({
@@ -1144,15 +1159,30 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation
-            bg_generator.start_generation(job_id, generate_expense_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_expense_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 EXPENSE PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ EXPENSE PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ EXPENSE PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
+            # Start background generation with wrapper
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
             # Return job_id immediately
             return jsonify({
@@ -1677,15 +1707,30 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation
-            bg_generator.start_generation(job_id, generate_profit_loss_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_profit_loss_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 P&L PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ P&L PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ P&L PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
+            # Start background generation with wrapper
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
             # Return job_id immediately
             return jsonify({
@@ -1974,15 +2019,30 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation
-            bg_generator.start_generation(job_id, generate_cash_flow_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_cash_flow_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 CASH FLOW PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ CASH FLOW PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ CASH FLOW PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
+            # Start background generation with wrapper
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
             # Return job_id immediately
             return jsonify({
@@ -2700,14 +2760,32 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation
-            bg_generator.start_generation(job_id, generate_tax_summary_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_tax_summary_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 TAX SUMMARY PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ TAX SUMMARY PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ TAX SUMMARY PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
+            # Start background generation with wrapper
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
-            # Log export event
+            # Log export event (removed - now in wrapper)
             log_export_event(current_user, report_type, 'pdf', success=True)
             
             # Return job_id immediately
@@ -3041,15 +3119,30 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation
-            bg_generator.start_generation(job_id, generate_assets_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_assets_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 ASSETS PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ ASSETS PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ ASSETS PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
+            # Start background generation with wrapper
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
             # Return job_id immediately
             return jsonify({
@@ -3224,15 +3317,30 @@ def init_reports_blueprint(mongo, token_required):
                 
                 return pdf_buffer
             
-            # Start background generation
-            bg_generator.start_generation(job_id, generate_asset_depreciation_pdf)
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_asset_depreciation_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 ASSET DEPRECIATION PDF: Generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ ASSET DEPRECIATION PDF: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ ASSET DEPRECIATION PDF: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
             
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                deduct_credits(current_user, credit_cost, report_type)
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
+            # Start background generation with wrapper
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             
             # Return job_id immediately
             return jsonify({
@@ -7810,20 +7918,33 @@ def init_reports_blueprint(mongo, token_required):
                     print(f"❌ SOA GENERATION TRACEBACK:\n{traceback.format_exc()}")
                     raise
             
-            # Start background generation
+            # Define wrapper function that deducts credits ONLY on success
+            def generate_and_deduct_on_success():
+                try:
+                    # Generate PDF
+                    pdf_buffer = generate_statement_of_affairs_pdf()
+                    
+                    # ONLY deduct credits if generation succeeded
+                    if not is_premium and credit_cost > 0:
+                        print(f"🔵 SOA ASYNC: PDF generated successfully, deducting {credit_cost} credits...")
+                        deduct_credits(current_user, credit_cost, report_type)
+                        print(f"✅ SOA ASYNC: Credits deducted after successful generation")
+                    
+                    # Log export event
+                    log_export_event(current_user, report_type, 'pdf', success=True)
+                    print(f"✅ SOA ASYNC: Export event logged")
+                    
+                    return pdf_buffer
+                except Exception as e:
+                    # DO NOT deduct credits on failure
+                    print(f"❌ SOA ASYNC: Generation failed, credits NOT deducted")
+                    log_export_event(current_user, report_type, 'pdf', success=False)
+                    raise
+            
+            # Start background generation with wrapper
             print(f"🔵 SOA ASYNC: Starting background generation...")
-            bg_generator.start_generation(job_id, generate_statement_of_affairs_pdf)
+            bg_generator.start_generation(job_id, generate_and_deduct_on_success)
             print(f"✅ SOA ASYNC: Background generation started")
-            
-            # Deduct credits immediately
-            if not is_premium and credit_cost > 0:
-                print(f"🔵 SOA ASYNC: Deducting {credit_cost} credits...")
-                deduct_credits(current_user, credit_cost, report_type)
-                print(f"✅ SOA ASYNC: Credits deducted")
-            
-            # Log export event
-            log_export_event(current_user, report_type, 'pdf', success=True)
-            print(f"✅ SOA ASYNC: Export event logged")
             
             # Return job_id immediately
             print(f"✅ SOA ASYNC: Returning job_id to client")

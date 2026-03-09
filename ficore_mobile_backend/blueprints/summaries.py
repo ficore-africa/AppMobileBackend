@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
+from utils.decimal_helpers import safe_float
 
 def init_summaries_blueprint(mongo, token_required, serialize_doc):
     """Initialize the summaries blueprint with database and dependencies"""
@@ -50,7 +51,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'type': 'EXPENSE',
                         'subtype': 'EXPENSE',
                         'title': expense.get('title', expense.get('description', 'Expense')),
-                        'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
+                        'description': f"Spent ₦{safe_float(expense.get('amount', 0)):,.2f} on {expense.get('category', 'Unknown')}",
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Unknown'),
                         'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
@@ -94,7 +95,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'type': 'INCOME',
                         'subtype': 'INCOME',
                         'title': income.get('title', income.get('source', 'Income')),
-                        'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
+                        'description': f"Received ₦{safe_float(income.get('amount', 0)):,.2f} from {income.get('source', 'Unknown')}",
                         'amount': income.get('amount', 0),
                         'source': income.get('source', 'Unknown'),
                         'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
@@ -172,26 +173,26 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         
                         if txn_type == 'WALLET_FUNDING':
                             title = 'Wallet Funded'
-                            description = f'Added ₦{amount:,.2f} to Liquid Wallet'
+                            description = f'Added ₦{safe_float(amount):,.2f} to Liquid Wallet'
                             icon = 'wallet'
                         elif txn_type == 'AIRTIME_PURCHASE':
                             title = 'Airtime Purchase'
                             phone = txn.get('metadata', {}).get('phoneNumber', 'Unknown')
-                            description = f'₦{amount:,.2f} airtime sent to {phone[-4:]}****' if phone != 'Unknown' else f'₦{amount:,.2f} airtime purchase'
+                            description = f'₦{safe_float(amount):,.2f} airtime sent to {phone[-4:]}****' if phone != 'Unknown' else f'₦{safe_float(amount):,.2f} airtime purchase'
                             icon = 'phone'
                         elif txn_type == 'DATA_PURCHASE':
                             title = 'Data Purchase'
                             phone = txn.get('metadata', {}).get('phoneNumber', 'Unknown')
                             plan = txn.get('metadata', {}).get('planName', 'Data')
-                            description = f'{plan} for {phone[-4:]}****' if phone != 'Unknown' else f'₦{amount:,.2f} data purchase'
+                            description = f'{plan} for {phone[-4:]}****' if phone != 'Unknown' else f'₦{safe_float(amount):,.2f} data purchase'
                             icon = 'data'
                         elif txn_type == 'KYC_VERIFICATION':
                             title = 'KYC Verification'
-                            description = f'Account verification fee ₦{amount:,.2f}'
+                            description = f'Account verification fee ₦{safe_float(amount):,.2f}'
                             icon = 'verification'
                         else:
                             title = f'VAS {txn_type.replace("_", " ").title()}'
-                            description = f'₦{amount:,.2f} VAS transaction'
+                            description = f'₦{safe_float(amount):,.2f} VAS transaction'
                             icon = 'vas'
                         
                         activity = {
@@ -234,7 +235,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'id': str(expense['_id']),
                             'type': 'expense',
                             'title': expense.get('title', expense.get('description', 'Expense')),
-                            'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
+                            'description': f"Spent ₦{safe_float(expense.get('amount', 0)):,.2f} on {expense.get('category', 'Unknown')}",
                             'amount': expense.get('amount', 0),
                             'category': expense.get('category', 'Unknown'),
                             'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
@@ -267,7 +268,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'id': str(income['_id']),
                             'type': 'income',
                             'title': income.get('title', income.get('source', 'Income')),
-                            'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
+                            'description': f"Received ₦{safe_float(income.get('amount', 0)):,.2f} from {income.get('source', 'Unknown')}",
                             'amount': income.get('amount', 0),
                             'source': income.get('source', 'Unknown'),
                             'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp

@@ -1783,6 +1783,9 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
         if annual_income and annual_income < 800000:
             return {
                 'businessStructure': 'personal_income',
+                'taxType': 'PIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+                'type': 'PIT',     # Alternative field name used in some reports
+                'userType': 'self_employed',  # User classification
                 'incomeLevel': 'below_800k',
                 'annualIncome': annual_income,
                 'taxAuthority': 'sirs',
@@ -1794,6 +1797,9 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
         else:
             return {
                 'businessStructure': 'personal_income',
+                'taxType': 'PIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+                'type': 'PIT',     # Alternative field name used in some reports
+                'userType': 'self_employed',  # User classification
                 'incomeLevel': 'above_800k',
                 'annualIncome': annual_income,
                 'taxAuthority': 'sirs',
@@ -1808,6 +1814,9 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
         
         return {
             'businessStructure': 'llc',
+            'taxType': 'CIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+            'type': 'CIT',     # Alternative field name used in some reports
+            'userType': 'business_owner',  # User classification
             'annualTurnover': annual_turnover,
             'taxAuthority': 'nrs',
             'taxRate': '0% or 30%',
@@ -1821,6 +1830,9 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
         # Law, accounting, consulting, engineering, architecture, medical practices
         return {
             'businessStructure': 'professional_services',
+            'taxType': 'CIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+            'type': 'CIT',     # Alternative field name used in some reports
+            'userType': 'professional',  # User classification
             'taxAuthority': 'nrs',
             'taxRate': '30% CIT (Standard Rate)',
             'exemptionEligible': False,

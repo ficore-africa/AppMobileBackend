@@ -9,6 +9,7 @@ from datetime import datetime
 from bson import ObjectId
 from utils.payment_utils import normalize_payment_method, validate_payment_method
 from utils.monthly_entry_tracker import MonthlyEntryTracker
+from utils.decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in calculations
 import traceback
 
 
@@ -273,7 +274,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     
                     # Get current balance again (double-check for race conditions)
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_fc_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_fc_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     
                     if current_fc_balance < fc_cost:
                         # Balance changed between check and deduction - ROLLBACK
@@ -498,7 +500,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 try:
                     # Restore FC balance
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     restored_balance = current_balance + fc_cost
                     
                     atomic_entries_bp.mongo.db.users.update_one(
@@ -743,7 +746,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     
                     # Get current balance again (double-check for race conditions)
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_fc_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_fc_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     
                     if current_fc_balance < fc_cost:
                         # Balance changed between check and deduction - ROLLBACK
@@ -969,7 +973,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 try:
                     # Restore FC balance
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     restored_balance = current_balance + fc_cost
                     
                     atomic_entries_bp.mongo.db.users.update_one(
