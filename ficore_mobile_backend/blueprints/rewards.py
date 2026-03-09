@@ -874,6 +874,19 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                     }
                     mongo.db.credit_transactions.insert_one(transaction)
                     
+                    # ✅ AUTOMATION: Record marketing expense for streak milestone
+                    try:
+                        from ficore_mobile_backend.utils.business_bookkeeping import record_fc_marketing_expense
+                        record_fc_marketing_expense(
+                            mongo=mongo,
+                            user_id=current_user['_id'],
+                            fc_amount=actual_amount,
+                            operation='streak_milestone',
+                            description=f'Streak milestone bonus - {milestone} days'
+                        )
+                    except Exception as automation_error:
+                        print(f"⚠️  Failed to record marketing expense for streak milestone: {str(automation_error)}")
+                    
                     if actual_amount < config['amount']:
                         print(f"Awarded {actual_amount} FCs (capped from {config['amount']}) for {milestone}-day streak milestone - User reached FC cap")
                     else:
@@ -964,6 +977,19 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                         }
                     }
                     mongo.db.credit_transactions.insert_one(transaction)
+                    
+                    # ✅ AUTOMATION: Record marketing expense for exploration bonus
+                    try:
+                        from ficore_mobile_backend.utils.business_bookkeeping import record_fc_marketing_expense
+                        record_fc_marketing_expense(
+                            mongo=mongo,
+                            user_id=current_user['_id'],
+                            fc_amount=actual_amount,
+                            operation='exploration_bonus',
+                            description=f'Exploration bonus - {bonus_key.replace("_", " ").title()}'
+                        )
+                    except Exception as automation_error:
+                        print(f"⚠️  Failed to record marketing expense for exploration bonus: {str(automation_error)}")
                     
                     if actual_amount < config['amount']:
                         print(f"Awarded {actual_amount} FCs (capped from {config['amount']}) for {bonus_key} exploration bonus - User reached FC cap")

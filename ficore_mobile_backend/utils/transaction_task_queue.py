@@ -349,7 +349,7 @@ class TransactionTaskQueue:
             # ==================== BUSINESS BOOKKEEPING: VAS COMMISSION ====================
             # Record VAS commission revenue in business books
             try:
-                from utils.business_bookkeeping import record_vas_commission_revenue
+                from ficore_mobile_backend.utils.business_bookkeeping import record_vas_commission_revenue
                 
                 # Extract commission data from provider response
                 provider_response = task_data.get('provider_response', {})

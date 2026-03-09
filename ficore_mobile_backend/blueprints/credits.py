@@ -1323,6 +1323,19 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             }
             
             mongo.db.credit_transactions.insert_one(transaction)
+            
+            # ✅ AUTOMATION: Record FC consumption revenue
+            try:
+                from ficore_mobile_backend.utils.business_bookkeeping import record_fc_consumption_revenue
+                record_fc_consumption_revenue(
+                    mongo=mongo,
+                    user_id=current_user['_id'],
+                    fc_amount=amount,
+                    description=description,
+                    service=operation
+                )
+            except Exception as automation_error:
+                print(f"⚠️  Failed to record FC consumption revenue: {str(automation_error)}")
 
             return jsonify({
                 'success': True,
