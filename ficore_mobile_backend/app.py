@@ -6,7 +6,7 @@ from flask_limiter.util import get_remote_address
 from datetime import datetime, timedelta
 import jwt
 import os
-from bson import ObjectId
+from bson import ObjectId, Decimal128, Decimal128
 from functools import wraps
 from werkzeug.security import generate_password_hash
 
@@ -268,16 +268,21 @@ def serialize_doc(doc):
         doc['id'] = str(doc['_id'])
         del doc['_id']
     
-    # Handle other ObjectId fields recursively
+    # Handle other ObjectId and Decimal128 fields recursively
     for key, value in list(doc.items()):  # Use list() to avoid dict changed size during iteration
         if isinstance(value, ObjectId):
             doc[key] = str(value)
+        elif isinstance(value, Decimal128):
+            # ✅ CRITICAL FIX: Convert Decimal128 to float for JSON serialization
+            doc[key] = float(value.to_decimal())
         elif isinstance(value, list):
-            # Handle lists that might contain ObjectIds or nested documents
+            # Handle lists that might contain ObjectIds, Decimal128, or nested documents
             new_list = []
             for item in value:
                 if isinstance(item, ObjectId):
                     new_list.append(str(item))
+                elif isinstance(item, Decimal128):
+                    new_list.append(float(item.to_decimal()))
                 elif isinstance(item, dict):
                     new_list.append(serialize_doc(item))
                 else:
@@ -304,6 +309,35 @@ def serialize_doc(doc):
     return doc
 
 # JWT token decorator
+
+# ✅ CRITICAL: Helper function to safely convert Decimal128 to float
+def safe_float(value):
+    """
+    Safely convert any numeric value (including Decimal128) to float.
+    Guards against Decimal128 serialization errors.
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal128):
+        return float(value.to_decimal())
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0.0
+
+# ✅ CRITICAL: Helper function to safely sum amounts (handles Decimal128)
+def safe_sum(amounts):
+    """
+    Safely sum a list of amounts, converting Decimal128 to float.
+    Guards against type errors when summing mixed types.
+    """
+    total = 0.0
+    for amount in amounts:
+        total += safe_float(amount)
+    return total
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
