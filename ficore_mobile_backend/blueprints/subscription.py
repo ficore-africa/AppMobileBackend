@@ -359,15 +359,34 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 subscription_record = {
                     '_id': ObjectId(),
                     'userId': user_id,
-                    'planType': plan_type,
-                    'amount': plan['price'],
+                    # Plan variants (ALL 4 for compatibility)
+                    'plan': plan_type,  # ✅ FIX: Add plan
+                    'planId': plan_type,  # ✅ FIX: Add planId
+                    'planName': plan['name'],  # ✅ FIX: Add planName
+                    'planType': plan_type.upper() if plan_type.islower() else plan_type,
+                    # Date variants (ALL 3 for compatibility)
                     'startDate': start_date,
                     'endDate': end_date,
+                    'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                    # Status variants (ALL 3 for consistency)
                     'status': 'active',
+                    'isActive': True,  # ✅ FIX: Add isActive
+                    'isDeleted': False,  # ✅ FIX: Add isDeleted
+                    # Amount & Duration
+                    'amount': plan['price'],
+                    'durationDays': plan['duration_days'],  # ✅ FIX: Add durationDays
+                    # Source tracking
+                    'type': 'paystack_purchase',  # ✅ FIX: Add type
+                    'source': 'paystack',  # ✅ FIX: Add source
+                    # Payment tracking
+                    'paymentMethod': 'paystack',  # ✅ FIX: Add paymentMethod
                     'paymentReference': reference,
                     'paystackTransactionId': 'TEST_MODE',
+                    'autoRenew': True,  # ✅ FIX: Add autoRenew
+                    # Audit trail
                     'testMode': True,
-                    'createdAt': datetime.utcnow()
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()  # ✅ FIX: Add updatedAt
                 }
                 
                 mongo.db.subscriptions.insert_one(subscription_record)
@@ -420,6 +439,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     '$set': {
                         'isSubscribed': True,
                         'subscriptionType': plan_type,
+                        'subscriptionStatus': 'active',  # ✅ FIX: Add subscriptionStatus
+                        'subscriptionPlan': plan_type,  # ✅ FIX: Add subscriptionPlan
                         'subscriptionStartDate': start_date,
                         'subscriptionEndDate': end_date,
                         'subscriptionAutoRenew': True,
@@ -446,14 +467,33 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             subscription_record = {
                 '_id': ObjectId(),
                 'userId': user_id,
-                'planType': plan_type,
-                'amount': plan['price'],
+                # Plan variants (ALL 4 for compatibility)
+                'plan': plan_type,  # ✅ FIX: Add plan
+                'planId': plan_type,  # ✅ FIX: Add planId
+                'planName': plan['name'],  # ✅ FIX: Add planName
+                'planType': plan_type.upper() if plan_type.islower() else plan_type,
+                # Date variants (ALL 3 for compatibility)
                 'startDate': start_date,
                 'endDate': end_date,
+                'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                # Status variants (ALL 3 for consistency)
                 'status': 'active',
+                'isActive': True,  # ✅ FIX: Add isActive
+                'isDeleted': False,  # ✅ FIX: Add isDeleted
+                # Amount & Duration
+                'amount': plan['price'],
+                'durationDays': plan['duration_days'],  # ✅ FIX: Add durationDays
+                # Source tracking
+                'type': 'paystack_purchase',  # ✅ FIX: Add type
+                'source': 'paystack',  # ✅ FIX: Add source
+                # Payment tracking
+                'paymentMethod': 'paystack',  # ✅ FIX: Add paymentMethod
                 'paymentReference': reference,
                 'paystackTransactionId': transaction_data['id'],
-                'createdAt': datetime.utcnow()
+                'autoRenew': True,  # ✅ FIX: Add autoRenew
+                # Audit trail
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()  # ✅ FIX: Add updatedAt
             }
             
             mongo.db.subscriptions.insert_one(subscription_record)
@@ -844,14 +884,29 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             if 'auto_renew' in data:
                 auto_renew_value = bool(data['auto_renew'])
                 update_data['subscriptionAutoRenew'] = auto_renew_value
+                update_data['updatedAt'] = datetime.utcnow()  # ✅ FIX: Add updatedAt timestamp
                 
                 print(f"[MANAGE_SUBSCRIPTION] User {current_user['_id']} setting auto_renew to {auto_renew_value}")
             
             if update_data:
+                # ✅ FIX: Update user document
                 result = mongo.db.users.update_one(
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
+                
+                # ✅ FIX: Also update subscriptions collection
+                if 'auto_renew' in data:
+                    mongo.db.subscriptions.update_one(
+                        {'userId': current_user['_id'], 'status': 'active'},
+                        {
+                            '$set': {
+                                'autoRenew': auto_renew_value,
+                                'updatedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f"[MANAGE_SUBSCRIPTION] Updated autoRenew in subscriptions collection")
                 
                 print(f"[MANAGE_SUBSCRIPTION] Update result: matched={result.matched_count}, modified={result.modified_count}")
                 
@@ -931,11 +986,29 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             data = request.get_json() or {}
             reason = data.get('reason', '').strip()
             
-            # Disable auto-renew (subscription remains active until end date)
+            # ✅ FIX: Update user document with updatedAt timestamp
             mongo.db.users.update_one(
                 {'_id': current_user['_id']},
-                {'$set': {'subscriptionAutoRenew': False}}
+                {
+                    '$set': {
+                        'subscriptionAutoRenew': False,
+                        'updatedAt': datetime.utcnow()  # ✅ FIX: Add updatedAt timestamp
+                    }
+                }
             )
+            
+            # ✅ FIX: Also update subscriptions collection
+            mongo.db.subscriptions.update_one(
+                {'userId': current_user['_id'], 'status': 'active'},
+                {
+                    '$set': {
+                        'autoRenew': False,
+                        'status': 'cancelled',  # ✅ FIX: Mark as cancelled
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            print(f"[CANCEL_SUBSCRIPTION] Updated subscription status to cancelled for user {current_user['_id']}")
             
             # Create cancellation request for admin review
             cancellation_request = {

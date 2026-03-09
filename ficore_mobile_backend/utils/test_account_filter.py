@@ -316,4 +316,3 @@ stats = get_test_account_stats(mongo)
 print(f"Test accounts: {stats['testAccountCount']}")
 print(f"Test spending: ₦{stats['totalSpending']:,.2f}")
 """
-

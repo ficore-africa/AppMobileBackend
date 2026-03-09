@@ -2724,19 +2724,32 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 mongo.db.subscriptions.update_one(
                     {'userId': ObjectId(user_id)},
                     {'$set': {
-                        'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
+                        # Plan variants (ALL 4 for compatibility)
+                        'plan': plan_id,
                         'planId': plan_id,
                         'planName': data.get('planName', plan_id),
+                        'planType': plan_id.upper(),  # ✅ FIX: Add planType
+                        # Date variants (ALL 3 for compatibility)
                         'startDate': start_date,
                         'endDate': end_date,
-                        'isActive': True,
-                        'autoRenew': auto_renew,
-                        'amount': amount,
-                        'paymentMethod': 'admin_grant',
+                        'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                        # Status variants (ALL 3 for consistency)
                         'status': 'active',
-                        'updatedAt': datetime.utcnow(),
+                        'isActive': True,
+                        'isDeleted': False,  # ✅ FIX: Add isDeleted
+                        # Amount & Duration
+                        'amount': amount,
+                        'durationDays': duration_days,  # ✅ FIX: Add durationDays
+                        # Source tracking
+                        'type': 'admin_grant',  # ✅ FIX: Add type
+                        'source': 'admin_grant',  # ✅ FIX: Add source
                         'grantedBy': current_user['_id'],
-                        'grantReason': reason
+                        'grantReason': reason,
+                        # Payment tracking
+                        'paymentMethod': 'admin_grant',
+                        'autoRenew': auto_renew,
+                        # Audit trail
+                        'updatedAt': datetime.utcnow()
                     }}
                 )
             else:
@@ -2745,22 +2758,52 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 subscription_data = {
                     '_id': subscription_id,
                     'userId': ObjectId(user_id),
-                    'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
+                    # Plan variants (ALL 4 for compatibility)
+                    'plan': plan_id,
                     'planId': plan_id,
                     'planName': data.get('planName', plan_id),
+                    'planType': plan_id.upper(),  # ✅ FIX: Add planType
+                    # Date variants (ALL 3 for compatibility)
                     'startDate': start_date,
                     'endDate': end_date,
-                    'isActive': True,
-                    'autoRenew': auto_renew,
-                    'amount': amount,
-                    'paymentMethod': 'admin_grant',
+                    'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                    # Status variants (ALL 3 for consistency)
                     'status': 'active',
-                    'createdAt': datetime.utcnow(),
-                    'updatedAt': datetime.utcnow(),
+                    'isActive': True,
+                    'isDeleted': False,  # ✅ FIX: Add isDeleted
+                    # Amount & Duration
+                    'amount': amount,
+                    'durationDays': duration_days,  # ✅ FIX: Add durationDays
+                    # Source tracking
+                    'type': 'admin_grant',  # ✅ FIX: Add type
+                    'source': 'admin_grant',  # ✅ FIX: Add source
                     'grantedBy': current_user['_id'],
-                    'grantReason': reason
+                    'grantReason': reason,
+                    # Payment tracking
+                    'paymentMethod': 'admin_grant',
+                    'autoRenew': auto_renew,
+                    # Audit trail
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
                 }
                 mongo.db.subscriptions.insert_one(subscription_data)
+                
+                # 🆕 RECORD SUBSCRIPTION MARKETING EXPENSE (March 9, 2026)
+                # Record admin-granted subscription as marketing expense in business books
+                try:
+                    from ficore_mobile_backend.utils.business_bookkeeping import record_subscription_marketing_expense
+                    record_subscription_marketing_expense(
+                        mongo=mongo,
+                        user_id=ObjectId(user_id),
+                        subscription_id=subscription_id,
+                        amount=amount,
+                        plan_type=plan_id.upper(),
+                        granted_by=current_user.get('displayName', 'Admin'),
+                        grant_reason=reason
+                    )
+                except Exception as e:
+                    print(f'⚠️  Failed to record subscription marketing expense: {str(e)}')
+                    # Don't fail subscription grant if bookkeeping fails
 
             # Update user subscription fields to sync with subscription collection
             mongo.db.users.update_one(

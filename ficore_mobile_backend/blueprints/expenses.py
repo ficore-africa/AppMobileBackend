@@ -1,3 +1,4 @@
+from app import safe_float, safe_sum
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
@@ -139,6 +140,11 @@ def get_capital_expenditures():
             capex_list = []
             for expense in capex:
                 expense_data = expenses_bp.serialize_doc(expense.copy())
+                
+                # CRITICAL FIX: Convert Decimal128 to float for JSON serialization
+                if 'amount' in expense_data:
+                    expense_data['amount'] = safe_float(expense_data['amount'])
+                
                 if not expense_data.get('title'):
                     expense_data['title'] = expense_data.get('description', 'Capital Expenditure')
                 expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
@@ -167,6 +173,13 @@ def get_capital_expenditures():
             
         except Exception as e:
             print(f"Error in get_capital_expenditures: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve capital expenditures',
+                'errors': {'general': [str(e)]}
+            }), 500
             return jsonify({
                 'success': False,
                 'message': 'Failed to retrieve capital expenditures',
@@ -879,8 +892,8 @@ def get_expense_summary():
             
             filtered_expenses = [exp for exp in all_expenses if exp.get('date') and filter_start <= exp['date'] <= filter_end]
            
-            total_this_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month)
-            total_last_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month)
+            total_this_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date']) and exp['date'] >= start_of_month)
+            total_last_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date']) and start_of_last_month <= exp['date'] < start_of_month)
             
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
@@ -889,7 +902,7 @@ def get_expense_summary():
             category_totals = {}
             for expense in filtered_expenses:
                 category = expense.get('category', 'Uncategorized')
-                category_totals[category] = category_totals.get(category, 0) + expense['amount']
+                category_totals[category] = category_totals.get(category, 0) + safe_float(expense.get('amount', 0))
            
             recent_expenses = sorted(
                 [exp for exp in all_expenses if exp.get('date')],  # Filter out expenses without date
@@ -913,7 +926,7 @@ def get_expense_summary():
                 'categoryBreakdown': category_totals,
                 'recentExpenses': recent_expenses_data,
                 'totalExpenses': len(filtered_expenses),
-                'averageExpense': sum(exp['amount'] for exp in filtered_expenses) / len(filtered_expenses) if filtered_expenses else 0
+                'averageExpense': safe_sum([exp.get('amount', 0) for exp in filtered_expenses]) / len(filtered_expenses) if filtered_expenses else 0
             }
            
             return jsonify({

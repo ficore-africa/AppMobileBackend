@@ -110,13 +110,7 @@ def login():
             'exp': datetime.utcnow() + timedelta(days=30)
         }, auth_bp.config['SECRET_KEY'], algorithm='HS256')
         
-        # Update last login
-        auth_bp.mongo.db.users.update_one(
-            {'_id': user['_id']},
-            {'$set': {'lastLogin': datetime.utcnow()}}
-        )
-        
-        # Track login event
+        # Track login event (also updates lastLoginAt and loginCount)
         try:
             device_info = {
                 'user_agent': request.headers.get('User-Agent', 'Unknown'),
@@ -125,6 +119,11 @@ def login():
             auth_bp.tracker.track_login(user['_id'], device_info=device_info)
         except Exception as e:
             print(f"Analytics tracking failed: {e}")
+            # Fallback: Update lastLogin manually if tracker fails
+            auth_bp.mongo.db.users.update_one(
+                {'_id': user['_id']},
+                {'$set': {'lastLogin': datetime.utcnow()}}
+            )
         
         # Determine admin permissions based on role
         permissions = []
@@ -366,6 +365,21 @@ def signup():
             }
         }
         auth_bp.mongo.db.credit_transactions.insert_one(signup_transaction)
+        
+        # 🆕 RECORD FC MARKETING EXPENSE (March 9, 2026)
+        # Record signup bonus as marketing expense in business books
+        try:
+            from ficore_mobile_backend.utils.business_bookkeeping import record_fc_marketing_expense
+            record_fc_marketing_expense(
+                mongo=auth_bp.mongo,
+                user_id=result.inserted_id,
+                fc_amount=10.0,
+                operation='signup_bonus',
+                description='Welcome bonus - Thank you for joining Ficore!'
+            )
+        except Exception as e:
+            print(f'⚠️  Failed to record FC marketing expense: {str(e)}')
+            # Don't fail signup if bookkeeping fails
         
         # 🆕 AUTO-CREATE VAS WALLET (Feb 10, 2026)
         # Create a basic VAS wallet for new user - no KYC required initially

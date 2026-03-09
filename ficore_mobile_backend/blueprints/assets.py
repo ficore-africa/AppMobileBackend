@@ -2,6 +2,7 @@
 Asset Register Blueprint
 Handles fixed asset tracking for 0% tax qualification (≤₦250M threshold)
 """
+from app import safe_float, safe_sum
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId

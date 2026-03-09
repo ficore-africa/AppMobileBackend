@@ -1414,6 +1414,22 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             }
             
             mongo.db.credit_transactions.insert_one(transaction)
+            
+            # 🆕 RECORD FC MARKETING EXPENSE (March 9, 2026)
+            # Record tax education reward as marketing expense in business books
+            if operation == 'tax_education_progress':
+                try:
+                    from ficore_mobile_backend.utils.business_bookkeeping import record_fc_marketing_expense
+                    record_fc_marketing_expense(
+                        mongo=mongo,
+                        user_id=current_user['_id'],
+                        fc_amount=amount,
+                        operation=operation,
+                        description=description
+                    )
+                except Exception as e:
+                    print(f'⚠️  Failed to record FC marketing expense: {str(e)}')
+                    # Don't fail credit award if bookkeeping fails
 
             return jsonify({
                 'success': True,

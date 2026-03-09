@@ -210,6 +210,25 @@ def init_internal_kyc_blueprint(mongo, token_required, serialize_doc):
             if status != 'all':
                 query['status'] = status
             
+            # CRITICAL FIX: Check if collection exists first
+            # Collection is created automatically when first failed verification is recorded
+            # If it doesn't exist yet, return empty array instead of error
+            collection_exists = 'failed_kyc_verifications' in mongo.db.list_collection_names()
+            
+            if not collection_exists:
+                # Collection doesn't exist yet - return empty result
+                logger.info("failed_kyc_verifications collection doesn't exist yet - returning empty result")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'failedVerifications': [],
+                        'totalCount': 0,
+                        'limit': limit,
+                        'skip': skip
+                    },
+                    'message': 'No failed verifications yet (collection not created)'
+                }), 200
+            
             # Get failed verifications
             failed_verifications = list(mongo.db.failed_kyc_verifications.find(query)
                 .sort('failedAt', -1)

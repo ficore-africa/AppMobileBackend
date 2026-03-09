@@ -62,8 +62,29 @@ class AnalyticsTracker:
             return False
     
     def track_login(self, user_id: ObjectId, device_info: Optional[Dict[str, str]] = None) -> bool:
-        """Track user login event."""
-        return self.track_event(user_id, 'user_logged_in', device_info=device_info)
+        """
+        Track user login event.
+        
+        Also increments loginCount in users collection for backward compatibility.
+        """
+        try:
+            # Track analytics event
+            event_tracked = self.track_event(user_id, 'user_logged_in', device_info=device_info)
+            
+            # Increment loginCount in users collection (for backward compatibility and fallback)
+            self.db.users.update_one(
+                {'_id': user_id},
+                {
+                    '$inc': {'loginCount': 1},
+                    '$set': {'lastLoginAt': datetime.utcnow()}
+                }
+            )
+            
+            return event_tracked
+            
+        except Exception as e:
+            print(f"Error tracking login for user {user_id}: {str(e)}")
+            return False
     
     def track_registration(self, user_id: ObjectId, device_info: Optional[Dict[str, str]] = None) -> bool:
         """Track user registration event."""

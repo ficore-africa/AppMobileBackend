@@ -1,3 +1,4 @@
+from app import safe_float, safe_sum
 """
 Income Blueprint
 Handles income tracking with monthly entry limits and credit deductions
@@ -307,6 +308,11 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             elif not isinstance(category_value, str):
                 category_value = str(category_value)
             
+            # ✅ CAPITAL CONTRIBUTION HANDLING (Mar 9, 2026): Mirror Capital Expenditure pattern
+            # Capital Contribution is EQUITY, not income (like COGS is not regular expense)
+            # It updates user.capital field and is excluded from P&L calculations
+            is_capital_contribution = category_value in ['Capital Contribution', 'capital_contribution', 'Capital']
+            
             income_data = {
                 'userId': current_user['_id'],
                 'amount': raw_amount,  # Store exact amount, no calculations
@@ -324,6 +330,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
                 'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
                 'sourceType': entry_source,  # SOURCE TRACKING: 'manual', 'voice', or 'wallet_auto'
+                'excludeFromProfitLoss': is_capital_contribution,  # ✅ CRITICAL: Exclude capital from P&L (equity, not income)
+                'isCapitalContribution': is_capital_contribution,  # Additional flag for clarity
                 'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
@@ -339,6 +347,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             result = mongo.db.incomes.insert_one(income_data)
             income_id = str(result.inserted_id)
+            
+            # ✅ CAPITAL CONTRIBUTION: Update user.capital field (Mar 9, 2026)
+            # This mirrors how Capital Expenditure updates fixed assets
+            # Capital is EQUITY, not income - excluded from P&L calculations
+            if is_capital_contribution:
+                try:
+                    # Get current capital
+                    user = mongo.db.users.find_one({'_id': current_user['_id']})
+                    current_capital = user.get('capital', 0.0)
+                    new_capital = current_capital + raw_amount
+                    
+                    # Update user.capital field
+                    mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {'$set': {'capital': new_capital}}
+                    )
+                    
+                    print(f'✅ Capital Contribution: Updated user.capital from ₦{current_capital:,.2f} to ₦{new_capital:,.2f}')
+                except Exception as e:
+                    print(f'⚠️ Failed to update user.capital (non-critical): {e}')
             
             # Track income creation event
             try:
@@ -1844,8 +1872,4 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             }), 500
 
     return income_bp
-
-
-
-
 
