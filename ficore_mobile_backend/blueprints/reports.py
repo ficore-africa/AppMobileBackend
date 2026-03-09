@@ -1330,10 +1330,12 @@ def init_reports_blueprint(mongo, token_required):
             
             # Fetch income and expense data with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses
+            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
+                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital contributions
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},  # Exclude personal
                     {'entryType': {'$exists': False}},   # Include untagged (legacy)
@@ -1344,6 +1346,7 @@ def init_reports_blueprint(mongo, token_required):
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
+                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital expenditures
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},  # Exclude personal
                     {'entryType': {'$exists': False}},   # Include untagged (legacy)
@@ -1554,10 +1557,12 @@ def init_reports_blueprint(mongo, token_required):
             # Define generation function
             def generate_profit_loss_pdf():
                 # Build queries
+                # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
                 income_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
+                    'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital contributions
                     '$or': [
                         {'entryType': {'$ne': 'personal'}},
                         {'entryType': {'$exists': False}},
@@ -1568,6 +1573,7 @@ def init_reports_blueprint(mongo, token_required):
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
+                    'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital expenditures
                     '$or': [
                         {'entryType': {'$ne': 'personal'}},
                         {'entryType': {'$exists': False}},
@@ -2049,15 +2055,18 @@ def init_reports_blueprint(mongo, token_required):
             
             # Fetch income and expense data for tax calculation
             # CRITICAL: Apply tag filtering for tax compliance
+            # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',  # Only active entries
-                'isDeleted': False   # Exclude soft-deleted entries
+                'isDeleted': False,   # Exclude soft-deleted entries
+                'excludeFromProfitLoss': {'$ne': True}  # Exclude capital contributions
             }
             expense_query = {
                 'userId': current_user['_id'],
                 'status': 'active',  # Only active entries
-                'isDeleted': False   # Exclude soft-deleted entries
+                'isDeleted': False,   # Exclude soft-deleted entries
+                'excludeFromProfitLoss': {'$ne': True}  # Exclude capital expenditures
             }
             
             # Apply tag filtering based on user selection
@@ -2466,15 +2475,18 @@ def init_reports_blueprint(mongo, token_required):
             def generate_tax_summary_pdf():
                 # Build queries with tag filtering
                 # CRITICAL FIX (Feb 26, 2026): Use 'entryType' not 'tags'
+                # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
                 income_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
-                    'isDeleted': False
+                    'isDeleted': False,
+                    'excludeFromProfitLoss': {'$ne': True}
                 }
                 expense_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
-                    'isDeleted': False
+                    'isDeleted': False,
+                    'excludeFromProfitLoss': {'$ne': True}
                 }
                 
                 # Apply tag filtering - FIXED to use entryType field
@@ -3434,10 +3446,12 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses (Default Business Assumption)
+            # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
+                'excludeFromProfitLoss': {'$ne': True},
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},
                     {'entryType': {'$exists': False}},
@@ -3448,6 +3462,7 @@ def init_reports_blueprint(mongo, token_required):
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
+                'excludeFromProfitLoss': {'$ne': True},
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},
                     {'entryType': {'$exists': False}},
@@ -3760,8 +3775,9 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # Fetch income and expense data
-            income_query = {'userId': current_user['_id']}
-            expense_query = {'userId': current_user['_id']}
+            # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
+            income_query = {'userId': current_user['_id'], 'excludeFromProfitLoss': {'$ne': True}}
+            expense_query = {'userId': current_user['_id'], 'excludeFromProfitLoss': {'$ne': True}}
             
             if start_date or end_date:
                 if start_date:
@@ -7155,10 +7171,12 @@ def init_reports_blueprint(mongo, token_required):
             
             # Build queries with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses (Default Business Assumption)
+            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
+                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital contributions
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},
                     {'entryType': {'$exists': False}},
@@ -7169,6 +7187,7 @@ def init_reports_blueprint(mongo, token_required):
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
+                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital expenditures
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},
                     {'entryType': {'$exists': False}},
@@ -7612,8 +7631,9 @@ def init_reports_blueprint(mongo, token_required):
                     
                     # Build queries
                     print(f"🟢 SOA GENERATION: Building queries...")
-                    income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
-                    expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+                    # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
+                    income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
+                    expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
                     asset_query = {'userId': current_user['_id'], 'status': 'active'}
                     debtors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
                     creditors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
@@ -7625,8 +7645,8 @@ def init_reports_blueprint(mongo, token_required):
                         income_query['entryType'] = 'business'
                         expense_query['entryType'] = 'business'
                     elif tag_filter == 'personal':
-                        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
-                        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
+                        income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal', 'excludeFromProfitLoss': {'$ne': True}}
+                        expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal', 'excludeFromProfitLoss': {'$ne': True}}
                     
                     # Apply date filtering (only for P&L items)
                     if start_date or end_date:
@@ -7866,8 +7886,9 @@ def init_reports_blueprint(mongo, token_required):
             start_date, end_date = parse_date_range(request_data)
             
             # Build queries (same as PDF version)
-            income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
-            expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+            # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
+            income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
+            expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
             asset_query = {'userId': current_user['_id'], 'status': 'active'}
             debtors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
             creditors_query = {'userId': current_user['_id'], 'status': {'$ne': 'paid'}}
@@ -7878,8 +7899,8 @@ def init_reports_blueprint(mongo, token_required):
                 income_query['entryType'] = 'business'
                 expense_query['entryType'] = 'business'
             elif tag_filter == 'personal':
-                income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
-                expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal'}
+                income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal', 'excludeFromProfitLoss': {'$ne': True}}
+                expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'entryType': 'personal', 'excludeFromProfitLoss': {'$ne': True}}
             
             # Apply date filtering
             if start_date or end_date:
