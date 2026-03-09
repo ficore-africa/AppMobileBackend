@@ -13,6 +13,7 @@ import csv
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.pdf_generator import PDFGenerator
+from utils.decimal_helpers import safe_float, safe_sum
 from utils.parallel_query_helper import fetch_collections_parallel
 from utils.pdf_cache_helper import get_pdf_cache
 from utils.background_report_generator import get_background_generator, ReportJobStatus
@@ -288,32 +289,38 @@ def init_reports_blueprint(mongo, token_required):
                 adjustment_query['date'] = {'$lte': end_date}
             
             # Get total income (active entries only)
-            total_income = 0.0
+            income_amounts = []
             income_cursor = mongo.db.incomes.find(income_query)
             for income in income_cursor:
-                total_income += income.get('amount', 0.0)
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
             
             # Get total expenses (active entries only)
-            total_expenses = 0.0
+            expense_amounts = []
             expense_cursor = mongo.db.expenses.find(expense_query)
             for expense in expense_cursor:
-                total_expenses += expense.get('amount', 0.0)
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
             
             # Get total drawings, capital deposits, and asset purchases (active entries only)
-            total_drawings = 0.0
-            total_capital = 0.0
-            total_asset_purchases = 0.0
+            drawing_amounts = []
+            capital_amounts = []
+            asset_amounts = []
             adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
             for adjustment in adjustment_cursor:
                 adj_type = adjustment.get('type')
                 amount = adjustment.get('amount', 0.0)
                 
                 if adj_type == 'drawing':
-                    total_drawings += amount
+                    drawing_amounts.append(amount)
                 elif adj_type == 'capital':
-                    total_capital += amount
+                    capital_amounts.append(amount)
                 elif adj_type == 'asset_purchase':
-                    total_asset_purchases += amount
+                    asset_amounts.append(amount)
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital = safe_sum(capital_amounts)
+            total_asset_purchases = safe_sum(asset_amounts)
             
             # Calculate balance
             current_balance = (

@@ -17,6 +17,7 @@ from datetime import datetime
 from bson import ObjectId
 import sys
 import os
+from utils.decimal_helpers import safe_float, safe_sum
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -397,7 +398,7 @@ def init_cash_bank_blueprint(mongo, token_required):
                 print(f'✓ Drawing saved to both cash_adjustments and drawings collections')
                 
                 # Calculate total drawings from all active drawing adjustments
-                total_drawings = 0.0
+                drawing_amounts = []
                 all_drawings = mongo.db.cash_adjustments.find({
                     'userId': current_user['_id'],
                     'type': 'drawing',
@@ -405,7 +406,8 @@ def init_cash_bank_blueprint(mongo, token_required):
                     'isDeleted': False
                 })
                 for drawing in all_drawings:
-                    total_drawings += drawing.get('amount', 0.0)
+                    drawing_amounts.append(drawing.get('amount', 0.0))
+                total_drawings = safe_sum(drawing_amounts)
                 
                 # Update user.drawings field
                 mongo.db.users.update_one(
@@ -420,7 +422,7 @@ def init_cash_bank_blueprint(mongo, token_required):
                 print(f'✓ Capital contribution saved to both cash_adjustments and capital_contributions collections')
                 
                 # Calculate total capital from all active capital adjustments
-                total_capital = 0.0
+                capital_amounts = []
                 all_capital = mongo.db.cash_adjustments.find({
                     'userId': current_user['_id'],
                     'type': 'capital',
@@ -428,7 +430,8 @@ def init_cash_bank_blueprint(mongo, token_required):
                     'isDeleted': False
                 })
                 for capital in all_capital:
-                    total_capital += capital.get('amount', 0.0)
+                    capital_amounts.append(capital.get('amount', 0.0))
+                total_capital = safe_sum(capital_amounts)
                 
                 # Update user.capital field
                 mongo.db.users.update_one(
@@ -505,7 +508,7 @@ def init_cash_bank_blueprint(mongo, token_required):
                 print(f'✓ Drawing soft deleted from both cash_adjustments and drawings collections')
                 
                 # Recalculate total drawings from remaining active drawing adjustments
-                total_drawings = 0.0
+                drawing_amounts = []
                 all_drawings = mongo.db.cash_adjustments.find({
                     'userId': current_user['_id'],
                     'type': 'drawing',
@@ -513,7 +516,8 @@ def init_cash_bank_blueprint(mongo, token_required):
                     'isDeleted': False
                 })
                 for drawing in all_drawings:
-                    total_drawings += drawing.get('amount', 0.0)
+                    drawing_amounts.append(drawing.get('amount', 0.0))
+                total_drawings = safe_sum(drawing_amounts)
                 
                 # Update user.drawings field
                 mongo.db.users.update_one(
@@ -536,7 +540,7 @@ def init_cash_bank_blueprint(mongo, token_required):
                 print(f'✓ Capital contribution soft deleted from both cash_adjustments and capital_contributions collections')
                 
                 # Recalculate total capital from remaining active capital adjustments
-                total_capital = 0.0
+                capital_amounts = []
                 all_capital = mongo.db.cash_adjustments.find({
                     'userId': current_user['_id'],
                     'type': 'capital',
@@ -544,7 +548,8 @@ def init_cash_bank_blueprint(mongo, token_required):
                     'isDeleted': False
                 })
                 for capital in all_capital:
-                    total_capital += capital.get('amount', 0.0)
+                    capital_amounts.append(capital.get('amount', 0.0))
+                total_capital = safe_sum(capital_amounts)
                 
                 # Update user.capital field
                 mongo.db.users.update_one(
@@ -579,21 +584,23 @@ def init_cash_bank_blueprint(mongo, token_required):
             
             # Get opening balance
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            opening_balance = user.get('openingCashBalance', 0.0)
+            opening_balance = safe_float(user.get('openingCashBalance', 0.0))
             
             # Get total income (active entries only - handles missing status/isDeleted fields)
             income_query = get_active_transactions_query(current_user['_id'])
-            total_income = 0.0
+            income_amounts = []
             income_cursor = mongo.db.incomes.find(income_query)
             for income in income_cursor:
-                total_income += income.get('amount', 0.0)
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
             
             # Get total expenses (active entries only - handles missing status/isDeleted fields)
             expense_query = get_active_transactions_query(current_user['_id'])
-            total_expenses = 0.0
+            expense_amounts = []
             expense_cursor = mongo.db.expenses.find(expense_query)
             for expense in expense_cursor:
-                total_expenses += expense.get('amount', 0.0)
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
             
             # Get total drawings and capital deposits (active entries only)
             # Use same pattern as get_active_transactions_query for consistency
@@ -606,14 +613,17 @@ def init_cash_bank_blueprint(mongo, token_required):
                 ],
                 'isDeleted': {'$ne': True}
             }
-            total_drawings = 0.0
-            total_capital = 0.0
+            drawing_amounts = []
+            capital_amounts = []
             adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
             for adjustment in adjustment_cursor:
                 if adjustment.get('type') == 'drawing':
-                    total_drawings += adjustment.get('amount', 0.0)
+                    drawing_amounts.append(adjustment.get('amount', 0.0))
                 elif adjustment.get('type') == 'capital':
-                    total_capital += adjustment.get('amount', 0.0)
+                    capital_amounts.append(adjustment.get('amount', 0.0))
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital = safe_sum(capital_amounts)
             
             # Calculate current balance
             current_balance = opening_balance + total_income - total_expenses - total_drawings + total_capital
@@ -673,7 +683,7 @@ def init_cash_bank_blueprint(mongo, token_required):
                 }), 404
             
             # Get opening balance
-            opening_balance = user.get('openingCashBalance', 0.0)
+            opening_balance = safe_float(user.get('openingCashBalance', 0.0))
             
             # Calculate totals (same logic as /balance endpoint)
             # Get total income (active entries only)
@@ -682,10 +692,11 @@ def init_cash_bank_blueprint(mongo, token_required):
                 'status': 'active',
                 'isDeleted': False
             }
-            total_income = 0.0
+            income_amounts = []
             income_cursor = mongo.db.incomes.find(income_query)
             for income in income_cursor:
-                total_income += income.get('amount', 0.0)
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
             
             # Get total expenses (active entries only)
             expense_query = {
@@ -693,10 +704,11 @@ def init_cash_bank_blueprint(mongo, token_required):
                 'status': 'active',
                 'isDeleted': False
             }
-            total_expenses = 0.0
+            expense_amounts = []
             expense_cursor = mongo.db.expenses.find(expense_query)
             for expense in expense_cursor:
-                total_expenses += expense.get('amount', 0.0)
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
             
             # Get total drawings and capital deposits (active entries only)
             adjustment_query = {
@@ -707,14 +719,17 @@ def init_cash_bank_blueprint(mongo, token_required):
                 ],
                 'isDeleted': {'$ne': True}
             }
-            total_drawings = 0.0
-            total_capital = 0.0
+            drawing_amounts = []
+            capital_amounts = []
             adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
             for adjustment in adjustment_cursor:
                 if adjustment.get('type') == 'drawing':
-                    total_drawings += adjustment.get('amount', 0.0)
+                    drawing_amounts.append(adjustment.get('amount', 0.0))
                 elif adjustment.get('type') == 'capital':
-                    total_capital += adjustment.get('amount', 0.0)
+                    capital_amounts.append(adjustment.get('amount', 0.0))
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital = safe_sum(capital_amounts)
             
             # Calculate current balance
             current_balance = opening_balance + total_income - total_expenses - total_drawings + total_capital
