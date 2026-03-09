@@ -1626,6 +1626,50 @@ def calculate_tax_estimate():
                     'errors': {'general': ['Amounts must be non-negative']}
                 }), 400
             
+            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions from taxable income
+            # Capital Contributions are owner equity injections (like putting your own money into the business)
+            # They are NOT taxable income - they should be excluded from P&L and tax calculations
+            # Query for capital contributions to subtract from total income
+            capital_contributions_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'isCapitalContribution': True},
+                    {'excludeFromProfitLoss': True, 'category': {'$in': ['Capital Contribution', 'capital_contribution', 'Capital']}}
+                ]
+            }
+            capital_contributions = list(mongo.db.incomes.find(capital_contributions_query))
+            total_capital_contributions = sum([safe_float(cc.get('amount', 0)) for cc in capital_contributions])
+            
+            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Expenditures from tax-deductible expenses
+            # Capital Expenditures are asset purchases (equipment, vehicles, buildings)
+            # They are capitalized and depreciated over time, NOT expensed immediately
+            # Query for capital expenditures to subtract from total expenses
+            capital_expenditures_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'isCapitalExpenditure': True},
+                    {'excludeFromProfitLoss': True, 'category': 'Capital Expenditure'}
+                ]
+            }
+            capital_expenditures = list(mongo.db.expenses.find(capital_expenditures_query))
+            total_capital_expenditures = sum([safe_float(ce.get('amount', 0)) for ce in capital_expenditures])
+            
+            # Adjust totals to exclude capital contributions and capital expenditures
+            taxable_income = total_income - total_capital_contributions
+            tax_deductible_expenses = total_expenses - total_capital_expenditures
+            
+            print(f'💰 Tax Calculation for user {current_user["_id"]}:')
+            print(f'   Total Income (raw): ₦{total_income:,.2f}')
+            print(f'   Less: Capital Contributions: ₦{total_capital_contributions:,.2f}')
+            print(f'   Taxable Income: ₦{taxable_income:,.2f}')
+            print(f'   Total Expenses (raw): ₦{total_expenses:,.2f}')
+            print(f'   Less: Capital Expenditures: ₦{total_capital_expenditures:,.2f}')
+            print(f'   Tax-Deductible Expenses: ₦{tax_deductible_expenses:,.2f}')
+            
             # Get user's tax profile
             tax_profile = current_user.get('taxProfile')
             if not tax_profile:
@@ -1640,39 +1684,41 @@ def calculate_tax_estimate():
             # Calculate tax based on business structure
             if business_structure == 'personal_income':
                 # Personal Income Tax (PIT) - Progressive rates
-                net_income = total_income - total_expenses
+                net_income = taxable_income - tax_deductible_expenses
                 
                 # Calculate rent relief (20% of rent, max ₦500,000)
                 rent_relief = min(rent_paid * 0.20, 500000)
                 
                 # Taxable income after rent relief
-                taxable_income = max(0, net_income - rent_relief)
+                final_taxable_income = max(0, net_income - rent_relief)
                 
                 # Calculate tax using progressive bands
-                estimated_tax, breakdown = _calculate_pit_tax(taxable_income)
+                estimated_tax, breakdown = _calculate_pit_tax(final_taxable_income)
                 
-                effective_rate = (estimated_tax / total_income * 100) if total_income > 0 else 0
+                effective_rate = (estimated_tax / taxable_income * 100) if taxable_income > 0 else 0
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'totalIncome': total_income,
-                        'totalExpenses': total_expenses,
+                        'totalIncome': taxable_income,  # Adjusted for capital contributions
+                        'totalExpenses': tax_deductible_expenses,  # Adjusted for capital expenditures
                         'netIncome': net_income,
                         'rentRelief': rent_relief,
-                        'taxableIncome': taxable_income,
+                        'taxableIncome': final_taxable_income,
                         'estimatedTax': estimated_tax,
                         'effectiveRate': round(effective_rate, 2),
                         'breakdown': breakdown,
                         'taxAuthority': 'SIRS',
-                        'filingDeadline': 'March 31st'
+                        'filingDeadline': 'March 31st',
+                        'capitalContributionsExcluded': total_capital_contributions,  # Show what was excluded
+                        'capitalExpendituresExcluded': total_capital_expenditures  # Show what was excluded
                     },
                     'message': 'Tax estimate calculated successfully'
                 })
                 
             elif business_structure == 'llc':
                 # Corporate Income Tax (CIT)
-                net_income = total_income - total_expenses
+                net_income = taxable_income - tax_deductible_expenses
                 annual_turnover = tax_profile.get('annualTurnover', 0)
                 
                 # Check exemption eligibility
@@ -1687,13 +1733,13 @@ def calculate_tax_estimate():
                     tax_rate = 30
                     note = 'Standard CIT rate applies'
                 
-                effective_rate = (estimated_tax / total_income * 100) if total_income > 0 else 0
+                effective_rate = (estimated_tax / taxable_income * 100) if taxable_income > 0 else 0
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'totalIncome': total_income,
-                        'totalExpenses': total_expenses,
+                        'totalIncome': taxable_income,  # Adjusted for capital contributions
+                        'totalExpenses': tax_deductible_expenses,  # Adjusted for capital expenditures
                         'netIncome': net_income,
                         'taxableIncome': net_income,
                         'estimatedTax': estimated_tax,
@@ -1702,7 +1748,9 @@ def calculate_tax_estimate():
                         'exemptionEligible': exemption_eligible,
                         'note': note,
                         'taxAuthority': 'NRS',
-                        'filingDeadline': 'June 30th'
+                        'filingDeadline': 'June 30th',
+                        'capitalContributionsExcluded': total_capital_contributions,  # Show what was excluded
+                        'capitalExpendituresExcluded': total_capital_expenditures  # Show what was excluded
                     },
                     'message': 'Tax estimate calculated successfully'
                 })
