@@ -892,8 +892,8 @@ def get_expense_summary():
             
             filtered_expenses = [exp for exp in all_expenses if exp.get('date') and filter_start <= exp['date'] <= filter_end]
            
-            total_this_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date']) and exp['date'] >= start_of_month)
-            total_last_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date']) and start_of_last_month <= exp['date'] < start_of_month)
+            total_this_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month])
+            total_last_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month])
             
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
