@@ -2810,6 +2810,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 {'_id': ObjectId(user_id)},
                 {'$set': {
                     'isSubscribed': True,
+                    'isPremium': True,  # ✅ FIX: Add isPremium
+                    'hasActiveSubscription': True,  # ✅ FIX: Add hasActiveSubscription
                     'subscriptionStatus': 'active',  # CRITICAL FIX: Add this field for VAS webhook compatibility
                     'subscriptionPlan': plan_id,  # CRITICAL FIX: Add this field for consistency
                     'subscriptionType': plan_id,

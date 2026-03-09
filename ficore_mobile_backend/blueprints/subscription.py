@@ -342,6 +342,9 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     {
                         '$set': {
                             'isSubscribed': True,
+                            'isPremium': True,  # ✅ FIX: Add isPremium
+                            'hasActiveSubscription': True,  # ✅ FIX: Add hasActiveSubscription
+                            'subscriptionStatus': 'active',  # ✅ FIX: Add subscriptionStatus
                             'subscriptionType': plan_type,
                             'subscriptionStartDate': start_date,
                             'subscriptionEndDate': end_date,
@@ -438,6 +441,8 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 {
                     '$set': {
                         'isSubscribed': True,
+                        'isPremium': True,  # ✅ FIX: Add isPremium
+                        'hasActiveSubscription': True,  # ✅ FIX: Add hasActiveSubscription
                         'subscriptionType': plan_type,
                         'subscriptionStatus': 'active',  # ✅ FIX: Add subscriptionStatus
                         'subscriptionPlan': plan_type,  # ✅ FIX: Add subscriptionPlan
