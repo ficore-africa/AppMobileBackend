@@ -414,9 +414,9 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
             income_counts = list(self.db.incomes.aggregate(income_pipeline))
             expense_counts = list(self.db.expenses.aggregate(expense_pipeline))
             
-            # Format results
-            income_by_category = {item['_id']: {'count': item['count'], 'amount': item['totalAmount']} for item in income_counts}
-            expense_by_category = {item['_id']: {'count': item['count'], 'amount': item['totalAmount']} for item in expense_counts}
+            # Format results - CRITICAL FIX: Convert Decimal128 to float for JSON serialization
+            income_by_category = {item['_id']: {'count': item['count'], 'amount': safe_float(item['totalAmount'])} for item in income_counts}
+            expense_by_category = {item['_id']: {'count': item['count'], 'amount': safe_float(item['totalAmount'])} for item in expense_counts}
             
             # Calculate totals - CRITICAL FIX: Use safe_sum to handle Decimal128
             total_income_count = sum(item['count'] for item in income_counts)
