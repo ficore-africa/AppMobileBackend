@@ -159,6 +159,120 @@ def init_automation_cron_blueprint(mongo):
                 'error': str(e)
             }), 500
     
+    @automation_cron_bp.route('/sync-provider-balances', methods=['POST'])
+    def run_sync_provider_balances():
+        """
+        Run automated provider balance sync (Peyflex + Monnify)
+        Triggered by external cron service every hour
+        
+        This implements the triple-check protocol:
+        1. Fetch balance from provider API
+        2. Calculate expected balance from transactions
+        3. Detect discrepancies
+        4. Update Provider Health Dashboard
+        5. Send alerts if needed
+        
+        Example curl:
+        curl -X POST https://mobilebackend.ficoreafrica.com/automation/sync-provider-balances \
+             -H "X-Cron-Secret: your-secret-key"
+        """
+        try:
+            # Verify authentication
+            if not verify_cron_secret():
+                return jsonify({
+                    'success': False,
+                    'message': 'Unauthorized - Invalid cron secret key'
+                }), 401
+            
+            # Import and run provider balance sync
+            from services.provider_balance_sync import ProviderBalanceSyncService
+            
+            sync_service = ProviderBalanceSyncService(mongo)
+            result = sync_service.sync_all_providers()
+            
+            if result['success']:
+                return jsonify({
+                    'success': True,
+                    'message': 'Provider balance sync completed successfully',
+                    'data': result,
+                    'executed_at': datetime.utcnow().isoformat() + 'Z'
+                }), 200
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Provider balance sync completed with errors',
+                    'data': result,
+                    'executed_at': datetime.utcnow().isoformat() + 'Z'
+                }), 500
+            
+        except Exception as e:
+            print(f"Error in provider balance sync cron: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to sync provider balances',
+                'error': str(e)
+            }), 500
+    
+    @automation_cron_bp.route('/sync-provider-balance/<provider>', methods=['POST'])
+    def run_sync_single_provider(provider):
+        """
+        Run automated balance sync for a single provider
+        Triggered manually or by external cron service
+        
+        Supported providers: peyflex, monnify
+        
+        Example curl:
+        curl -X POST https://mobilebackend.ficoreafrica.com/automation/sync-provider-balance/peyflex \
+             -H "X-Cron-Secret: your-secret-key"
+        """
+        try:
+            # Verify authentication
+            if not verify_cron_secret():
+                return jsonify({
+                    'success': False,
+                    'message': 'Unauthorized - Invalid cron secret key'
+                }), 401
+            
+            provider_lower = provider.lower()
+            if provider_lower not in ['peyflex', 'monnify']:
+                return jsonify({
+                    'success': False,
+                    'message': f'Unsupported provider: {provider}. Supported: peyflex, monnify'
+                }), 400
+            
+            # Import and run provider balance sync
+            from services.provider_balance_sync import ProviderBalanceSyncService
+            
+            sync_service = ProviderBalanceSyncService(mongo)
+            result = sync_service.sync_and_update_provider_balance(provider_lower)
+            
+            if result['success']:
+                return jsonify({
+                    'success': True,
+                    'message': f'{provider.capitalize()} balance synced successfully',
+                    'data': result,
+                    'executed_at': datetime.utcnow().isoformat() + 'Z'
+                }), 200
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'Failed to sync {provider.capitalize()} balance',
+                    'data': result,
+                    'executed_at': datetime.utcnow().isoformat() + 'Z'
+                }), 500
+            
+        except Exception as e:
+            print(f"Error in {provider} balance sync cron: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': f'Failed to sync {provider} balance',
+                'error': str(e)
+            }), 500
+    
     @automation_cron_bp.route('/health', methods=['GET'])
     def health_check():
         """Health check endpoint (no auth required)"""
