@@ -637,8 +637,15 @@
                                     peyflexBalance < 10000 ? '#f39c12' : '#27ae60';
                 
                 const peyflexLastUpdated = peyflexBalanceData.lastUpdated ? 
-                    `${peyflexBalanceData.hoursSinceUpdate}h ago by ${peyflexBalanceData.updatedBy}` : 
+                    `${peyflexBalanceData.hoursSinceUpdate}h ago` : 
                     'Never updated';
+                
+                const peyflexUpdatedBy = peyflexBalanceData.updatedBy || 'unknown';
+                const peyflexIsAutomated = peyflexUpdatedBy === 'automated_sync';
+                const peyflexUpdateIcon = peyflexIsAutomated ? 'fa-robot' : 'fa-user';
+                const peyflexUpdateBadge = peyflexIsAutomated ? 
+                    '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 5px;"><i class="fas fa-robot"></i> AUTO</span>' : 
+                    '<span style="background: #3498db; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 5px;"><i class="fas fa-user"></i> MANUAL</span>';
 
                 // Monnify balance card
                 const monnifyBalance = monnifyBalanceData.balance || 0;
@@ -646,8 +653,15 @@
                                     monnifyBalance < 10000 ? '#f39c12' : '#27ae60';
                 
                 const monnifyLastUpdated = monnifyBalanceData.lastUpdated ? 
-                    `${monnifyBalanceData.hoursSinceUpdate}h ago by ${monnifyBalanceData.updatedBy}` : 
+                    `${monnifyBalanceData.hoursSinceUpdate}h ago` : 
                     'Never updated';
+                
+                const monnifyUpdatedBy = monnifyBalanceData.updatedBy || 'unknown';
+                const monnifyIsAutomated = monnifyUpdatedBy === 'automated_sync';
+                const monnifyUpdateIcon = monnifyIsAutomated ? 'fa-robot' : 'fa-user';
+                const monnifyUpdateBadge = monnifyIsAutomated ? 
+                    '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 5px;"><i class="fas fa-robot"></i> AUTO</span>' : 
+                    '<span style="background: #3498db; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 5px;"><i class="fas fa-user"></i> MANUAL</span>';
 
                 // Failed transactions card
                 const failedCount = failuresData.summary?.totalFailed || 0;
@@ -671,10 +685,12 @@
                         <div class="number" style="color: ${peyflexColor}">
                             ₦${peyflexBalance.toLocaleString('en-NG', {minimumFractionDigits: 2})}
                         </div>
-                        <div class="label">Peyflex Balance</div>
+                        <div class="label">Peyflex Balance ${peyflexUpdateBadge}</div>
                         <div class="meta">
                             <i class="fas fa-clock"></i> ${peyflexLastUpdated}
-                            ${peyflexBalanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : ''}
+                            ${peyflexBalanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : '<br><span style="color: #27ae60;">✅ Fresh</span>'}
+                            ${peyflexBalanceData.expectedBalance ? `<br><span style="color: #666; font-size: 0.8rem;">Expected: ₦${peyflexBalanceData.expectedBalance.toLocaleString('en-NG', {minimumFractionDigits: 2})}</span>` : ''}
+                            ${peyflexBalanceData.discrepancy && peyflexBalanceData.discrepancy.hasDiscrepancy ? `<br><span style="color: #f39c12; font-size: 0.8rem;">⚠️ Discrepancy: ₦${peyflexBalanceData.discrepancy.difference.toLocaleString('en-NG', {minimumFractionDigits: 2})}</span>` : ''}
                         </div>
                     </div>
 
@@ -683,10 +699,12 @@
                         <div class="number" style="color: ${monnifyColor}">
                             ₦${monnifyBalance.toLocaleString('en-NG', {minimumFractionDigits: 2})}
                         </div>
-                        <div class="label">Monnify Balance</div>
+                        <div class="label">Monnify Balance ${monnifyUpdateBadge}</div>
                         <div class="meta">
                             <i class="fas fa-clock"></i> ${monnifyLastUpdated}
-                            ${monnifyBalanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : ''}
+                            ${monnifyBalanceData.needsUpdate ? '<br><span style="color: #e74c3c;">⚠️ Needs update</span>' : '<br><span style="color: #27ae60;">✅ Fresh</span>'}
+                            ${monnifyBalanceData.expectedBalance ? `<br><span style="color: #666; font-size: 0.8rem;">Expected: ₦${monnifyBalanceData.expectedBalance.toLocaleString('en-NG', {minimumFractionDigits: 2})}</span>` : ''}
+                            ${monnifyBalanceData.discrepancy && monnifyBalanceData.discrepancy.hasDiscrepancy ? `<br><span style="color: #f39c12; font-size: 0.8rem;">⚠️ Discrepancy: ₦${monnifyBalanceData.discrepancy.difference.toLocaleString('en-NG', {minimumFractionDigits: 2})}</span>` : ''}
                         </div>
                     </div>
 
@@ -973,6 +991,12 @@
                         hour: '2-digit',
                         minute: '2-digit'
                     });
+                    
+                    // Determine if automated or manual
+                    const isAutomated = entry.updatedBy === 'automated_sync';
+                    const updateBadge = isAutomated ? 
+                        '<span style="background: #27ae60; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;"><i class="fas fa-robot"></i> AUTO</span>' : 
+                        '<span style="background: #3498db; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;"><i class="fas fa-user"></i> MANUAL</span>';
 
                     html += `
                         <tr style="background: ${bgColor}; border-bottom: 1px solid #E5E7EB;">
@@ -987,7 +1011,10 @@
                             <td style="padding: 15px; text-align: right; font-family: monospace; color: ${changeColor}; font-weight: 600;">
                                 <i class="fas ${changeIcon}"></i> ₦${Math.abs(entry.change).toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                             </td>
-                            <td style="padding: 15px; font-size: 0.9rem;">${entry.updatedBy}</td>
+                            <td style="padding: 15px; font-size: 0.9rem;">
+                                ${updateBadge}
+                                <div style="font-size: 0.75rem; color: #6B7280; margin-top: 4px;">${entry.updatedBy}</div>
+                            </td>
                             <td style="padding: 15px; font-size: 0.9rem; color: #6B7280;">${entry.notes || '-'}</td>
                         </tr>
                     `;
