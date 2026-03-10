@@ -57,6 +57,7 @@ def record_fc_marketing_expense(
             'streak_milestone': ('Marketing Ads and Promotion', 'marketing_expense_streak'),
             'engagement_reward': ('Marketing Ads and Promotion', 'marketing_expense_engagement'),
             'admin_award': ('Marketing Ads and Promotion', 'marketing_expense_admin'),
+            'referral_bonus': ('Marketing Ads and Promotion', 'marketing_expense_referral'),  # NEW: Referral FC bonuses
             'marketing_expense_total': ('Marketing Ads and Promotion', 'marketing_expense_total')
         }
         category, source_type = category_map.get(operation, ('Marketing Ads and Promotion', 'marketing_expense_other'))
@@ -241,6 +242,77 @@ def record_subscription_marketing_expense(
         
     except Exception as e:
         print(f'❌ Error recording subscription marketing expense: {str(e)}')
+        raise
+
+
+def record_fee_refund_marketing_expense(
+    mongo,
+    user_id: ObjectId,
+    fee_amount: float,
+    refund_reason: str = "Referral deposit fee waiver"
+) -> Dict[str, ObjectId]:
+    """
+    Record fee refund as marketing expense in business books
+    
+    This is for direct cash refunds (like deposit fee waivers) that are marketing costs.
+    Unlike FC bonuses, this is actual cash given back to users.
+    
+    Implements single-entry expense recording:
+    - Dr. Marketing Expense (increases expense on P&L)
+    
+    Args:
+        mongo: MongoDB connection
+        user_id: User who received the refund
+        fee_amount: Amount refunded (in Naira)
+        refund_reason: Reason for refund
+        
+    Returns:
+        Dict with expense_id
+    """
+    try:
+        from bson import ObjectId
+        from datetime import datetime
+        
+        # Get business user ID
+        BUSINESS_USER_ID = ObjectId('65e5c2a5e874e2b5a5c2a5e8')  # ficoreafrica@gmail.com
+        
+        # Get user info for description
+        user = mongo.db.users.find_one({'_id': user_id})
+        user_email = user.get('email', 'Unknown') if user else 'Unknown'
+        
+        # Record expense - Direct marketing cost (cash refund)
+        expense_entry = {
+            '_id': ObjectId(),
+            'userId': BUSINESS_USER_ID,
+            'amount': safe_float(fee_amount),
+            'category': 'Marketing Ads and Promotion',
+            'description': f'{refund_reason} for {user_email} (₦{safe_float(fee_amount):,.2f})',
+            'date': datetime.utcnow(),
+            'sourceType': 'marketing_expense_fee_refund',
+            'status': 'active',
+            'isDeleted': False,
+            'createdAt': datetime.utcnow(),
+            'updatedAt': datetime.utcnow(),
+            'metadata': {
+                'refundedUserId': str(user_id),
+                'refundedUserEmail': user_email,
+                'refundReason': refund_reason,
+                'refundType': 'deposit_fee_waiver',
+                'isMarketingCost': True
+            }
+        }
+        
+        mongo.db.expenses.insert_one(expense_entry)
+        
+        print(f'✅ Recorded fee refund marketing expense: ₦{safe_float(fee_amount):,.2f} for {user_email}')
+        print(f'   Dr. Marketing Expense: ₦{safe_float(fee_amount):,.2f} ({refund_reason})')
+        
+        return {
+            'expense_id': expense_entry['_id']
+        }
+        
+    except Exception as e:
+        print(f'❌ Error recording fee refund marketing expense: {str(e)}')
         raise
 
 
