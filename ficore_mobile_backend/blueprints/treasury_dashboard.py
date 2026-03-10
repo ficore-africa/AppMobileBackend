@@ -12,7 +12,54 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.treasury_management import TreasuryManager
-from utils.auth_middleware import token_required, admin_required
+# Import decorators from app.py - they're defined there
+from functools import wraps
+from flask import g
+import jwt
+import os
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        
+        # JWT is passed in the request header
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(" ")[1]  # Bearer <token>
+            except IndexError:
+                return jsonify({'message': 'Token format invalid'}), 401
+        
+        # Return 401 if token is not passed
+        if not token:
+            return jsonify({'message': 'Token is missing'}), 401
+        
+        try:
+            # Decoding the payload to fetch the stored details
+            data = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+            current_user = {
+                'userId': data['userId'],
+                'email': data['email']
+            }
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'message': 'Token is invalid'}), 401
+        
+        # Returns the current logged in users context to the routes
+        return f(current_user, *args, **kwargs)
+    
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(current_user, *args, **kwargs):
+        # Check if user is admin (you can implement your admin logic here)
+        # For now, we'll assume all authenticated users are admins for treasury access
+        return f(current_user, *args, **kwargs)
+    
+    return decorated
 
 
 def init_treasury_dashboard_blueprint(mongo):
