@@ -185,7 +185,7 @@ class ProviderBalanceSyncService:
             cutoff_time = datetime.utcnow() - timedelta(hours=hours)
             
             # Get previous balance snapshot
-            previous_balance_entry = self.mongo.provider_balances.find_one(
+            previous_balance_entry = self.mongo.db.provider_balances.find_one(
                 {'provider': provider_lower},
                 sort=[('updatedAt', -1)]
             )
@@ -210,7 +210,7 @@ class ProviderBalanceSyncService:
                 }
             ]
             
-            debits_result = list(self.mongo.vas_transactions.aggregate(debits_pipeline))
+            debits_result = list(self.mongo.db.vas_transactions.aggregate(debits_pipeline))
             total_debits = debits_result[0]['totalDebits'] if debits_result else 0.0
             debit_count = debits_result[0]['count'] if debits_result else 0
             
@@ -330,7 +330,7 @@ class ProviderBalanceSyncService:
                     'error': api_result.get('error'),
                     'timestamp': datetime.utcnow()
                 }
-                self.mongo.provider_sync_logs.insert_one(error_log)
+                self.mongo.db.provider_sync_logs.insert_one(error_log)
                 
                 return {
                     'success': False,
@@ -349,11 +349,11 @@ class ProviderBalanceSyncService:
             discrepancy = self.detect_discrepancy(provider_lower, api_balance, expected_balance)
             
             # Step 4: Update database
-            previous_entry = self.mongo.provider_balances.find_one({'provider': provider_lower})
+            previous_entry = self.mongo.db.provider_balances.find_one({'provider': provider_lower})
             previous_balance = float(previous_entry.get('balance', 0)) if previous_entry else 0.0
             
             # Update provider_balances collection
-            update_result = self.mongo.provider_balances.update_one(
+            update_result = self.mongo.db.provider_balances.update_one(
                 {'provider': provider_lower},
                 {
                     '$set': {
@@ -388,7 +388,7 @@ class ProviderBalanceSyncService:
                 'expectedBalance': expected_balance,
                 'discrepancy': discrepancy
             }
-            self.mongo.provider_balance_history.insert_one(history_entry)
+            self.mongo.db.provider_balance_history.insert_one(history_entry)
             
             # Log sync success
             sync_log = {
@@ -401,7 +401,7 @@ class ProviderBalanceSyncService:
                 'discrepancy': discrepancy,
                 'timestamp': datetime.utcnow()
             }
-            self.mongo.provider_sync_logs.insert_one(sync_log)
+            self.mongo.db.provider_sync_logs.insert_one(sync_log)
             
             print(f'✅ {provider.capitalize()} balance updated: ₦{api_balance:,.2f}')
             
@@ -453,7 +453,7 @@ class ProviderBalanceSyncService:
             from utils.email_service import get_email_service
             
             # Get recent failed transactions
-            failed_count = self.mongo.vas_transactions.count_documents({
+            failed_count = self.mongo.db.vas_transactions.count_documents({
                 'provider': provider,
                 'status': 'FAILED',
                 'errorMessage': {'$regex': 'Insufficient wallet balance', '$options': 'i'},
