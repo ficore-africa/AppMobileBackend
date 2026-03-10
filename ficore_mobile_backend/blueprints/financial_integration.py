@@ -297,3 +297,6 @@ def init_financial_integration_blueprint(mongo, token_required):
             }), 500
 
     return financial_integration_bp
+
+# Alias for backward compatibility (in case deployment expects this name)
+register_financial_integration_blueprint = init_financial_integration_blueprint
