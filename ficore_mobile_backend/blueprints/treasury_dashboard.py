@@ -11,8 +11,8 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ficore_mobile_backend.utils.treasury_management import TreasuryManager
-from ficore_mobile_backend.utils.auth_middleware import token_required, admin_required
+from utils.treasury_management import TreasuryManager
+from utils.auth_middleware import token_required, admin_required
 
 
 def init_treasury_dashboard_blueprint(mongo):
