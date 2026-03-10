@@ -1969,52 +1969,111 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 print(f"🔍 Context: {cleanup_context} (recent cleanup: {'Yes' if recent_cleanup_check else 'No'})")
                 
                 # ✅ AUTO-FIX: Correct the balance mismatch automatically
+                # BUT FIRST: Check if this is a test account or early beta user where cleanup was intentional
                 try:
-                    print(f"🔧 AUTO-FIXING: Updating stored balance from {current_balance} FC to {computed_balance} FC")
+                    from config.test_accounts import is_test_account, get_test_account_user_ids
                     
-                    # Update user's balance to match computed balance
-                    mongo.db.users.update_one(
-                        {'_id': current_user['_id']},
-                        {
-                            '$set': {
-                                'ficoreCreditBalance': computed_balance,
-                                'balanceLastCorrected': datetime.utcnow()
+                    # Get user email and check if test account
+                    user_email = user.get('email', '')
+                    is_test_user = is_test_account(user_email) or current_user['_id'] in get_test_account_user_ids()
+                    
+                    # Check if this user had early signup bonuses (1000 FCs) that were cleaned up
+                    early_signup_bonus = mongo.db.credit_transactions.find_one({
+                        'userId': current_user['_id'],
+                        'type': 'credit',
+                        'amount': 1000,
+                        'description': {'$regex': 'signup.*bonus', '$options': 'i'}
+                    })
+                    
+                    is_early_beta_user = early_signup_bonus is not None
+                    
+                    print(f"🔍 User Analysis:")
+                    print(f"   - Email: {user_email}")
+                    print(f"   - Is test account: {is_test_user}")
+                    print(f"   - Had 1K signup bonus: {is_early_beta_user}")
+                    
+                    # If this is a test account or early beta user, DO NOT auto-fix
+                    if is_test_user or is_early_beta_user:
+                        print(f"🚫 SKIPPING AUTO-FIX: User is test account or early beta user - cleanup was intentional")
+                        print(f"   - Test account: {is_test_user}")
+                        print(f"   - Early beta user (1K signup): {is_early_beta_user}")
+                        print(f"   - Keeping stored balance at {current_balance} FC (computed: {computed_balance} FC)")
+                        
+                        # Create a log entry but don't fix the balance
+                        log_transaction = {
+                            '_id': ObjectId(),
+                            'userId': current_user['_id'],
+                            'type': 'log',
+                            'amount': 0,
+                            'description': f'Balance mismatch detected but NOT fixed - cleanup was intentional (test account: {is_test_user}, early beta: {is_early_beta_user})',
+                            'status': 'logged',
+                            'operation': 'balance_mismatch_ignored',
+                            'balanceBefore': current_balance,
+                            'balanceAfter': current_balance,
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'correctionType': 'intentional_cleanup_ignored',
+                                'storedBalance': current_balance,
+                                'computedBalance': computed_balance,
+                                'difference': balance_difference,
+                                'isTestAccount': is_test_user,
+                                'isEarlyBetaUser': is_early_beta_user,
+                                'userEmail': user_email,
+                                'reason': 'Cleanup was intentional - balance should remain at zero'
                             }
                         }
-                    )
-                    
-                    # Create audit transaction for the correction
-                    audit_transaction = {
-                        '_id': ObjectId(),
-                        'userId': current_user['_id'],
-                        'type': 'adjustment',
-                        'amount': balance_difference,
-                        'description': f'Auto-correction ({cleanup_context}): stored {current_balance} FC → computed {computed_balance} FC',
-                        'status': 'completed',
-                        'operation': f'balance_auto_correction_{cleanup_context}',
-                        'balanceBefore': current_balance,
-                        'balanceAfter': computed_balance,
-                        'createdAt': datetime.utcnow(),
-                        'metadata': {
-                            'correctionType': 'auto_balance_fix',
-                            'originalBalance': current_balance,
-                            'computedBalance': computed_balance,
-                            'difference': balance_difference,
-                            'totalCredits': credits_amount,
-                            'totalDebits': debits_amount,
-                            'trigger': 'balance_mismatch_detection',
-                            'context': cleanup_context,
-                            'recentCleanup': recent_cleanup_check is not None,
-                            'cleanupTransactionId': str(recent_cleanup_check['_id']) if recent_cleanup_check else None
+                        
+                        mongo.db.credit_transactions.insert_one(log_transaction)
+                        
+                    else:
+                        # Normal user - proceed with auto-fix
+                        print(f"🔧 AUTO-FIXING: Updating stored balance from {current_balance} FC to {computed_balance} FC")
+                        
+                        # Update user's balance to match computed balance
+                        mongo.db.users.update_one(
+                            {'_id': current_user['_id']},
+                            {
+                                '$set': {
+                                    'ficoreCreditBalance': computed_balance,
+                                    'balanceLastCorrected': datetime.utcnow()
+                                }
+                            }
+                        )
+                        
+                        # Create audit transaction for the correction
+                        audit_transaction = {
+                            '_id': ObjectId(),
+                            'userId': current_user['_id'],
+                            'type': 'adjustment',
+                            'amount': balance_difference,
+                            'description': f'Auto-correction ({cleanup_context}): stored {current_balance} FC → computed {computed_balance} FC',
+                            'status': 'completed',
+                            'operation': f'balance_auto_correction_{cleanup_context}',
+                            'balanceBefore': current_balance,
+                            'balanceAfter': computed_balance,
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'correctionType': 'auto_balance_fix',
+                                'originalBalance': current_balance,
+                                'computedBalance': computed_balance,
+                                'difference': balance_difference,
+                                'totalCredits': credits_amount,
+                                'totalDebits': debits_amount,
+                                'trigger': 'balance_mismatch_detection',
+                                'context': cleanup_context,
+                                'recentCleanup': recent_cleanup_check is not None,
+                                'cleanupTransactionId': str(recent_cleanup_check['_id']) if recent_cleanup_check else None,
+                                'isTestAccount': False,
+                                'isEarlyBetaUser': False
+                            }
                         }
-                    }
-                    
-                    mongo.db.credit_transactions.insert_one(audit_transaction)
-                    
-                    # Update current_balance for the response
-                    current_balance = computed_balance
-                    
-                    print(f"✅ AUTO-FIX COMPLETED: Balance corrected to {computed_balance} FC (context: {cleanup_context})")
+                        
+                        mongo.db.credit_transactions.insert_one(audit_transaction)
+                        
+                        # Update current_balance for the response
+                        current_balance = computed_balance
+                        
+                        print(f"✅ AUTO-FIX COMPLETED: Balance corrected to {computed_balance} FC (context: {cleanup_context})")
                     
                 except Exception as fix_error:
                     print(f"❌ AUTO-FIX FAILED: {str(fix_error)}")
