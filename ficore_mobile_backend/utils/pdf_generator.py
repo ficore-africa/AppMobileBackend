@@ -10,7 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from datetime import datetime, timezone, timedelta
 import io
-from .decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in calculations
+from utils.decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in calculations
 
 
 # CRITICAL FIX (Feb 19, 2026): Naira symbol rendering

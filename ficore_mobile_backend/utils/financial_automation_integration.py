@@ -242,7 +242,7 @@ def ensure_monthly_depreciation_recorded(mongo) -> Dict[str, Any]:
 
 def get_balance_sheet_data(mongo) -> Dict[str, Any]:
     """
-    Get comprehensive balance sheet data including liabilities
+    Get comprehensive balance sheet data including liabilities and accumulated depreciation
     """
     try:
         # Assets (from assets collection)
@@ -252,7 +252,22 @@ def get_balance_sheet_data(mongo) -> Dict[str, Any]:
             'isDeleted': False
         }))
         
-        total_assets = sum(asset.get('currentValue', 0) for asset in assets)
+        # Calculate gross asset value
+        gross_assets = sum(asset.get('currentValue', 0) for asset in assets)
+        
+        # Get accumulated depreciation (stored as negative amounts in incomes collection)
+        accumulated_depreciation_entries = list(mongo.db.incomes.find({
+            'userId': BUSINESS_USER_ID,
+            'sourceType': 'accumulated_depreciation',
+            'status': 'active',
+            'isDeleted': False
+        }))
+        
+        # Sum accumulated depreciation (these are negative amounts)
+        total_accumulated_depreciation = sum(entry.get('amount', 0) for entry in accumulated_depreciation_entries)
+        
+        # Net assets = Gross assets + Accumulated depreciation (since accumulated depreciation is negative)
+        net_assets = gross_assets + total_accumulated_depreciation
         
         # Liabilities (from incomes collection with liability sourceTypes)
         liability_result = calculate_total_liabilities(mongo)
@@ -264,7 +279,7 @@ def get_balance_sheet_data(mongo) -> Dict[str, Any]:
             'userId': BUSINESS_USER_ID,
             'status': 'active',
             'isDeleted': False,
-            'sourceType': {'$nin': ['fc_liability_accrual', 'subscription_liability_accrual']}  # Exclude liabilities
+            'sourceType': {'$nin': ['fc_liability_accrual', 'subscription_liability_accrual', 'accumulated_depreciation']}  # Exclude liabilities and accumulated depreciation
         }))
         
         business_expenses = list(mongo.db.expenses.find({
@@ -284,8 +299,10 @@ def get_balance_sheet_data(mongo) -> Dict[str, Any]:
         return {
             'success': True,
             'assets': {
-                'fixed_assets': total_assets,
-                'total_assets': total_assets
+                'gross_fixed_assets': gross_assets,
+                'accumulated_depreciation': total_accumulated_depreciation,  # This will be negative
+                'net_fixed_assets': net_assets,
+                'total_assets': net_assets
             },
             'liabilities': {
                 'fc_credit_liabilities': liability_result.get('fc_credit_liabilities', {}).get('total', 0) if liability_result['success'] else 0,
@@ -298,9 +315,13 @@ def get_balance_sheet_data(mongo) -> Dict[str, Any]:
                 'total_equity': total_equity
             },
             'balance_check': {
-                'assets': total_assets,
+                'assets': net_assets,
                 'liabilities_plus_equity': total_liabilities + total_equity,
-                'balanced': abs(total_assets - (total_liabilities + total_equity)) < 1.0  # Allow ₦1 rounding difference
+                'balanced': abs(net_assets - (total_liabilities + total_equity)) < 1.0  # Allow ₦1 rounding difference
+            },
+            'depreciation_summary': {
+                'total_accumulated_depreciation': abs(total_accumulated_depreciation),  # Show as positive for readability
+                'depreciation_entries_count': len(accumulated_depreciation_entries)
             }
         }
         

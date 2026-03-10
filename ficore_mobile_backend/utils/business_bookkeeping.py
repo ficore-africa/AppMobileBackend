@@ -7,7 +7,7 @@ from datetime import datetime
 from bson import ObjectId
 from typing import Dict, Any, Optional
 from flask import current_app
-from .decimal_helpers import safe_float
+from utils.decimal_helpers import safe_float
 
 # Business account ID (ficoreafrica@gmail.com)
 BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
@@ -413,8 +413,9 @@ def record_fc_consumption_revenue(
 def record_monthly_depreciation(mongo) -> ObjectId:
     """
     Record monthly depreciation for business assets
-    Implements single-entry (accumulated depreciation tracked separately)
-    - Dr. Depreciation Expense (increases expense)
+    Implements double-entry bookkeeping:
+    - Dr. Depreciation Expense (increases expense on P&L)
+    - Cr. Accumulated Depreciation (reduces asset value on Balance Sheet)
     
     Returns:
         ObjectId of created expense entry
@@ -426,7 +427,7 @@ def record_monthly_depreciation(mongo) -> ObjectId:
         # Current: March 9, 2026 (5 months elapsed)
         monthly_depreciation = 8333.33
         
-        # Record depreciation expense
+        # 1. Record depreciation expense (Debit) - Goes to P&L
         depreciation_entry = {
             '_id': ObjectId(),
             'userId': BUSINESS_USER_ID,
@@ -443,7 +444,8 @@ def record_monthly_depreciation(mongo) -> ObjectId:
                 'usefulLife': 24,  # 2 years for used laptop
                 'monthlyRate': monthly_depreciation,
                 'automated': True,
-                'doubleEntry': False  # Accumulated depreciation tracked separately
+                'doubleEntry': True,  # FIXED: Now properly double-entry
+                'linkedAccumulatedDepreciationId': None  # Will be set below
             },
             'createdAt': datetime.utcnow(),
             'updatedAt': datetime.utcnow()
@@ -451,7 +453,43 @@ def record_monthly_depreciation(mongo) -> ObjectId:
         
         mongo.db.expenses.insert_one(depreciation_entry)
         
+        # 2. Record accumulated depreciation (Credit) - Reduces asset value on Balance Sheet
+        # Store as negative income to represent contra-asset account
+        accumulated_depreciation_entry = {
+            '_id': ObjectId(),
+            'userId': BUSINESS_USER_ID,
+            'amount': -monthly_depreciation,  # Negative = contra-asset (reduces asset value)
+            'category': 'Accumulated Depreciation - Laptop',
+            'description': 'Monthly Accumulated Depreciation - Business Laptop',
+            'date': datetime.utcnow(),
+            'sourceType': 'accumulated_depreciation',
+            'status': 'active',
+            'isDeleted': False,
+            'metadata': {
+                'type': 'CONTRA_ASSET',  # Reduces asset value
+                'linkedDepreciationExpenseId': str(depreciation_entry['_id']),
+                'assetName': 'Business Laptop (Used)',
+                'assetCost': 200000.0,
+                'monthlyRate': monthly_depreciation,
+                'automated': True,
+                'doubleEntry': True
+            },
+            'createdAt': datetime.utcnow(),
+            'updatedAt': datetime.utcnow()
+        }
+        
+        # Store accumulated depreciation in incomes collection (as negative to represent contra-asset)
+        mongo.db.incomes.insert_one(accumulated_depreciation_entry)
+        
+        # 3. Link the two entries
+        mongo.db.expenses.update_one(
+            {'_id': depreciation_entry['_id']},
+            {'$set': {'metadata.linkedAccumulatedDepreciationId': str(accumulated_depreciation_entry['_id'])}}
+        )
+        
         print(f'✅ Recorded monthly depreciation: ₦{safe_float(monthly_depreciation):,.2f}')
+        print(f'   Dr. Depreciation Expense: ₦{safe_float(monthly_depreciation):,.2f} (P&L)')
+        print(f'   Cr. Accumulated Depreciation: ₦{safe_float(monthly_depreciation):,.2f} (Balance Sheet)')
         
         return depreciation_entry['_id']
         
