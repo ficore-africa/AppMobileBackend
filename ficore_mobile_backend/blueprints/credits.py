@@ -1890,20 +1890,36 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                     'type': 'debit'
                 }))
                 
+                # ✅ ENHANCED FIX: Include transactions with missing status or 'unknown' status
+                # Many debit transactions may have status 'unknown' or missing status field
                 completed_debits = list(mongo.db.credit_transactions.aggregate([
-                    {'$match': {'userId': current_user['_id'], 'type': 'debit', 'status': 'completed'}},  # ✅ CRITICAL FIX: Add status filter
+                    {
+                        '$match': {
+                            'userId': current_user['_id'], 
+                            'type': 'debit',
+                            '$or': [
+                                {'status': 'completed'},
+                                {'status': 'unknown'},  # Include 'unknown' status
+                                {'status': {'$exists': False}},  # Include missing status
+                                {'status': None}  # Include null status
+                            ]
+                        }
+                    },
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
                 
                 # Debug logging for debit transaction analysis
                 print(f"DEBUG: User {current_user['_id']} has {len(all_debits)} total debit transactions")
                 for debit in all_debits:
-                    print(f"  - {debit.get('status', 'no_status')}: {debit.get('amount', 0)} FC - {debit.get('description', 'no_description')}")
+                    status = debit.get('status', 'no_status')
+                    amount = debit.get('amount', 0)
+                    desc = debit.get('description', 'no_description')
+                    print(f"  - {status}: {amount} FC - {desc}")
                 
                 debits_amount = completed_debits[0]['total'] if completed_debits else 0
                 debits_count = completed_debits[0]['count'] if completed_debits else 0
                 
-                print(f"DEBUG: Completed debits total: {debits_amount} FC from {debits_count} transactions")
+                print(f"DEBUG: Total debits (including unknown status): {debits_amount} FC from {debits_count} transactions")
             except Exception as debits_error:
                 print(f"Error fetching debits statistics: {str(debits_error)}")
                 debits_amount = 0
@@ -1937,6 +1953,72 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             
             if abs(balance_difference) > 0.01:  # More than 1 cent difference
                 print(f"⚠️  WARNING: Balance mismatch detected! Stored vs Computed difference: {balance_difference} FC")
+                
+                # Check if this might be due to recent cleanup operations
+                recent_cleanup_check = mongo.db.credit_transactions.find_one({
+                    'userId': current_user['_id'],
+                    'createdAt': {'$gte': datetime.utcnow() - timedelta(days=7)},
+                    '$or': [
+                        {'type': 'adjustment'},
+                        {'operation': {'$regex': 'cleanup|correction|fix', '$options': 'i'}},
+                        {'description': {'$regex': 'cleanup|correction|fix|adjustment', '$options': 'i'}}
+                    ]
+                })
+                
+                cleanup_context = "post_cleanup" if recent_cleanup_check else "normal_operation"
+                print(f"🔍 Context: {cleanup_context} (recent cleanup: {'Yes' if recent_cleanup_check else 'No'})")
+                
+                # ✅ AUTO-FIX: Correct the balance mismatch automatically
+                try:
+                    print(f"🔧 AUTO-FIXING: Updating stored balance from {current_balance} FC to {computed_balance} FC")
+                    
+                    # Update user's balance to match computed balance
+                    mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {
+                            '$set': {
+                                'ficoreCreditBalance': computed_balance,
+                                'balanceLastCorrected': datetime.utcnow()
+                            }
+                        }
+                    )
+                    
+                    # Create audit transaction for the correction
+                    audit_transaction = {
+                        '_id': ObjectId(),
+                        'userId': current_user['_id'],
+                        'type': 'adjustment',
+                        'amount': balance_difference,
+                        'description': f'Auto-correction ({cleanup_context}): stored {current_balance} FC → computed {computed_balance} FC',
+                        'status': 'completed',
+                        'operation': f'balance_auto_correction_{cleanup_context}',
+                        'balanceBefore': current_balance,
+                        'balanceAfter': computed_balance,
+                        'createdAt': datetime.utcnow(),
+                        'metadata': {
+                            'correctionType': 'auto_balance_fix',
+                            'originalBalance': current_balance,
+                            'computedBalance': computed_balance,
+                            'difference': balance_difference,
+                            'totalCredits': credits_amount,
+                            'totalDebits': debits_amount,
+                            'trigger': 'balance_mismatch_detection',
+                            'context': cleanup_context,
+                            'recentCleanup': recent_cleanup_check is not None,
+                            'cleanupTransactionId': str(recent_cleanup_check['_id']) if recent_cleanup_check else None
+                        }
+                    }
+                    
+                    mongo.db.credit_transactions.insert_one(audit_transaction)
+                    
+                    # Update current_balance for the response
+                    current_balance = computed_balance
+                    
+                    print(f"✅ AUTO-FIX COMPLETED: Balance corrected to {computed_balance} FC (context: {cleanup_context})")
+                    
+                except Exception as fix_error:
+                    print(f"❌ AUTO-FIX FAILED: {str(fix_error)}")
+                    # Continue with original balance if fix fails
 
             summary_data = {
                 'currentBalance': current_balance,
