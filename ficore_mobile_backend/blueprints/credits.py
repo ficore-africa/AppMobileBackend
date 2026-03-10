@@ -11,7 +11,7 @@ import hmac
 import hashlib
 
 def init_credits_blueprint(mongo, token_required, serialize_doc):
-    from utils.test_account_filter import is_test_account, get_paystack_keys
+    from utils.test_account_filter import is_test_account, get_paystack_keys, get_test_account_user_ids
     
     credits_bp = Blueprint('credits', __name__, url_prefix='/credits')
     
@@ -1971,8 +1971,6 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 # ✅ AUTO-FIX: Correct the balance mismatch automatically
                 # BUT FIRST: Check if this is a test account or early beta user where cleanup was intentional
                 try:
-                    from utils.test_account_filter import is_test_account, get_test_account_user_ids
-                    
                     # Get user email and check if test account
                     user_email = user.get('email', '')
                     is_test_user = is_test_account(user_email) or current_user['_id'] in get_test_account_user_ids()

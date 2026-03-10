@@ -21,8 +21,8 @@ from utils.emergency_pricing_recovery import tag_emergency_transaction
 from blueprints.notifications import create_user_notification
 from utils.atomic_transactions import check_recent_duplicate_transaction
 from utils.transaction_task_queue import process_vas_transaction_with_reservation, get_user_available_balance
-from config.test_accounts import is_test_account
-from utils.test_mode_vas import simulate_airtime_purchase, simulate_data_purchase, simulate_electricity_purchase
+from utils.test_account_filter import is_test_account
+from utils.test_account_filter import simulate_airtime_purchase, simulate_data_purchase, simulate_electricity_purchase
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):
@@ -873,7 +873,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # TEST MODE: Return mock plans for test accounts
             if is_test_account(user_email):
                 print(f'[TEST MODE] Returning mock data plans with pricing for {user_email} - Network: {network}')
-                from utils.test_mode_vas import get_mock_data_plans
+                from utils.test_account_filter import get_mock_data_plans
                 mock_plans = get_mock_data_plans(network)
                 return jsonify({
                     'success': True,
@@ -1039,7 +1039,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # TEST MODE: Return mock networks for test accounts
             if is_test_account(user_email):
                 print(f'[TEST MODE] Returning mock airtime networks for {user_email}')
-                from utils.test_mode_vas import get_mock_airtime_networks
+                from utils.test_account_filter import get_mock_airtime_networks
                 mock_networks = get_mock_airtime_networks()
                 return jsonify({
                     'success': True,
@@ -1177,7 +1177,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # TEST MODE: Return mock networks for test accounts
             if is_test_account(user_email):
                 print(f'[TEST MODE] Returning mock data networks for {user_email}')
-                from utils.test_mode_vas import get_mock_data_networks
+                from utils.test_account_filter import get_mock_data_networks
                 mock_networks = get_mock_data_networks()
                 return jsonify({
                     'success': True,
@@ -1364,7 +1364,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # TEST MODE: Return mock plans for test accounts
             if is_test_account(user_email):
                 print(f'[TEST MODE] Returning mock data plans for {user_email} - Network: {network}')
-                from utils.test_mode_vas import get_mock_data_plans
+                from utils.test_account_filter import get_mock_data_plans
                 mock_plans = get_mock_data_plans(network)
                 return jsonify({
                     'success': True,
@@ -1796,7 +1796,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             # TEST MODE: Return mock plan types for test accounts
             if is_test_account(user_email):
                 print(f'[TEST MODE] Returning mock plan types for {user_email} - Network: {network}')
-                from utils.test_mode_vas import get_mock_data_plan_types
+                from utils.test_account_filter import get_mock_data_plan_types
                 mock_plan_types = get_mock_data_plan_types(network)
                 return jsonify({
                     'success': True,

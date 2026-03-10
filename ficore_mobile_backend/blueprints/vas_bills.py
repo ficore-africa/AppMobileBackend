@@ -949,8 +949,8 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
             
             # ==================== TEST MODE CHECK ====================
             # For Google Play review test accounts, simulate successful purchase
-            from ficore_mobile_backend.utils.test_account_filter import is_test_account
-            from ficore_mobile_backend.utils.test_mode_vas import simulate_electricity_purchase
+            from utils.test_account_filter import is_test_account
+            from utils.test_account_filter import simulate_electricity_purchase
             
             if is_test_account(user_email):
                 print(f'🧪 [TEST MODE - STEP 1] Electricity purchase request received for {user_email}')

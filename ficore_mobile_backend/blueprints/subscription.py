@@ -10,7 +10,7 @@ import uuid
 
 def init_subscription_blueprint(mongo, token_required, serialize_doc):
     from utils.analytics_tracker import create_tracker
-    from config.test_accounts import is_test_account, get_paystack_keys
+    from utils.test_account_filter import is_test_account, get_paystack_keys
     
     subscription_bp = Blueprint('subscription', __name__, url_prefix='/subscription')
     tracker = create_tracker(mongo.db)
