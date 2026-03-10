@@ -505,8 +505,22 @@ app.register_blueprint(automation_cron_blueprint)
 print("✓ Automation Cron blueprint registered at /automation")
 
 # Register Financial Integration Endpoints (NEW - March 10, 2026)
-from blueprints.financial_integration import register_financial_integration_blueprint
-register_financial_integration_blueprint(app, mongo)
+try:
+    from blueprints.financial_integration import init_financial_integration_blueprint
+    financial_integration_blueprint = init_financial_integration_blueprint(mongo, token_required)
+    app.register_blueprint(financial_integration_blueprint)
+    print("✓ Financial Integration blueprint registered at /api/financial-integration")
+except ImportError as e:
+    print(f"⚠️ Financial Integration blueprint import failed: {e}")
+    # Try alternative import name in case of deployment mismatch
+    try:
+        from blueprints.financial_integration import register_financial_integration_blueprint
+        financial_integration_blueprint = register_financial_integration_blueprint(mongo, token_required)
+        app.register_blueprint(financial_integration_blueprint)
+        print("✓ Financial Integration blueprint registered at /api/financial-integration (fallback)")
+    except ImportError as e2:
+        print(f"❌ Financial Integration blueprint completely failed: {e2}")
+        print("   Continuing without financial integration endpoints...")
 
 # EMERGENCY: Register wallet recovery endpoint (TEMPORARY)
 emergency_recovery_blueprint = init_emergency_recovery_blueprint(mongo, token_required, admin_required)
