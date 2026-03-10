@@ -6,7 +6,7 @@ Endpoints for running financial automation integration and fixes
 from flask import Blueprint, jsonify, request
 from bson import ObjectId
 from datetime import datetime
-from ..utils.financial_automation_integration import (
+from utils.financial_automation_integration import (
     run_complete_financial_integration,
     ensure_all_fc_credits_have_liabilities,
     ensure_all_subscriptions_have_liabilities,
@@ -15,8 +15,8 @@ from ..utils.financial_automation_integration import (
     get_balance_sheet_data,
     get_liability_breakdown_for_reports
 )
-from ..utils.auth_helpers import require_auth
-from ..utils.decimal_helpers import safe_float
+from utils.auth_helpers import require_auth
+from utils.decimal_helpers import safe_float
 
 # Create blueprint
 financial_integration_bp = Blueprint('financial_integration', __name__, url_prefix='/api/financial-integration')
@@ -325,4 +325,5 @@ def register_financial_integration_blueprint(app, mongo):
     """Register the financial integration blueprint with the Flask app"""
     financial_integration_bp.mongo = mongo
     app.register_blueprint(financial_integration_bp)
+
     print("✅ Financial Integration Blueprint registered")
