@@ -239,6 +239,32 @@ def count_real_users(mongo):
     return mongo.db.users.count_documents({'_id': {'$nin': test_user_ids}})
 
 
+def get_paystack_keys(user_email=None):
+    """
+    Get appropriate Paystack keys based on user type
+    
+    Args:
+        user_email (str): User email to determine if test account
+        
+    Returns:
+        dict: Dictionary with secret_key and mode
+    """
+    import os
+    
+    if user_email and is_test_account(user_email):
+        # Test mode for test accounts
+        return {
+            'secret_key': os.getenv('PAYSTACK_TEST_SECRET_KEY', os.getenv('PAYSTACK_SECRET_KEY')),
+            'mode': 'test'
+        }
+    else:
+        # Live mode for real users
+        return {
+            'secret_key': os.getenv('PAYSTACK_SECRET_KEY'),
+            'mode': 'live'
+        }
+
+
 def get_test_account_stats(mongo):
     """
     Get statistics about test accounts (for debugging/verification)
