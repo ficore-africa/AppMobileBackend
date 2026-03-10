@@ -975,17 +975,28 @@ def get_expense_categories():
                 categories.add(category)
                 category_totals[category] = category_totals.get(category, 0) + expense.get('amount', 0)
            
-            if not categories:
-                default_categories = {
-                    'Food & Dining', 'Transportation', 'Shopping', 'Entertainment',
-                    'Bills & Utilities', 'Healthcare', 'Education', 'Travel',
-                    'Personal Care', 'Home & Garden', 'Gifts & Donations',
-                    'Office & Admin', 'Staff & Wages', 'Business Transport', 'Rent & Utilities',
-                    'Marketing & Sales Expenses', 'Cost of Goods Sold - COGS', 'Personal Expenses',
-                    'Statutory & Legal Contributions', 'Other'
-                }
-                categories = default_categories
-                for cat in default_categories:
+            # ALWAYS include all available categories (not just used ones)
+            # This ensures frontend has access to all categories for expense creation
+            all_available_categories = {
+                # EXISTING CATEGORIES (Keep all for future users)
+                'Food & Dining', 'Transportation', 'Shopping', 'Entertainment',
+                'Bills & Utilities', 'Healthcare', 'Education', 'Travel',
+                'Personal Care', 'Home & Garden', 'Gifts & Donations',
+                'Office & Admin', 'Staff & Wages', 'Business Transport', 'Rent & Utilities',
+                'Marketing & Sales Expenses', 'Cost of Goods Sold - COGS', 'Personal Expenses',
+                'Statutory & Legal Contributions', 'Other',
+                
+                # NEW CATEGORIES (Added based on actual usage)
+                'IT & Software', 'Professional & Legal', 'Preliminary Expenses',
+                'Utilities', 'Marketing Ads and Promotion', 'Depreciation',
+                
+                # TAX-DEDUCTIBLE CATEGORIES (For future users)
+                'Rent', 'Pension', 'Life Insurance', 'NHIS', 'HMO'
+            }
+            
+            # Add any categories that don't have expenses (with 0.0 amount)
+            for cat in all_available_categories:
+                if cat not in category_totals:
                     category_totals[cat] = 0.0
            
             return jsonify({
