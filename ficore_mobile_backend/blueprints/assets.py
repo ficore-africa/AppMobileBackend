@@ -2,6 +2,10 @@
 Asset Register Blueprint
 Handles fixed asset tracking for 0% tax qualification (≤₦250M threshold)
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId

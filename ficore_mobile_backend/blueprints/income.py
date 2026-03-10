@@ -2,6 +2,10 @@
 Income Blueprint
 Handles income tracking with monthly entry limits and credit deductions
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify, make_response
 from datetime import datetime, timedelta
 from bson import ObjectId

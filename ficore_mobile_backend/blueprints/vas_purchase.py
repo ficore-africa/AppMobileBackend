@@ -7,10 +7,13 @@ Providers: Monnify (primary), Peyflex (fallback)
 Features: Dynamic pricing, emergency pricing recovery, retention messaging
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
-import os
 import requests
 import uuid
 import json

@@ -3,6 +3,10 @@ Drawings Routes - Phase 2.2
 GET endpoint for viewing drawings history
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from utils.decimal_helpers import safe_sum  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in sum operations

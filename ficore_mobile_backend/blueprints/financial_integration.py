@@ -3,6 +3,10 @@ Financial Integration Blueprint
 Endpoints for running financial automation integration and fixes
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, jsonify, request
 from bson import ObjectId
 from datetime import datetime

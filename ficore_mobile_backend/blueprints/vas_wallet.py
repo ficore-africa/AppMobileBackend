@@ -7,14 +7,16 @@ Providers: Monnify (primary wallet provider)
 Features: Reserved accounts, KYC verification, multi-bank support, webhook processing
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
-import os
 import requests
 import hmac
 import hashlib
-import sys
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):

@@ -3,6 +3,10 @@ Internal KYC Management System - Zero Cost Solution
 Handles KYC submissions internally without external API charges
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId

@@ -7869,7 +7869,10 @@ def init_reports_blueprint(mongo, token_required):
                     }
                     
                     # CRITICAL FIX (Mar 10, 2026): Get FC Credit and Subscription liabilities
-                    from ..utils.financial_automation_integration import calculate_total_liabilities
+                    import sys
+                    import os
+                    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    from utils.financial_automation_integration import calculate_total_liabilities
                     
                     liability_result = calculate_total_liabilities(mongo)
                     fc_credit_liabilities = 0

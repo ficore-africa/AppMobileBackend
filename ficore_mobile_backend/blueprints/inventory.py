@@ -101,7 +101,10 @@ def init_inventory_blueprint(mongo, token_required, serialize_doc):
             }
             
             # Import and apply auto-population for proper title/description
-            from ..utils.expense_utils import auto_populate_expense_fields
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from utils.expense_utils import auto_populate_expense_fields
             expense_data = auto_populate_expense_fields(expense_data)
             
             mongo.db.expenses.insert_one(expense_data)

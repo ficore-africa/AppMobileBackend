@@ -4,6 +4,10 @@ Handles Income & Expense creation with atomic FC deduction
 Either BOTH entry creation AND FC deduction succeed, or NEITHER happens
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId
