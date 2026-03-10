@@ -569,6 +569,239 @@ def init_cash_bank_blueprint(mongo, token_required):
                 'message': 'Failed to delete adjustment'
             }), 500
     
+    @cash_bank_bp.route('/founder-capital', methods=['GET'])
+    @token_required
+    def get_founder_capital(current_user):
+        """
+        Get founder capital contributions from incomes collection
+        These are historical capital contributions (sourceType='capital_contribution')
+        that appear in Balance Sheet but not in regular adjustments
+        """
+        try:
+            # Fetch founder capital contributions from incomes collection
+            founder_capital = list(mongo.db.incomes.find(
+                {
+                    'userId': current_user['_id'],
+                    'sourceType': 'capital_contribution',
+                    'status': 'active',
+                    'isDeleted': False
+                },
+                sort=[('date', -1)]
+            ))
+            
+            # Convert ObjectId fields to string for JSON serialization
+            for capital in founder_capital:
+                capital['_id'] = str(capital['_id'])
+                capital['userId'] = str(capital['userId'])
+                
+                # Convert datetime fields to ISO format strings
+                if 'date' in capital and capital['date']:
+                    capital['date'] = capital['date'].isoformat()
+                if 'createdAt' in capital and capital['createdAt']:
+                    capital['createdAt'] = capital['createdAt'].isoformat()
+                if 'updatedAt' in capital and capital['updatedAt']:
+                    capital['updatedAt'] = capital['updatedAt'].isoformat()
+            
+            print(f'✓ Found {len(founder_capital)} founder capital contributions for user {current_user["_id"]}')
+            
+            # Wrap data in 'data' field for DioApiClient compatibility
+            return jsonify({
+                'success': True,
+                'data': {
+                    'founderCapital': founder_capital
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'Error fetching founder capital: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch founder capital'
+            }), 500
+
+    @cash_bank_bp.route('/financial-overview', methods=['GET'])
+    @token_required
+    def get_financial_overview(current_user):
+        """
+        Get comprehensive financial overview for Financial Setup Hub
+        Returns capital, cash/bank, liabilities, and assets data
+        """
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # 1. CAPITAL DATA
+            # Founder capital from incomes collection
+            founder_capital = list(mongo.db.incomes.find(
+                {
+                    'userId': current_user['_id'],
+                    'sourceType': 'capital_contribution',
+                    'status': 'active',
+                    'isDeleted': False
+                }
+            ))
+            total_founder_capital = safe_sum([capital.get('amount', 0.0) for capital in founder_capital])
+            
+            # User capital from cash_adjustments collection
+            user_capital = list(mongo.db.cash_adjustments.find(
+                {
+                    'userId': current_user['_id'],
+                    'type': 'capital',
+                    'status': 'active',
+                    'isDeleted': False
+                }
+            ))
+            total_user_capital = safe_sum([capital.get('amount', 0.0) for capital in user_capital])
+            
+            # 2. CASH & BANK DATA
+            opening_cash_balance = safe_float(user.get('openingCashBalance', 0.0))
+            
+            # Calculate current balance using same logic as /balance endpoint
+            income_query = get_active_transactions_query(current_user['_id'])
+            income_amounts = []
+            income_cursor = mongo.db.incomes.find(income_query)
+            for income in income_cursor:
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
+            
+            expense_query = get_active_transactions_query(current_user['_id'])
+            expense_amounts = []
+            expense_cursor = mongo.db.expenses.find(expense_query)
+            for expense in expense_cursor:
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
+            
+            # Drawings and capital from adjustments
+            adjustment_query = {
+                'userId': current_user['_id'],
+                '$or': [
+                    {'status': 'active'},
+                    {'status': {'$exists': False}},
+                    {'status': None},
+                ],
+                'isDeleted': {'$ne': True}
+            }
+            drawing_amounts = []
+            capital_amounts = []
+            adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
+            for adjustment in adjustment_cursor:
+                if adjustment.get('type') == 'drawing':
+                    drawing_amounts.append(adjustment.get('amount', 0.0))
+                elif adjustment.get('type') == 'capital':
+                    capital_amounts.append(adjustment.get('amount', 0.0))
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital_adjustments = safe_sum(capital_amounts)
+            
+            current_cash_balance = opening_cash_balance + total_income - total_expenses - total_drawings + total_capital_adjustments
+            
+            # 3. LIABILITY DATA
+            opening_liability = safe_float(user.get('openingLiability', 0.0))
+            
+            # Current liabilities (could be calculated from expenses marked as liabilities)
+            # For now, use opening liability as current liability
+            current_liability = opening_liability
+            
+            # 4. ASSET DATA
+            # Get assets from assets collection
+            assets = list(mongo.db.assets.find(
+                {
+                    'userId': current_user['_id'],
+                    'status': 'active',
+                    'isDeleted': False
+                }
+            ))
+            
+            # Separate current and long-term assets (simple rule: <1 year = current)
+            current_assets = []
+            long_term_assets = []
+            
+            for asset in assets:
+                # For simplicity, consider all assets as long-term unless specified
+                asset_type = asset.get('type', 'long-term')
+                if asset_type in ['inventory', 'cash', 'receivables']:
+                    current_assets.append(asset)
+                else:
+                    long_term_assets.append(asset)
+            
+            total_current_assets = safe_sum([asset.get('value', 0.0) for asset in current_assets])
+            total_long_term_assets = safe_sum([asset.get('value', 0.0) for asset in long_term_assets])
+            total_assets = total_current_assets + total_long_term_assets
+            
+            # Add cash balance to current assets
+            total_current_assets += current_cash_balance
+            
+            # 5. SUMMARY CALCULATIONS
+            total_capital = total_founder_capital + total_user_capital
+            total_liabilities = current_liability  # For now, only opening liability
+            
+            # Accounting equation check
+            accounting_assets = total_current_assets + total_long_term_assets
+            accounting_liabilities_equity = total_liabilities + total_capital
+            accounting_imbalance = accounting_assets - accounting_liabilities_equity
+            is_balanced = abs(accounting_imbalance) < 0.01
+            
+            print(f'✓ Financial overview calculated for user {current_user["_id"]}:')
+            print(f'   Total Capital: ₦{total_capital} (Founder: ₦{total_founder_capital}, User: ₦{total_user_capital})')
+            print(f'   Cash & Bank: ₦{current_cash_balance}')
+            print(f'   Total Assets: ₦{accounting_assets} (Current: ₦{total_current_assets}, Long-term: ₦{total_long_term_assets})')
+            print(f'   Total Liabilities: ₦{total_liabilities}')
+            print(f'   Accounting Equation: ₦{accounting_assets} = ₦{total_liabilities} + ₦{total_capital} (Imbalance: ₦{accounting_imbalance})')
+            
+            # Wrap data in 'data' field for DioApiClient compatibility
+            return jsonify({
+                'success': True,
+                'data': {
+                    'capital': {
+                        'founderCapital': total_founder_capital,
+                        'userCapital': total_user_capital,
+                        'totalCapital': total_capital,
+                        'founderCount': len(founder_capital),
+                        'userCount': len(user_capital)
+                    },
+                    'cashBank': {
+                        'openingBalance': opening_cash_balance,
+                        'currentBalance': current_cash_balance,
+                        'totalIncome': total_income,
+                        'totalExpenses': total_expenses,
+                        'totalDrawings': total_drawings
+                    },
+                    'liabilities': {
+                        'openingLiability': opening_liability,
+                        'currentLiability': current_liability,
+                        'totalLiabilities': total_liabilities
+                    },
+                    'assets': {
+                        'currentAssets': total_current_assets,
+                        'longTermAssets': total_long_term_assets,
+                        'totalAssets': accounting_assets,
+                        'assetCount': len(assets)
+                    },
+                    'accountingEquation': {
+                        'assets': accounting_assets,
+                        'liabilities': total_liabilities,
+                        'equity': total_capital,
+                        'imbalance': accounting_imbalance,
+                        'isBalanced': is_balanced
+                    }
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f'❌ Error fetching financial overview: {str(e)}')
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to fetch financial overview'
+            }), 500
+
     @cash_bank_bp.route('/balance', methods=['GET'])
     @token_required
     def get_current_balance(current_user):

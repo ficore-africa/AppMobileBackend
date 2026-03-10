@@ -7,6 +7,7 @@ import os
 import resend
 from datetime import datetime
 from bson import ObjectId
+from .decimal_helpers import safe_float
 
 
 class EmailService:
@@ -527,7 +528,7 @@ class EmailService:
         text_color = '#c0392b' if alert_type == 'critical' else '#e67e22'
         
         # Create email subject
-        subject = f'{severity_emoji} {severity_text}: {provider_name} Balance Low - ₦{balance:,.2f}'
+        subject = f'{severity_emoji} {severity_text}: {provider_name} Balance Low - ₦{safe_float(balance):,.2f}'
         
         # Create email body
         html_content = f"""
@@ -553,7 +554,7 @@ class EmailService:
                         <strong>Provider:</strong> {provider_name}
                     </div>
                     <div style="padding: 10px 0; border-bottom: 1px solid #ddd;">
-                        <strong>Current Balance:</strong> <span style="color: {severity_color}; font-size: 1.3em; font-weight: 700;">₦{balance:,.2f}</span>
+                        <strong>Current Balance:</strong> <span style="color: {severity_color}; font-size: 1.3em; font-weight: 700;">₦{safe_float(balance):,.2f}</span>
                     </div>
                     <div style="padding: 10px 0; border-bottom: 1px solid #ddd;">
                         <strong>Failed Transactions (Last Hour):</strong> {failed_count}

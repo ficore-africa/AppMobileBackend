@@ -5,6 +5,7 @@ GET endpoint for viewing drawings history
 
 from flask import Blueprint, request, jsonify
 from datetime import datetime
+from utils.decimal_helpers import safe_sum  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in sum operations
 
 def init_drawings_blueprint(mongo, token_required, serialize_doc):
     """Initialize the drawings blueprint"""
@@ -79,7 +80,7 @@ def init_drawings_blueprint(mongo, token_required, serialize_doc):
                 drawings_list.append(drawing_data)
             
             # Calculate total drawings
-            total_drawings = sum(d.get('amount', 0) for d in drawings)
+            total_drawings = safe_sum(d.get('amount', 0) for d in drawings)
             
             return jsonify({
                 'success': True,

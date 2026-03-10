@@ -10,6 +10,7 @@ CRITICAL: This ensures Single Source of Truth (SSOT) for wallet balances.
 from datetime import datetime
 from bson import ObjectId
 import logging
+from .decimal_helpers import safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,10 @@ def update_liquid_wallet_balance(mongo, user_id, new_balance, reason="", transac
         # Clients now poll /api/vas/wallet/balance/current every 3 seconds
         # This eliminates memory-intensive persistent connections
         if push_sse_update:
-            logger.info(f"Balance updated for user {user_id}: ₦{new_balance:,.2f} - clients will detect via polling")
+            logger.info(f"Balance updated for user {user_id}: ₦{safe_float(new_balance):,.2f} - clients will detect via polling")
         
         # Log the update
-        logger.info(f"Balance sync: User {user_id}, New balance: ₦{new_balance:,.2f}, Reason: {reason}")
+        logger.info(f"Balance sync: User {user_id}, New balance: ₦{safe_float(new_balance):,.2f}, Reason: {reason}")
         
         return True
         
@@ -156,7 +157,7 @@ def sync_balance_from_vas_to_users(mongo, user_id):
             }
         )
         
-        logger.info(f"Synced balance ₦{balance:,.2f} from vas_wallets to users for user {user_id}")
+        logger.info(f"Synced balance ₦{safe_float(balance):,.2f} from vas_wallets to users for user {user_id}")
         return result.modified_count > 0
         
     except Exception as e:

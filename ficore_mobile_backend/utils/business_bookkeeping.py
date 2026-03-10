@@ -7,6 +7,7 @@ from datetime import datetime
 from bson import ObjectId
 from typing import Dict, Any, Optional
 from flask import current_app
+from .decimal_helpers import safe_float
 
 # Business account ID (ficoreafrica@gmail.com)
 BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
@@ -117,9 +118,9 @@ def record_fc_marketing_expense(
         # (Alternative: create separate liabilities collection)
         mongo.db.incomes.insert_one(liability_entry)
         
-        print(f'✅ Recorded FC marketing expense: {fc_amount} FCs (₦{naira_cost:,.2f}) for {operation}')
-        print(f'   Dr. Marketing Expense: ₦{naira_cost:,.2f}')
-        print(f'   Cr. FC Liability: ₦{naira_cost:,.2f}')
+        print(f'✅ Recorded FC marketing expense: {fc_amount} FCs (₦{safe_float(naira_cost):,.2f}) for {operation}')
+        print(f'   Dr. Marketing Expense: ₦{safe_float(naira_cost):,.2f}')
+        print(f'   Cr. FC Liability: ₦{safe_float(naira_cost):,.2f}')
         
         return {
             'expense_id': expense_entry['_id'],
@@ -228,9 +229,9 @@ def record_subscription_marketing_expense(
         # Store in incomes collection with positive amount to represent liability
         mongo.db.incomes.insert_one(liability_entry)
         
-        print(f'✅ Recorded subscription marketing expense: ₦{amount:,.2f} for {user_email}')
-        print(f'   Dr. Marketing Expense: ₦{amount:,.2f}')
-        print(f'   Cr. Subscription Liability: ₦{amount:,.2f}')
+        print(f'✅ Recorded subscription marketing expense: ₦{safe_float(amount):,.2f} for {user_email}')
+        print(f'   Dr. Marketing Expense: ₦{safe_float(amount):,.2f}')
+        print(f'   Cr. Subscription Liability: ₦{safe_float(amount):,.2f}')
         
         return {
             'expense_id': expense_entry['_id'],
@@ -283,7 +284,7 @@ def record_vas_commission_revenue(
             'userId': BUSINESS_USER_ID,
             'amount': commission,
             'category': 'Service Revenue',
-            'description': f'VAS Commission - {provider.capitalize()} {transaction_type} (₦{amount:,.2f} @ {commission_rate:.2f}%)',
+            'description': f'VAS Commission - {provider.capitalize()} {transaction_type} (₦{safe_float(amount):,.2f} @ {commission_rate:.2f}%)',
             'date': datetime.utcnow(),
             'sourceType': 'vas_commission',
             'status': 'active',
@@ -305,7 +306,7 @@ def record_vas_commission_revenue(
         
         mongo.db.incomes.insert_one(revenue_entry)
         
-        print(f'✅ Recorded VAS commission revenue: ₦{commission:,.2f} from {provider} {transaction_type}')
+        print(f'✅ Recorded VAS commission revenue: ₦{safe_float(commission):,.2f} from {provider} {transaction_type}')
         
         return revenue_entry['_id']
         
@@ -396,7 +397,7 @@ def record_fc_consumption_revenue(
         
         mongo.db.expenses.insert_one(liability_reduction)
         
-        print(f'✅ Recorded FC consumption revenue: {fc_amount} FCs (₦{naira_revenue:,.2f}) from {user_email}')
+        print(f'✅ Recorded FC consumption revenue: {fc_amount} FCs (₦{safe_float(naira_revenue):,.2f}) from {user_email}')
         
         return {
             'revenue_id': revenue_entry['_id'],
@@ -450,7 +451,7 @@ def record_monthly_depreciation(mongo) -> ObjectId:
         
         mongo.db.expenses.insert_one(depreciation_entry)
         
-        print(f'✅ Recorded monthly depreciation: ₦{monthly_depreciation:,.2f}')
+        print(f'✅ Recorded monthly depreciation: ₦{safe_float(monthly_depreciation):,.2f}')
         
         return depreciation_entry['_id']
         
@@ -528,7 +529,7 @@ def accrue_daily_subscription_revenue(mongo) -> list:
             mongo.db.incomes.insert_one(revenue_entry)
             revenue_ids.append(revenue_entry['_id'])
             
-            print(f'✅ Accrued daily subscription revenue: ₦{daily_revenue:,.2f} for {user_email}')
+            print(f'✅ Accrued daily subscription revenue: ₦{safe_float(daily_revenue):,.2f} for {user_email}')
         
         return revenue_ids
         

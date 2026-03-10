@@ -7868,6 +7868,17 @@ def init_reports_blueprint(mongo, token_required):
                         'expenses': comprehensive_data['expenses']
                     }
                     
+                    # CRITICAL FIX (Mar 10, 2026): Get FC Credit and Subscription liabilities
+                    from ..utils.financial_automation_integration import calculate_total_liabilities
+                    
+                    liability_result = calculate_total_liabilities(mongo)
+                    fc_credit_liabilities = 0
+                    subscription_liabilities = 0
+                    
+                    if liability_result['success']:
+                        fc_credit_liabilities = liability_result.get('fc_credit_liabilities', {}).get('total', 0)
+                        subscription_liabilities = liability_result.get('subscription_liabilities', {}).get('total', 0)
+                    
                     tax_data = {
                         'sales_revenue': comprehensive_data.get('sales_revenue', 0),
                         'other_income': comprehensive_data.get('other_income', 0),
@@ -7891,7 +7902,10 @@ def init_reports_blueprint(mongo, token_required):
                         'opening_equity': user.get('openingEquity', 0) if user else 0,
                         'drawings': user.get('drawings', 0) if user else 0,
                         'capital': user.get('capital', 0) if user else 0,  # Capital contributions
-                        'loans_outstanding': 0  # TODO: Calculate outstanding loans
+                        'loans_outstanding': 0,  # TODO: Calculate outstanding loans
+                        # CRITICAL FIX (Mar 10, 2026): Include FC Credit and Subscription liabilities
+                        'fc_credit_liabilities': fc_credit_liabilities,
+                        'subscription_liabilities': subscription_liabilities
                     }
                     
                     assets_data = comprehensive_data['assets']

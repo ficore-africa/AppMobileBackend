@@ -2,6 +2,7 @@
 """
 Expense utility functions for auto-generating titles and descriptions
 """
+from utils.decimal_helpers import safe_float
 
 def generate_expense_title(category, amount=None):
     """Generate smart title from category and amount"""
@@ -84,7 +85,7 @@ def generate_expense_description(category, amount, user_description=None):
     base_description = description_templates.get(category, f"{category} expense")
     
     # Add amount context
-    return f"N{amount:,.2f} spent on {base_description.lower()}"
+    return f"N{safe_float(amount):,.2f} spent on {base_description.lower()}"
 
 def auto_populate_expense_fields(expense_data):
     """
@@ -120,7 +121,7 @@ def format_expense_for_activity(expense_data):
     description = expense_data.get('description', '')
     
     # Create activity description
-    activity_description = f"Spent N{amount:,.2f} on {description.lower()}"
+    activity_description = f"Spent N{safe_float(amount):,.2f} on {description.lower()}"
     
     return {
         'title': title,

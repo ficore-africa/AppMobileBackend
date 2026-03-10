@@ -5654,6 +5654,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # ===== 4. FC CREDITS CONSUMED (THIS PERIOD) =====
             credits_consumed_query = {'type': 'debit', 'status': 'completed'}
             credits_consumed_query.update(date_filter)
+            credits_consumed_query = add_test_account_exclusion(credits_consumed_query, mongo)  # ✅ CRITICAL FIX: Exclude test accounts
             credits_consumed = list(mongo.db.credit_transactions.find(credits_consumed_query))
 
             fc_consumed_amount = sum(c['amount'] for c in credits_consumed)

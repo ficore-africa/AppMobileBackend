@@ -9,6 +9,7 @@ import os
 from bson import ObjectId, Decimal128, Decimal128
 from functools import wraps
 from werkzeug.security import generate_password_hash
+from utils.decimal_helpers import safe_sum  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in sum operations
 
 # Import blueprints
 from blueprints.auth import auth_bp, init_auth_blueprint
@@ -54,6 +55,8 @@ from blueprints.vas_bills import init_vas_bills_blueprint
 from blueprints.referrals import referrals_bp, init_referrals_blueprint
 # EMERGENCY: Wallet recovery endpoint (TEMPORARY)
 from blueprints.emergency_recovery import init_emergency_recovery_blueprint
+# Automation Cron Endpoints (NEW - March 9, 2026)
+from blueprints.automation_cron import init_automation_cron_blueprint
 
 # Import database models
 from models import DatabaseInitializer
@@ -61,6 +64,9 @@ from models import DatabaseInitializer
 # Import rate limit tracking utilities
 from utils.rate_limit_tracker import RateLimitTracker
 from utils.api_logging_middleware import setup_api_logging
+
+# Import decimal helpers
+from utils.decimal_helpers import safe_float, safe_sum
 
 # Import credential manager
 from config.credentials import credential_manager
@@ -309,35 +315,6 @@ def serialize_doc(doc):
     return doc
 
 # JWT token decorator
-
-# ✅ CRITICAL: Helper function to safely convert Decimal128 to float
-def safe_float(value):
-    """
-    Safely convert any numeric value (including Decimal128) to float.
-    Guards against Decimal128 serialization errors.
-    """
-    if value is None:
-        return 0.0
-    if isinstance(value, Decimal128):
-        return float(value.to_decimal())
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return 0.0
-
-# ✅ CRITICAL: Helper function to safely sum amounts (handles Decimal128)
-def safe_sum(amounts):
-    """
-    Safely sum a list of amounts, converting Decimal128 to float.
-    Guards against type errors when summing mixed types.
-    """
-    total = 0.0
-    for amount in amounts:
-        total += safe_float(amount)
-    return total
-
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -444,6 +421,9 @@ vas_bills_blueprint = init_vas_bills_blueprint(mongo, token_required, serialize_
 # Initialize Referral System (NEW - Feb 4, 2026)
 referrals_blueprint = init_referrals_blueprint(mongo)
 
+# Initialize Automation Cron Endpoints (NEW - March 9, 2026)
+automation_cron_blueprint = init_automation_cron_blueprint(mongo)
+
 # Initialize rate limit tracker
 rate_limit_tracker = RateLimitTracker(mongo)
 rate_limit_monitoring_blueprint = init_rate_limit_monitoring_blueprint(mongo, token_required, admin_required, rate_limit_tracker)
@@ -520,6 +500,14 @@ print("✓ VAS Bills blueprint registered at /api/vas/bills")
 app.register_blueprint(referrals_blueprint)
 print("✓ Referrals blueprint registered at /api/referrals")
 
+# Register Automation Cron Endpoints (NEW - March 9, 2026)
+app.register_blueprint(automation_cron_blueprint)
+print("✓ Automation Cron blueprint registered at /automation")
+
+# Register Financial Integration Endpoints (NEW - March 10, 2026)
+from blueprints.financial_integration import register_financial_integration_blueprint
+register_financial_integration_blueprint(app, mongo)
+
 # EMERGENCY: Register wallet recovery endpoint (TEMPORARY)
 emergency_recovery_blueprint = init_emergency_recovery_blueprint(mongo, token_required, admin_required)
 app.register_blueprint(emergency_recovery_blueprint)
@@ -542,6 +530,12 @@ from blueprints.provider_health import init_provider_health_blueprint
 provider_health_blueprint = init_provider_health_blueprint(mongo, token_required)
 app.register_blueprint(provider_health_blueprint)
 print("✓ Provider Health blueprint registered at /api/admin/provider-health")
+
+# Register treasury management dashboard (NEW - Mar 9, 2026)
+from blueprints.treasury_dashboard import init_treasury_dashboard_blueprint
+treasury_blueprint = init_treasury_dashboard_blueprint(mongo)
+app.register_blueprint(treasury_blueprint)
+print("✓ Treasury Dashboard blueprint registered at /admin/treasury")
 
 # Root redirect to admin login
 @app.route('/', methods=['GET', 'HEAD'])
@@ -1342,11 +1336,11 @@ def get_dashboard(current_user):
         
         # Get income data
         incomes = list(mongo.db.incomes.find({'userId': current_user['_id']}))
-        total_income_this_month = sum(inc['amount'] for inc in incomes if inc['date'] >= start_of_month)
+        total_income_this_month = safe_sum([inc['amount'] for inc in incomes if inc['date'] >= start_of_month])
         
         # Get expense data
         expenses = list(mongo.db.expenses.find({'userId': current_user['_id']}))
-        total_expenses_this_month = sum(exp['amount'] for exp in expenses if exp['date'] >= start_of_month)
+        total_expenses_this_month = safe_sum([exp['amount'] for exp in expenses if exp['date'] >= start_of_month])
         
         # Calculate financial health metrics
         net_income = total_income_this_month - total_expenses_this_month
@@ -1443,16 +1437,19 @@ def get_analytics(current_user):
             month_incomes = [inc for inc in incomes if month_start <= inc['date'] <= month_end]
             month_expenses = [exp for exp in expenses if month_start <= exp['date'] <= month_end]
             
+            month_income_total = safe_sum([inc['amount'] for inc in month_incomes])
+            month_expense_total = safe_sum([exp['amount'] for exp in month_expenses])
+            
             trends.append({
                 'month': month_start.strftime('%Y-%m'),
-                'income': sum(inc['amount'] for inc in month_incomes),
-                'expenses': sum(exp['amount'] for exp in month_expenses),
-                'net': sum(inc['amount'] for inc in month_incomes) - sum(exp['amount'] for exp in month_expenses)
+                'income': month_income_total,
+                'expenses': month_expense_total,
+                'net': month_income_total - month_expense_total
             })
         
         # Financial ratios and metrics
-        total_income = sum(inc['amount'] for inc in incomes)
-        total_expenses = sum(exp['amount'] for exp in expenses)
+        total_income = safe_sum([inc['amount'] for inc in incomes])
+        total_expenses = safe_sum([exp['amount'] for exp in expenses])
         
         analytics_data = {
             'trends': trends,
@@ -1504,12 +1501,12 @@ def get_analytics_overview(current_user):
         current_month_incomes = [inc for inc in incomes if inc['date'] >= month_start]
         current_month_expenses = [exp for exp in expenses if exp['date'] >= month_start]
         
-        current_month_income_total = sum(inc['amount'] for inc in current_month_incomes)
-        current_month_expense_total = sum(exp['amount'] for exp in current_month_expenses)
+        current_month_income_total = safe_sum([inc['amount'] for inc in current_month_incomes])
+        current_month_expense_total = safe_sum([exp['amount'] for exp in current_month_expenses])
         
         # All time data
-        total_income = sum(inc['amount'] for inc in incomes)
-        total_expenses = sum(exp['amount'] for exp in expenses)
+        total_income = safe_sum([inc['amount'] for inc in incomes])
+        total_expenses = safe_sum([exp['amount'] for exp in expenses])
         
         # Business suite data (if available)
         debtors_count = mongo.db.debtors.count_documents({'userId': user_id})

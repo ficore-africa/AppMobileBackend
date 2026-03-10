@@ -13,6 +13,7 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import urllib.parse
 import logging
+from utils.decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in formatting
 
 def init_debtors_blueprint(mongo, token_required, serialize_doc):
     """Initialize the comprehensive debtors blueprint with all features"""
@@ -171,7 +172,7 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
                 })
                 
                 if not existing_notification:
-                    message = f"{debtor['customerName']} has an overdue payment of ₦{debtor['remainingDebt']:,.2f} ({debtor['overdueDays']} days overdue)"
+                    message = f"{debtor['customerName']} has an overdue payment of ₦{safe_float(debtor['remainingDebt']):,.2f} ({debtor['overdueDays']} days overdue)"
                     create_notification(user_id, debtor['_id'], 'overdue_reminder', message, 'high')
             
             return True
@@ -199,7 +200,7 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
         """Format WhatsApp message for IOU sharing"""
         message = f"Hello {debtor_name},\n\n"
         message += f"This is a reminder about your outstanding debt:\n"
-        message += f"Amount: ₦{amount:,.2f}\n"
+        message += f"Amount: ₦{safe_float(amount):,.2f}\n"
         if description:
             message += f"Description: {description}\n"
         if due_date:
@@ -1634,9 +1635,9 @@ def init_debtors_blueprint(mongo, token_required, serialize_doc):
                 ['Customer Name:', debtor.get('customerName', 'N/A')],
                 ['Customer Email:', debtor.get('customerEmail', 'N/A')],
                 ['Customer Phone:', debtor.get('customerPhone', 'N/A')],
-                ['Outstanding Amount:', f"₦{debtor.get('remainingDebt', 0):,.2f}"],
-                ['Total Debt:', f"₦{debtor.get('totalDebt', 0):,.2f}"],
-                ['Amount Paid:', f"₦{debtor.get('paidAmount', 0):,.2f}"],
+                ['Outstanding Amount:', f"₦{safe_float(debtor.get('remainingDebt', 0)):,.2f}"],
+                ['Total Debt:', f"₦{safe_float(debtor.get('totalDebt', 0)):,.2f}"],
+                ['Amount Paid:', f"₦{safe_float(debtor.get('paidAmount', 0)):,.2f}"],
                 ['Status:', debtor.get('status', 'N/A').title()],
                 ['Created Date:', debtor.get('createdAt', datetime.utcnow()).strftime('%B %d, %Y')],
                 ['Last Updated:', debtor.get('updatedAt', datetime.utcnow()).strftime('%B %d, %Y')],

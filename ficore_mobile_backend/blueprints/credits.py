@@ -1789,7 +1789,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             # Get transaction statistics with error handling
             try:
                 total_credits = list(mongo.db.credit_transactions.aggregate([
-                    {'$match': {'userId': current_user['_id'], 'type': 'credit'}},
+                    {'$match': {'userId': current_user['_id'], 'type': 'credit', 'status': 'completed'}},  # ✅ CRITICAL FIX: Add status filter for consistency
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
                 credits_amount = total_credits[0]['total'] if total_credits else 0
@@ -1807,6 +1807,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                         '$match': {
                             'userId': current_user['_id'],
                             'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
                             '$or': [
                                 {'metadata.purchaseType': {'$exists': True}},
                                 {'paymentMethod': 'paystack'},
@@ -1824,6 +1825,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                         '$match': {
                             'userId': current_user['_id'],
                             'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
                             'operation': 'signup_bonus'
                         }
                     },
@@ -1837,6 +1839,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                         '$match': {
                             'userId': current_user['_id'],
                             'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
                             '$or': [
                                 {'operation': 'engagement_reward'},
                                 {'operation': 'streak_milestone'},
@@ -1856,6 +1859,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                         '$match': {
                             'userId': current_user['_id'],
                             'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
                             '$or': [
                                 {'operation': 'tax_education_progress'},
                                 {'description': {'$regex': 'tax education|tax module', '$options': 'i'}}
@@ -1880,12 +1884,26 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 other_credits_amount = 0.0
 
             try:
-                total_debits = list(mongo.db.credit_transactions.aggregate([
-                    {'$match': {'userId': current_user['_id'], 'type': 'debit'}},
+                # ✅ CRITICAL FIX: Add debugging to help identify debit transaction issues
+                all_debits = list(mongo.db.credit_transactions.find({
+                    'userId': current_user['_id'], 
+                    'type': 'debit'
+                }))
+                
+                completed_debits = list(mongo.db.credit_transactions.aggregate([
+                    {'$match': {'userId': current_user['_id'], 'type': 'debit', 'status': 'completed'}},  # ✅ CRITICAL FIX: Add status filter
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
-                debits_amount = total_debits[0]['total'] if total_debits else 0
-                debits_count = total_debits[0]['count'] if total_debits else 0
+                
+                # Debug logging for debit transaction analysis
+                print(f"DEBUG: User {current_user['_id']} has {len(all_debits)} total debit transactions")
+                for debit in all_debits:
+                    print(f"  - {debit.get('status', 'no_status')}: {debit.get('amount', 0)} FC - {debit.get('description', 'no_description')}")
+                
+                debits_amount = completed_debits[0]['total'] if completed_debits else 0
+                debits_count = completed_debits[0]['count'] if completed_debits else 0
+                
+                print(f"DEBUG: Completed debits total: {debits_amount} FC from {debits_count} transactions")
             except Exception as debits_error:
                 print(f"Error fetching debits statistics: {str(debits_error)}")
                 debits_amount = 0
@@ -1905,6 +1923,20 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             credits_amount = float(credits_amount) if credits_amount else 0.0
             debits_amount = float(debits_amount) if debits_amount else 0.0
             current_balance = float(current_balance)
+            
+            # ✅ CRITICAL DEBUG: Compare stored balance vs computed balance
+            computed_balance = credits_amount - debits_amount
+            balance_difference = current_balance - computed_balance
+            
+            print(f"DEBUG: Balance Analysis for User {current_user['_id']}")
+            print(f"  - Stored Balance (ficoreCreditBalance): {current_balance} FC")
+            print(f"  - Total Credits: {credits_amount} FC")
+            print(f"  - Total Debits: {debits_amount} FC")
+            print(f"  - Computed Balance: {computed_balance} FC")
+            print(f"  - Difference: {balance_difference} FC")
+            
+            if abs(balance_difference) > 0.01:  # More than 1 cent difference
+                print(f"⚠️  WARNING: Balance mismatch detected! Stored vs Computed difference: {balance_difference} FC")
 
             summary_data = {
                 'currentBalance': current_balance,

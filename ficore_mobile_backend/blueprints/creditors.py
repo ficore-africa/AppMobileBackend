@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
 import uuid
+from utils.decimal_helpers import safe_sum  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in sum operations
 
 def init_creditors_blueprint(mongo, token_required, serialize_doc):
     """Initialize the creditors blueprint with database and auth decorator"""
@@ -127,13 +128,13 @@ def init_creditors_blueprint(mongo, token_required, serialize_doc):
             total_vendors = len(vendors)
             
             # Calculate totals
-            total_owed = sum(vendor.get('totalOwed', 0) for vendor in vendors)
-            total_outstanding = sum(vendor.get('outstandingBalance', 0) for vendor in vendors)
+            total_owed = safe_sum([vendor.get('totalOwed', 0) for vendor in vendors])
+            total_outstanding = safe_sum([vendor.get('outstandingBalance', 0) for vendor in vendors])
             
             # Get overdue vendors
             overdue_vendors = [v for v in vendors if v.get('isOverdue', False)]
             overdue_count = len(overdue_vendors)
-            overdue_amount = sum(vendor.get('outstandingBalance', 0) for vendor in overdue_vendors)
+            overdue_amount = safe_sum([vendor.get('outstandingBalance', 0) for vendor in overdue_vendors])
             
             # Get recent transactions
             recent_transactions = list(mongo.db.creditor_transactions.find({
@@ -1070,9 +1071,9 @@ def init_creditors_blueprint(mongo, token_required, serialize_doc):
             
             # Calculate summary statistics
             total_vendors = len(creditors)
-            total_owed = sum(creditor.get('totalOwed', 0) for creditor in creditors)
-            total_paid = sum(creditor.get('paidAmount', 0) for creditor in creditors)
-            total_outstanding = sum(creditor.get('remainingOwed', 0) for creditor in creditors)
+            total_owed = safe_sum(creditor.get('totalOwed', 0) for creditor in creditors)
+            total_paid = safe_sum(creditor.get('paidAmount', 0) for creditor in creditors)
+            total_outstanding = safe_sum(creditor.get('remainingOwed', 0) for creditor in creditors)
             
             # Count by status
             active_vendors = len([c for c in creditors if c.get('status') == 'active'])
@@ -1080,7 +1081,7 @@ def init_creditors_blueprint(mongo, token_required, serialize_doc):
             paid_vendors = len([c for c in creditors if c.get('status') == 'paid'])
             
             # Calculate overdue amount
-            overdue_amount = sum(creditor.get('remainingOwed', 0) for creditor in creditors if creditor.get('status') == 'overdue')
+            overdue_amount = safe_sum(creditor.get('remainingOwed', 0) for creditor in creditors if creditor.get('status') == 'overdue')
             
             # Get recent transactions
             recent_transactions = list(mongo.db.creditor_transactions.find({

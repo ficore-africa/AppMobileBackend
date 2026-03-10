@@ -1095,8 +1095,8 @@ def get_expense_insights():
             current_month_expenses = [e for e in expenses if e.get('date') and e['date'] >= start_of_month]
             last_month_expenses = [e for e in expenses if e.get('date') and start_of_last_month <= e['date'] < start_of_month]
            
-            current_total = sum(e.get('amount', 0) for e in current_month_expenses)
-            last_total = sum(e.get('amount', 0) for e in last_month_expenses)
+            current_total = safe_sum([e.get('amount', 0) for e in current_month_expenses])
+            last_total = safe_sum([e.get('amount', 0) for e in last_month_expenses])
             
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")

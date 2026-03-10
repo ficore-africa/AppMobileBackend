@@ -574,6 +574,94 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                 }
                 mongo.db.credit_transactions.insert_one(credit_transaction)
 
+            # ✅ ENHANCED CLEANUP: Clean up related payment records and provide user guidance
+            cleanup_results = []
+            user_guidance = []
+            payment_method = asset.get('paymentMethod', 'unknown')
+            asset_name = asset.get('assetName', 'Unknown Asset')
+            asset_cost = asset.get('purchasePrice', 0)
+            
+            # 1. Clean up cash adjustments (business_cash, capital_contribution)
+            if asset.get('cashAdjustmentId'):
+                cash_result = mongo.db.cash_adjustments.update_one(
+                    {'_id': asset['cashAdjustmentId'], 'userId': current_user['_id']},
+                    {
+                        '$set': {
+                            'status': 'deleted',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow(),
+                            'deletedReason': f'Asset "{asset_name}" was deleted',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                if cash_result.modified_count > 0:
+                    cleanup_results.append(f"Cash adjustment: {cash_result.modified_count} cleaned")
+                    user_guidance.append(f"Reversed cash reduction of ₦{asset_cost:,.2f}")
+            
+            if asset.get('capitalEntryId'):
+                capital_result = mongo.db.cash_adjustments.update_one(
+                    {'_id': asset['capitalEntryId'], 'userId': current_user['_id']},
+                    {
+                        '$set': {
+                            'status': 'deleted',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow(),
+                            'deletedReason': f'Asset "{asset_name}" was deleted',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                if capital_result.modified_count > 0:
+                    cleanup_results.append(f"Capital entry: {capital_result.modified_count} cleaned")
+                    user_guidance.append(f"Reversed capital contribution of ₦{asset_cost:,.2f}")
+            
+            # 2. Clean up linked expense (auto-created CAPEX expense)
+            if asset.get('linkedExpenseId'):
+                expense_result = mongo.db.expenses.update_one(
+                    {'_id': ObjectId(asset['linkedExpenseId']), 'userId': current_user['_id']},
+                    {
+                        '$set': {
+                            'status': 'deleted',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow(),
+                            'deletedReason': f'Asset "{asset_name}" was deleted',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                if expense_result.modified_count > 0:
+                    cleanup_results.append(f"Linked expense: {expense_result.modified_count} cleaned")
+                    user_guidance.append(f"Removed CAPEX expense of ₦{asset_cost:,.2f}")
+            
+            # 3. Clean up any expenses that reference this asset
+            expense_cleanup = mongo.db.expenses.update_many(
+                {'linkedAssetId': str(asset_id), 'userId': current_user['_id']},
+                {
+                    '$set': {
+                        'status': 'deleted',
+                        'isDeleted': True,
+                        'deletedAt': datetime.utcnow(),
+                        'deletedReason': f'Asset "{asset_name}" was deleted',
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            if expense_cleanup.modified_count > 0:
+                cleanup_results.append(f"Asset-linked expenses: {expense_cleanup.modified_count} cleaned")
+                user_guidance.append(f"Cleaned up {expense_cleanup.modified_count} related expense(s)")
+
+            # 4. Special handling for manual payment method
+            manual_payment_guidance = None
+            if payment_method == 'manual' and not asset.get('paymentRecorded', False):
+                manual_payment_guidance = {
+                    'type': 'manual_payment_reminder',
+                    'message': f'If you recorded a separate payment for "{asset_name}" (₦{asset_cost:,.2f}), you may want to delete that entry too to keep your books balanced.',
+                    'amount': asset_cost,
+                    'assetName': asset_name,
+                    'suggestion': 'Check your recent expenses or cash adjustments for this payment.'
+                }
+
             # Delete the asset
             result = mongo.db.assets.delete_one({
                 '_id': ObjectId(asset_id),
@@ -583,10 +671,26 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             if result.deleted_count == 0:
                 return jsonify({'success': False, 'message': 'Asset not found'}), 404
 
-            return jsonify({
+            # Log cleanup results for debugging
+            if cleanup_results:
+                print(f"✅ Asset {asset_id} deleted with cleanup: {', '.join(cleanup_results)}")
+
+            # Prepare response with user guidance
+            response_data = {
                 'success': True,
-                'message': 'Asset deleted successfully'
-            })
+                'message': 'Asset deleted successfully',
+                'cleanup': {
+                    'recordsCleaned': len(cleanup_results),
+                    'details': cleanup_results,
+                    'userGuidance': user_guidance
+                }
+            }
+            
+            # Add manual payment guidance if applicable
+            if manual_payment_guidance:
+                response_data['manualPaymentGuidance'] = manual_payment_guidance
+
+            return jsonify(response_data)
 
         except Exception as e:
             print(f"Error in delete_asset: {e}")

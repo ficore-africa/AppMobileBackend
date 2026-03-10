@@ -2739,8 +2739,13 @@ Your registered tax profile remains <b>{profile_name}</b>.
         total_current_assets = inventory_value + debtors_value + cash_balance
         total_all_assets = total_assets_nbv + total_current_assets
         
-        # Total liabilities including tax liability
-        total_current_liabilities = creditors_value
+        # CRITICAL FIX (Mar 10, 2026): Include FC Credit and Subscription liabilities
+        # Get FC Credit and Subscription liabilities from tax_data
+        fc_credit_liabilities = tax_data.get('fc_credit_liabilities', 0)
+        subscription_liabilities = tax_data.get('subscription_liabilities', 0)
+        
+        # Total liabilities including all liability types
+        total_current_liabilities = creditors_value + fc_credit_liabilities + subscription_liabilities
         
         # CRITICAL FIX (Feb 27, 2026): Calculate closing equity with capital contributions
         # Formula: Opening Equity + Net Profit - Drawings + Capital
@@ -2775,7 +2780,8 @@ Your registered tax profile remains <b>{profile_name}</b>.
         unpaid_tax = max(0, estimated_tax - tax_liability)
         
         # CRITICAL FIX (Feb 27, 2026): Include loans in total liabilities
-        total_current_liabilities = creditors_value + unpaid_tax + loans_outstanding
+        # CRITICAL FIX (Mar 10, 2026): Include FC Credit and Subscription liabilities
+        total_current_liabilities = creditors_value + unpaid_tax + loans_outstanding + fc_credit_liabilities + subscription_liabilities
         
         # Period text
         period_text = f"{start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}" if start_date and end_date else "All Time"
@@ -2944,6 +2950,8 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ['', '', ''],
             ['CURRENT LIABILITIES', '', ''],
             ['Accounts Payable (Creditors)', creditors_display, f'{creditors_count} vendors' if creditors_count > 0 else ''],
+            ['FC Credit Liabilities', fc_credit_display, 'Outstanding FC Credit obligations'],  # NEW (Mar 10, 2026)
+            ['Subscription Liabilities', subscription_display, 'Outstanding subscription obligations'],  # NEW (Mar 10, 2026)
             ['Loans Payable', loans_display, 'Outstanding loan balances'],  # NEW (Feb 27, 2026)
             ['Estimated Tax Payable', format_currency(unpaid_tax), 'Unpaid tax obligation'],
             ['Total Current Liabilities', format_currency(total_current_liabilities), ''],
@@ -3094,10 +3102,16 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         # LIABILITIES & EQUITY Section
         story.append(Paragraph("LIABILITIES & EQUITY", self.styles['SectionHeader']))
         
+        # Format liability displays
+        fc_credit_display = format_currency(fc_credit_liabilities) if fc_credit_liabilities > 0 else "Not tracked"
+        subscription_display = format_currency(subscription_liabilities) if subscription_liabilities > 0 else "Not tracked"
+        
         liabilities_section = [
             ['Category', 'Amount (N)'],
             ['CURRENT LIABILITIES', ''],
             ['Accounts Payable (Creditors)', creditors_display],
+            ['FC Credit Liabilities', fc_credit_display],  # NEW (Mar 10, 2026)
+            ['Subscription Liabilities', subscription_display],  # NEW (Mar 10, 2026)
             ['Loans Payable', loans_display],  # NEW (Feb 27, 2026)
             ['Estimated Tax Payable', format_currency(unpaid_tax)],
             ['Total Current Liabilities', format_currency(total_current_liabilities)],
@@ -3120,11 +3134,11 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT LIABILITIES
-            ('FONTNAME', (0, 7), (0, 7), 'Helvetica-Bold'),  # OWNER'S EQUITY (was 6, now 7 due to loans row)
-            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # Closing Equity (was 10, now 12 due to capital row)
-            ('BACKGROUND', (0, 12), (-1, 12), colors.HexColor('#E8F5E9')),  # Light green
-            ('FONTNAME', (0, 14), (-1, 14), 'Helvetica-Bold'),  # TOTAL (was 12, now 14)
-            ('BACKGROUND', (0, 14), (-1, 14), colors.HexColor('#FFEBEE')),
+            ('FONTNAME', (0, 9), (0, 9), 'Helvetica-Bold'),  # OWNER'S EQUITY (was 7, now 9 due to FC Credit + Subscription rows)
+            ('FONTNAME', (0, 14), (-1, 14), 'Helvetica-Bold'),  # Closing Equity (was 12, now 14 due to new liability rows)
+            ('BACKGROUND', (0, 14), (-1, 14), colors.HexColor('#E8F5E9')),  # Light green
+            ('FONTNAME', (0, 16), (-1, 16), 'Helvetica-Bold'),  # TOTAL (was 14, now 16 due to new liability rows)
+            ('BACKGROUND', (0, 16), (-1, 16), colors.HexColor('#FFEBEE')),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
         
