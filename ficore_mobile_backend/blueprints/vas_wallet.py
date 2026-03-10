@@ -2536,6 +2536,18 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                                 reason="Deposit fee refund (first-time funding bonus)"
                             )
                             print(f'✅ Credited back ₦{deposit_fee} deposit fee')
+                            
+                            # 🆕 RECORD FEE REFUND AS MARKETING EXPENSE (March 10, 2026)
+                            try:
+                                from utils.business_bookkeeping import record_fee_refund_marketing_expense
+                                record_fee_refund_marketing_expense(
+                                    mongo=mongo,
+                                    user_id=ObjectId(user_id),
+                                    fee_amount=deposit_fee,
+                                    refund_reason="Referral deposit fee waiver"
+                                )
+                            except Exception as e:
+                                print(f'⚠️  Failed to record fee refund marketing expense: {str(e)}')
                         
                         # BONUS 2: Grant 5 FiCore Credits
                         current_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -2564,6 +2576,19 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         }
                         mongo.db.credit_transactions.insert_one(credit_transaction)
                         print(f'✅ Granted 5 FiCore Credits')
+                        
+                        # 🆕 RECORD FC BONUS AS MARKETING EXPENSE (March 10, 2026)
+                        try:
+                            from utils.business_bookkeeping import record_fc_marketing_expense
+                            record_fc_marketing_expense(
+                                mongo=mongo,
+                                user_id=ObjectId(user_id),
+                                fc_amount=5.0,
+                                operation='referral_bonus',
+                                description='Referral signup bonus - 5 FCs'
+                            )
+                        except Exception as e:
+                            print(f'⚠️  Failed to record FC referral marketing expense: {str(e)}')
                         
                         # Update referral record
                         mongo.db.referrals.update_one(
