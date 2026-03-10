@@ -547,7 +547,7 @@ print("✓ Provider Health blueprint registered at /api/admin/provider-health")
 
 # Register treasury management dashboard (NEW - Mar 9, 2026)
 from blueprints.treasury_dashboard import init_treasury_dashboard_blueprint
-treasury_blueprint = init_treasury_dashboard_blueprint(mongo)
+treasury_blueprint = init_treasury_dashboard_blueprint(mongo, token_required, admin_required)
 app.register_blueprint(treasury_blueprint)
 print("✓ Treasury Dashboard blueprint registered at /admin/treasury")
 
