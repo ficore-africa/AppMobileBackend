@@ -339,6 +339,15 @@ def create_expense():
                     'errors': {'source': ['Invalid value']}
                 }), 400
             
+            # Normalize category to always be a string (not dict)
+            # Frontend sometimes sends {"name": "Food", "icon": "..."} and sometimes just "Food"
+            # We standardize to always store as string for consistency
+            category_value = data['category']
+            if isinstance(category_value, dict):
+                category_value = category_value.get('name', 'Other')
+            elif not isinstance(category_value, str):
+                category_value = str(category_value)
+            
             # TASK 4 PART 3B (Feb 28, 2026): Handle excludeFromProfitLoss field for CAPEX
             # Capital expenditures are excluded from P&L but included in Balance Sheet
             exclude_from_pl = data.get('exclude_from_profit_loss', False)
@@ -362,15 +371,6 @@ def create_expense():
                 # Entry is premium if user is admin OR has active subscription
                 if is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow()):
                     is_premium_entry = True
-            
-            # Normalize category to always be a string (not dict)
-            # Frontend sometimes sends {"name": "Food", "icon": "..."} and sometimes just "Food"
-            # We standardize to always store as string for consistency
-            category_value = data['category']
-            if isinstance(category_value, dict):
-                category_value = category_value.get('name', 'Other')
-            elif not isinstance(category_value, str):
-                category_value = str(category_value)
             
             expense_data = {
                 'userId': current_user['_id'],
