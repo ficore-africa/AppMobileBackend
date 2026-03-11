@@ -7,10 +7,13 @@ Providers: Monnify (primary), Peyflex (fallback)
 Features: Dynamic pricing, emergency pricing recovery, retention messaging
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
-import os
 import requests
 import uuid
 import json
@@ -21,6 +24,8 @@ from utils.emergency_pricing_recovery import tag_emergency_transaction
 from blueprints.notifications import create_user_notification
 from utils.atomic_transactions import check_recent_duplicate_transaction
 from utils.transaction_task_queue import process_vas_transaction_with_reservation, get_user_available_balance
+from utils.test_account_filter import is_test_account
+from utils.test_account_filter import simulate_airtime_purchase, simulate_data_purchase, simulate_electricity_purchase
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):
@@ -866,6 +871,23 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
         Get data plans with dynamic pricing for a specific network
         """
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock plans for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock data plans with pricing for {user_email} - Network: {network}')
+                from utils.test_account_filter import get_mock_data_plans
+                mock_plans = get_mock_data_plans(network)
+                return jsonify({
+                    'success': True,
+                    'data': mock_plans,
+                    'message': f'Data plans for {network.upper()} (TEST MODE)',
+                    'source': 'test_mode',
+                    'network': network,
+                    'provider': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             # Determine user tier
             user_tier = 'basic'
             if current_user.get('subscriptionStatus') == 'active':
@@ -1015,6 +1037,21 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     def get_airtime_networks(current_user):
         """Get available airtime networks from Monnify Bills API (primary) with Peyflex fallback"""
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock networks for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock airtime networks for {user_email}')
+                from utils.test_account_filter import get_mock_airtime_networks
+                mock_networks = get_mock_airtime_networks()
+                return jsonify({
+                    'success': True,
+                    'data': mock_networks,
+                    'message': 'Airtime networks (TEST MODE)',
+                    'source': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             print('INFO: Fetching airtime networks from Monnify Bills API')
             
             # Try Monnify first
@@ -1025,6 +1062,17 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     'GET',
                     access_token=access_token
                 )
+                
+                # 🔍 DEBUG: Log complete Monnify airtime networks response
+                print('═══════════════════════════════════════════════════')
+                print('🔍 MONNIFY AIRTIME NETWORKS DEBUG')
+                print('═══════════════════════════════════════════════════')
+                print(f'Timestamp: {datetime.now().isoformat()}')
+                print(f'Total Billers: {len(billers_response["responseBody"]["content"])}')
+                print('\n📋 COMPLETE BILLER LIST:')
+                import json
+                print(json.dumps(billers_response['responseBody']['content'], indent=2))
+                print('═══════════════════════════════════════════════════\n')
                 
                 # Transform Monnify billers to our format
                 networks = []
@@ -1127,6 +1175,21 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     def get_data_networks(current_user):
         """Get available data networks from Monnify Bills API (primary) with Peyflex fallback"""
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock networks for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock data networks for {user_email}')
+                from utils.test_account_filter import get_mock_data_networks
+                mock_networks = get_mock_data_networks()
+                return jsonify({
+                    'success': True,
+                    'data': mock_networks,
+                    'message': 'Data networks (TEST MODE)',
+                    'source': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             vas_log('Fetching data networks from Monnify Bills API')
             vas_log(f'Route /api/vas/purchase/networks/data was called by user {current_user.get("_id", "unknown")}')
             
@@ -1274,6 +1337,24 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             'emergency': True
         }), 200
     
+    # ==================== DEBUG LOGS ENDPOINT (TEMPORARY) ====================
+    
+    @vas_purchase_bp.route('/debug_logs/<filename>', methods=['GET'])
+    def get_debug_log(filename):
+        """Temporary endpoint to fetch debug log JSON files"""
+        try:
+            import os
+            file_path = os.path.join('debug_logs', filename)
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'File not found', 'path': file_path}), 404
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            return jsonify(data), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
     # ==================== DATA PLANS ENDPOINT ====================
     
     @vas_purchase_bp.route('/data-plans/<network>', methods=['GET'])
@@ -1281,6 +1362,23 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     def get_data_plans(current_user, network):
         """Get data plans for a specific network from Monnify Bills API (primary) with Peyflex fallback"""
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock plans for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock data plans for {user_email} - Network: {network}')
+                from utils.test_account_filter import get_mock_data_plans
+                mock_plans = get_mock_data_plans(network)
+                return jsonify({
+                    'success': True,
+                    'data': mock_plans,
+                    'message': f'Data plans for {network.upper()} (TEST MODE)',
+                    'source': 'test_mode',
+                    'network': network,
+                    'provider': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             vas_log(f'Fetching data plans for network: {network}')
             vas_log(f'Route /api/vas/purchase/data-plans/{network} was called by user {current_user.get("_id", "unknown")}')
             
@@ -1367,6 +1465,29 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         'GET',
                         access_token=access_token
                     )
+                    
+                    # 🔍 DEBUG: Write complete Monnify response to file
+                    import json
+                    import os
+                    
+                    debug_dir = 'debug_logs'
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    debug_data = {
+                        'timestamp': datetime.now().isoformat(),
+                        'network': network,
+                        'monnify_network': monnify_network,
+                        'biller_code': target_biller["code"],
+                        'total_products': len(products_response["responseBody"]["content"]),
+                        'products': products_response['responseBody']['content']
+                    }
+                    
+                    filename = f'{debug_dir}/monnify_{network.lower()}_plans.json'
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+                    
+                    print(f'✅ DEBUG: Saved {len(debug_data["products"])} products to {filename}')
+                    vas_log(f'DEBUG: Saved Monnify {network.upper()} plans to {filename}')
                     
                     # Transform Monnify products to our format
                     plans = []
@@ -1497,6 +1618,33 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                     response = requests.get(url, headers=headers, timeout=10)
                     # print(f'INFO: Peyflex plans response status: {response.status_code}')
                     # print(f'INFO: Response preview: {response.text[:500]}')
+                    
+                    # 🔍 DEBUG: Write complete Peyflex response to file
+                    import json
+                    import os
+                    
+                    debug_dir = 'debug_logs'
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    debug_data = {
+                        'timestamp': datetime.now().isoformat(),
+                        'network': network,
+                        'peyflex_network_id': full_network_id,
+                        'response_status': response.status_code,
+                        'response_data': None
+                    }
+                    
+                    try:
+                        debug_data['response_data'] = response.json()
+                    except:
+                        debug_data['response_data'] = response.text
+                    
+                    filename = f'{debug_dir}/peyflex_{network.lower()}_plans.json'
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        json.dump(debug_data, f, indent=2, ensure_ascii=False)
+                    
+                    print(f'✅ DEBUG: Saved Peyflex response to {filename}')
+                    vas_log(f'DEBUG: Saved Peyflex {network.upper()} plans to {filename}')
                     
                     if response.status_code == 200:
                         try:
@@ -1646,6 +1794,21 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
         ALL NETWORKS NOW HAVE 4-STEP PROCESS (Golden Rule #33-35)
         """
         try:
+            user_email = current_user.get('email', '')
+            
+            # TEST MODE: Return mock plan types for test accounts
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Returning mock plan types for {user_email} - Network: {network}')
+                from utils.test_account_filter import get_mock_data_plan_types
+                mock_plan_types = get_mock_data_plan_types(network)
+                return jsonify({
+                    'success': True,
+                    'data': mock_plan_types,
+                    'message': f'Plan types for {network.upper()} (TEST MODE)',
+                    'source': 'test_mode',
+                    'testMode': True
+                }), 200
+            
             vas_log(f'Fetching plan types for network: {network}')
             network_lower = network.lower()
             
@@ -2312,6 +2475,72 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             user_id = str(current_user['_id'])
+            user_email = current_user.get('email', '')
+            
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate successful purchase
+            if is_test_account(user_email):
+                print(f'🧪 [TEST MODE - STEP 1] Request received for {user_email}')
+                print(f'🧪 [TEST MODE - STEP 1] Network: {network}, Amount: ₦{amount}, Phone: {phone_number}')
+                
+                # Check wallet balance
+                print(f'🧪 [TEST MODE - STEP 2] Checking wallet for user_id: {user_id}')
+                wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+                if not wallet:
+                    print(f'❌ [TEST MODE - STEP 2] FAILED: Wallet not found for user_id: {user_id}')
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet not found. Please create a wallet first.',
+                        'errors': {'wallet': ['Wallet not found']}
+                    }), 404
+                
+                current_balance = wallet.get('balance', 0)
+                print(f'✅ [TEST MODE - STEP 2] Wallet found. Balance: ₦{current_balance:,.2f}')
+                
+                if current_balance < amount:
+                    print(f'❌ [TEST MODE - STEP 3] FAILED: Insufficient balance. Have: ₦{current_balance:,.2f}, Need: ₦{amount:,.2f}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
+                        'errors': {'wallet': ['Insufficient balance']}
+                    }), 400
+                
+                print(f'✅ [TEST MODE - STEP 3] Balance sufficient. Proceeding with deduction.')
+                
+                # Deduct from wallet
+                print(f'🧪 [TEST MODE - STEP 4] Deducting ₦{amount} from wallet...')
+                wallet_update = mongo.db.vas_wallets.update_one(
+                    {'userId': ObjectId(user_id)},
+                    {
+                        '$inc': {'balance': -amount},
+                        '$set': {'updatedAt': datetime.utcnow()}
+                    }
+                )
+                print(f'✅ [TEST MODE - STEP 4] Wallet updated. Modified count: {wallet_update.modified_count}')
+                
+                # Simulate successful purchase
+                print(f'🧪 [TEST MODE - STEP 5] Simulating airtime purchase...')
+                result = simulate_airtime_purchase(mongo, user_id, network, amount, phone_number)
+                print(f'✅ [TEST MODE - STEP 5] Purchase simulated. Transaction ID: {result["transactionId"]}')
+                
+                new_balance = current_balance - amount
+                print(f'✅ [TEST MODE - STEP 6] SUCCESS! New wallet balance: ₦{new_balance:,.2f}')
+                print(f'🧪 [TEST MODE - STEP 6] Returning success response to frontend')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'₦{amount} {network} airtime purchased successfully (TEST MODE)',
+                    'data': {
+                        'transactionId': result['transactionId'],
+                        'reference': result['reference'],
+                        'amount': amount,
+                        'network': network,
+                        'phoneNumber': phone_number,
+                        'newBalance': new_balance,
+                        'testMode': True
+                    }
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
             
             # Determine user tier for record keeping
             user_tier = 'basic'
@@ -2424,22 +2653,25 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             api_response = None
             
             try:
-                # Try Monnify first (primary provider)
+                # AIRTIME ROUTING: Monnify FIRST (3% commission), Peyflex fallback (1% commission)
+                # Strategy: Try best commission first, but don't fail users if Monnify is down
+                print(f'🎯 AIRTIME ROUTING: Monnify PRIMARY (3% commission), Peyflex FALLBACK (1% commission)')
                 api_response = call_monnify_airtime(network, amount, phone_number, request_id)
                 success = True
                 print(f'SUCCESS: Monnify airtime purchase successful: {request_id}')
             except Exception as monnify_error:
-                print(f'WARNING: Monnify failed: {str(monnify_error)}')
+                print(f'WARNING: Monnify airtime failed: {str(monnify_error)}')
                 error_message = str(monnify_error)
                 
                 try:
-                    # Fallback to Peyflex
+                    # Fallback to Peyflex - 1% commission is better than 0% (failed transaction)
+                    print(f'🔄 FALLBACK: Trying Peyflex (1% commission better than failing user)')
                     api_response = call_peyflex_airtime(network, amount, phone_number, request_id)
                     provider = 'peyflex'
                     success = True
                     print(f'SUCCESS: Peyflex airtime purchase successful (fallback): {request_id}')
                 except Exception as peyflex_error:
-                    print(f'ERROR: Peyflex failed: {str(peyflex_error)}')
+                    print(f'ERROR: Peyflex airtime also failed: {str(peyflex_error)}')
                     error_message = f'Both providers failed. Monnify: {monnify_error}, Peyflex: {peyflex_error}'
             
             if not success:
@@ -2706,6 +2938,9 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Airtime', network],
                 'vasTransactionId': transaction_id,
+                'sourceType': 'vas_airtime',  # Granular source type for VAS airtime purchases
+                'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
+                'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'metadata': {
                     'faceValue': amount,
                     'actualCost': amount,  # Actual cost is now the purchase amount (fees eliminated)
@@ -2729,6 +2964,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             expense_entry = auto_populate_expense_fields(expense_entry)
             
             mongo.db.expenses.insert_one(expense_entry)
+            
+            # AUTOMATIC DRAWINGS (Phase 2.2): Check if this should create a drawing entry
+            from blueprints.drawings_auto import check_and_create_drawing
+            check_and_create_drawing(mongo, expense_entry, ObjectId(user_id))
             
             print(f'SUCCESS: Airtime purchase complete: User {user_id}, Face Value: ₦ {amount}, Charged: ₦ {selling_price}, Margin: ₦ {margin}, Provider: {provider}')
             
@@ -2824,6 +3063,74 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             user_id = str(current_user['_id'])
+            user_email = current_user.get('email', '')
+            
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate successful purchase
+            if is_test_account(user_email):
+                print(f'🧪 [TEST MODE - STEP 1] Data purchase request received for {user_email}')
+                print(f'🧪 [TEST MODE - STEP 1] Network: {network}, Plan: {data_plan_name}, Amount: ₦{amount}')
+                
+                # Check wallet balance
+                print(f'🧪 [TEST MODE - STEP 2] Checking wallet for user_id: {user_id}')
+                wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+                if not wallet:
+                    print(f'❌ [TEST MODE - STEP 2] FAILED: Wallet not found for user_id: {user_id}')
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet not found. Please create a wallet first.',
+                        'errors': {'wallet': ['Wallet not found']}
+                    }), 404
+                
+                current_balance = wallet.get('balance', 0)
+                print(f'✅ [TEST MODE - STEP 2] Wallet found. Balance: ₦{current_balance:,.2f}')
+                
+                if current_balance < amount:
+                    print(f'❌ [TEST MODE - STEP 3] FAILED: Insufficient balance. Have: ₦{current_balance:,.2f}, Need: ₦{amount:,.2f}')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Insufficient wallet balance. You have ₦{current_balance:,.2f}, but need ₦{amount:,.2f}',
+                        'errors': {'wallet': ['Insufficient balance']}
+                    }), 400
+                
+                print(f'✅ [TEST MODE - STEP 3] Balance sufficient. Proceeding with deduction.')
+                
+                # Deduct from wallet
+                print(f'🧪 [TEST MODE - STEP 4] Deducting ₦{amount} from wallet...')
+                wallet_update = mongo.db.vas_wallets.update_one(
+                    {'userId': ObjectId(user_id)},
+                    {
+                        '$inc': {'balance': -amount},
+                        '$set': {'updatedAt': datetime.utcnow()}
+                    }
+                )
+                print(f'✅ [TEST MODE - STEP 4] Wallet updated. Modified count: {wallet_update.modified_count}')
+                
+                # Simulate successful purchase
+                print(f'🧪 [TEST MODE - STEP 5] Simulating data purchase...')
+                result = simulate_data_purchase(mongo, user_id, network, data_plan_id, phone_number, amount, data_plan_name)
+                print(f'✅ [TEST MODE - STEP 5] Purchase simulated. Transaction ID: {result["transactionId"]}')
+                
+                new_balance = current_balance - amount
+                print(f'✅ [TEST MODE - STEP 6] SUCCESS! New wallet balance: ₦{new_balance:,.2f}')
+                print(f'🧪 [TEST MODE - STEP 6] Returning success response to frontend')
+                print(f'[TEST MODE] New wallet balance: ₦{current_balance - amount:,.2f}')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{data_plan_name} purchased successfully (TEST MODE)',
+                    'data': {
+                        'transactionId': result['transactionId'],
+                        'reference': result['reference'],
+                        'amount': amount,
+                        'network': network,
+                        'phoneNumber': phone_number,
+                        'planName': data_plan_name,
+                        'newBalance': current_balance - amount,
+                        'testMode': True
+                    }
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
             
             # Determine user tier for pricing
             user_tier = 'basic'
@@ -2844,29 +3151,19 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             print(f'   No Margin Added: ₦{margin}')
             print(f'   Policy: Sell data at face value')
             
-            # CRITICAL: Plan validation to prevent mismatches
-            print(f'💰 DATA PRICING (NO MARGIN POLICY):')
-            print(f'   Plan Amount: ₦{amount}')
-            print(f'   User Pays: ₦{selling_price} (EXACT MATCH)')
-            print(f'   No Margin Added: ₦{margin}')
-            print(f'   Policy: Sell data at face value')
-            
-            # CRITICAL: Validate plan exists in provider systems
-            plan_validation_result = validate_data_plan_exists(network, data_plan_id, amount)
-            if not plan_validation_result['valid']:
-                print(f'❌ PLAN VALIDATION FAILED: {plan_validation_result["error"]}')
-                return jsonify({
-                    'success': False,
-                    'message': f'Data plan validation failed: {plan_validation_result["error"]}',
-                    'errors': {'general': [f'Plan {data_plan_id} not available for {network}']},
-                    'user_message': {
-                        'title': '⚠️ Plan Not Available',
-                        'message': f'The selected {network} data plan is currently unavailable. Please try a different plan or network.',
-                        'type': 'plan_unavailable',
-                        'support_message': 'This plan may have been discontinued or is temporarily unavailable.',
-                        'retry_after': '5 minutes',
-                    }
-                }), 400
+            # 🎯 CRITICAL FIX: Skip plan validation - it was checking wrong provider
+            # The validation function checks BOTH Monnify and Peyflex, but:
+            # - MTN Share plans (M1GBS, etc.) only exist in Peyflex
+            # - Monnify plans only exist in Monnify
+            # This caused false "PLAN VALIDATION FAILED" errors
+            # 
+            # SOLUTION: Let the provider routing logic handle validation
+            # Each provider's API will validate the plan when we call it
+            # If plan doesn't exist, the API call will fail with clear error
+            #
+            # This aligns with Golden Rule #33: "NO AUTOMATIC FALLBACKS"
+            # User chose a provider via plan type - we trust that choice
+            print(f'✅ SKIPPING PRE-VALIDATION: Provider will validate plan during purchase')
             
             # EMERGENCY PRICING DETECTION
             emergency_multiplier = 2.0
@@ -3112,7 +3409,7 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                         print(f'   Marking as SUCCESS and logging for admin review')
                         
                         # Log mismatch for admin review (don't fail transaction)
-                        log_plan_mismatch(user_id, 'monnify', {
+                        log_plan_mismatch(mongo.db, user_id, 'monnify', {
                             'transaction_id': str(transaction_id),
                             'requested_plan_id': data_plan_id,
                             'requested_plan_name': data_plan_name,
@@ -3442,6 +3739,9 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'date': datetime.utcnow(),
                 'tags': ['VAS', 'Data', network],
                 'vasTransactionId': transaction_id,
+                'sourceType': 'vas_data',  # Granular source type for VAS data purchases
+                'status': 'active',  # CRITICAL: Required for immutability system (Jan 14, 2026)
+                'isDeleted': False,  # CRITICAL: Required for immutability system (Jan 14, 2026)
                 'metadata': {
                     'planName': data_plan_name,
                     'planId': data_plan_id,
@@ -3462,6 +3762,10 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
             expense_entry = auto_populate_expense_fields(expense_entry)
             
             mongo.db.expenses.insert_one(expense_entry)
+            
+            # AUTOMATIC DRAWINGS (Phase 2.2): Check if this should create a drawing entry
+            from blueprints.drawings_auto import check_and_create_drawing
+            check_and_create_drawing(mongo, expense_entry, ObjectId(user_id))
             
             # RETENTION DATA for Frontend Trust Building
             retention_data = {
@@ -3520,6 +3824,52 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 'message': 'Failed to purchase data',
                 'errors': {'general': [str(e)]}
             }), 500
+    
+    # ==================== DEBUG ENDPOINTS ====================
+    
+    @vas_purchase_bp.route('/debug/files', methods=['GET'])
+    def list_debug_files():
+        """List all debug log files"""
+        import os
+        debug_dir = 'debug_logs'
+        
+        if not os.path.exists(debug_dir):
+            return jsonify({'files': [], 'message': 'No debug files yet'}), 200
+        
+        files = []
+        for filename in os.listdir(debug_dir):
+            if filename.endswith('.json'):
+                filepath = os.path.join(debug_dir, filename)
+                stat = os.stat(filepath)
+                files.append({
+                    'filename': filename,
+                    'size': stat.st_size,
+                    'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    'view_url': f'/api/vas/purchase/debug/view/{filename}'
+                })
+        
+        return jsonify({'files': files, 'count': len(files)}), 200
+    
+    @vas_purchase_bp.route('/debug/view/<filename>', methods=['GET'])
+    def view_debug_file(filename):
+        """View debug log file content as JSON"""
+        import os
+        
+        # Security: Only allow JSON files
+        if not filename.endswith('.json'):
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        filepath = os.path.join('debug_logs', filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found', 'filepath': filepath}), 404
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return jsonify(data), 200
+        except Exception as e:
+            return jsonify({'error': f'Failed to read file: {str(e)}'}), 500
     
     return vas_purchase_bp
 
@@ -3778,9 +4128,15 @@ def check_plan_name_similarity(requested_name, delivered_name):
     except Exception:
         return False
 
-def log_plan_mismatch(user_id, provider, mismatch_details):
+def log_plan_mismatch(mongo_db, user_id, provider, mismatch_details):
     """
     Log plan mismatch incidents for investigation and recovery
+    
+    Args:
+        mongo_db: MongoDB database instance
+        user_id: User ID
+        provider: Provider name (monnify, peyflex)
+        mismatch_details: Dictionary with mismatch details
     """
     try:
         from datetime import datetime
@@ -3788,9 +4144,6 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         
         # Import standardized reconciliation marker
         from utils.reconciliation_marker import mark_plan_mismatch_for_reconciliation
-        
-        # mongo is available from the blueprint closure scope
-        # No need to import it - it's passed to init_vas_purchase_blueprint
         
         # Optional notification import - don't fail if not available
         try:
@@ -3819,7 +4172,7 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         }
         
         # Store in MongoDB for investigation
-        mongo.db.plan_mismatch_logs.insert_one(mismatch_log)
+        mongo_db.plan_mismatch_logs.insert_one(mismatch_log)
         
         print(f'📝 PLAN MISMATCH LOGGED: {str(mismatch_log["_id"])}')
         print(f'   User: {user_id}')
@@ -3831,7 +4184,7 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         if transaction_id:
             try:
                 success = mark_plan_mismatch_for_reconciliation(
-                    mongo_db=mongo.db,
+                    mongo_db=mongo_db,
                     transaction_id=transaction_id,
                     requested_plan=mismatch_details.get('requested_plan_name'),
                     requested_amount=mismatch_details.get('requested_amount'),
@@ -3851,7 +4204,7 @@ def log_plan_mismatch(user_id, provider, mismatch_details):
         if notification_available:
             try:
                 create_user_notification(
-                    mongo=mongo.db,
+                    mongo=mongo_db,
                     user_id=user_id,
                     category='system',
                     title='⚠️ Data Plan Issue Detected',

@@ -11,11 +11,12 @@ import hmac
 import hashlib
 
 def init_credits_blueprint(mongo, token_required, serialize_doc):
+    from utils.business_bookkeeping import *
+    from utils.test_account_filter import is_test_account, get_paystack_keys, get_test_account_user_ids
+    
     credits_bp = Blueprint('credits', __name__, url_prefix='/credits')
     
-    # Paystack configuration for FC purchases
-    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
-    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_your_public_key')
+    # Paystack configuration for FC purchases (defaults - will be overridden per user)
     PAYSTACK_BASE_URL = 'https://api.paystack.co'
     
     # Credit top-up configuration - For NON-SUBSCRIBERS ONLY
@@ -43,10 +44,16 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
         """Check if file extension is allowed"""
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    def _make_paystack_request(endpoint, method='GET', data=None):
-        """Make authenticated request to Paystack API"""
+    def _make_paystack_request(endpoint, method='GET', data=None, user_email=None):
+        """Make authenticated request to Paystack API with test mode support"""
+        # Get appropriate keys based on user
+        paystack_keys = get_paystack_keys(user_email) if user_email else {
+            'secret_key': os.getenv('PAYSTACK_SECRET_KEY'),
+            'mode': 'live'
+        }
+        
         headers = {
-            'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+            'Authorization': f'Bearer {paystack_keys["secret_key"]}',
             'Content-Type': 'application/json'
         }
         
@@ -62,7 +69,10 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            return response.json()
+            result = response.json()
+            if paystack_keys['mode'] == 'test':
+                print(f"[TEST MODE] Paystack {method} {endpoint}: {result}")
+            return result
         except Exception as e:
             print(f"Paystack API error: {str(e)}")
             return {'status': False, 'message': f'Payment service error: {str(e)}'}
@@ -74,7 +84,12 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
         try:
             # Check if user is a premium subscriber
             user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_admin = user.get('isAdmin', False)
+            
+            # ✅ CRITICAL FIX: Validate subscription end date, not just flag
             is_subscribed = user.get('isSubscribed', False)
+            subscription_end = user.get('subscriptionEndDate')
+            is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
             
             options = []
             for package in CREDIT_PACKAGES:
@@ -262,9 +277,16 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
     @credits_bp.route('/purchase/initialize', methods=['POST'])
     @token_required
     def initialize_credit_purchase(current_user):
-        """Initialize automated FC purchase with Paystack"""
+        """Initialize automated FC purchase with Paystack (with test mode support)"""
         try:
             data = request.get_json()
+            
+            # Get user email
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_email = user.get('email', 'user@example.com')
+            
+            print(f"[CREDITS] Initialize purchase for {user_email}")
+            print(f"[CREDITS] Test mode: {is_test_account(user_email)}")
             
             # Validate required fields
             if 'credits' not in data:
@@ -291,13 +313,54 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
 
             naira_amount = selected_package['naira']
             
-            # Get user email for Paystack
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
-            user_email = user.get('email', 'user@example.com')
-            
             # Create transaction reference
             transaction_ref = f"fc_purchase_{current_user['_id']}_{uuid.uuid4().hex[:8]}"
             
+            # ==================== TEST MODE CHECK ====================
+            # For Google Play review test accounts, simulate instant success
+            if is_test_account(user_email):
+                print(f'[TEST MODE] Simulating credit purchase for {user_email}')
+                print(f'[TEST MODE] Credits: {credit_amount}, Amount: ₦{naira_amount}')
+                
+                # Store pending transaction
+                pending_transaction = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'transactionRef': transaction_ref,
+                    'paystackRef': f'TEST_{uuid.uuid4().hex[:10]}',
+                    'accessCode': f'TEST_{uuid.uuid4().hex[:10]}',
+                    'creditAmount': credit_amount,
+                    'nairaAmount': naira_amount,
+                    'status': 'pending',
+                    'paymentMethod': 'paystack_test',
+                    'testMode': True,
+                    'createdAt': datetime.utcnow(),
+                    'expiresAt': datetime.utcnow() + timedelta(minutes=15)
+                }
+                
+                mongo.db.pending_credit_purchases.insert_one(pending_transaction)
+                
+                # Return mock authorization URL
+                mock_url = f"{request.host_url.rstrip('/')}/credits/verify-callback?reference={transaction_ref}&test_mode=true"
+                
+                print(f'[TEST MODE] Mock payment URL: {mock_url}')
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'transactionRef': transaction_ref,
+                        'paystackRef': pending_transaction['paystackRef'],
+                        'accessCode': pending_transaction['accessCode'],
+                        'authorizationUrl': mock_url,
+                        'creditAmount': credit_amount,
+                        'nairaAmount': naira_amount,
+                        'testMode': True
+                    },
+                    'message': 'Payment initialized successfully (TEST MODE)'
+                }), 200
+            # ==================== END TEST MODE CHECK ====================
+            
+            # LIVE MODE: Normal Paystack flow
             # Initialize Paystack transaction
             paystack_data = {
                 'email': user_email,
@@ -313,7 +376,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 }
             }
             
-            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data)
+            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data, user_email)
             
             if not paystack_response.get('status'):
                 return jsonify({
@@ -474,31 +537,24 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.credit_transactions.insert_one(transaction)
             
-            # Record corporate revenue
-            corporate_revenue = {
-                '_id': ObjectId(),
-                'type': 'CREDITS_PURCHASE',
-                'category': 'FICORE_CREDITS',
-                'amount': pending_transaction['nairaAmount'],
-                'userId': current_user['_id'],
-                'relatedTransaction': reference,
-                'description': f'FiCore Credits purchase - {pending_transaction["creditAmount"]} FCs',
-                'status': 'RECORDED',
-                'createdAt': datetime.utcnow(),
-                # 💰 UNIT ECONOMICS TRACKING (Phase 2)
-                'gatewayFee': round(pending_transaction['nairaAmount'] * 0.016, 2),  # 1.6% Paystack fee
-                'gatewayProvider': 'paystack',
-                'netRevenue': round(pending_transaction['nairaAmount'] * 0.984, 2),  # Net after gateway fee
-                'metadata': {
-                    'creditAmount': pending_transaction['creditAmount'],
-                    'nairaAmount': pending_transaction['nairaAmount'],
-                    'paystackTransactionId': payment_data.get('id'),
-                    'paymentChannel': payment_data.get('channel'),
-                    'gatewayFeePercentage': 1.6
-                }
-            }
-            mongo.db.corporate_revenue.insert_one(corporate_revenue)
-            print(f'💰 Corporate revenue recorded: ₦{pending_transaction["nairaAmount"]} credits (net: ₦{pending_transaction["nairaAmount"] * 0.984:.2f} after gateway) - User {current_user["_id"]}')
+            # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
+            from utils.gateway_fee_accounting import record_fc_purchase_with_gateway_fees
+            
+            revenue_result = record_fc_purchase_with_gateway_fees(
+                mongo=mongo,
+                user_id=current_user['_id'],
+                fc_amount=pending_transaction['creditAmount'],
+                naira_amount=pending_transaction['nairaAmount'],
+                payment_reference=reference,
+                paystack_transaction_id=payment_data.get('id'),
+                payment_method='paystack'
+            )
+            
+            if revenue_result.get('success'):
+                print(f'💰 PAID FC purchase revenue recorded: {pending_transaction["creditAmount"]} FCs (₦{pending_transaction["nairaAmount"]}) - User {current_user["_id"]}')
+                print(f'   Net revenue: ₦{revenue_result["net_revenue"]:.2f} (after ₦{revenue_result["gateway_fee"]:.2f} gateway fee)')
+            else:
+                print(f'⚠️  Failed to record FC purchase revenue: {revenue_result.get("error")}')
             
             # Mark pending transaction as completed
             mongo.db.pending_credit_purchases.update_one(
@@ -588,6 +644,252 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 'message': 'Failed to get transaction status',
                 'errors': {'general': [str(e)]}
             }), 500
+
+    @credits_bp.route('/verify-callback', methods=['GET'])
+    def verify_credit_callback():
+        """Handle Paystack redirect callback for credit purchases (no auth required)"""
+        try:
+            from flask import redirect, render_template
+            
+            reference = request.args.get('reference')
+            test_mode = request.args.get('test_mode', 'false').lower() == 'true'
+            
+            if not reference:
+                # Return HTML page with error
+                return render_template('payment_callback.html', 
+                                     status='failed', 
+                                     error='missing_reference'), 400
+            
+            print(f"[CREDITS CALLBACK] Received callback for reference: {reference}, test_mode: {test_mode}")
+            
+            # Find pending transaction by transactionRef (not paystackRef)
+            pending_transaction = mongo.db.pending_credit_purchases.find_one({
+                'transactionRef': reference
+            })
+            
+            if not pending_transaction:
+                print(f"[CREDITS CALLBACK] Pending transaction not found for reference: {reference}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='not_found'), 404
+            
+            # Check if already processed
+            if pending_transaction['status'] != 'pending':
+                print(f"[CREDITS CALLBACK] Transaction already processed: {pending_transaction['status']}")
+                return render_template('payment_callback.html',
+                                     status=pending_transaction['status'],
+                                     reference=reference,
+                                     message='Transaction already processed'), 200
+            
+            user_id = pending_transaction['userId']
+            credit_amount = pending_transaction['creditAmount']
+            naira_amount = pending_transaction['nairaAmount']
+            
+            # ==================== TEST MODE AUTO-COMPLETE ====================
+            if test_mode or pending_transaction.get('testMode', False):
+                print(f'[TEST MODE] Auto-completing credit purchase for user {user_id}')
+                
+                # Get current user balance
+                user = mongo.db.users.find_one({'_id': user_id})
+                current_balance = user.get('ficoreCreditBalance', 0.0)
+                new_balance = current_balance + credit_amount
+                
+                # Update user balance
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {'$set': {'ficoreCreditBalance': new_balance}}
+                )
+                
+                # Create completed transaction record
+                transaction = {
+                    '_id': ObjectId(),
+                    'userId': user_id,
+                    'type': 'credit',
+                    'amount': credit_amount,
+                    'nairaAmount': naira_amount,
+                    'description': f'FC purchase (TEST MODE) - {credit_amount} FCs',
+                    'status': 'completed',
+                    'paymentMethod': 'paystack_test',
+                    'paymentReference': pending_transaction['paystackRef'],
+                    'balanceBefore': current_balance,
+                    'balanceAfter': new_balance,
+                    'createdAt': datetime.utcnow(),
+                    'metadata': {
+                        'purchaseType': 'test_mode_auto',
+                        'testMode': True
+                    }
+                }
+                
+                mongo.db.credit_transactions.insert_one(transaction)
+                
+                # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
+                from utils.gateway_fee_accounting import record_fc_purchase_with_gateway_fees
+                
+                revenue_result = record_fc_purchase_with_gateway_fees(
+                    mongo=mongo,
+                    user_id=user_id,
+                    fc_amount=credit_amount,
+                    naira_amount=naira_amount,
+                    payment_reference=pending_transaction['paystackRef'],
+                    paystack_transaction_id='TEST_MODE',
+                    payment_method='paystack_test'
+                )
+                
+                if revenue_result.get('success'):
+                    print(f'💰 PAID FC purchase revenue recorded (TEST MODE): {credit_amount} FCs (₦{naira_amount}) - User {user_id}')
+                else:
+                    print(f'⚠️  Failed to record FC purchase revenue (TEST MODE): {revenue_result.get("error")}')
+                
+                # Mark pending transaction as completed
+                mongo.db.pending_credit_purchases.update_one(
+                    {'_id': pending_transaction['_id']},
+                    {
+                        '$set': {
+                            'status': 'completed',
+                            'completedAt': datetime.utcnow(),
+                            'transactionId': str(transaction['_id'])
+                        }
+                    }
+                )
+                
+                print(f'[TEST MODE] Credit purchase completed: {credit_amount} FCs added to user {user_id}')
+                
+                # Return success page
+                return render_template('payment_callback.html',
+                                     status='success',
+                                     reference=reference,
+                                     amount=f'{credit_amount} FCs',
+                                     test_mode=True,
+                                     message=f'Payment successful! {credit_amount} FCs have been added to your account.'), 200
+            
+            # ==================== LIVE MODE: VERIFY WITH PAYSTACK ====================
+            paystack_ref = pending_transaction['paystackRef']
+            
+            # Get user email for Paystack key selection
+            user = mongo.db.users.find_one({'_id': user_id})
+            user_email = user.get('email', 'user@example.com')
+            
+            # Verify with Paystack
+            paystack_response = _make_paystack_request(f'/transaction/verify/{paystack_ref}', user_email=user_email)
+            
+            if not paystack_response.get('status'):
+                print(f"[CREDITS CALLBACK] Paystack verification failed: {paystack_response}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='verification_failed'), 400
+            
+            transaction_data = paystack_response['data']
+            
+            # Check if payment was successful
+            if transaction_data['status'] != 'success':
+                print(f"[CREDITS CALLBACK] Payment status: {transaction_data['status']}")
+                
+                # Mark as failed
+                mongo.db.pending_credit_purchases.update_one(
+                    {'_id': pending_transaction['_id']},
+                    {'$set': {'status': 'failed', 'failureReason': transaction_data.get('gateway_response', 'Payment failed')}}
+                )
+                
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error=transaction_data['status']), 400
+            
+            # Verify amount matches
+            expected_amount = int(naira_amount * 100)  # Convert to kobo
+            if transaction_data['amount'] != expected_amount:
+                print(f"[CREDITS CALLBACK] Amount mismatch: expected {expected_amount}, got {transaction_data['amount']}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='amount_mismatch'), 400
+            
+            # Credit user account
+            current_balance = user.get('ficoreCreditBalance', 0.0)
+            new_balance = current_balance + credit_amount
+            
+            mongo.db.users.update_one(
+                {'_id': user_id},
+                {'$set': {'ficoreCreditBalance': new_balance}}
+            )
+            
+            # Create completed transaction record
+            transaction = {
+                '_id': ObjectId(),
+                'userId': user_id,
+                'type': 'credit',
+                'amount': credit_amount,
+                'nairaAmount': naira_amount,
+                'description': f'FC purchase via Paystack - {credit_amount} FCs',
+                'status': 'completed',
+                'paymentMethod': 'paystack',
+                'paymentReference': paystack_ref,
+                'paystackTransactionId': transaction_data.get('id'),
+                'balanceBefore': current_balance,
+                'balanceAfter': new_balance,
+                'createdAt': datetime.utcnow(),
+                'metadata': {
+                    'purchaseType': 'paystack_callback',
+                    'paystackData': {
+                        'transaction_id': transaction_data.get('id'),
+                        'gateway_response': transaction_data.get('gateway_response'),
+                        'paid_at': transaction_data.get('paid_at'),
+                        'channel': transaction_data.get('channel')
+                    }
+                }
+            }
+            
+            mongo.db.credit_transactions.insert_one(transaction)
+            
+            # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
+            from utils.gateway_fee_accounting import record_fc_purchase_with_gateway_fees
+            
+            revenue_result = record_fc_purchase_with_gateway_fees(
+                mongo=mongo,
+                user_id=user_id,
+                fc_amount=credit_amount,
+                naira_amount=naira_amount,
+                payment_reference=paystack_ref,
+                paystack_transaction_id=transaction_data.get('id'),
+                payment_method='paystack'
+            )
+            
+            if revenue_result.get('success'):
+                print(f'💰 PAID FC purchase revenue recorded (CALLBACK): {credit_amount} FCs (₦{naira_amount}) - User {user_id}')
+                print(f'   Net revenue: ₦{revenue_result["net_revenue"]:.2f} (after ₦{revenue_result["gateway_fee"]:.2f} gateway fee)')
+            else:
+                print(f'⚠️  Failed to record FC purchase revenue (CALLBACK): {revenue_result.get("error")}')
+            
+            # Mark pending transaction as completed
+            mongo.db.pending_credit_purchases.update_one(
+                {'_id': pending_transaction['_id']},
+                {
+                    '$set': {
+                        'status': 'completed',
+                        'completedAt': datetime.utcnow(),
+                        'transactionId': str(transaction['_id'])
+                    }
+                }
+            )
+            
+            print(f'[CREDITS CALLBACK] Credit purchase completed: {credit_amount} FCs added to user {user_id}')
+            
+            # Return success page
+            return render_template('payment_callback.html',
+                                 status='success',
+                                 reference=reference,
+                                 amount=f'{credit_amount} FCs',
+                                 message=f'Payment successful! {credit_amount} FCs have been added to your account.'), 200
+            
+        except Exception as e:
+            print(f"[CREDITS CALLBACK] Error: {str(e)}")
+            traceback.print_exc()
+            return render_template('payment_callback.html',
+                                 status='failed',
+                                 error='processing_error',
+                                 message=str(e)), 500
 
     @credits_bp.route('/webhook/paystack', methods=['POST'])
     def paystack_webhook():
@@ -1027,6 +1329,18 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             }
             
             mongo.db.credit_transactions.insert_one(transaction)
+            
+            # ✅ AUTOMATION: Record FC consumption revenue
+            try:
+                record_fc_consumption_revenue(
+                    mongo=mongo,
+                    user_id=current_user['_id'],
+                    fc_amount=amount,
+                    description=description,
+                    service=operation
+                )
+            except Exception as automation_error:
+                print(f"⚠️  Failed to record FC consumption revenue: {str(automation_error)}")
 
             return jsonify({
                 'success': True,
@@ -1118,6 +1432,25 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             }
             
             mongo.db.credit_transactions.insert_one(transaction)
+            
+            # 🆕 ATOMIC FC TAX EDUCATION REWARD (March 11, 2026)
+            # Record tax education reward using atomic operations (4-transaction pattern)
+            if operation == 'tax_education_progress':
+                try:
+                    atomic_result = award_and_consume_fc_credits_atomic(
+                        mongo=mongo,
+                        user_id=current_user['_id'],
+                        fc_amount=amount,
+                        operation=operation,
+                        description=description
+                    )
+                    if atomic_result.get('success'):
+                        print(f'✅ Atomic tax education reward completed: {len(atomic_result["transactions"])} transactions')
+                    else:
+                        print(f'⚠️  Atomic tax education reward failed: {atomic_result.get("error")}')
+                except Exception as e:
+                    print(f'⚠️  Failed to record atomic tax education reward: {str(e)}')
+                    # Don't fail credit award if bookkeeping fails
 
             return jsonify({
                 'success': True,
@@ -1464,7 +1797,7 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             # Get transaction statistics with error handling
             try:
                 total_credits = list(mongo.db.credit_transactions.aggregate([
-                    {'$match': {'userId': current_user['_id'], 'type': 'credit'}},
+                    {'$match': {'userId': current_user['_id'], 'type': 'credit', 'status': 'completed'}},  # ✅ CRITICAL FIX: Add status filter for consistency
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
                 credits_amount = total_credits[0]['total'] if total_credits else 0
@@ -1473,14 +1806,128 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 print(f"Error fetching credits statistics: {str(credits_error)}")
                 credits_amount = 0
                 credits_count = 0
+            
+            # Get credits breakdown by source (NEW: Feb 9, 2026)
+            try:
+                # 1. Credits from BUYING (Paystack purchases)
+                purchased_credits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
+                            '$or': [
+                                {'metadata.purchaseType': {'$exists': True}},
+                                {'paymentMethod': 'paystack'},
+                                {'description': {'$regex': 'purchase', '$options': 'i'}}
+                            ]
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                purchased_amount = purchased_credits[0]['total'] if purchased_credits else 0.0
+                
+                # 2. Credits from SIGNUP BONUS
+                signup_bonus = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
+                            'operation': 'signup_bonus'
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                signup_bonus_amount = signup_bonus[0]['total'] if signup_bonus else 0.0
+                
+                # 3. Credits from REWARDS SCREEN (engagement, streaks, exploration)
+                rewards_credits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
+                            '$or': [
+                                {'operation': 'engagement_reward'},
+                                {'operation': 'streak_milestone'},
+                                {'operation': 'exploration_bonus'},
+                                {'operation': 'profile_completion'},
+                                {'description': {'$regex': 'reward|streak|exploration|milestone', '$options': 'i'}}
+                            ]
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                rewards_amount = rewards_credits[0]['total'] if rewards_credits else 0.0
+                
+                # 4. Credits from TAX EDUCATION MODULES
+                tax_education_credits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'],
+                            'type': 'credit',
+                            'status': 'completed',  # ✅ CRITICAL FIX: Add status filter
+                            '$or': [
+                                {'operation': 'tax_education_progress'},
+                                {'description': {'$regex': 'tax education|tax module', '$options': 'i'}}
+                            ]
+                        }
+                    },
+                    {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+                ]))
+                tax_education_amount = tax_education_credits[0]['total'] if tax_education_credits else 0.0
+                
+                # 5. Other credits (referral bonuses, admin awards, etc.)
+                other_credits_amount = credits_amount - (purchased_amount + signup_bonus_amount + rewards_amount + tax_education_amount)
+                if other_credits_amount < 0:
+                    other_credits_amount = 0.0  # Safety check
+                
+            except Exception as breakdown_error:
+                print(f"Error fetching credits breakdown: {str(breakdown_error)}")
+                purchased_amount = 0.0
+                signup_bonus_amount = 0.0
+                rewards_amount = 0.0
+                tax_education_amount = 0.0
+                other_credits_amount = 0.0
 
             try:
-                total_debits = list(mongo.db.credit_transactions.aggregate([
-                    {'$match': {'userId': current_user['_id'], 'type': 'debit'}},
+                # ✅ CRITICAL FIX: Add debugging to help identify debit transaction issues
+                all_debits = list(mongo.db.credit_transactions.find({
+                    'userId': current_user['_id'], 
+                    'type': 'debit'
+                }))
+                
+                # ✅ ENHANCED FIX: Include transactions with missing status or 'unknown' status
+                # Many debit transactions may have status 'unknown' or missing status field
+                completed_debits = list(mongo.db.credit_transactions.aggregate([
+                    {
+                        '$match': {
+                            'userId': current_user['_id'], 
+                            'type': 'debit',
+                            '$or': [
+                                {'status': 'completed'},
+                                {'status': 'unknown'},  # Include 'unknown' status
+                                {'status': {'$exists': False}},  # Include missing status
+                                {'status': None}  # Include null status
+                            ]
+                        }
+                    },
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
-                debits_amount = total_debits[0]['total'] if total_debits else 0
-                debits_count = total_debits[0]['count'] if total_debits else 0
+                
+                # Debug logging for debit transaction analysis
+                print(f"DEBUG: User {current_user['_id']} has {len(all_debits)} total debit transactions")
+                for debit in all_debits:
+                    status = debit.get('status', 'no_status')
+                    amount = debit.get('amount', 0)
+                    desc = debit.get('description', 'no_description')
+                    print(f"  - {status}: {amount} FC - {desc}")
+                
+                debits_amount = completed_debits[0]['total'] if completed_debits else 0
+                debits_count = completed_debits[0]['count'] if completed_debits else 0
+                
+                print(f"DEBUG: Total debits (including unknown status): {debits_amount} FC from {debits_count} transactions")
             except Exception as debits_error:
                 print(f"Error fetching debits statistics: {str(debits_error)}")
                 debits_amount = 0
@@ -1500,12 +1947,157 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             credits_amount = float(credits_amount) if credits_amount else 0.0
             debits_amount = float(debits_amount) if debits_amount else 0.0
             current_balance = float(current_balance)
+            
+            # ✅ CRITICAL DEBUG: Compare stored balance vs computed balance
+            computed_balance = credits_amount - debits_amount
+            balance_difference = current_balance - computed_balance
+            
+            print(f"DEBUG: Balance Analysis for User {current_user['_id']}")
+            print(f"  - Stored Balance (ficoreCreditBalance): {current_balance} FC")
+            print(f"  - Total Credits: {credits_amount} FC")
+            print(f"  - Total Debits: {debits_amount} FC")
+            print(f"  - Computed Balance: {computed_balance} FC")
+            print(f"  - Difference: {balance_difference} FC")
+            
+            if abs(balance_difference) > 0.01:  # More than 1 cent difference
+                print(f"⚠️  WARNING: Balance mismatch detected! Stored vs Computed difference: {balance_difference} FC")
+                
+                # Check if this might be due to recent cleanup operations
+                recent_cleanup_check = mongo.db.credit_transactions.find_one({
+                    'userId': current_user['_id'],
+                    'createdAt': {'$gte': datetime.utcnow() - timedelta(days=7)},
+                    '$or': [
+                        {'type': 'adjustment'},
+                        {'operation': {'$regex': 'cleanup|correction|fix', '$options': 'i'}},
+                        {'description': {'$regex': 'cleanup|correction|fix|adjustment', '$options': 'i'}}
+                    ]
+                })
+                
+                cleanup_context = "post_cleanup" if recent_cleanup_check else "normal_operation"
+                print(f"🔍 Context: {cleanup_context} (recent cleanup: {'Yes' if recent_cleanup_check else 'No'})")
+                
+                # ✅ AUTO-FIX: Correct the balance mismatch automatically
+                # BUT FIRST: Check if this is a test account or early beta user where cleanup was intentional
+                try:
+                    # Get user email and check if test account
+                    user_email = user.get('email', '')
+                    is_test_user = is_test_account(user_email) or current_user['_id'] in get_test_account_user_ids()
+                    
+                    # Check if this user had early signup bonuses (1000 FCs) that were cleaned up
+                    early_signup_bonus = mongo.db.credit_transactions.find_one({
+                        'userId': current_user['_id'],
+                        'type': 'credit',
+                        'amount': 1000,
+                        'description': {'$regex': 'signup.*bonus', '$options': 'i'}
+                    })
+                    
+                    is_early_beta_user = early_signup_bonus is not None
+                    
+                    print(f"🔍 User Analysis:")
+                    print(f"   - Email: {user_email}")
+                    print(f"   - Is test account: {is_test_user}")
+                    print(f"   - Had 1K signup bonus: {is_early_beta_user}")
+                    
+                    # If this is a test account or early beta user, DO NOT auto-fix
+                    if is_test_user or is_early_beta_user:
+                        print(f"🚫 SKIPPING AUTO-FIX: User is test account or early beta user - cleanup was intentional")
+                        print(f"   - Test account: {is_test_user}")
+                        print(f"   - Early beta user (1K signup): {is_early_beta_user}")
+                        print(f"   - Keeping stored balance at {current_balance} FC (computed: {computed_balance} FC)")
+                        
+                        # Create a log entry but don't fix the balance
+                        log_transaction = {
+                            '_id': ObjectId(),
+                            'userId': current_user['_id'],
+                            'type': 'log',
+                            'amount': 0,
+                            'description': f'Balance mismatch detected but NOT fixed - cleanup was intentional (test account: {is_test_user}, early beta: {is_early_beta_user})',
+                            'status': 'logged',
+                            'operation': 'balance_mismatch_ignored',
+                            'balanceBefore': current_balance,
+                            'balanceAfter': current_balance,
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'correctionType': 'intentional_cleanup_ignored',
+                                'storedBalance': current_balance,
+                                'computedBalance': computed_balance,
+                                'difference': balance_difference,
+                                'isTestAccount': is_test_user,
+                                'isEarlyBetaUser': is_early_beta_user,
+                                'userEmail': user_email,
+                                'reason': 'Cleanup was intentional - balance should remain at zero'
+                            }
+                        }
+                        
+                        mongo.db.credit_transactions.insert_one(log_transaction)
+                        
+                    else:
+                        # Normal user - proceed with auto-fix
+                        print(f"🔧 AUTO-FIXING: Updating stored balance from {current_balance} FC to {computed_balance} FC")
+                        
+                        # Update user's balance to match computed balance
+                        mongo.db.users.update_one(
+                            {'_id': current_user['_id']},
+                            {
+                                '$set': {
+                                    'ficoreCreditBalance': computed_balance,
+                                    'balanceLastCorrected': datetime.utcnow()
+                                }
+                            }
+                        )
+                        
+                        # Create audit transaction for the correction
+                        audit_transaction = {
+                            '_id': ObjectId(),
+                            'userId': current_user['_id'],
+                            'type': 'adjustment',
+                            'amount': balance_difference,
+                            'description': f'Auto-correction ({cleanup_context}): stored {current_balance} FC → computed {computed_balance} FC',
+                            'status': 'completed',
+                            'operation': f'balance_auto_correction_{cleanup_context}',
+                            'balanceBefore': current_balance,
+                            'balanceAfter': computed_balance,
+                            'createdAt': datetime.utcnow(),
+                            'metadata': {
+                                'correctionType': 'auto_balance_fix',
+                                'originalBalance': current_balance,
+                                'computedBalance': computed_balance,
+                                'difference': balance_difference,
+                                'totalCredits': credits_amount,
+                                'totalDebits': debits_amount,
+                                'trigger': 'balance_mismatch_detection',
+                                'context': cleanup_context,
+                                'recentCleanup': recent_cleanup_check is not None,
+                                'cleanupTransactionId': str(recent_cleanup_check['_id']) if recent_cleanup_check else None,
+                                'isTestAccount': False,
+                                'isEarlyBetaUser': False
+                            }
+                        }
+                        
+                        mongo.db.credit_transactions.insert_one(audit_transaction)
+                        
+                        # Update current_balance for the response
+                        current_balance = computed_balance
+                        
+                        print(f"✅ AUTO-FIX COMPLETED: Balance corrected to {computed_balance} FC (context: {cleanup_context})")
+                    
+                except Exception as fix_error:
+                    print(f"❌ AUTO-FIX FAILED: {str(fix_error)}")
+                    # Continue with original balance if fix fails
 
             summary_data = {
                 'currentBalance': current_balance,
                 'totalCredits': credits_amount,
                 'totalDebits': debits_amount,
                 'netCredits': credits_amount - debits_amount,
+                # NEW: Credits breakdown by source (Feb 9, 2026)
+                'creditsBreakdown': {
+                    'purchased': float(purchased_amount),
+                    'signupBonus': float(signup_bonus_amount),
+                    'rewards': float(rewards_amount),
+                    'taxEducation': float(tax_education_amount),
+                    'other': float(other_credits_amount)
+                },
                 'transactionCounts': {
                     'credits': int(credits_count),
                     'debits': int(debits_count),

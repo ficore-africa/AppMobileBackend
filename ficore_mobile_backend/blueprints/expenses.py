@@ -1,8 +1,14 @@
+import sys
+import os
+from utils.decimal_helpers import safe_sum
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
 from utils.payment_utils import normalize_payment_method, validate_payment_method
 from utils.monthly_entry_tracker import MonthlyEntryTracker
+from utils.decimal_helpers import safe_float, safe_sum
 
 expenses_bp = Blueprint('expenses', __name__, url_prefix='/expenses')
 
@@ -28,7 +34,7 @@ def get_expenses():
             category = request.args.get('category')
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
-            sort_by = request.args.get('sort_by', 'date')
+            sort_by = request.args.get('sort_by', 'createdAt')  # CRITICAL FIX: Default to createdAt for consistent "just now" timestamps
             sort_order = request.args.get('sort_order', 'desc')
            
             query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
@@ -60,6 +66,8 @@ def get_expenses():
                 expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+                # ENTRY TAGGING FIELDS: Format tagging fields for frontend
+                expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
                 expense_list.append(expense_data)
            
             has_more = offset + limit < total
@@ -90,13 +98,122 @@ def get_expenses():
    
     return _get_expenses()
 
+@expenses_bp.route('/capital-expenditures', methods=['GET'])
+def get_capital_expenditures():
+    @expenses_bp.token_required
+    def _get_capital_expenditures(current_user):
+        """
+        Get all capital expenditures (expenses with excludeFromProfitLoss: True)
+        These are asset purchases that don't reduce profit but do reduce cash.
+        
+        CAPEX TRACKING: Part of Task 4 implementation (Feb 28, 2026)
+        - Excludes from P&L calculations
+        - Includes in Balance Sheet (reduces cash, increases assets)
+        - Tracks asset purchases separately from operating expenses
+        """
+        try:
+            limit = min(int(request.args.get('limit', 50)), 100)
+            offset = max(int(request.args.get('offset', 0)), 0)
+            start_date = request.args.get('start_date')
+            end_date = request.args.get('end_date')
+            sort_by = request.args.get('sort_by', 'date')
+            sort_order = request.args.get('sort_order', 'desc')
+            
+            query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                'excludeFromProfitLoss': True  # CAPEX filter
+            }
+            
+            if start_date or end_date:
+                date_query = {}
+                if start_date:
+                    date_query['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
+                if end_date:
+                    date_query['$lte'] = datetime.fromisoformat(end_date.replace('Z', ''))
+                query['date'] = date_query
+            
+            sort_direction = -1 if sort_order == 'desc' else 1
+            sort_field = sort_by if sort_by in ['date', 'amount', 'category', 'createdAt'] else 'date'
+            
+            capex = list(expenses_bp.mongo.db.expenses.find(query)
+                        .sort(sort_field, sort_direction)
+                        .skip(offset).limit(limit))
+            total = expenses_bp.mongo.db.expenses.count_documents(query)
+            
+            capex_list = []
+            for expense in capex:
+                expense_data = expenses_bp.serialize_doc(expense.copy())
+                
+                # CRITICAL FIX: Convert Decimal128 to float for JSON serialization
+                if 'amount' in expense_data:
+                    expense_data['amount'] = safe_float(expense_data['amount'])
+                
+                if not expense_data.get('title'):
+                    expense_data['title'] = expense_data.get('description', 'Capital Expenditure')
+                expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+                expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
+                capex_list.append(expense_data)
+            
+            has_more = offset + limit < total
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'capitalExpenditures': capex_list,
+                    'pagination': {
+                        'total': total,
+                        'limit': limit,
+                        'offset': offset,
+                        'hasMore': has_more,
+                        'page': (offset // limit) + 1,
+                        'pages': (total + limit - 1) // limit
+                    }
+                },
+                'message': 'Capital expenditures retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error in get_capital_expenditures: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve capital expenditures',
+                'errors': {'general': [str(e)]}
+            }), 500
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve capital expenditures',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_capital_expenditures()
+
 @expenses_bp.route('/<expense_id>', methods=['GET'])
 def get_expense(expense_id):
     @expenses_bp.token_required
     def _get_expense(current_user):
         try:
+            # CRITICAL FIX: Handle optimistic/temp IDs from frontend
+            # These IDs start with 'optimistic_' or 'temp_' and are not yet in the database
+            if expense_id.startswith('optimistic_') or expense_id.startswith('temp_') or expense_id.startswith('local_'):
+                return jsonify({
+                    'success': False,
+                    'message': 'Expense record is pending sync',
+                    'error_type': 'pending_sync'
+                }), 202  # 202 Accepted - processing in background
+            
+            # CRITICAL FIX (Feb 10, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: expense_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = expense_id.replace('expense_', '').replace('income_', '')
+            
             expense = expenses_bp.mongo.db.expenses.find_one({
-                '_id': ObjectId(expense_id),
+                '_id': ObjectId(clean_id),
                 'userId': current_user['_id']
             })
            
@@ -107,6 +224,7 @@ def get_expense(expense_id):
             expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
             expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+            expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
            
             return jsonify({
                 'success': True,
@@ -128,7 +246,15 @@ def create_expense():
     @expenses_bp.token_required
     def _create_expense(current_user):
         try:
+            print(f"\n{'='*80}")
+            print(f"CREATING EXPENSE - DEBUG LOG")
+            print(f"{'='*80}")
+            
             data = request.get_json()
+            print(f"Request data: {data}")
+            print(f"User ID: {current_user['_id']}")
+            print(f"User Email: {current_user.get('email', 'N/A')}")
+            
             errors = {}
             if not data.get('amount') or data.get('amount', 0) <= 0:
                 errors['amount'] = ['Valid amount is required']
@@ -138,6 +264,7 @@ def create_expense():
                 errors['category'] = ['Category is required']
            
             if errors:
+                print(f"❌ Validation errors: {errors}")
                 return jsonify({
                     'success': False,
                     'message': 'Validation failed',
@@ -147,13 +274,16 @@ def create_expense():
             # NEW: Check monthly entry limit for free tier users
             entry_tracker = MonthlyEntryTracker(expenses_bp.mongo)
             fc_check = entry_tracker.should_deduct_fc(current_user['_id'], 'expense')
+            print(f"FC check result: {fc_check}")
             
             # If FC deduction is required, check user has sufficient credits
             if fc_check['deduct_fc']:
                 user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
                 current_balance = user.get('ficoreCreditBalance', 0.0)
+                print(f"FC deduction required. Current balance: {current_balance}, Required: {fc_check['fc_cost']}")
                 
                 if current_balance < fc_check['fc_cost']:
+                    print(f"❌ Insufficient credits!")
                     return jsonify({
                         'success': False,
                         'message': f'Insufficient credits. {fc_check["reason"]}',
@@ -167,6 +297,7 @@ def create_expense():
             raw_payment = data.get('paymentMethod')
             normalized_payment = normalize_payment_method(raw_payment) if raw_payment is not None else 'cash'
             if raw_payment is not None and not validate_payment_method(raw_payment):
+                print(f"❌ Invalid payment method: {raw_payment}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid payment method',
@@ -174,28 +305,201 @@ def create_expense():
                 }), 400
 
             # Import auto-population utility
-            from ..utils.expense_utils import auto_populate_expense_fields
+            from utils.expense_utils import auto_populate_expense_fields
+            
+            # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
+            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  TAGGING DEBUG - EXPENSE CREATION")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Entry type received: {entry_type}")
+            print(f"🏷️  Entry type is None: {entry_type is None}")
+            print(f"🏷️  Entry type is empty: {entry_type == ''}")
+            print(f"🏷️  Entry type type: {type(entry_type)}")
+            if entry_type:
+                print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG PROVIDED (will be saved as None)")
+            print(f"{'🏷️ '*40}\n")
+            
+            # Validate entryType if provided (voice-entry-tagging feature - Feb 18, 2026)
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
+            # SOURCE TRACKING STANDARDIZATION (Feb 18, 2026): Determine entry source
+            # Source values: 'manual', 'voice', 'wallet_auto'
+            # Default to 'manual' if not specified
+            entry_source = data.get('source_type', 'manual')
+            print(f"Entry source: {entry_source}")
+            
+            # Validate source if provided
+            if entry_source not in ['manual', 'voice', 'wallet_auto']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid source. Must be "manual", "voice", or "wallet_auto"',
+                    'errors': {'source': ['Invalid value']}
+                }), 400
+            
+            # Normalize category to always be a string (not dict)
+            # Frontend sometimes sends {"name": "Food", "icon": "..."} and sometimes just "Food"
+            # We standardize to always store as string for consistency
+            category_value = data['category']
+            if isinstance(category_value, dict):
+                category_value = category_value.get('name', 'Other')
+            elif not isinstance(category_value, str):
+                category_value = str(category_value)
+            
+            # TASK 4 PART 3B (Feb 28, 2026): Handle excludeFromProfitLoss field for CAPEX
+            # Capital expenditures are excluded from P&L but included in Balance Sheet
+            exclude_from_pl = data.get('exclude_from_profit_loss', False)
+            
+            # NEW (Feb 28, 2026): Handle "Drawings" category specially
+            # Drawings are owner withdrawals - excluded from P&L, affect Owner's Equity
+            if category_value == 'Drawings':
+                exclude_from_pl = True
+                print(f"✅ Drawings category detected - will exclude from P&L and create drawing entry")
+            
+            print(f"Exclude from P&L: {exclude_from_pl}")
+            
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            # This prevents premium entries from counting against free tier limit after subscription expires
+            user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
+            is_premium_entry = False
+            if user:
+                is_admin = user.get('isAdmin', False)
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end = user.get('subscriptionEndDate')
+                # Entry is premium if user is admin OR has active subscription
+                if is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow()):
+                    is_premium_entry = True
             
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
                 'description': data['description'],
-                'category': data['category'],
+                'category': category_value,  # ✅ ALWAYS STRING - normalized above
                 'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
                 'budgetId': data.get('budgetId'),
                 'tags': data.get('tags', []),
                 'paymentMethod': normalized_payment,
                 'location': data.get('location', ''),
                 'notes': data.get('notes', ''),
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
+                'sourceType': entry_source,  # SOURCE TRACKING: 'manual', 'voice', or 'wallet_auto'
+                'excludeFromProfitLoss': exclude_from_pl,  # TASK 4 PART 3B: CAPEX flag
+                'isCapitalExpenditure': exclude_from_pl,  # Additional flag for clarity
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
             }
             
+            # 🏷️  TAGGING DEBUG: Log what will be saved to database
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  TAGGING DEBUG - DATABASE INSERT")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  entryType field: {expense_data.get('entryType')}")
+            print(f"🏷️  taggedAt field: {expense_data.get('taggedAt')}")
+            print(f"🏷️  taggedBy field: {expense_data.get('taggedBy')}")
+            if expense_data.get('entryType'):
+                print(f"🏷️  ✅ WILL SAVE WITH TAG: '{expense_data.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  WILL SAVE WITHOUT TAG (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
+            
             # Auto-populate title and description if missing
             expense_data = auto_populate_expense_fields(expense_data)
+            print(f"Expense data prepared: amount=₦{expense_data['amount']}, category={expense_data['category']}")
            
             result = expenses_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
+            print(f"✅ Expense created with ID: {expense_id}")
+            
+            # CRITICAL VERIFICATION: Check if expense actually exists in database
+            verification = expenses_bp.mongo.db.expenses.find_one({'_id': result.inserted_id})
+            if not verification:
+                print(f"❌ CRITICAL ERROR: Expense {expense_id} was inserted but cannot be found in database!")
+                raise Exception("Database insert verification failed - expense not found after insert")
+            else:
+                print(f"✅ VERIFIED: Expense {expense_id} exists in database with amount ₦{verification.get('amount')}")
+                
+                # 🏷️  TAGGING DEBUG: Verify tag was saved correctly
+                print(f"\n{'🏷️ '*40}")
+                print(f"🏷️  TAGGING DEBUG - POST-INSERT VERIFICATION")
+                print(f"{'🏷️ '*40}")
+                print(f"🏷️  Expense ID: {expense_id}")
+                print(f"🏷️  entryType in DB: {verification.get('entryType')}")
+                print(f"🏷️  taggedAt in DB: {verification.get('taggedAt')}")
+                print(f"🏷️  taggedBy in DB: {verification.get('taggedBy')}")
+                if verification.get('entryType'):
+                    print(f"🏷️  ✅ TAG SAVED SUCCESSFULLY: '{verification.get('entryType')}'")
+                else:
+                    print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
+                print(f"{'🏷️ '*40}\n")
+                
+                # NEW (Feb 28, 2026): If category is "Drawings", create a drawing entry
+                if category_value == 'Drawings':
+                    print(f"\n{'💰 '*40}")
+                    print(f"💰 CREATING DRAWING ENTRY (Owner Withdrawal)")
+                    print(f"{'💰 '*40}")
+                    
+                    drawing_data = {
+                        '_id': ObjectId(),
+                        'userId': current_user['_id'],
+                        'amount': float(data['amount']),
+                        'description': data['description'],
+                        'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
+                        'linkedExpenseId': result.inserted_id,  # Link to the expense entry
+                        'status': 'active',
+                        'isDeleted': False,
+                        'createdAt': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow()
+                    }
+                    
+                    drawing_result = expenses_bp.mongo.db.drawings.insert_one(drawing_data)
+                    print(f"✅ Drawing entry created with ID: {drawing_result.inserted_id}")
+                    print(f"💰 Linked to expense ID: {expense_id}")
+                    print(f"{'💰 '*40}\n")
+                
+                # 🔍 DUPLICATE DETECTION: Check if similar expense already exists
+                print(f"\n{'🔍 '*40}")
+                print(f"🔍 DUPLICATE DETECTION - CHECKING FOR SIMILAR EXPENSES")
+                print(f"{'🔍 '*40}")
+                similar_expenses = list(expenses_bp.mongo.db.expenses.find({
+                    'userId': current_user['_id'],
+                    'amount': float(data['amount']),
+                    'category': category_value,
+                    'date': {
+                        '$gte': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')) - timedelta(minutes=5),
+                        '$lte': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')) + timedelta(minutes=5)
+                    }
+                }).sort('createdAt', 1))
+                
+                print(f"🔍 Found {len(similar_expenses)} expense(s) with similar amount/category/date:")
+                for idx, exp in enumerate(similar_expenses, 1):
+                    print(f"🔍   {idx}. ID: {exp['_id']}")
+                    print(f"🔍      Amount: ₦{exp.get('amount')}")
+                    print(f"🔍      Category: {exp.get('category')}")
+                    print(f"🔍      Description: {exp.get('description')}")
+                    print(f"🔍      Created: {exp.get('createdAt')}")
+                    print(f"🔍      EntryType: {exp.get('entryType')}")
+                    print(f"🔍      Status: {exp.get('status')}")
+                    print(f"🔍      IsDeleted: {exp.get('isDeleted')}")
+                
+                if len(similar_expenses) > 1:
+                    print(f"🔍 ⚠️  POTENTIAL DUPLICATE DETECTED!")
+                    print(f"🔍 ⚠️  {len(similar_expenses)} expenses with same amount/category within 5 minutes")
+                    print(f"🔍 ⚠️  This might be a duplicate creation issue!")
+                else:
+                    print(f"🔍 ✅ No duplicates detected - this is the only expense with these characteristics")
+                print(f"{'🔍 '*40}\n")
             
             # Track expense creation event
             try:
@@ -209,6 +513,7 @@ def create_expense():
             
             # NEW: Deduct FC if required (over monthly limit)
             if fc_check['deduct_fc']:
+                print(f"Deducting {fc_check['fc_cost']} FC credits...")
                 # Deduct credits from user account
                 user = expenses_bp.mongo.db.users.find_one({'_id': current_user['_id']})
                 current_balance = user.get('ficoreCreditBalance', 0.0)
@@ -239,6 +544,7 @@ def create_expense():
                 }
                 
                 expenses_bp.mongo.db.credit_transactions.insert_one(transaction)
+                print(f"✅ FC credits deducted. New balance: {new_balance}")
            
             # NEW: Check if this is user's first entry and mark onboarding complete
             # This ensures backend state stays in sync with frontend wizard
@@ -322,6 +628,10 @@ def create_expense():
             })
            
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"❌ ERROR in create_expense: {str(e)}")
+            print(f"❌ Full traceback:\n{error_trace}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to create expense',
@@ -349,6 +659,26 @@ def update_expense(expense_id):
             data = request.get_json()
             if not data:
                 return jsonify({'success': False, 'message': 'No data provided'}), 400
+            
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_expense:
+                return jsonify({
+                    'success': False,
+                    'message': 'Expense record not found'
+                }), 404
+            
+            # Block edits on wallet-auto transactions (system-generated)
+            if existing_expense.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot edit wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be edited. Use void/reversal instead.']}
+                }), 403
             
             # Validation
             errors = {}
@@ -452,6 +782,47 @@ def delete_expense(expense_id):
             if not ObjectId.is_valid(expense_id):
                 return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
             
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_expense:
+                return jsonify({
+                    'success': False,
+                    'message': 'Expense record not found'
+                }), 404
+            
+            # Block deletion on wallet-auto transactions (system-generated)
+            if existing_expense.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be deleted. Use void/reversal instead.']}
+                }), 403
+            
+            # 🛡️ INTEGRATED RECORD PROTECTION: Block deletion of creditor payment expenses
+            # Check description/title for creditor payment markers
+            description = existing_expense.get('description', '').lower()
+            title = existing_expense.get('title', '').lower()
+            
+            if 'creditor payment' in description or 'creditor payment' in title:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete expense from vendor payments. Reverse the payment in the Creditors module instead.',
+                    'errors': {'metadata': ['Creditor payment expense cannot be deleted directly. Use the Creditors module to reverse the payment.']}
+                }), 403
+            
+            # Future: Add metadata check when backend adds metadata field to expenses
+            # metadata = existing_expense.get('metadata', {})
+            # if metadata.get('diice_type') == 'creditor_payment':
+            #     return jsonify({
+            #         'success': False,
+            #         'message': 'Cannot delete expense from vendor payments. Reverse the payment in the Creditors module instead.',
+            #         'errors': {'metadata': ['Creditor payment expense cannot be deleted directly.']}
+            #     }), 403
+            
             # Use the immutable ledger helper
             from utils.immutable_ledger_helper import soft_delete_transaction
             
@@ -526,8 +897,8 @@ def get_expense_summary():
             
             filtered_expenses = [exp for exp in all_expenses if exp.get('date') and filter_start <= exp['date'] <= filter_end]
            
-            total_this_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month)
-            total_last_month = sum(exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month)
+            total_this_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date') and exp['date'] >= start_of_month])
+            total_last_month = safe_sum([exp.get('amount', 0) for exp in all_expenses if exp.get('date') and start_of_last_month <= exp['date'] < start_of_month])
             
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG EXPENSE SUMMARY: This month total: {total_this_month}")
@@ -536,7 +907,7 @@ def get_expense_summary():
             category_totals = {}
             for expense in filtered_expenses:
                 category = expense.get('category', 'Uncategorized')
-                category_totals[category] = category_totals.get(category, 0) + expense['amount']
+                category_totals[category] = category_totals.get(category, 0) + safe_float(expense.get('amount', 0))
            
             recent_expenses = sorted(
                 [exp for exp in all_expenses if exp.get('date')],  # Filter out expenses without date
@@ -560,7 +931,7 @@ def get_expense_summary():
                 'categoryBreakdown': category_totals,
                 'recentExpenses': recent_expenses_data,
                 'totalExpenses': len(filtered_expenses),
-                'averageExpense': sum(exp['amount'] for exp in filtered_expenses) / len(filtered_expenses) if filtered_expenses else 0
+                'averageExpense': safe_sum([exp.get('amount', 0) for exp in filtered_expenses]) / len(filtered_expenses) if filtered_expenses else 0
             }
            
             return jsonify({
@@ -609,17 +980,28 @@ def get_expense_categories():
                 categories.add(category)
                 category_totals[category] = category_totals.get(category, 0) + expense.get('amount', 0)
            
-            if not categories:
-                default_categories = {
-                    'Food & Dining', 'Transportation', 'Shopping', 'Entertainment',
-                    'Bills & Utilities', 'Healthcare', 'Education', 'Travel',
-                    'Personal Care', 'Home & Garden', 'Gifts & Donations',
-                    'Office & Admin', 'Staff & Wages', 'Business Transport', 'Rent & Utilities',
-                    'Marketing & Sales Expenses', 'Cost of Goods Sold - COGS', 'Personal Expenses',
-                    'Statutory & Legal Contributions', 'Other'
-                }
-                categories = default_categories
-                for cat in default_categories:
+            # ALWAYS include all available categories (not just used ones)
+            # This ensures frontend has access to all categories for expense creation
+            all_available_categories = {
+                # EXISTING CATEGORIES (Keep all for future users)
+                'Food & Dining', 'Transportation', 'Shopping', 'Entertainment',
+                'Bills & Utilities', 'Healthcare', 'Education', 'Travel',
+                'Personal Care', 'Home & Garden', 'Gifts & Donations',
+                'Office & Admin', 'Staff & Wages', 'Business Transport', 'Rent & Utilities',
+                'Marketing & Sales Expenses', 'Cost of Goods Sold - COGS', 'Personal Expenses',
+                'Statutory & Legal Contributions', 'Other',
+                
+                # NEW CATEGORIES (Added based on actual usage)
+                'IT & Software', 'Professional & Legal', 'Preliminary Expenses',
+                'Utilities', 'Marketing Ads and Promotion', 'Depreciation',
+                
+                # TAX-DEDUCTIBLE CATEGORIES (For future users)
+                'Rent', 'Pension', 'Life Insurance', 'NHIS', 'HMO'
+            }
+            
+            # Add any categories that don't have expenses (with 0.0 amount)
+            for cat in all_available_categories:
+                if cat not in category_totals:
                     category_totals[cat] = 0.0
            
             return jsonify({
@@ -729,8 +1111,8 @@ def get_expense_insights():
             current_month_expenses = [e for e in expenses if e.get('date') and e['date'] >= start_of_month]
             last_month_expenses = [e for e in expenses if e.get('date') and start_of_last_month <= e['date'] < start_of_month]
            
-            current_total = sum(e.get('amount', 0) for e in current_month_expenses)
-            last_total = sum(e.get('amount', 0) for e in last_month_expenses)
+            current_total = safe_sum([e.get('amount', 0) for e in current_month_expenses])
+            last_total = safe_sum([e.get('amount', 0) for e in last_month_expenses])
             
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG EXPENSE INSIGHTS: This month expenses count: {len(current_month_expenses)}")
@@ -830,124 +1212,620 @@ def get_expense_insights():
 # ENTRY TAGGING ENDPOINTS (Phase 3B)
 # ============================================================================
 
-@expenses_bp.route('/tag/<entry_id>', methods=['PATCH'])
-@expenses_bp.token_required
-def tag_expense_entry(current_user, entry_id):
-    """Tag an expense entry as business or personal"""
-    try:
-        data = request.get_json() or {}
-        entry_type = data.get('entryType')
-        
-        # Validate entry type
-        if entry_type not in ['business', 'personal', None]:
+@expenses_bp.route('/<entry_id>/tag', methods=['PATCH', 'PUT'])
+def tag_expense_entry(entry_id):
+    @expenses_bp.token_required
+    def _tag_expense_entry(current_user):
+        """Tag an expense entry as business or personal"""
+        try:
+            print(f"\n{'='*80}")
+            print(f"TAGGING EXPENSE - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Raw entry_id received: {entry_id}")
+            print(f"User ID: {current_user['_id']}")
+            
+            data = request.get_json() or {}
+            entry_type = data.get('entryType')
+            print(f"Entry type requested: {entry_type}")
+            
+            # Validate entry type
+            if entry_type not in ['business', 'personal', None]:
+                print(f"❌ Invalid entry type: {entry_type}")
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business", "personal", or null'
+                }), 400
+            
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: expense_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = entry_id.replace('expense_', '').replace('income_', '')
+            print(f"Cleaned ID: {clean_id}")
+            
+            # CRITICAL FIX (Feb 20, 2026): Validate that cleaned ID is a valid MongoDB ObjectId
+            # Frontend sometimes sends Isar local IDs (e.g., "283") instead of MongoDB ObjectIds
+            # Golden Rule #46: ID Format Consistency - reject invalid IDs early
+            if not ObjectId.is_valid(clean_id):
+                print(f"❌ Invalid ObjectId format: {clean_id}")
+                print(f"   Expected: 24-character hex string (MongoDB ObjectId)")
+                print(f"   Received: {len(clean_id)}-character string")
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry ID format. Please refresh and try again.'
+                }), 400
+            
+            # Check if expense exists first
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(clean_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                print(f"❌ Expense not found with _id={clean_id} and userId={current_user['_id']}")
+                print(f"Checking if expense exists with different userId...")
+                any_expense = expenses_bp.mongo.db.expenses.find_one({'_id': ObjectId(clean_id)})
+                if any_expense:
+                    print(f"⚠️  Expense exists but belongs to different user: {any_expense.get('userId')}")
+                else:
+                    print(f"❌ Expense does not exist in database at all")
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found'
+                }), 404
+            
+            print(f"✅ Expense found:")
+            print(f"   Amount: ₦{expense.get('amount')}")
+            print(f"   Category: {expense.get('category')}")
+            print(f"   Current entryType: {expense.get('entryType', 'NOT SET')}")
+            
+            # Update entry
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow() if entry_type else None,
+                'taggedBy': 'user' if entry_type else None
+            }
+            
+            print(f"Updating with: {update_data}")
+            
+            result = expenses_bp.mongo.db.expenses.update_one(
+                {'_id': ObjectId(clean_id), 'userId': current_user['_id']},
+                {'$set': update_data}
+            )
+            
+            print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+            
+            if result.matched_count > 0:
+                # Fetch the updated expense to return to frontend
+                updated_expense = expenses_bp.mongo.db.expenses.find_one({
+                    '_id': ObjectId(clean_id),
+                    'userId': current_user['_id']
+                })
+                
+                if updated_expense:
+                    # CRITICAL FIX: Use serialize_doc to properly convert _id → id
+                    expense_data = expenses_bp.serialize_doc(updated_expense.copy())
+                    
+                    # Ensure date fields are properly formatted
+                    expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                    expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if expense_data.get('updatedAt') else None
+                    expense_data['taggedAt'] = expense_data.get('taggedAt').isoformat() + 'Z' if expense_data.get('taggedAt') else None
+                    
+                    print(f"✅ Entry tagged successfully, returning updated expense")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully',
+                        'data': expense_data
+                    })
+                else:
+                    print(f"⚠️  Entry updated but could not fetch updated data")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully'
+                    })
+            else:
+                print(f"⚠️  Entry not found")
+                print(f"{'='*80}\n")
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found'
+                }), 404
+                
+        except Exception as e:
+            print(f"❌ ERROR in tag_expense_entry: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Invalid entry type. Must be "business", "personal", or null'
-            }), 400
-        
-        # Update entry
-        update_data = {
-            'entryType': entry_type,
-            'taggedAt': datetime.utcnow() if entry_type else None,
-            'taggedBy': 'user' if entry_type else None
-        }
-        
-        result = expenses_bp.mongo.db.expenses.update_one(
-            {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
-            {'$set': update_data}
-        )
-        
-        if result.modified_count > 0:
+                'message': 'Failed to tag entry',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _tag_expense_entry()
+
+@expenses_bp.route('/bulk-tag', methods=['PATCH', 'PUT'])
+def bulk_tag_expense_entries():
+    @expenses_bp.token_required
+    def _bulk_tag_expense_entries(current_user):
+        """Tag multiple expense entries at once"""
+        try:
+            data = request.get_json() or {}
+            entry_ids = data.get('entryIds', [])
+            entry_type = data.get('entryType')
+            
+            # Validate entry type
+            if entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry type. Must be "business" or "personal"'
+                }), 400
+            
+            if not entry_ids:
+                return jsonify({
+                    'success': False,
+                    'message': 'No entry IDs provided'
+                }), 400
+            
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefixes before ObjectId conversion
+            # Golden Rule #46: ID Format Consistency
+            clean_ids = [id.replace('expense_', '').replace('income_', '') for id in entry_ids]
+            
+            # Update entries
+            update_data = {
+                'entryType': entry_type,
+                'taggedAt': datetime.utcnow(),
+                'taggedBy': 'user'
+            }
+            
+            result = expenses_bp.mongo.db.expenses.update_many(
+                {
+                    '_id': {'$in': [ObjectId(id) for id in clean_ids]},
+                    'userId': current_user['_id']
+                },
+                {'$set': update_data}
+            )
+            
             return jsonify({
                 'success': True,
-                'message': 'Entry tagged successfully'
+                'message': f'{result.modified_count} entries tagged successfully',
+                'count': result.modified_count
             })
-        else:
+                
+        except Exception as e:
+            print(f"Error in bulk_tag_expense_entries: {e}")
             return jsonify({
                 'success': False,
-                'message': 'Entry not found or already tagged'
-            }), 404
-            
-    except Exception as e:
-        print(f"Error in tag_expense_entry: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to tag entry',
-            'errors': {'general': [str(e)]}
-        }), 500
-
-@expenses_bp.route('/bulk-tag', methods=['PATCH'])
-@expenses_bp.token_required
-def bulk_tag_expense_entries(current_user):
-    """Tag multiple expense entries at once"""
-    try:
-        data = request.get_json() or {}
-        entry_ids = data.get('entryIds', [])
-        entry_type = data.get('entryType')
-        
-        # Validate entry type
-        if entry_type not in ['business', 'personal']:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid entry type. Must be "business" or "personal"'
-            }), 400
-        
-        if not entry_ids:
-            return jsonify({
-                'success': False,
-                'message': 'No entry IDs provided'
-            }), 400
-        
-        # Update entries
-        update_data = {
-            'entryType': entry_type,
-            'taggedAt': datetime.utcnow(),
-            'taggedBy': 'user'
-        }
-        
-        result = expenses_bp.mongo.db.expenses.update_many(
-            {
-                '_id': {'$in': [ObjectId(id) for id in entry_ids]},
-                'userId': current_user['_id']
-            },
-            {'$set': update_data}
-        )
-        
-        return jsonify({
-            'success': True,
-            'message': f'{result.modified_count} entries tagged successfully',
-            'count': result.modified_count
-        })
-            
-    except Exception as e:
-        print(f"Error in bulk_tag_expense_entries: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to bulk tag entries',
-            'errors': {'general': [str(e)]}
-        }), 500
+                'message': 'Failed to bulk tag entries',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _bulk_tag_expense_entries()
 
 @expenses_bp.route('/untagged-count', methods=['GET'])
-@expenses_bp.token_required
-def get_untagged_expense_count(current_user):
-    """Get count of untagged expense entries"""
-    try:
-        from utils.immutable_ledger_helper import get_active_transactions_query
-        
-        query = get_active_transactions_query(current_user['_id'])
-        query['entryType'] = None
-        
-        count = expenses_bp.mongo.db.expenses.count_documents(query)
-        
-        return jsonify({
-            'success': True,
-            'count': count
-        })
+def get_untagged_expense_count():
+    @expenses_bp.token_required
+    def _get_untagged_expense_count(current_user):
+        """Get count of untagged expense entries"""
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
             
-    except Exception as e:
-        print(f"Error in get_untagged_expense_count: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to get untagged count',
-            'errors': {'general': [str(e)]}
-        }), 500
+            query = get_active_transactions_query(current_user['_id'])
+            query['entryType'] = None
+            
+            count = expenses_bp.mongo.db.expenses.count_documents(query)
+            
+            return jsonify({
+                'success': True,
+                'count': count
+            })
+                
+        except Exception as e:
+            print(f"Error in get_untagged_expense_count: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get untagged count',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_untagged_expense_count()
+
+# ============================================================================
+# AUDIT SHIELD: Report Discrepancy & Version Tracking (Feb 7, 2026)
+# ============================================================================
+
+@expenses_bp.route('/<expense_id>/discrepancy-check', methods=['GET'])
+def check_expense_discrepancy(expense_id):
+    @expenses_bp.token_required
+    def _check_expense_discrepancy(current_user):
+        """
+        Check if expense was edited after being exported in a report
+        
+        GUARDIAN LOGIC: Detects when current version > exported version
+        Returns data for "Report Discrepancy" warning in UI
+        """
+        try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import check_report_discrepancy
+            
+            result = check_report_discrepancy(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id
+            )
+            
+            # Serialize dates
+            for export in result.get('affected_exports', []):
+                if export.get('exported_at'):
+                    export['exported_at'] = export['exported_at'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'hasDiscrepancy': result['has_discrepancy'],
+                    'affectedExports': result['affected_exports'],
+                    'currentVersion': result['current_version'],
+                    'exportedVersions': result['exported_versions']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in check_expense_discrepancy: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to check discrepancy',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _check_expense_discrepancy()
+
+@expenses_bp.route('/<expense_id>/version-comparison', methods=['GET'])
+def get_expense_version_comparison(expense_id):
+    @expenses_bp.token_required
+    def _get_expense_version_comparison(current_user):
+        """
+        Get side-by-side comparison of two versions
+        
+        DIFF VIEW: Shows what changed between exported and current version
+        Used in "Version Comparison Modal" in UI
+        """
+        try:
+            version1 = int(request.args.get('version1', 1))
+            version2 = int(request.args.get('version2', 2))
+            
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import get_version_comparison
+            
+            result = get_version_comparison(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id,
+                version1=version1,
+                version2=version2
+            )
+            
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
+            
+            # Serialize dates
+            if result['version1_data'].get('date'):
+                result['version1_data']['date'] = result['version1_data']['date'].isoformat() + 'Z'
+            if result['version2_data'].get('date'):
+                result['version2_data']['date'] = result['version2_data']['date'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'version1': result['version1_data'],
+                    'version2': result['version2_data'],
+                    'changes': result['changes']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_expense_version_comparison: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version comparison',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_expense_version_comparison()
+
+@expenses_bp.route('/<expense_id>/version-history', methods=['GET'])
+def get_expense_version_history(expense_id):
+    @expenses_bp.token_required
+    def _get_expense_version_history(current_user):
+        """
+        Get complete version history for an expense entry
+        
+        TRANSPARENCY: Shows all versions with timestamps and changes
+        Used in "Version History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            version_log = expense.get('versionLog', [])
+            current_version = expense.get('version', 1)
+            
+            # Serialize dates
+            for version in version_log:
+                if version.get('createdAt'):
+                    version['createdAt'] = version['createdAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'versionLog': version_log,
+                    'currentVersion': current_version,
+                    'totalVersions': len(version_log) + 1  # +1 for current
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_expense_version_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_expense_version_history()
+
+@expenses_bp.route('/<expense_id>/export-history', methods=['GET'])
+def get_expense_export_history(expense_id):
+    @expenses_bp.token_required
+    def _get_expense_export_history(current_user):
+        """
+        Get complete export history for an expense entry
+        
+        TRANSPARENCY: Shows all reports this entry was included in
+        Used in "Export History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            # Verify ownership
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id']
+            })
+            
+            if not expense:
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            export_history = expense.get('exportHistory', [])
+            
+            # Serialize dates
+            for export in export_history:
+                if export.get('exportedAt'):
+                    export['exportedAt'] = export['exportedAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'exportHistory': export_history,
+                    'totalExports': len(export_history)
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_expense_export_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get export history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _get_expense_export_history()
+
+@expenses_bp.route('/<expense_id>/rollback/<int:target_version>', methods=['POST'])
+def rollback_expense_version(expense_id, target_version):
+    @expenses_bp.token_required
+    def _rollback_expense_version(current_user):
+        """
+        Rollback expense entry to a previous version
+        
+        INSURANCE POLICY: Allows manual restore of accidentally overwritten data
+        Creates NEW version with old data (maintains audit trail)
+        
+        Example: v1 → v2 → v3 → v4 (rollback to v2) = v4 looks like v2
+        
+        Usage:
+        - High-value user accidentally overwrites complex entry
+        - Admin can restore via API call or Postman
+        - No data is actually deleted, just new version created
+        """
+        try:
+            print(f"\n{'='*80}")
+            print(f"ROLLBACK EXPENSE - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Expense ID: {expense_id}")
+            print(f"Target version: {target_version}")
+            print(f"User ID: {current_user['_id']}")
+            
+            if not ObjectId.is_valid(expense_id):
+                return jsonify({'success': False, 'message': 'Invalid expense ID'}), 400
+            
+            if target_version < 1:
+                return jsonify({'success': False, 'message': 'Invalid target version'}), 400
+            
+            # Get the expense entry
+            expense = expenses_bp.mongo.db.expenses.find_one({
+                '_id': ObjectId(expense_id),
+                'userId': current_user['_id'],
+                'status': 'active'
+            })
+            
+            if not expense:
+                print(f"❌ Expense not found")
+                return jsonify({'success': False, 'message': 'Expense not found'}), 404
+            
+            current_version = expense.get('version', 1)
+            print(f"Current version: {current_version}")
+            
+            # Can't rollback to current version
+            if target_version == current_version:
+                print(f"⚠️ Target version is current version")
+                return jsonify({
+                    'success': False,
+                    'message': f'Entry is already at version {target_version}'
+                }), 400
+            
+            # Can't rollback to future version
+            if target_version > current_version:
+                print(f"❌ Target version is in the future")
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot rollback to future version {target_version} (current: {current_version})'
+                }), 400
+            
+            # Find the target version in versionLog
+            version_log = expense.get('versionLog', [])
+            target_data = None
+            
+            for version_entry in version_log:
+                if version_entry.get('version') == target_version:
+                    target_data = version_entry.get('data', {})
+                    break
+            
+            if not target_data:
+                print(f"❌ Target version not found in version log")
+                return jsonify({
+                    'success': False,
+                    'message': f'Version {target_version} not found in version history'
+                }), 404
+            
+            print(f"✅ Found target version data:")
+            print(f"   Amount: ₦{target_data.get('amount')}")
+            print(f"   Title: {target_data.get('title')}")
+            
+            # Prepare rollback data (restore old values)
+            rollback_data = {}
+            
+            # Restore all fields from target version
+            if 'amount' in target_data:
+                rollback_data['amount'] = target_data['amount']
+            if 'title' in target_data:
+                rollback_data['title'] = target_data['title']
+            if 'description' in target_data:
+                rollback_data['description'] = target_data['description']
+            if 'category' in target_data:
+                rollback_data['category'] = target_data['category']
+            if 'date' in target_data:
+                rollback_data['date'] = target_data['date']
+            
+            print(f"Rollback data prepared: {list(rollback_data.keys())}")
+            
+            # Use supersede_transaction to create new version with old data
+            from utils.immutable_ledger_helper import supersede_transaction
+            
+            result = supersede_transaction(
+                db=expenses_bp.mongo.db,
+                collection_name='expenses',
+                transaction_id=expense_id,
+                user_id=current_user['_id'],
+                update_data=rollback_data
+            )
+            
+            if not result['success']:
+                print(f"❌ Rollback failed: {result['message']}")
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 500
+            
+            # Add rollback metadata to the new version
+            new_version_number = result['new_version'].get('version', current_version + 1)
+            
+            # Update the new version to mark it as a rollback
+            expenses_bp.mongo.db.expenses.update_one(
+                {'_id': ObjectId(expense_id)},
+                {'$set': {
+                    'lastRollback': {
+                        'rolledBackAt': datetime.utcnow(),
+                        'rolledBackBy': current_user['_id'],
+                        'fromVersion': current_version,
+                        'toVersion': target_version,
+                        'newVersion': new_version_number
+                    }
+                }}
+            )
+            
+            print(f"✅ Rollback successful!")
+            print(f"   From version: {current_version}")
+            print(f"   To version: {target_version}")
+            print(f"   New version: {new_version_number}")
+            print(f"{'='*80}\n")
+            
+            # Serialize the restored version for response
+            restored_expense = result['new_version']
+            expense_data = expenses_bp.serialize_doc(restored_expense.copy())
+            expense_data['date'] = expense_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+            expense_data['createdAt'] = expense_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            expense_data['updatedAt'] = expense_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'message': f'Expense rolled back to version {target_version}',
+                'data': expense_data,
+                'metadata': {
+                    'fromVersion': current_version,
+                    'toVersion': target_version,
+                    'newVersion': new_version_number,
+                    'rolledBackAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ ERROR in rollback_expense_version: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to rollback expense version',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    return _rollback_expense_version()

@@ -1,4 +1,6 @@
 """
+from utils.business_bookkeeping import *
+from utils.balance_sync import get_liquid_wallet_balance
 VAS Wallet Management Module - Production Grade
 Handles wallet creation, funding, balance management, and reserved accounts
 
@@ -7,14 +9,16 @@ Providers: Monnify (primary wallet provider)
 Features: Reserved accounts, KYC verification, multi-bank support, webhook processing
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
-import os
 import requests
 import hmac
 import hashlib
-import sys
 
 # Force immediate output flushing for print statements in production
 def debug_print(message):
@@ -67,6 +71,11 @@ from bson import ObjectId
 def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     vas_wallet_bp = Blueprint('vas_wallet', __name__, url_prefix='/api/vas/wallet')
     
+    # CRITICAL FIX (Feb 12, 2026): Create alias blueprint for PIN endpoints without /api prefix
+    # Frontend calls /vas/wallet/pin/* but backend has /api/vas/wallet/pin/*
+    # App already submitted to Play Store, so we add backend aliases instead of changing frontend
+    vas_wallet_alias_bp = Blueprint('vas_wallet_alias', __name__, url_prefix='/vas/wallet')
+    
     # Environment variables (NEVER hardcode these)
     MONNIFY_API_KEY = os.environ.get('MONNIFY_API_KEY', '')
     MONNIFY_SECRET_KEY = os.environ.get('MONNIFY_SECRET_KEY', '')
@@ -79,6 +88,198 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     NIN_VERIFICATION_COST = 60.0
     
     # ==================== HELPER FUNCTIONS ====================
+    
+    def get_wallet_by_user_id(user_id_str, auto_fetch_accounts=True):
+        """
+        Get wallet by user ID with automatic string-to-ObjectId fix and account fetching.
+        
+        BUGFIX: Some wallets were created with string userId instead of ObjectId.
+        This function tries both formats and auto-fixes string userId to ObjectId.
+        
+        AUTO-RECOVERY: If wallet has no accounts, automatically fetches from Monnify.
+        
+        Args:
+            user_id_str: User ID as string
+            auto_fetch_accounts: If True, automatically fetch accounts from Monnify if empty
+            
+        Returns:
+            Wallet document or None
+        """
+        user_id_obj = ObjectId(user_id_str)
+        
+        # Try ObjectId first (correct format)
+        wallet = mongo.db.vas_wallets.find_one({'userId': user_id_obj})
+        
+        if not wallet:
+            # Fallback: Try string format (the bug)
+            wallet = mongo.db.vas_wallets.find_one({'userId': user_id_str})
+            
+            if wallet:
+                # Found with string - fix it immediately
+                print(f'🔧 AUTO-FIX: Wallet {wallet["_id"]} has string userId, converting to ObjectId')
+                mongo.db.vas_wallets.update_one(
+                    {'_id': wallet['_id']},
+                    {'$set': {'userId': user_id_obj}}
+                )
+                wallet['userId'] = user_id_obj  # Update in-memory
+        
+        # AUTO-RECOVERY: Fetch accounts from Monnify if empty
+        if wallet and auto_fetch_accounts:
+            accounts = wallet.get('accounts', [])
+            if not accounts or len(accounts) == 0:
+                print(f'🔧 AUTO-RECOVERY: Wallet {wallet["_id"]} has no accounts, fetching from Monnify...')
+                try:
+                    access_token = call_monnify_auth()
+                    account_ref = wallet.get('accountReference', user_id_str)
+                    
+                    fetch_response = requests.get(
+                        f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts/{account_ref}',
+                        headers={'Authorization': f'Bearer {access_token}'},
+                        timeout=30
+                    )
+                    
+                    if fetch_response.status_code == 200:
+                        fetch_data = fetch_response.json()
+                        if fetch_data.get('requestSuccessful'):
+                            monnify_accounts = fetch_data['responseBody'].get('accounts', [])
+                            if monnify_accounts:
+                                # Update wallet with fetched accounts
+                                mongo.db.vas_wallets.update_one(
+                                    {'_id': wallet['_id']},
+                                    {'$set': {
+                                        'accounts': monnify_accounts,
+                                        'updatedAt': datetime.utcnow(),
+                                        'accountsRecoveredAt': datetime.utcnow()
+                                    }}
+                                )
+                                wallet['accounts'] = monnify_accounts  # Update in-memory
+                                print(f'✅ AUTO-RECOVERY: Restored {len(monnify_accounts)} accounts from Monnify')
+                            else:
+                                print(f'⚠️ AUTO-RECOVERY: Monnify returned no accounts')
+                        else:
+                            print(f'⚠️ AUTO-RECOVERY: Monnify error: {fetch_data.get("responseMessage")}')
+                    elif fetch_response.status_code == 404:
+                        # Account doesn't exist in Monnify - try to create it
+                        print(f'⚠️ AUTO-RECOVERY: Account not found in Monnify (404)')
+                        
+                        # Check if user has BVN/NIN in profile
+                        user = mongo.db.users.find_one({'_id': wallet['userId']})
+                        user_bvn = user.get('bvn', '').strip() if user else ''
+                        user_nin = user.get('nin', '').strip() if user else ''
+                        
+                        if user_bvn or user_nin:
+                            print(f'   User has BVN/NIN, attempting to CREATE account...')
+                            
+                            # Create account with BVN/NIN
+                            account_data = {
+                                'accountReference': str(wallet['userId']),
+                                'accountName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()[:50],
+                                'currencyCode': 'NGN',
+                                'contractCode': MONNIFY_CONTRACT_CODE,
+                                'customerEmail': user.get('email', ''),
+                                'customerName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()[:50],
+                                'bvn': user_bvn,
+                                'nin': user_nin,
+                                'getAllAvailableBanks': True
+                            }
+                            
+                            create_response = requests.post(
+                                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                                headers={
+                                    'Authorization': f'Bearer {access_token}',
+                                    'Content-Type': 'application/json'
+                                },
+                                json=account_data,
+                                timeout=30
+                            )
+                            
+                            if create_response.status_code == 200:
+                                create_data = create_response.json()['responseBody']
+                                monnify_accounts = create_data.get('accounts', [])
+                                
+                                if monnify_accounts:
+                                    # Update wallet with new accounts
+                                    mongo.db.vas_wallets.update_one(
+                                        {'_id': wallet['_id']},
+                                        {'$set': {
+                                            'accounts': monnify_accounts,
+                                            'accountReference': create_data['accountReference'],
+                                            'accountName': create_data['accountName'],
+                                            'updatedAt': datetime.utcnow(),
+                                            'accountsAutoCreatedAt': datetime.utcnow()
+                                        }}
+                                    )
+                                    wallet['accounts'] = monnify_accounts  # Update in-memory
+                                    print(f'✅ AUTO-RECOVERY: Created {len(monnify_accounts)} accounts')
+                                else:
+                                    print(f'⚠️ AUTO-RECOVERY: Monnify returned no accounts after creation')
+                            else:
+                                # Account creation failed - log for admin review
+                                print(f'⚠️ AUTO-RECOVERY: Account creation failed: {create_response.text}')
+                                
+                                # Parse Monnify error
+                                try:
+                                    error_data = create_response.json()
+                                    error_message = error_data.get('responseMessage', 'Unknown error')
+                                    error_code = error_data.get('responseCode', '99')
+                                    
+                                    # Check if error is BVN/NIN verification failure
+                                    if any(keyword in error_message.upper() for keyword in ['BVN', 'NIN', 'INVALID', 'VERIFICATION', 'FAILED']):
+                                        print(f'   Detected BVN/NIN verification failure - logging for admin')
+                                        
+                                        # Log failed verification for admin review
+                                        failed_verification = {
+                                            '_id': ObjectId(),
+                                            'userId': wallet['userId'],
+                                            'userEmail': user.get('email', 'unknown'),
+                                            'userName': f"{user.get('firstName', '')} {user.get('lastName', '')}".strip(),
+                                            'bvnMasked': user_bvn[:4] + '****' + user_bvn[-3:] if user_bvn and len(user_bvn) >= 7 else 'N/A',
+                                            'ninMasked': user_nin[:4] + '****' + user_nin[-3:] if user_nin and len(user_nin) >= 7 else 'N/A',
+                                            'monnifyError': error_message,
+                                            'monnifyErrorCode': error_code,
+                                            'failedAt': datetime.utcnow(),
+                                            'source': 'auto_recovery',
+                                            'status': 'pending_review',
+                                            'notified': False
+                                        }
+                                        
+                                        mongo.db.failed_kyc_verifications.insert_one(failed_verification)
+                                        
+                                        # Update KYC submission status to rejected
+                                        mongo.db.kyc_submissions.update_one(
+                                            {'userId': wallet['userId']},
+                                            {
+                                                '$set': {
+                                                    'status': 'rejected',
+                                                    'rejectionReason': f'Monnify verification failed: {error_message}',
+                                                    'rejectedAt': datetime.utcnow(),
+                                                    'rejectedBy': 'auto_recovery_system'
+                                                }
+                                            }
+                                        )
+                                        
+                                        # Update user KYC status
+                                        mongo.db.users.update_one(
+                                            {'_id': wallet['userId']},
+                                            {
+                                                '$set': {
+                                                    'kycStatus': 'rejected',
+                                                    'kycRejectionReason': error_message
+                                                }
+                                            }
+                                        )
+                                        
+                                        print(f'   ✅ Logged failed verification for admin review')
+                                except Exception as parse_error:
+                                    print(f'   ⚠️ Failed to parse error: {str(parse_error)}')
+                        else:
+                            print(f'   User has no BVN/NIN - needs internal KYC submission')
+                    else:
+                        print(f'⚠️ AUTO-RECOVERY: Monnify fetch failed (status {fetch_response.status_code})')
+                except Exception as e:
+                    print(f'⚠️ AUTO-RECOVERY: Failed to fetch/create accounts: {str(e)}')
+        
+        return wallet
     
     def call_monnify_auth():
         """Get Monnify authentication token"""
@@ -258,10 +459,60 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 timeout=30
             )
             
-            if van_response.status_code != 200:
-                raise Exception(f'VAN creation failed: {van_response.text}')
+            van_data = None
             
-            van_data = van_response.json()['responseBody']
+            if van_response.status_code != 200:
+                # Parse Monnify error response
+                error_data = van_response.json()
+                error_message = error_data.get('responseMessage', 'Unknown error')
+                error_code = error_data.get('responseCode', '99')
+                
+                # Check if account already exists (duplicate error)
+                if 'already' in error_message.lower() or 'duplicate' in error_message.lower() or 'exists' in error_message.lower():
+                    print(f'INFO: Account already exists in Monnify for user {user_id}, fetching existing account...')
+                    
+                    # Fetch existing account from Monnify
+                    fetch_response = requests.get(
+                        f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts/{user_id}',
+                        headers={'Authorization': f'Bearer {access_token}'},
+                        timeout=30
+                    )
+                    
+                    if fetch_response.status_code == 200:
+                        fetch_data = fetch_response.json()
+                        if fetch_data.get('requestSuccessful'):
+                            van_data = fetch_data['responseBody']
+                            print(f'✅ Successfully fetched existing account from Monnify')
+                        else:
+                            raise Exception(f'Failed to fetch existing account: {fetch_data.get("responseMessage")}')
+                    else:
+                        raise Exception(f'Failed to fetch existing account: {fetch_response.text}')
+                
+                # Check if error is BVN/NIN requirement
+                elif 'BVN' in error_message or 'NIN' in error_message or error_code == '99':
+                    print(f'INFO: Monnify requires KYC for user {user_id}')
+                    return jsonify({
+                        'success': False,
+                        'requiresKyc': True,
+                        'message': 'Identity verification required',
+                        'userMessage': {
+                            'title': 'Verification Required',
+                            'message': 'To use VAS features, we need to verify your identity. Please submit your BVN or NIN.',
+                            'action': 'submit_kyc',
+                            'type': 'info'
+                        },
+                        'errors': {'kyc': ['BVN or NIN verification required']}
+                    }), 400  # 400 instead of 500 - this is a client action required
+                else:
+                    # Other Monnify errors
+                    raise Exception(f'VAN creation failed: {van_response.text}')
+            else:
+                # Success - account created
+                van_data = van_response.json()['responseBody']
+            
+            # Ensure we have van_data at this point
+            if not van_data:
+                raise Exception('Failed to create or fetch account from Monnify')
             
             wallet = {
                 '_id': ObjectId(),
@@ -289,11 +540,34 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             }), 201
             
         except Exception as e:
-            print(f'ERROR: Error creating wallet: {str(e)}')
+            error_str = str(e)
+            print(f'ERROR: Error creating wallet: {error_str}')
+            
+            # Check if error is BVN/NIN related (fallback check)
+            if 'BVN' in error_str or 'NIN' in error_str:
+                return jsonify({
+                    'success': False,
+                    'requiresKyc': True,
+                    'message': 'Identity verification required',
+                    'userMessage': {
+                        'title': 'Verification Required',
+                        'message': 'To use VAS features, we need to verify your identity. Please submit your BVN or NIN for verification.',
+                        'action': 'submit_kyc',
+                        'type': 'info'
+                    },
+                    'errors': {'kyc': ['BVN or NIN verification required']}
+                }), 400
+            
+            # Generic error
             return jsonify({
                 'success': False,
                 'message': 'Failed to create wallet',
-                'errors': {'general': [str(e)]}
+                'userMessage': {
+                    'title': 'Wallet Creation Failed',
+                    'message': 'We couldn\'t create your VAS wallet at this time. Please try again later or contact support.',
+                    'type': 'error'
+                },
+                'errors': {'general': [error_str]}
             }), 500
     
     @vas_wallet_bp.route('/balance', methods=['GET'])
@@ -302,7 +576,7 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
         """Get user's wallet balance with available balance calculation"""
         try:
             user_id = str(current_user['_id'])
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            wallet = get_wallet_by_user_id(user_id)
             
             if not wallet:
                 return jsonify({
@@ -342,17 +616,28 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @vas_wallet_bp.route('/balance/current', methods=['GET'])
     @token_required
     def get_current_balance(current_user):
-        """Get current wallet balance - lightweight polling endpoint"""
+        """Get current wallet balance - lightweight polling endpoint
+        
+        Returns 404 with helpful message if wallet doesn't exist yet.
+        Frontend should handle this by triggering wallet creation.
+        """
         try:
             user_id = str(current_user['_id'])
+            wallet = get_wallet_by_user_id(user_id)
             
-            # Get wallet from database
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             if not wallet:
+                # ENHANCED ERROR RESPONSE: Provide actionable information
                 return jsonify({
                     'success': False,
                     'message': 'Wallet not found',
-                    'errors': {'wallet': ['No wallet found for user']}
+                    'userMessage': {
+                        'title': 'Wallet Setup Required',
+                        'message': 'Your VAS wallet needs to be set up. This will only take a moment.',
+                        'action': 'create_wallet',
+                        'type': 'info'
+                    },
+                    'errors': {'wallet': ['No wallet found for user']},
+                    'requiresSetup': True  # Flag for frontend to trigger wallet creation
                 }), 404
             
             from utils.transaction_task_queue import get_user_available_balance
@@ -373,7 +658,9 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'availableBalance': available_balance,
                     'liquidWalletBalance': liquid_wallet_balance,
                     'timestamp': datetime.utcnow().isoformat(),
-                    'source': 'polling_endpoint'
+                    'source': 'polling_endpoint',
+                    'walletStatus': wallet.get('status', 'active'),
+                    'hasReservedAccount': len(wallet.get('accounts', [])) > 0
                 }
             }
             
@@ -381,10 +668,19 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
         except Exception as e:
             print(f'ERROR: Failed to get current balance: {str(e)}')
+            import traceback
+            traceback.print_exc()  # Print full stack trace for debugging
+            
             return jsonify({
                 'success': False,
                 'message': 'Failed to get balance',
-                'errors': {'general': [str(e)]}
+                'userMessage': {
+                    'title': 'Unable to Load Balance',
+                    'message': 'We couldn\'t load your wallet balance. Please try again or contact support if the issue persists.',
+                    'type': 'error'
+                },
+                'errors': {'general': [str(e)]},
+                'stackTrace': traceback.format_exc() if os.environ.get('FLASK_ENV') == 'development' else None
             }), 500
     
     @vas_wallet_bp.route('/pending-tasks', methods=['GET'])
@@ -986,19 +1282,72 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             user_id = str(current_user['_id'])
             
             # Check if wallet already exists
-            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            existing_wallet = get_wallet_by_user_id(user_id)
             if existing_wallet:
-                return jsonify({
-                    'success': True,
-                    'data': {
-                        'accountNumber': existing_wallet.get('accounts', [{}])[0].get('accountNumber', ''),
-                        'accountName': existing_wallet.get('accounts', [{}])[0].get('accountName', ''),
-                        'bankName': existing_wallet.get('accounts', [{}])[0].get('bankName', 'Wema Bank'),
-                        'bankCode': existing_wallet.get('accounts', [{}])[0].get('bankCode', '035'),
-                        'createdAt': existing_wallet.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
-                    },
-                    'message': 'Reserved account already exists'
-                }), 200
+                # CRITICAL FIX: Check if accounts array exists and has elements
+                accounts = existing_wallet.get('accounts', [])
+                if accounts and len(accounts) > 0:
+                    # Wallet has valid accounts, return existing
+                    return jsonify({
+                        'success': True,
+                        'data': {
+                            'accountNumber': accounts[0].get('accountNumber', ''),
+                            'accountName': accounts[0].get('accountName', ''),
+                            'bankName': accounts[0].get('bankName', 'Wema Bank'),
+                            'bankCode': accounts[0].get('bankCode', '035'),
+                            'createdAt': existing_wallet.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                        },
+                        'message': 'Reserved account already exists'
+                    }), 200
+                else:
+                    # CRITICAL: NEVER DELETE WALLETS!
+                    # If wallet exists but has no accounts, try to fetch from Monnify and update
+                    print(f'⚠️ WARNING: Wallet exists but has no accounts for user {user_id}')
+                    print(f'   Attempting to fetch accounts from Monnify...')
+                    
+                    # Try to fetch existing reserved accounts from Monnify
+                    try:
+                        access_token = call_monnify_auth()
+                        account_ref = existing_wallet.get('accountReference', user_id)
+                        
+                        fetch_response = requests.get(
+                            f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts/{account_ref}',
+                            headers={'Authorization': f'Bearer {access_token}'},
+                            timeout=30
+                        )
+                        
+                        if fetch_response.status_code == 200:
+                            fetch_data = fetch_response.json()
+                            if fetch_data.get('requestSuccessful'):
+                                monnify_accounts = fetch_data['responseBody'].get('accounts', [])
+                                if monnify_accounts:
+                                    # Update wallet with fetched accounts
+                                    mongo.db.vas_wallets.update_one(
+                                        {'_id': existing_wallet['_id']},
+                                        {'$set': {'accounts': monnify_accounts, 'updatedAt': datetime.utcnow()}}
+                                    )
+                                    print(f'✅ Successfully restored {len(monnify_accounts)} accounts from Monnify')
+                                    
+                                    return jsonify({
+                                        'success': True,
+                                        'data': {
+                                            'accountNumber': monnify_accounts[0].get('accountNumber', ''),
+                                            'accountName': monnify_accounts[0].get('accountName', ''),
+                                            'bankName': monnify_accounts[0].get('bankName', 'Wema Bank'),
+                                            'bankCode': monnify_accounts[0].get('bankCode', '035'),
+                                            'createdAt': existing_wallet.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                                        },
+                                        'message': 'Reserved account restored successfully'
+                                    }), 200
+                    except Exception as e:
+                        print(f'ERROR: Failed to fetch accounts from Monnify: {str(e)}')
+                    
+                    # If we couldn't fetch accounts, return error but NEVER delete wallet
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet exists but accounts are missing. Please contact support.',
+                        'errors': {'wallet': ['Wallet configuration issue - contact support']}
+                    }), 500
             
             # REMOVED: BVN/NIN check for reserved account creation
             # Since we now use internal KYC system, users can create accounts
@@ -1016,8 +1365,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'customerEmail': current_user.get('email', ''),
                 'customerName': current_user.get('fullName', f"FiCore User {user_id[:8]}")[:50],  # Monnify 50-char limit
                 # BVN/NIN removed - using internal KYC system
-                'getAllAvailableBanks': True  # Moniepoint default, user choice
+                'getAllAvailableBanks': True  # Request all available banks
             }
+            
+            print(f'DEBUG: Requesting reserved account with getAllAvailableBanks=True for user {user_id}')
             
             van_response = requests.post(
                 f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
@@ -1030,11 +1381,93 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             )
             
             if van_response.status_code != 200:
-                raise Exception(f'Reserved account creation failed: {van_response.text}')
+                # Parse Monnify error response
+                try:
+                    error_data = van_response.json()
+                    error_message = error_data.get('responseMessage', 'Unknown error')
+                    error_code = error_data.get('responseCode', '99')
+                    
+                    print(f'ERROR: Monnify error - Code: {error_code}, Message: {error_message}')
+                    
+                    # Check if error is BVN/NIN requirement (Monnify changed policy Feb 2026)
+                    if 'BVN' in error_message.upper() or 'NIN' in error_message.upper():
+                        print(f'INFO: Monnify requires KYC for user {user_id} (new policy since Feb 2026)')
+                        
+                        # Check if user already has BVN/NIN in profile
+                        user_bvn = current_user.get('bvn', '').strip()
+                        user_nin = current_user.get('nin', '').strip()
+                        
+                        if user_bvn or user_nin:
+                            # User HAS BVN/NIN but we didn't send it - AUTO-RETRY with credentials
+                            print(f'INFO: User has BVN/NIN in profile, auto-retrying with credentials...')
+                            
+                            # Add BVN/NIN to request
+                            account_data['bvn'] = user_bvn
+                            account_data['nin'] = user_nin
+                            
+                            # Retry with BVN/NIN
+                            van_response_retry = requests.post(
+                                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                                headers={
+                                    'Authorization': f'Bearer {access_token}',
+                                    'Content-Type': 'application/json'
+                                },
+                                json=account_data,
+                                timeout=30
+                            )
+                            
+                            if van_response_retry.status_code == 200:
+                                print(f'SUCCESS: Account created with BVN/NIN on auto-retry')
+                                van_response = van_response_retry  # Use retry response
+                                # Continue to process successful response below
+                            else:
+                                # Retry also failed
+                                retry_error = van_response_retry.json()
+                                retry_message = retry_error.get('responseMessage', 'Unknown error')
+                                print(f'ERROR: Auto-retry failed: {retry_message}')
+                                raise Exception(f'Account creation failed even with BVN/NIN: {retry_message}')
+                        else:
+                            # User does NOT have BVN/NIN - guide them to KYC
+                            print(f'INFO: User has no BVN/NIN in profile - returning KYC requirement')
+                            return jsonify({
+                                'success': False,
+                                'requiresKyc': True,
+                                'kycType': 'bvn_or_nin',
+                                'message': 'Identity verification required to create wallet',
+                                'userMessage': {
+                                    'title': 'Verification Required',
+                                    'message': 'To create your wallet, we need to verify your identity with your BVN or NIN. This is a one-time requirement to comply with financial regulations.',
+                                    'action': 'submit_kyc',
+                                    'actionLabel': 'Submit BVN/NIN',
+                                    'type': 'info'
+                                },
+                                'errors': {'kyc': ['BVN or NIN verification required']}
+                            }), 400  # 400 = client action required, not server error
+                    else:
+                        # Other Monnify error (not BVN/NIN related)
+                        raise Exception(f'Monnify error: {error_message}')
+                        
+                except ValueError:
+                    # Response is not JSON
+                    raise Exception(f'Reserved account creation failed: {van_response.text}')
             
+            # If we reach here, van_response.status_code == 200 (success)
             van_data = van_response.json()['responseBody']
             
-            # Create wallet record with KYC verification
+            # Log what Monnify actually returned
+            print(f'DEBUG: Monnify returned {len(van_data.get("accounts", []))} accounts')
+            for i, acc in enumerate(van_data.get('accounts', [])):
+                print(f'  Account {i+1}: {acc.get("bankName")} ({acc.get("bankCode")}) - {acc.get("accountNumber")}')
+            
+            # CRITICAL FIX: Validate that Monnify returned accounts
+            if not van_data.get('accounts') or len(van_data['accounts']) == 0:
+                raise Exception('Monnify returned no accounts in response')
+            
+            # Check if BVN/NIN was sent in this request (for tracking)
+            bvn_sent = bool(account_data.get('bvn', '').strip())
+            nin_sent = bool(account_data.get('nin', '').strip())
+            
+            # Create wallet record with KYC verification and Monnify metadata
             wallet_data = {
                 '_id': ObjectId(),
                 'userId': ObjectId(user_id),
@@ -1042,6 +1475,27 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'accountReference': van_data['accountReference'],
                 'contractCode': van_data['contractCode'],
                 'accounts': van_data['accounts'],
+                
+                # NEW: Store customer info from Monnify response (for audit trail)
+                'customerEmail': van_data.get('customerEmail', account_data.get('customerEmail')),
+                'customerName': van_data.get('customerName', account_data.get('customerName')),
+                
+                # NEW: Store Monnify metadata (from response)
+                'reservationReference': van_data.get('reservationReference'),
+                'reservedAccountType': van_data.get('reservedAccountType', 'GENERAL'),
+                'collectionChannel': van_data.get('collectionChannel', 'RESERVED_ACCOUNT'),
+                'monnifyStatus': van_data.get('status', 'ACTIVE'),
+                'monnifyCreatedOn': van_data.get('createdOn'),
+                
+                # NEW: Track BVN/NIN submission (CRITICAL - prevents duplicate submissions)
+                'bvnSubmittedToMonnify': bvn_sent,
+                'ninSubmittedToMonnify': nin_sent,
+                'kycSubmittedAt': datetime.utcnow() if (bvn_sent or nin_sent) else None,
+                
+                # NEW: Payment restrictions (from Monnify response)
+                'restrictPaymentSource': van_data.get('restrictPaymentSource', False),
+                'allowedPaymentSources': van_data.get('allowedPaymentSources'),
+                
                 'status': 'ACTIVE',
                 'tier': 'TIER_1',  # Basic account - will upgrade when KYC verified
                 'kycTier': 1,  # Will be updated to 2 when internal KYC is verified
@@ -1054,7 +1508,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.vas_wallets.insert_one(wallet_data)
             
-            print(f'SUCCESS: Basic reserved account created for user {user_id} - KYC can be submitted separately')
+            if bvn_sent or nin_sent:
+                print(f'SUCCESS: Reserved account created for user {user_id} WITH BVN/NIN submission')
+            else:
+                print(f'SUCCESS: Basic reserved account created for user {user_id} - KYC can be submitted separately')
             
             # Return all accounts for frontend to choose from
             return jsonify({
@@ -1068,10 +1525,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     'createdAt': wallet_data['createdAt'].isoformat() + 'Z',
                     # Keep backward compatibility - return first account as default
                     'defaultAccount': {
-                        'accountNumber': van_data['accounts'][0].get('accountNumber', '') if van_data['accounts'] else '',
-                        'accountName': van_data['accounts'][0].get('accountName', '') if van_data['accounts'] else '',
-                        'bankName': van_data['accounts'][0].get('bankName', 'Wema Bank') if van_data['accounts'] else 'Wema Bank',
-                        'bankCode': van_data['accounts'][0].get('bankCode', '035') if van_data['accounts'] else '035',
+                        'accountNumber': van_data['accounts'][0].get('accountNumber', ''),
+                        'accountName': van_data['accounts'][0].get('accountName', ''),
+                        'bankName': van_data['accounts'][0].get('bankName', 'Wema Bank'),
+                        'bankCode': van_data['accounts'][0].get('bankCode', '035'),
                     }
                 },
                 'message': f'Reserved account created successfully with {len(van_data["accounts"])} available banks. Submit KYC for full verification.'
@@ -1155,33 +1612,83 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_reserved_accounts_with_banks(current_user):
         """Get user's reserved accounts with available banks (explicit endpoint for frontend compatibility)"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info('═══════════════════════════════════════════════════════')
+        logger.info('🔍 GET /api/vas/wallet/reserved-accounts/with-banks')
+        logger.info(f'   User ID: {current_user.get("_id")}')
+        logger.info(f'   User Email: {current_user.get("email", "N/A")}')
+        logger.info(f'   Request Time: {datetime.utcnow().isoformat()}Z')
+        logger.info(f'   IP Address: {request.remote_addr}')
+        logger.info(f'   User Agent: {request.headers.get("User-Agent", "N/A")}')
+        
         # Call the same business logic function as /reserved-accounts
         result, status_code = _get_reserved_accounts_with_banks_logic(current_user)
+        
+        logger.info(f'📤 Response Status: {status_code}')
+        logger.info(f'   Success: {result.get("success")}')
+        logger.info(f'   Message: {result.get("message")}')
+        if result.get('success') and result.get('data'):
+            accounts = result['data'].get('accounts', [])
+            logger.info(f'   Accounts Count: {len(accounts)}')
+            for i, acc in enumerate(accounts):
+                logger.info(f'   Account {i}: {acc.get("bankName")} - {acc.get("accountNumber")}')
+        logger.info('═══════════════════════════════════════════════════════')
+        
         return jsonify(result), status_code
     
     def _get_reserved_accounts_with_banks_logic(current_user):
         """Business logic for getting user's reserved accounts with available banks"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             user_id = str(current_user['_id'])
-            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            logger.info(f'📝 Step 1: Looking up wallet for user {user_id}...')
+            
+            wallet = get_wallet_by_user_id(user_id)
             
             if not wallet:
+                logger.warning(f'⚠️ No wallet found for user {user_id}')
+                logger.info('   User needs to create a wallet first')
                 return {
                     'success': False,
                     'message': 'Reserved account not found. Please create a wallet first.'
                 }, 404
             
+            logger.info(f'✅ Wallet found: {wallet.get("_id")}')
+            logger.info(f'   Wallet Status: {wallet.get("status")}')
+            logger.info(f'   Wallet Tier: {wallet.get("tier")}')
+            logger.info(f'   KYC Verified: {wallet.get("kycVerified")}')
+            logger.info(f'   Account Reference: {wallet.get("accountReference")}')
+            
             # Get all available accounts
+            logger.info(f'📝 Step 2: Extracting accounts from wallet...')
             accounts = wallet.get('accounts', [])
+            logger.info(f'   Accounts field type: {type(accounts)}')
+            logger.info(f'   Accounts count: {len(accounts) if accounts else 0}')
             
             if not accounts:
+                logger.warning(f'⚠️ No accounts found in wallet for user {user_id}')
+                logger.info('   Wallet exists but accounts array is empty')
+                logger.info(f'   Wallet data keys: {list(wallet.keys())}')
                 return {
                     'success': False,
                     'message': 'No accounts found in wallet'
                 }, 404
             
+            logger.info(f'✅ Found {len(accounts)} accounts')
+            for i, acc in enumerate(accounts):
+                logger.info(f'   Account {i}:')
+                logger.info(f'     - Bank: {acc.get("bankName")} ({acc.get("bankCode")})')
+                logger.info(f'     - Account Number: {acc.get("accountNumber")}')
+                logger.info(f'     - Account Name: {acc.get("accountName")}')
+                logger.info(f'     - Status: {acc.get("status", "N/A")}')
+            
             # Return all accounts for frontend to choose from
-            return {
+            logger.info(f'📝 Step 3: Preparing response...')
+            response_data = {
                 'success': True,
                 'data': {
                     'accounts': accounts,  # All available bank accounts
@@ -1199,10 +1706,24 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     }
                 },
                 'message': f'Reserved account retrieved successfully with {len(accounts)} available banks'
-            }, 200
+            }
+            
+            logger.info(f'✅ Response prepared successfully')
+            logger.info(f'   Returning {len(accounts)} accounts to frontend')
+            return response_data, 200
             
         except Exception as e:
-            print(f'ERROR: Error getting reserved accounts: {str(e)}')
+            logger.error(f'❌ EXCEPTION in _get_reserved_accounts_with_banks_logic')
+            logger.error(f'   Error Type: {type(e).__name__}')
+            logger.error(f'   Error Message: {str(e)}')
+            logger.error(f'   User ID: {current_user.get("_id")}')
+            
+            import traceback
+            logger.error('   Stack Trace:')
+            for line in traceback.format_exc().split('\n'):
+                if line.strip():
+                    logger.error(f'     {line}')
+            
             return {
                 'success': False,
                 'message': 'Failed to retrieve reserved accounts',
@@ -1630,9 +2151,13 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
             
             # If VAS-only requested, skip income/expense transactions
             if not vas_only:
-                # Get Income transactions
+                # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for consistency
+                from utils.immutable_ledger_helper import get_active_transactions_query
+                
+                # Get Income transactions with active filter
+                income_query = get_active_transactions_query(ObjectId(user_id))
                 income_transactions = list(
-                    mongo.db.incomes.find({'userId': ObjectId(user_id)})
+                    mongo.db.incomes.find(income_query)
                     .sort('dateReceived', -1)
                 )
                 
@@ -1662,9 +2187,10 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         'isOptimistic': False,
                     })
                 
-                # Get Expense transactions
+                # Get Expense transactions with active filter
+                expense_query = get_active_transactions_query(ObjectId(user_id))
                 expense_transactions = list(
-                    mongo.db.expenses.find({'userId': ObjectId(user_id)})
+                    mongo.db.expenses.find(expense_query)
                     .sort('date', -1)
                 )
                 
@@ -2000,22 +2526,35 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         
                         # BONUS 1: Waive the ₦30 deposit fee (credit it back)
                         if deposit_fee > 0:
-                            mongo.db.vas_wallets.update_one(
-                                {'userId': ObjectId(user_id)},
-                                {'$inc': {'balance': deposit_fee}}
-                            )
-                            # Also update users collection balances
-                            mongo.db.users.update_one(
-                                {'_id': ObjectId(user_id)},
-                                {
-                                    '$inc': {
-                                        'walletBalance': deposit_fee,
-                                        'liquidWalletBalance': deposit_fee,
-                                        'vasWalletBalance': deposit_fee
-                                    }
-                                }
+                            from utils.balance_sync import update_liquid_wallet_balance, get_liquid_wallet_balance
+                            
+                            # Get current balance and add deposit fee
+                            current_balance = get_liquid_wallet_balance(mongo, user_id)
+                            new_balance = current_balance + deposit_fee
+                            
+                            # Use centralized balance update utility
+                            update_liquid_wallet_balance(
+                                mongo=mongo,
+                                user_id=user_id,
+                                new_balance=new_balance,
+                                reason="Deposit fee refund (first-time funding bonus)"
                             )
                             print(f'✅ Credited back ₦{deposit_fee} deposit fee')
+                            
+                            # 🆕 ATOMIC FEE WAIVER ACCOUNTING (March 11, 2026)
+                            try:
+                                atomic_result = award_and_consume_fee_waiver_atomic(
+                                    mongo=mongo,
+                                    user_id=ObjectId(user_id),
+                                    fee_amount=deposit_fee,
+                                    waiver_reason="Referral deposit fee waiver"
+                                )
+                                if atomic_result.get('success'):
+                                    print(f'✅ Atomic fee waiver accounting completed: {len(atomic_result["transactions"])} transactions')
+                                else:
+                                    print(f'⚠️  Atomic fee waiver failed: {atomic_result.get("error")}')
+                            except Exception as e:
+                                print(f'⚠️  Failed to record atomic fee waiver: {str(e)}')
                         
                         # BONUS 2: Grant 5 FiCore Credits
                         current_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -2044,6 +2583,23 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                         }
                         mongo.db.credit_transactions.insert_one(credit_transaction)
                         print(f'✅ Granted 5 FiCore Credits')
+                        
+                        # 🆕 ATOMIC FC REFERRAL BONUS (March 11, 2026)
+                        # Record referral bonus using atomic operations (4-transaction pattern)
+                        try:
+                            atomic_result = award_and_consume_fc_credits_atomic(
+                                mongo=mongo,
+                                user_id=ObjectId(user_id),
+                                fc_amount=5.0,
+                                operation='referral_bonus',
+                                description='Referral signup bonus - 5 FCs'
+                            )
+                            if atomic_result.get('success'):
+                                print(f'✅ Atomic referral bonus completed: {len(atomic_result["transactions"])} transactions')
+                            else:
+                                print(f'⚠️  Atomic referral bonus failed: {atomic_result.get("error")}')
+                        except Exception as e:
+                            print(f'⚠️  Failed to record atomic referral bonus: {str(e)}')
                         
                         # Update referral record
                         mongo.db.referrals.update_one(
@@ -2935,4 +3491,25 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
-    return vas_wallet_bp
+    # ==================== ALIAS ROUTES FOR PIN ENDPOINTS (Feb 12, 2026) ====================
+    # Frontend calls /vas/wallet/pin/* (missing /api prefix) due to inconsistency
+    # App already submitted to Play Store, so we add backend aliases
+    # These routes point to the same handlers as /api/vas/wallet/pin/*
+    
+    @vas_wallet_alias_bp.route('/pin/status', methods=['GET'])
+    def get_pin_status_alias():
+        """Alias for /api/vas/wallet/pin/status - called by frontend without /api prefix"""
+        # Call the original decorated function - it handles authentication
+        return get_pin_status()
+    
+    @vas_wallet_alias_bp.route('/pin/validate', methods=['POST'])
+    def validate_vas_pin_alias():
+        """Alias for /api/vas/wallet/pin/validate - called by frontend without /api prefix"""
+        return validate_vas_pin()
+    
+    @vas_wallet_alias_bp.route('/pin/change', methods=['POST'])
+    def change_vas_pin_alias():
+        """Alias for /api/vas/wallet/pin/change - called by frontend without /api prefix"""
+        return change_vas_pin()
+    
+    return vas_wallet_bp, vas_wallet_alias_bp

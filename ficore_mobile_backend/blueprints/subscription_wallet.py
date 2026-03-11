@@ -4,6 +4,10 @@ Handles premium subscription activation using wallet balance
 
 Phase 5: Dual-Path Payment System
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
@@ -75,15 +79,15 @@ def init_subscription_wallet_blueprint(mongo, token_required):
                     }
                 }), 402  # Payment Required
             
-            # CRITICAL: Debit all 3 wallet fields simultaneously (Golden Rule #38)
+            # CRITICAL: Debit wallet using centralized utility (Golden Rule #38)
+            from utils.balance_sync import update_liquid_wallet_balance
+            
             new_balance = wallet_balance - plan_price
-            mongo.db.users.update_one(
-                {'_id': current_user['_id']},
-                {'$set': {
-                    'walletBalance': new_balance,
-                    'liquidWalletBalance': new_balance,
-                    'vasWalletBalance': new_balance
-                }}
+            update_liquid_wallet_balance(
+                mongo=mongo,
+                user_id=current_user['_id'],
+                new_balance=new_balance,
+                reason=f"Subscription payment: {plan_name}"
             )
             
             # Create subscription record

@@ -157,7 +157,7 @@ def init_analytics_blueprint(mongo, token_required, admin_required, serialize_do
             
             # Entries this month
             income_entries_this_month = mongo.db.incomes.count_documents({
-                'dateReceived': {'$gte': month_start}
+                'date': {'$gte': month_start}
             })
             expense_entries_this_month = mongo.db.expenses.count_documents({
                 'date': {'$gte': month_start}

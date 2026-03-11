@@ -1,12 +1,18 @@
 """
+from utils.decimal_helpers import safe_sum
 Income Blueprint
 Handles income tracking with monthly entry limits and credit deductions
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify, make_response
 from datetime import datetime, timedelta
 from bson import ObjectId
 import csv
 import io
+from utils.decimal_helpers import safe_float, safe_sum
 from collections import defaultdict
 from utils.payment_utils import normalize_sales_type, validate_sales_type
 from utils.monthly_entry_tracker import MonthlyEntryTracker
@@ -22,6 +28,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_incomes(current_user):
         try:
+            print(f"\n{'='*80}")
+            print(f"🔍 [Income API] GET /income")
+            print(f"{'='*80}")
+            print(f"🔍 [Income API] User ID: {current_user['_id']}")
+            print(f"🔍 [Income API] User Email: {current_user.get('email', 'N/A')}")
+            
             # FIXED: Use offset/limit instead of page for consistency with frontend
             limit = min(int(request.args.get('limit', 50)), 100)
             offset = max(int(request.args.get('offset', 0)), 0)
@@ -29,35 +41,75 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             frequency = request.args.get('frequency')
             start_date = request.args.get('start_date')
             end_date = request.args.get('end_date')
-            sort_by = request.args.get('sort_by', 'dateReceived')
+            sort_by = request.args.get('sort_by', 'createdAt')  # CRITICAL FIX: Default to createdAt for consistent "just now" timestamps
             sort_order = request.args.get('sort_order', 'desc')
+            
+            print(f"🔍 [Income API] Query Params:")
+            print(f"  - limit: {limit}")
+            print(f"  - offset: {offset}")
+            print(f"  - category: {category}")
+            print(f"  - frequency: {frequency}")
+            print(f"  - start_date: {start_date}")
+            print(f"  - end_date: {end_date}")
+            print(f"  - sort_by: {sort_by}")
+            print(f"  - sort_order: {sort_order}")
             
             # Build query - ONLY active, non-deleted incomes
             from utils.immutable_ledger_helper import get_active_transactions_query
             
-            now = datetime.utcnow()
+            # CLOCK DRIFT FIX: Allow up to 2 hours in the future to handle device clock differences
+            # This prevents voice entries from being hidden when device time is ahead of server time
+            now = datetime.utcnow() + timedelta(hours=2)
             query = get_active_transactions_query(current_user['_id'])  # IMMUTABLE: Filters out voided/deleted
-            query['dateReceived'] = {'$lte': now}  # Only past and present incomes
+            query['date'] = {'$lte': now}  # Only past and present incomes (with clock drift tolerance)
+            
+            print(f"🔍 [Income API] Base query (after active filter): {query}")
             
             if category:
                 query['category'] = category
             if frequency:
                 query['frequency'] = frequency
             if start_date or end_date:
-                date_query = query.get('dateReceived', {})
+                date_query = query.get('date', {})
                 if start_date:
                     date_query['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
                 if end_date:
                     date_query['$lte'] = min(datetime.fromisoformat(end_date.replace('Z', '')), now)
-                query['dateReceived'] = date_query
+                query['date'] = date_query
+            
+            print(f"🔍 [Income API] Final MongoDB query: {query}")
             
             # FIXED: Proper sorting
             sort_direction = -1 if sort_order == 'desc' else 1
-            sort_field = sort_by if sort_by in ['dateReceived', 'amount', 'source', 'createdAt'] else 'dateReceived'
+            sort_field = sort_by if sort_by in ['date', 'amount', 'source', 'createdAt'] else 'date'
             
             # Get incomes with pagination
             incomes = list(mongo.db.incomes.find(query).sort(sort_field, sort_direction).skip(offset).limit(limit))
             total = mongo.db.incomes.count_documents(query)
+            
+            print(f"🔍 [Income API] Query Results:")
+            print(f"  - Total matching documents: {total}")
+            print(f"  - Returned in this page: {len(incomes)}")
+            
+            if incomes:
+                sample = incomes[0]
+                print(f"🔍 [Income API] Sample entry:")
+                print(f"  - ID: {sample.get('_id')}")
+                print(f"  - Source: {sample.get('source')}")
+                print(f"  - Amount: {sample.get('amount')}")
+                print(f"  - Date: {sample.get('date')}")
+                print(f"  - Status: {sample.get('status', 'NO STATUS FIELD')}")
+                print(f"  - IsDeleted: {sample.get('isDeleted', 'NO FIELD')}")
+                print(f"  - EntryType: {sample.get('entryType', 'NO TAG')}")
+                print(f"  - TaggedAt: {sample.get('taggedAt', 'NO TIMESTAMP')}")
+                print(f"  - TaggedBy: {sample.get('taggedBy', 'NO USER')}")
+            else:
+                print(f"🔍 [Income API] ⚠️ NO ENTRIES FOUND!")
+                print(f"🔍 [Income API] Debugging: Let's check if ANY entries exist for this user...")
+                any_entries = mongo.db.incomes.count_documents({'userId': current_user['_id']})
+                print(f"🔍 [Income API] Total entries for user (no filters): {any_entries}")
+            
+            print(f"{'='*80}\n")
             
             # Serialize incomes with proper field mapping
             income_list = []
@@ -65,9 +117,12 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 income_data = serialize_doc(income.copy())
                 # FIXED: Map source to title for frontend compatibility
                 income_data['title'] = income_data.get('source', income_data.get('title', 'Income'))
-                income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
                 income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                 income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
+                # ENTRY TAGGING FIELDS: Format tagging fields for frontend
+                income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
                 # Removed recurring date logic - simplified income tracking
                 income_data['nextRecurringDate'] = None
                 income_list.append(income_data)
@@ -103,8 +158,22 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @token_required
     def get_income(current_user, income_id):
         try:
+            # CRITICAL FIX: Handle optimistic/temp IDs from frontend
+            # These IDs start with 'optimistic_' or 'temp_' and are not yet in the database
+            if income_id.startswith('optimistic_') or income_id.startswith('temp_') or income_id.startswith('local_'):
+                return jsonify({
+                    'success': False,
+                    'message': 'Income record is pending sync',
+                    'error_type': 'pending_sync'
+                }), 202  # 202 Accepted - processing in background
+            
+            # CRITICAL FIX (Feb 10, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: income_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = income_id.replace('income_', '').replace('expense_', '')
+            
             income = mongo.db.incomes.find_one({
-                '_id': ObjectId(income_id),
+                '_id': ObjectId(clean_id),
                 'userId': current_user['_id']
             })
             
@@ -115,9 +184,11 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 }), 404
             
             income_data = serialize_doc(income.copy())
-            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+            income_data['dateReceived'] = income_data['date']  # Backward compatibility
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
+            income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
             # Removed recurring date logic - simplified income tracking
             income_data['nextRecurringDate'] = None
             
@@ -137,6 +208,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     @income_bp.route('', methods=['POST'])
     @token_required
     def create_income(current_user):
+        print(f"🎤 [Income API] POST /income called by user: {current_user.get('_id')}")
+        print(f"🎤 [Income API] Request data: {request.get_json()}")
         try:
             data = request.get_json()
             
@@ -185,7 +258,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # If over limit, FC will be deducted after successful creation
             
             # Import auto-population utility
-            from ..utils.income_utils import auto_populate_income_fields
+            from utils.income_utils import auto_populate_income_fields
             
             # Simplified: No recurring logic - all incomes are one-time entries
             
@@ -194,18 +267,77 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             # Normalize salesType if present
             normalized_sales_type = normalize_sales_type(data.get('salesType')) if data.get('salesType') else None
+            
+            # QUICK TAG INTEGRATION (Feb 6, 2026): Accept entryType from frontend
+            entry_type = data.get('entryType')  # 'business', 'personal', or None
+            
+            # Validate entryType if provided (voice-entry-tagging feature - Feb 18, 2026)
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
+            # SOURCE TRACKING STANDARDIZATION (Feb 18, 2026): Determine entry source
+            # Source values: 'manual', 'voice', 'wallet_auto'
+            # Default to 'manual' if not specified
+            entry_source = data.get('source_type', 'manual')  # Use source_type to avoid conflict with income.source field
+            
+            # Validate source if provided
+            if entry_source not in ['manual', 'voice', 'wallet_auto']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid source. Must be "manual", "voice", or "wallet_auto"',
+                    'errors': {'source': ['Invalid value']}
+                }), 400
+            
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            # This prevents premium entries from counting against free tier limit after subscription expires
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            is_premium_entry = False
+            if user:
+                is_admin = user.get('isAdmin', False)
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end = user.get('subscriptionEndDate')
+                # Entry is premium if user is admin OR has active subscription
+                if is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow()):
+                    is_premium_entry = True
 
+            # Normalize category to always be a string (not dict)
+            # Frontend sometimes sends {"name": "Food", "icon": "..."} and sometimes just "Food"
+            # We standardize to always store as string for consistency
+            category_value = data['category']
+            if isinstance(category_value, dict):
+                category_value = category_value.get('name', 'Other')
+            elif not isinstance(category_value, str):
+                category_value = str(category_value)
+            
+            # ✅ CAPITAL CONTRIBUTION HANDLING (Mar 9, 2026): Mirror Capital Expenditure pattern
+            # Capital Contribution is EQUITY, not income (like COGS is not regular expense)
+            # It updates user.capital field and is excluded from P&L calculations
+            is_capital_contribution = category_value in ['Capital Contribution', 'capital_contribution', 'Capital']
+            
             income_data = {
                 'userId': current_user['_id'],
                 'amount': raw_amount,  # Store exact amount, no calculations
                 'source': data['source'],
                 'description': data.get('description', ''),
-                'category': data['category'],
+                'category': category_value,  # ✅ ALWAYS STRING - normalized above
                 'salesType': normalized_sales_type,
                 'frequency': 'one_time',  # Always one-time now
-                'dateReceived': datetime.fromisoformat((data.get('dateReceived') or data.get('date_received') or datetime.utcnow().isoformat()).replace('Z', '')),
+                'date': datetime.fromisoformat((data.get('date') or data.get('dateReceived') or data.get('date_received') or datetime.utcnow().isoformat()).replace('Z', '')),
                 'isRecurring': False,  # Always false now
                 'nextRecurringDate': None,  # Always null now
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # QUICK TAG: Tagged by user
+                'sourceType': entry_source,  # SOURCE TRACKING: 'manual', 'voice', or 'wallet_auto'
+                'excludeFromProfitLoss': is_capital_contribution,  # ✅ CRITICAL: Exclude capital from P&L (equity, not income)
+                'isCapitalContribution': is_capital_contribution,  # Additional flag for clarity
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow()
@@ -220,6 +352,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             result = mongo.db.incomes.insert_one(income_data)
             income_id = str(result.inserted_id)
+            
+            # ✅ CAPITAL CONTRIBUTION: Update user.capital field (Mar 9, 2026)
+            # This mirrors how Capital Expenditure updates fixed assets
+            # Capital is EQUITY, not income - excluded from P&L calculations
+            if is_capital_contribution:
+                try:
+                    # Get current capital
+                    user = mongo.db.users.find_one({'_id': current_user['_id']})
+                    current_capital = user.get('capital', 0.0)
+                    new_capital = current_capital + raw_amount
+                    
+                    # Update user.capital field
+                    mongo.db.users.update_one(
+                        {'_id': current_user['_id']},
+                        {'$set': {'capital': new_capital}}
+                    )
+                    
+                    print(f'✅ Capital Contribution: Updated user.capital from ₦{current_capital:,.2f} to ₦{new_capital:,.2f}')
+                except Exception as e:
+                    print(f'⚠️ Failed to update user.capital (non-critical): {e}')
             
             # Track income creation event
             try:
@@ -288,8 +440,17 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # PHASE 4: Create context-aware notification reminder to attach documents
             # This is the "Audit Shield" - persistent reminder that survives app reinstalls
             try:
-                from blueprints.notifications import create_user_notification
-                from utils.notification_context import get_notification_context
+                try:
+                    from blueprints.notifications import create_user_notification
+                except ImportError as import_err:
+                    print(f'⚠️ Failed to import create_user_notification: {import_err}')
+                    raise
+                
+                try:
+                    from utils.notification_context import get_notification_context
+                except ImportError as import_err:
+                    print(f'⚠️ Failed to import get_notification_context: {import_err}')
+                    raise
                 
                 # Determine entry title for notification
                 entry_title = income_data.get('source', 'Income')
@@ -335,7 +496,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             created_income = serialize_doc(income_data.copy())
             created_income['id'] = income_id
             created_income['title'] = created_income.get('source', 'Income')  # Map for frontend
-            created_income['dateReceived'] = created_income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            created_income['date'] = created_income.get('date', datetime.utcnow()).isoformat() + 'Z'
+            created_income['dateReceived'] = created_income['date']  # Backward compatibility
             created_income['createdAt'] = created_income.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_income['updatedAt'] = created_income.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             created_income['nextRecurringDate'] = None
@@ -347,6 +509,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             })
             
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"❌ ERROR in create_income: {str(e)}")
+            print(f"❌ Full traceback:\n{error_trace}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to create income record',
@@ -367,7 +533,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             # Get date ranges with error handling
             try:
-                now = datetime.utcnow()
+                # CLOCK DRIFT FIX: Allow up to 2 hours in the future to handle device clock differences
+                now = datetime.utcnow() + timedelta(hours=2)
                 start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
                 start_of_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -383,40 +550,50 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             try:
-            # DISABLED FOR VAS FOCUS
-            # print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
-            # print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
+                # ENABLED FOR DEBUGGING BALANCE ISSUE
+                print(f"DEBUG INCOME SUMMARY - User: {current_user['_id']}")
+                print(f"DEBUG: Date ranges - Start of month: {start_of_month}, Start of year: {start_of_year}")
                 
                 # Base query for active transactions only
                 base_query = get_active_transactions_query(current_user['_id'])
                 
+                print(f"DEBUG: Base query: {base_query}")
+                
                 total_this_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': start_of_month, '$lte': now}
+                        'date': {'$gte': start_of_month, '$lte': now}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
                 total_this_month = total_this_month_result[0]['total'] if total_this_month_result else 0.0
                 this_month_count = total_this_month_result[0]['count'] if total_this_month_result else 0
-                # DISABLED FOR VAS FOCUS
-                # print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
+                print(f"DEBUG: CALCULATED total_this_month = {total_this_month}, count = {this_month_count}")
+                print(f"DEBUG: Aggregation result: {total_this_month_result}")
+                
+                # Let's also check what entries match the query
+                matching_entries = list(mongo.db.incomes.find({
+                    **base_query,
+                    'date': {'$gte': start_of_month, '$lte': now}
+                }))
+                print(f"DEBUG: Found {len(matching_entries)} matching entries:")
+                for entry in matching_entries:
+                    print(f"  - {entry.get('source')}: ₦{entry.get('amount')} on {entry.get('date')}")
                 
                 total_last_month_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': start_of_last_month, '$lt': start_of_month}
+                        'date': {'$gte': start_of_last_month, '$lt': start_of_month}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
                 ]))
                 total_last_month = total_last_month_result[0]['total'] if total_last_month_result else 0.0
-                # DISABLED FOR VAS FOCUS
-                # print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
+                print(f"DEBUG: CALCULATED total_last_month = {total_last_month}")
                 
                 year_to_date_result = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': start_of_year, '$lte': now}
+                        'date': {'$gte': start_of_year, '$lte': now}
                     }},
                     {'$group': {'_id': None, 'total': {'$sum': '$amount'}, 'count': {'$sum': 1}}}
                 ]))
@@ -437,21 +614,22 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 monthly_totals = list(mongo.db.incomes.aggregate([
                     {'$match': {
                         **base_query,
-                        'dateReceived': {'$gte': twelve_months_ago, '$lte': now}
+                        'date': {'$gte': twelve_months_ago, '$lte': now}
                     }},
                     {'$group': {
-                        '_id': {'year': {'$year': '$dateReceived'}, 'month': {'$month': '$dateReceived'}},
+                        '_id': {'year': {'$year': '$date'}, 'month': {'$month': '$date'}},
                         'total': {'$sum': '$amount'}
                     }}
                 ]))
                 average_monthly = sum(item['total'] for item in monthly_totals) / max(len(monthly_totals), 1) if monthly_totals else 0
                 
-                recent_incomes = list(mongo.db.incomes.find(base_query).sort('dateReceived', -1).limit(5))
+                recent_incomes = list(mongo.db.incomes.find(base_query).sort('date', -1).limit(5))
                 
                 recent_incomes_data = []
                 for income in recent_incomes:
                     income_data = serialize_doc(income.copy())
-                    income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['dateReceived'] = income_data['date']  # Backward compatibility
                     income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
                     recent_incomes_data.append(income_data)
                 
@@ -537,7 +715,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             ytd_count = mongo.db.incomes.count_documents({
                 **base_query,
-                'dateReceived': {'$gte': start_of_year, '$lte': now}
+                'date': {'$gte': start_of_year, '$lte': now}
             })
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG: YTD count = {ytd_count}")
@@ -548,7 +726,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             this_month_count = mongo.db.incomes.count_documents({
                 **base_query,
-                'dateReceived': {'$gte': start_of_month, '$lte': now}
+                'date': {'$gte': start_of_month, '$lte': now}
             })
             # DISABLED FOR VAS FOCUS
             # print(f"DEBUG: This month count = {this_month_count}")
@@ -580,7 +758,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             now = datetime.utcnow()
             base_query = get_active_transactions_query(current_user['_id'])
-            base_query['dateReceived'] = {'$lte': now}
+            base_query['date'] = {'$lte': now}
             
             incomes = list(mongo.db.incomes.find(base_query))
             
@@ -603,10 +781,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             start_of_last_month = (start_of_month - timedelta(days=1)).replace(day=1)
             
-            current_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and inc['dateReceived'] >= start_of_month]
+            current_month_incomes = [inc for inc in incomes if inc.get('date') and inc['date'] >= start_of_month]
             current_month_total = sum(inc.get('amount', 0) for inc in current_month_incomes)
             
-            last_month_incomes = [inc for inc in incomes if inc.get('dateReceived') and start_of_last_month <= inc['dateReceived'] < start_of_month]
+            last_month_incomes = [inc for inc in incomes if inc.get('date') and start_of_last_month <= inc['date'] < start_of_month]
             last_month_total = sum(inc.get('amount', 0) for inc in last_month_incomes)
             
             if last_month_total > 0:
@@ -654,7 +832,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 })
             
             twelve_months_ago = now - timedelta(days=365)
-            recent_incomes = [inc for inc in incomes if inc['dateReceived'] >= twelve_months_ago]
+            recent_incomes = [inc for inc in incomes if inc['date'] >= twelve_months_ago]
             if recent_incomes:
                 avg_monthly = sum(inc['amount'] for inc in recent_incomes) / 12
                 insights.append({
@@ -669,7 +847,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             for i in range(6):
                 month_start = (now - timedelta(days=30*i)).replace(day=1)
                 month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-                month_incomes = [inc for inc in incomes if month_start <= inc['dateReceived'] <= month_end]
+                month_incomes = [inc for inc in incomes if month_start <= inc['date'] <= month_end]
                 monthly_totals.append(sum(inc['amount'] for inc in month_incomes))
             
             if len(monthly_totals) >= 3:
@@ -734,6 +912,26 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             if not data:
                 return jsonify({'success': False, 'message': 'No data provided'}), 400
 
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_income:
+                return jsonify({
+                    'success': False,
+                    'message': 'Income record not found'
+                }), 404
+            
+            # Block edits on wallet-auto transactions (system-generated)
+            if existing_income.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot edit wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be edited. Use void/reversal instead.']}
+                }), 403
+
             # Validation
             errors = {}
             if 'amount' in data and (not data.get('amount') or data.get('amount', 0) <= 0):
@@ -764,8 +962,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 update_data['category'] = data['category']
             if 'frequency' in data:
                 update_data['frequency'] = data['frequency']
-            if 'dateReceived' in data:
-                update_data['dateReceived'] = datetime.fromisoformat(data['dateReceived'].replace('Z', ''))
+            if 'date' in data or 'dateReceived' in data:
+                # Support both 'date' (new) and 'dateReceived' (legacy) for backward compatibility
+                date_value = data.get('date') or data.get('dateReceived')
+                update_data['date'] = datetime.fromisoformat(date_value.replace('Z', ''))
             if 'metadata' in data:
                 update_data['metadata'] = data['metadata']
 
@@ -795,7 +995,8 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             # Serialize the new version for response
             new_version = result['new_version']
             income_data = serialize_doc(new_version.copy())
-            income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+            income_data['dateReceived'] = income_data['date']  # Backward compatibility
             income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             next_recurring = income_data.get('nextRecurringDate')
@@ -841,6 +1042,43 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
         try:
             if not ObjectId.is_valid(income_id):
                 return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # 🛡️ WALLET-AUTO PROTECTION: Check if this is a wallet-auto transaction
+            existing_income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not existing_income:
+                return jsonify({
+                    'success': False,
+                    'message': 'Income record not found'
+                }), 404
+            
+            # Block deletion on wallet-auto transactions (system-generated)
+            if existing_income.get('sourceType') == 'wallet_auto':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete wallet-auto transactions. These are system-generated and read-only.',
+                    'errors': {'sourceType': ['Wallet-auto transactions cannot be deleted. Use void/reversal instead.']}
+                }), 403
+            
+            # 🛡️ INTEGRATED RECORD PROTECTION: Block deletion of inventory sale income
+            metadata = existing_income.get('metadata', {})
+            if metadata.get('inventorySale') == True:
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete income from inventory sales. Delete the original sale transaction instead.',
+                    'errors': {'metadata': ['Inventory sale income cannot be deleted directly. Use the Inventory module to reverse the sale.']}
+                }), 403
+            
+            # 🛡️ INTEGRATED RECORD PROTECTION: Block deletion of debtor payment income
+            if metadata.get('diice_type') == 'debtor_payment':
+                return jsonify({
+                    'success': False,
+                    'message': 'Cannot delete income from customer payments. Reverse the payment in the Debtors module instead.',
+                    'errors': {'metadata': ['Debtor payment income cannot be deleted directly. Use the Debtors module to reverse the payment.']}
+                }), 403
             
             # Use the immutable ledger helper
             from utils.immutable_ledger_helper import soft_delete_transaction
@@ -910,7 +1148,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 end_date = now
             
             query = get_active_transactions_query(current_user['_id'])
-            query['dateReceived'] = {'$gte': start_date, '$lte': end_date}
+            query['date'] = {'$gte': start_date, '$lte': end_date}
             
             incomes = list(mongo.db.incomes.find(query))
             
@@ -950,7 +1188,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             monthly = {}
             for income in incomes:
-                date = income.get('dateReceived', datetime.utcnow())
+                date = income.get('date', datetime.utcnow())
                 month_key = date.strftime('%Y-%m')
                 monthly[month_key] = monthly.get(month_key, 0) + income.get('amount', 0)
             
@@ -999,15 +1237,15 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             now = datetime.utcnow()
             query = get_active_transactions_query(current_user['_id'])
-            query['dateReceived'] = {'$lte': now}
+            query['date'] = {'$lte': now}
             
             if start_date or end_date:
-                date_query = query.get('dateReceived', {})
+                date_query = query.get('date', {})
                 if start_date:
                     date_query['$gte'] = datetime.fromisoformat(start_date.replace('Z', ''))
                 if end_date:
                     date_query['$lte'] = min(datetime.fromisoformat(end_date.replace('Z', '')), now)
-                query['dateReceived'] = date_query
+                query['date'] = date_query
             
             incomes = list(mongo.db.incomes.find(query))
             source_totals = {}
@@ -1046,20 +1284,64 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
     # ENTRY TAGGING ENDPOINTS (Phase 3B)
     # ============================================================================
     
-    @income_bp.route('/tag/<entry_id>', methods=['PATCH'])
+    @income_bp.route('/<entry_id>/tag', methods=['PATCH', 'PUT'])
     @token_required
     def tag_income_entry(current_user, entry_id):
         """Tag an income entry as business or personal"""
         try:
+            print(f"\n{'='*80}")
+            print(f"TAGGING INCOME - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Raw entry_id received: {entry_id}")
+            print(f"User ID: {current_user['_id']}")
+            
             data = request.get_json() or {}
             entry_type = data.get('entryType')
+            print(f"Entry type requested: {entry_type}")
             
             # Validate entry type
             if entry_type not in ['business', 'personal', None]:
+                print(f"❌ Invalid entry type: {entry_type}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid entry type. Must be "business", "personal", or null'
                 }), 400
+            
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefix before ObjectId conversion
+            # Frontend sends: income_<mongoId>, backend needs: <mongoId>
+            # Golden Rule #46: ID Format Consistency
+            clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            print(f"Cleaned ID: {clean_id}")
+            
+            # CRITICAL FIX (Feb 20, 2026): Validate that cleaned ID is a valid MongoDB ObjectId
+            # Frontend sometimes sends Isar local IDs (e.g., "283") instead of MongoDB ObjectIds
+            # Golden Rule #46: ID Format Consistency - reject invalid IDs early
+            if not ObjectId.is_valid(clean_id):
+                print(f"❌ Invalid ObjectId format: {clean_id}")
+                print(f"   Expected: 24-character hex string (MongoDB ObjectId)")
+                print(f"   Received: {len(clean_id)}-character string")
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entry ID format. Please refresh and try again.'
+                }), 400
+            
+            # Check if income exists first
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(clean_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                print(f"❌ Income not found with _id={clean_id} and userId={current_user['_id']}")
+                return jsonify({
+                    'success': False,
+                    'message': 'Entry not found'
+                }), 404
+            
+            print(f"✅ Income found:")
+            print(f"   Amount: ₦{income.get('amount')}")
+            print(f"   Source: {income.get('source')}")
+            print(f"   Current entryType: {income.get('entryType', 'NOT SET')}")
             
             # Update entry
             update_data = {
@@ -1068,24 +1350,60 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                 'taggedBy': 'user' if entry_type else None
             }
             
+            print(f"Updating with: {update_data}")
+            
             result = mongo.db.incomes.update_one(
-                {'_id': ObjectId(entry_id), 'userId': current_user['_id']},
+                {'_id': ObjectId(clean_id), 'userId': current_user['_id']},
                 {'$set': update_data}
             )
             
-            if result.modified_count > 0:
-                return jsonify({
-                    'success': True,
-                    'message': 'Entry tagged successfully'
+            print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+            
+            if result.matched_count > 0:
+                # Fetch the updated income to return to frontend
+                updated_income = mongo.db.incomes.find_one({
+                    '_id': ObjectId(clean_id),
+                    'userId': current_user['_id']
                 })
+                
+                if updated_income:
+                    # CRITICAL FIX: Use serialize_doc to properly convert _id → id
+                    income_data = serialize_doc(updated_income.copy())
+                    
+                    # Ensure date fields are properly formatted
+                    income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['dateReceived'] = income_data['date']  # Backward compatibility
+                    income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+                    income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z' if income_data.get('updatedAt') else None
+                    income_data['taggedAt'] = income_data.get('taggedAt').isoformat() + 'Z' if income_data.get('taggedAt') else None
+                    
+                    print(f"✅ Entry tagged successfully, returning updated income")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully',
+                        'data': income_data
+                    })
+                else:
+                    print(f"⚠️  Entry updated but could not fetch updated data")
+                    print(f"{'='*80}\n")
+                    return jsonify({
+                        'success': True,
+                        'message': 'Entry tagged successfully'
+                    })
             else:
+                print(f"⚠️  Entry not found")
+                print(f"{'='*80}\n")
                 return jsonify({
                     'success': False,
-                    'message': 'Entry not found or already tagged'
+                    'message': 'Entry not found'
                 }), 404
                 
         except Exception as e:
-            print(f"Error in tag_income_entry: {e}")
+            print(f"❌ ERROR in tag_income_entry: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to tag entry',
@@ -1114,6 +1432,10 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
                     'message': 'No entry IDs provided'
                 }), 400
             
+            # CRITICAL FIX (Feb 6, 2026): Strip frontend ID prefixes before ObjectId conversion
+            # Golden Rule #46: ID Format Consistency
+            clean_ids = [id.replace('income_', '').replace('expense_', '') for id in entry_ids]
+            
             # Update entries
             update_data = {
                 'entryType': entry_type,
@@ -1123,7 +1445,7 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             
             result = mongo.db.incomes.update_many(
                 {
-                    '_id': {'$in': [ObjectId(id) for id in entry_ids]},
+                    '_id': {'$in': [ObjectId(id) for id in clean_ids]},
                     'userId': current_user['_id']
                 },
                 {'$set': update_data}
@@ -1165,6 +1487,392 @@ def init_income_blueprint(mongo, token_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to get untagged count',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ============================================================================
+    # AUDIT SHIELD: Report Discrepancy & Version Tracking (Feb 7, 2026)
+    # ============================================================================
+    
+    @income_bp.route('/<income_id>/discrepancy-check', methods=['GET'])
+    @token_required
+    def check_income_discrepancy(current_user, income_id):
+        """
+        Check if income was edited after being exported in a report
+        
+        GUARDIAN LOGIC: Detects when current version > exported version
+        Returns data for "Report Discrepancy" warning in UI
+        """
+        try:
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import check_report_discrepancy
+            
+            result = check_report_discrepancy(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id
+            )
+            
+            # Serialize dates
+            for export in result.get('affected_exports', []):
+                if export.get('exported_at'):
+                    export['exported_at'] = export['exported_at'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'hasDiscrepancy': result['has_discrepancy'],
+                    'affectedExports': result['affected_exports'],
+                    'currentVersion': result['current_version'],
+                    'exportedVersions': result['exported_versions']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in check_income_discrepancy: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to check discrepancy',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/version-comparison', methods=['GET'])
+    @token_required
+    def get_income_version_comparison(current_user, income_id):
+        """
+        Get side-by-side comparison of two versions
+        
+        DIFF VIEW: Shows what changed between exported and current version
+        Used in "Version Comparison Modal" in UI
+        """
+        try:
+            version1 = int(request.args.get('version1', 1))
+            version2 = int(request.args.get('version2', 2))
+            
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            # Use helper function
+            from utils.immutable_ledger_helper import get_version_comparison
+            
+            result = get_version_comparison(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id,
+                version1=version1,
+                version2=version2
+            )
+            
+            if not result['success']:
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 404
+            
+            # Serialize dates
+            if result['version1_data'].get('date'):
+                result['version1_data']['date'] = result['version1_data']['date'].isoformat() + 'Z'
+                result['version1_data']['dateReceived'] = result['version1_data']['date']  # Backward compatibility
+            if result['version2_data'].get('date'):
+                result['version2_data']['date'] = result['version2_data']['date'].isoformat() + 'Z'
+                result['version2_data']['dateReceived'] = result['version2_data']['date']  # Backward compatibility
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'version1': result['version1_data'],
+                    'version2': result['version2_data'],
+                    'changes': result['changes']
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_income_version_comparison: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version comparison',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/version-history', methods=['GET'])
+    @token_required
+    def get_income_version_history(current_user, income_id):
+        """
+        Get complete version history for an income entry
+        
+        TRANSPARENCY: Shows all versions with timestamps and changes
+        Used in "Version History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            version_log = income.get('versionLog', [])
+            current_version = income.get('version', 1)
+            
+            # Serialize dates
+            for version in version_log:
+                if version.get('createdAt'):
+                    version['createdAt'] = version['createdAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'versionLog': version_log,
+                    'currentVersion': current_version,
+                    'totalVersions': len(version_log) + 1  # +1 for current
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_income_version_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get version history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/export-history', methods=['GET'])
+    @token_required
+    def get_income_export_history(current_user, income_id):
+        """
+        Get complete export history for an income entry
+        
+        TRANSPARENCY: Shows all reports this entry was included in
+        Used in "Export History Modal" in UI
+        """
+        try:
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            # Verify ownership
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id']
+            })
+            
+            if not income:
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            export_history = income.get('exportHistory', [])
+            
+            # Serialize dates
+            for export in export_history:
+                if export.get('exportedAt'):
+                    export['exportedAt'] = export['exportedAt'].isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'exportHistory': export_history,
+                    'totalExports': len(export_history)
+                }
+            })
+            
+        except Exception as e:
+            print(f"Error in get_income_export_history: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get export history',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @income_bp.route('/<income_id>/rollback/<int:target_version>', methods=['POST'])
+    @token_required
+    def rollback_income_version(current_user, income_id, target_version):
+        """
+        Rollback income entry to a previous version
+        
+        INSURANCE POLICY: Allows manual restore of accidentally overwritten data
+        Creates NEW version with old data (maintains audit trail)
+        
+        Example: v1 → v2 → v3 → v4 (rollback to v2) = v4 looks like v2
+        
+        Usage:
+        - High-value user accidentally overwrites complex entry
+        - Admin can restore via API call or Postman
+        - No data is actually deleted, just new version created
+        """
+        try:
+            print(f"\n{'='*80}")
+            print(f"ROLLBACK INCOME - DEBUG LOG")
+            print(f"{'='*80}")
+            print(f"Income ID: {income_id}")
+            print(f"Target version: {target_version}")
+            print(f"User ID: {current_user['_id']}")
+            
+            if not ObjectId.is_valid(income_id):
+                return jsonify({'success': False, 'message': 'Invalid income ID'}), 400
+            
+            if target_version < 1:
+                return jsonify({'success': False, 'message': 'Invalid target version'}), 400
+            
+            # Get the income entry
+            income = mongo.db.incomes.find_one({
+                '_id': ObjectId(income_id),
+                'userId': current_user['_id'],
+                'status': 'active'
+            })
+            
+            if not income:
+                print(f"❌ Income not found")
+                return jsonify({'success': False, 'message': 'Income not found'}), 404
+            
+            current_version = income.get('version', 1)
+            print(f"Current version: {current_version}")
+            
+            # Can't rollback to current version
+            if target_version == current_version:
+                print(f"⚠️ Target version is current version")
+                return jsonify({
+                    'success': False,
+                    'message': f'Entry is already at version {target_version}'
+                }), 400
+            
+            # Can't rollback to future version
+            if target_version > current_version:
+                print(f"❌ Target version is in the future")
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot rollback to future version {target_version} (current: {current_version})'
+                }), 400
+            
+            # Find the target version in versionLog
+            version_log = income.get('versionLog', [])
+            target_data = None
+            
+            for version_entry in version_log:
+                if version_entry.get('version') == target_version:
+                    target_data = version_entry.get('data', {})
+                    break
+            
+            if not target_data:
+                print(f"❌ Target version not found in version log")
+                return jsonify({
+                    'success': False,
+                    'message': f'Version {target_version} not found in version history'
+                }), 404
+            
+            print(f"✅ Found target version data:")
+            print(f"   Amount: ₦{target_data.get('amount')}")
+            print(f"   Source: {target_data.get('source')}")
+            
+            # Prepare rollback data (restore old values)
+            rollback_data = {}
+            
+            # Restore all fields from target version
+            if 'amount' in target_data:
+                rollback_data['amount'] = target_data['amount']
+            if 'source' in target_data:
+                rollback_data['source'] = target_data['source']
+            if 'description' in target_data:
+                rollback_data['description'] = target_data['description']
+            if 'category' in target_data:
+                rollback_data['category'] = target_data['category']
+            if 'date' in target_data:
+                rollback_data['date'] = target_data['date']
+            
+            print(f"Rollback data prepared: {list(rollback_data.keys())}")
+            
+            # Use supersede_transaction to create new version with old data
+            from utils.immutable_ledger_helper import supersede_transaction
+            
+            result = supersede_transaction(
+                db=mongo.db,
+                collection_name='incomes',
+                transaction_id=income_id,
+                user_id=current_user['_id'],
+                update_data=rollback_data
+            )
+            
+            if not result['success']:
+                print(f"❌ Rollback failed: {result['message']}")
+                return jsonify({
+                    'success': False,
+                    'message': result['message']
+                }), 500
+            
+            # Add rollback metadata to the new version
+            new_version_number = result['new_version'].get('version', current_version + 1)
+            
+            # Update the new version to mark it as a rollback
+            mongo.db.incomes.update_one(
+                {'_id': ObjectId(income_id)},
+                {'$set': {
+                    'lastRollback': {
+                        'rolledBackAt': datetime.utcnow(),
+                        'rolledBackBy': current_user['_id'],
+                        'fromVersion': current_version,
+                        'toVersion': target_version,
+                        'newVersion': new_version_number
+                    }
+                }}
+            )
+            
+            print(f"✅ Rollback successful!")
+            print(f"   From version: {current_version}")
+            print(f"   To version: {target_version}")
+            print(f"   New version: {new_version_number}")
+            print(f"{'='*80}\n")
+            
+            # Serialize the restored version for response
+            restored_income = result['new_version']
+            income_data = serialize_doc(restored_income.copy())
+            income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+            income_data['dateReceived'] = income_data['date']  # Backward compatibility
+            income_data['createdAt'] = income_data.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
+            income_data['updatedAt'] = income_data.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
+            
+            return jsonify({
+                'success': True,
+                'message': f'Income rolled back to version {target_version}',
+                'data': income_data,
+                'metadata': {
+                    'fromVersion': current_version,
+                    'toVersion': target_version,
+                    'newVersion': new_version_number,
+                    'rolledBackAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ ERROR in rollback_income_version: {e}")
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to rollback income version',
                 'errors': {'general': [str(e)]}
             }), 500
 

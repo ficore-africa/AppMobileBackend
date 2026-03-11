@@ -5,6 +5,7 @@ from bson import ObjectId
 import sys
 import os
 
+from utils.decimal_helpers import safe_float
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.pdf_generator import PDFGenerator
@@ -58,7 +59,20 @@ def get_profile():
                 'subscriptionType': current_user.get('subscriptionType'),
                 'subscriptionStartDate': current_user.get('subscriptionStartDate').isoformat() + 'Z' if current_user.get('subscriptionStartDate') else None,
                 'subscriptionEndDate': current_user.get('subscriptionEndDate').isoformat() + 'Z' if current_user.get('subscriptionEndDate') else None,
-                'subscriptionAutoRenew': current_user.get('subscriptionAutoRenew', False)
+                'subscriptionAutoRenew': current_user.get('subscriptionAutoRenew', False),
+                # CRITICAL FIX: Add BVN/NIN fields for verification status and pre-population
+                # These are needed for:
+                # 1. Pre-populating BVN/NIN verification form if user returns
+                # 2. Checking verification status in frontend
+                # 3. Unified verification system checks
+                'bvn': current_user.get('bvn'),
+                'nin': current_user.get('nin'),
+                'kycStatus': current_user.get('kycStatus', 'not_submitted'),
+                'bvnVerified': current_user.get('bvnVerified', False),
+                'ninVerified': current_user.get('ninVerified', False),
+                'kycVerified': current_user.get('kycVerified', False),
+                'kycVerifiedAt': current_user.get('kycVerifiedAt').isoformat() + 'Z' if current_user.get('kycVerifiedAt') else None,
+                'kycSubmittedAt': current_user.get('kycSubmittedAt').isoformat() + 'Z' if current_user.get('kycSubmittedAt') else None,
             }
             
             return jsonify({
@@ -981,6 +995,108 @@ def get_support_info():
     
     return _get_support_info()
 
+# ==================== FCM TOKEN MANAGEMENT ====================
+# Added: Feb 20, 2026 - FCM Production Readiness (Fix 2)
+
+@users_bp.route('/fcm-token', methods=['POST'])
+def update_fcm_token():
+    """
+    Update user's FCM token for push notifications
+    
+    Request Body:
+    {
+        "fcmToken": "string"
+    }
+    
+    Returns:
+        - 200: Token updated successfully
+        - 400: Invalid request (missing token)
+        - 500: Server error
+    """
+    @users_bp.token_required
+    def _update_fcm_token(current_user):
+        try:
+            data = request.get_json()
+            fcm_token = data.get('fcmToken')
+            
+            if not fcm_token:
+                return jsonify({
+                    'success': False,
+                    'message': 'FCM token is required'
+                }), 400
+            
+            # Update user's FCM token
+            users_bp.mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {
+                    '$set': {
+                        'fcmToken': fcm_token,
+                        'fcmTokenUpdatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            
+            print(f"✓ FCM token updated for user {current_user['email']}: {fcm_token[:20]}...")
+            
+            return jsonify({
+                'success': True,
+                'message': 'FCM token updated successfully',
+                'data': {
+                    'tokenUpdatedAt': datetime.utcnow().isoformat() + 'Z'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"✗ Error updating FCM token: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Failed to update FCM token: {str(e)}'
+            }), 500
+    
+    return _update_fcm_token()
+
+
+@users_bp.route('/fcm-token', methods=['DELETE'])
+def delete_fcm_token():
+    """
+    Delete user's FCM token (called on logout)
+    
+    Returns:
+        - 200: Token deleted successfully
+        - 500: Server error
+    """
+    @users_bp.token_required
+    def _delete_fcm_token(current_user):
+        try:
+            # Remove FCM token from user
+            users_bp.mongo.db.users.update_one(
+                {'_id': current_user['_id']},
+                {
+                    '$unset': {
+                        'fcmToken': '',
+                        'fcmTokenUpdatedAt': ''
+                    }
+                }
+            )
+            
+            print(f"✓ FCM token deleted for user {current_user['email']}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'FCM token deleted successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"✗ Error deleting FCM token: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Failed to delete FCM token: {str(e)}'
+            }), 500
+    
+    return _delete_fcm_token()
+
+# ==================== END FCM TOKEN MANAGEMENT ====================
+
 @users_bp.route('/financial-goals', methods=['GET'])
 def get_financial_goals():
     @users_bp.token_required
@@ -1288,11 +1404,11 @@ def save_tax_profile():
             
             # Validate business structure
             business_structure = data.get('businessStructure')
-            if not business_structure or business_structure not in ['personal_income', 'llc']:
+            if not business_structure or business_structure not in ['personal_income', 'llc', 'professional_services']:
                 return jsonify({
                     'success': False,
                     'message': 'Invalid business structure',
-                    'errors': {'businessStructure': ['Must be "personal_income" or "llc"']}
+                    'errors': {'businessStructure': ['Must be "personal_income", "llc", or "professional_services"']}
                 }), 400
             
             # Get income/turnover based on structure
@@ -1511,6 +1627,50 @@ def calculate_tax_estimate():
                     'errors': {'general': ['Amounts must be non-negative']}
                 }), 400
             
+            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions from taxable income
+            # Capital Contributions are owner equity injections (like putting your own money into the business)
+            # They are NOT taxable income - they should be excluded from P&L and tax calculations
+            # Query for capital contributions to subtract from total income
+            capital_contributions_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'isCapitalContribution': True},
+                    {'excludeFromProfitLoss': True, 'category': {'$in': ['Capital Contribution', 'capital_contribution', 'Capital']}}
+                ]
+            }
+            capital_contributions = list(mongo.db.incomes.find(capital_contributions_query))
+            total_capital_contributions = sum([safe_float(cc.get('amount', 0)) for cc in capital_contributions])
+            
+            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Expenditures from tax-deductible expenses
+            # Capital Expenditures are asset purchases (equipment, vehicles, buildings)
+            # They are capitalized and depreciated over time, NOT expensed immediately
+            # Query for capital expenditures to subtract from total expenses
+            capital_expenditures_query = {
+                'userId': current_user['_id'],
+                'status': 'active',
+                'isDeleted': False,
+                '$or': [
+                    {'isCapitalExpenditure': True},
+                    {'excludeFromProfitLoss': True, 'category': 'Capital Expenditure'}
+                ]
+            }
+            capital_expenditures = list(mongo.db.expenses.find(capital_expenditures_query))
+            total_capital_expenditures = sum([safe_float(ce.get('amount', 0)) for ce in capital_expenditures])
+            
+            # Adjust totals to exclude capital contributions and capital expenditures
+            taxable_income = total_income - total_capital_contributions
+            tax_deductible_expenses = total_expenses - total_capital_expenditures
+            
+            print(f'💰 Tax Calculation for user {current_user["_id"]}:')
+            print(f'   Total Income (raw): ₦{total_income:,.2f}')
+            print(f'   Less: Capital Contributions: ₦{total_capital_contributions:,.2f}')
+            print(f'   Taxable Income: ₦{taxable_income:,.2f}')
+            print(f'   Total Expenses (raw): ₦{total_expenses:,.2f}')
+            print(f'   Less: Capital Expenditures: ₦{total_capital_expenditures:,.2f}')
+            print(f'   Tax-Deductible Expenses: ₦{tax_deductible_expenses:,.2f}')
+            
             # Get user's tax profile
             tax_profile = current_user.get('taxProfile')
             if not tax_profile:
@@ -1525,39 +1685,41 @@ def calculate_tax_estimate():
             # Calculate tax based on business structure
             if business_structure == 'personal_income':
                 # Personal Income Tax (PIT) - Progressive rates
-                net_income = total_income - total_expenses
+                net_income = taxable_income - tax_deductible_expenses
                 
                 # Calculate rent relief (20% of rent, max ₦500,000)
                 rent_relief = min(rent_paid * 0.20, 500000)
                 
                 # Taxable income after rent relief
-                taxable_income = max(0, net_income - rent_relief)
+                final_taxable_income = max(0, net_income - rent_relief)
                 
                 # Calculate tax using progressive bands
-                estimated_tax, breakdown = _calculate_pit_tax(taxable_income)
+                estimated_tax, breakdown = _calculate_pit_tax(final_taxable_income)
                 
-                effective_rate = (estimated_tax / total_income * 100) if total_income > 0 else 0
+                effective_rate = (estimated_tax / taxable_income * 100) if taxable_income > 0 else 0
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'totalIncome': total_income,
-                        'totalExpenses': total_expenses,
+                        'totalIncome': taxable_income,  # Adjusted for capital contributions
+                        'totalExpenses': tax_deductible_expenses,  # Adjusted for capital expenditures
                         'netIncome': net_income,
                         'rentRelief': rent_relief,
-                        'taxableIncome': taxable_income,
+                        'taxableIncome': final_taxable_income,
                         'estimatedTax': estimated_tax,
                         'effectiveRate': round(effective_rate, 2),
                         'breakdown': breakdown,
                         'taxAuthority': 'SIRS',
-                        'filingDeadline': 'March 31st'
+                        'filingDeadline': 'March 31st',
+                        'capitalContributionsExcluded': total_capital_contributions,  # Show what was excluded
+                        'capitalExpendituresExcluded': total_capital_expenditures  # Show what was excluded
                     },
                     'message': 'Tax estimate calculated successfully'
                 })
                 
             elif business_structure == 'llc':
                 # Corporate Income Tax (CIT)
-                net_income = total_income - total_expenses
+                net_income = taxable_income - tax_deductible_expenses
                 annual_turnover = tax_profile.get('annualTurnover', 0)
                 
                 # Check exemption eligibility
@@ -1572,13 +1734,13 @@ def calculate_tax_estimate():
                     tax_rate = 30
                     note = 'Standard CIT rate applies'
                 
-                effective_rate = (estimated_tax / total_income * 100) if total_income > 0 else 0
+                effective_rate = (estimated_tax / taxable_income * 100) if taxable_income > 0 else 0
                 
                 return jsonify({
                     'success': True,
                     'data': {
-                        'totalIncome': total_income,
-                        'totalExpenses': total_expenses,
+                        'totalIncome': taxable_income,  # Adjusted for capital contributions
+                        'totalExpenses': tax_deductible_expenses,  # Adjusted for capital expenditures
                         'netIncome': net_income,
                         'taxableIncome': net_income,
                         'estimatedTax': estimated_tax,
@@ -1587,7 +1749,9 @@ def calculate_tax_estimate():
                         'exemptionEligible': exemption_eligible,
                         'note': note,
                         'taxAuthority': 'NRS',
-                        'filingDeadline': 'June 30th'
+                        'filingDeadline': 'June 30th',
+                        'capitalContributionsExcluded': total_capital_contributions,  # Show what was excluded
+                        'capitalExpendituresExcluded': total_capital_expenditures  # Show what was excluded
                     },
                     'message': 'Tax estimate calculated successfully'
                 })
@@ -1620,6 +1784,9 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
         if annual_income and annual_income < 800000:
             return {
                 'businessStructure': 'personal_income',
+                'taxType': 'PIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+                'type': 'PIT',     # Alternative field name used in some reports
+                'userType': 'self_employed',  # User classification
                 'incomeLevel': 'below_800k',
                 'annualIncome': annual_income,
                 'taxAuthority': 'sirs',
@@ -1628,27 +1795,19 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
                 'filingDeadline': 'March 31st',
                 'description': '🎉 Great news! Your income is below ₦800,000, so you pay 0% tax. This applies to freelancers, side hustles, and small businesses. Keep records for future growth and stay compliant.'
             }
-        elif annual_income and annual_income < 3000000:
-            return {
-                'businessStructure': 'personal_income',
-                'incomeLevel': '800k_to_3m',
-                'annualIncome': annual_income,
-                'taxAuthority': 'sirs',
-                'taxRate': '0% on first ₦800k, then 15%',
-                'exemptionEligible': False,
-                'filingDeadline': 'March 31st',
-                'description': 'You pay 15% tax on income above ₦800,000. For employees: Your salary is taxed via PAYE by your employer. This 15% applies ONLY to your side income tracked in FiCore.'
-            }
         else:
             return {
                 'businessStructure': 'personal_income',
-                'incomeLevel': 'above_3m',
+                'taxType': 'PIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+                'type': 'PIT',     # Alternative field name used in some reports
+                'userType': 'self_employed',  # User classification
+                'incomeLevel': 'above_800k',
                 'annualIncome': annual_income,
                 'taxAuthority': 'sirs',
-                'taxRate': '15-25% (Progressive)',
+                'taxRate': '0% on first ₦800k, then progressive rates',
                 'exemptionEligible': False,
                 'filingDeadline': 'March 31st',
-                'description': 'You pay progressive rates (15%-25%) as your income grows. First ₦800,000 is always tax-free. This applies to all personal income including freelance work, side hustles, and business income.'
+                'description': 'You pay progressive tax rates on income above ₦800,000. For employees: Your salary is taxed via PAYE by your employer. Progressive rates apply ONLY to your side income tracked in FiCore.'
             }
     
     elif business_structure == 'llc':
@@ -1656,12 +1815,30 @@ def _compute_tax_profile(business_structure, annual_turnover=None, annual_income
         
         return {
             'businessStructure': 'llc',
+            'taxType': 'CIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+            'type': 'CIT',     # Alternative field name used in some reports
+            'userType': 'business_owner',  # User classification
             'annualTurnover': annual_turnover,
             'taxAuthority': 'nrs',
             'taxRate': '0% or 30%',
             'exemptionEligible': exemption_eligible,
             'filingDeadline': 'June 30th',
             'description': '0% CIT if qualified (Turnover < ₦100M AND Fixed Assets NBV < ₦250M), otherwise 30% CIT.'
+        }
+    
+    elif business_structure == 'professional_services':
+        # Professional services are EXPLICITLY EXCLUDED from small company exemption
+        # Law, accounting, consulting, engineering, architecture, medical practices
+        return {
+            'businessStructure': 'professional_services',
+            'taxType': 'CIT',  # CRITICAL FIX (Mar 9, 2026): Add taxType for tax calculations
+            'type': 'CIT',     # Alternative field name used in some reports
+            'userType': 'professional',  # User classification
+            'taxAuthority': 'nrs',
+            'taxRate': '30% CIT (Standard Rate)',
+            'exemptionEligible': False,
+            'filingDeadline': 'June 30th',
+            'description': 'Professional services firms (law, accounting, consulting, engineering, architecture, medical) are EXCLUDED from the 0% CIT exemption under Nigeria Tax Act 2025. You pay the standard 30% CIT rate regardless of turnover or asset size. This applies to LLP, Ltd, BN, and Partnership structures that are offering professional services.'
         }
     
     return None
@@ -1737,40 +1914,64 @@ def get_tagging_statistics():
     @users_bp.token_required
     def _get_tagging_statistics(current_user):
         """Get tagging statistics for user"""
+        import time
+        start_time = time.time()
+        
         try:
+            print(f"🔍 [TaggingStats] Starting for user: {current_user['_id']}")
             from utils.immutable_ledger_helper import get_active_transactions_query
             
             # Income stats
+            print(f"🔍 [TaggingStats] Querying income...")
             income_query = get_active_transactions_query(current_user['_id'])
             total_income = users_bp.mongo.db.incomes.count_documents(income_query)
+            print(f"🔍 [TaggingStats] Total income: {total_income}")
             
             business_income_query = income_query.copy()
             business_income_query['entryType'] = 'business'
             business_income = users_bp.mongo.db.incomes.count_documents(business_income_query)
+            print(f"🔍 [TaggingStats] Business income: {business_income}")
             
             personal_income_query = income_query.copy()
             personal_income_query['entryType'] = 'personal'
             personal_income = users_bp.mongo.db.incomes.count_documents(personal_income_query)
+            print(f"🔍 [TaggingStats] Personal income: {personal_income}")
             
+            # CRITICAL FIX: Check for both None AND missing entryType field
             untagged_income_query = income_query.copy()
-            untagged_income_query['entryType'] = None
+            untagged_income_query['$or'] = [
+                {'entryType': None},
+                {'entryType': {'$exists': False}},
+                {'entryType': ''}  # Empty string
+            ]
             untagged_income = users_bp.mongo.db.incomes.count_documents(untagged_income_query)
+            print(f"🔍 [TaggingStats] Untagged income: {untagged_income}")
             
             # Expense stats
+            print(f"🔍 [TaggingStats] Querying expenses...")
             expense_query = get_active_transactions_query(current_user['_id'])
             total_expenses = users_bp.mongo.db.expenses.count_documents(expense_query)
+            print(f"🔍 [TaggingStats] Total expenses: {total_expenses}")
             
             business_expenses_query = expense_query.copy()
             business_expenses_query['entryType'] = 'business'
             business_expenses = users_bp.mongo.db.expenses.count_documents(business_expenses_query)
+            print(f"🔍 [TaggingStats] Business expenses: {business_expenses}")
             
             personal_expenses_query = expense_query.copy()
             personal_expenses_query['entryType'] = 'personal'
             personal_expenses = users_bp.mongo.db.expenses.count_documents(personal_expenses_query)
+            print(f"🔍 [TaggingStats] Personal expenses: {personal_expenses}")
             
+            # CRITICAL FIX: Check for both None AND missing entryType field
             untagged_expenses_query = expense_query.copy()
-            untagged_expenses_query['entryType'] = None
+            untagged_expenses_query['$or'] = [
+                {'entryType': None},
+                {'entryType': {'$exists': False}},
+                {'entryType': ''}  # Empty string
+            ]
             untagged_expenses = users_bp.mongo.db.expenses.count_documents(untagged_expenses_query)
+            print(f"🔍 [TaggingStats] Untagged expenses: {untagged_expenses}")
             
             # Calculate totals
             total_entries = total_income + total_expenses
@@ -1778,6 +1979,10 @@ def get_tagging_statistics():
             untagged_entries = untagged_income + untagged_expenses
             
             tagging_percentage = (tagged_entries / total_entries * 100) if total_entries > 0 else 0
+            
+            elapsed_time = (time.time() - start_time) * 1000  # Convert to ms
+            print(f"✅ [TaggingStats] Completed in {elapsed_time:.2f}ms")
+            print(f"✅ [TaggingStats] Total: {total_entries}, Tagged: {tagged_entries}, Untagged: {untagged_entries}")
             
             return jsonify({
                 'success': True,
@@ -1802,7 +2007,11 @@ def get_tagging_statistics():
             })
             
         except Exception as e:
-            print(f"Error in get_tagging_statistics: {e}")
+            elapsed_time = (time.time() - start_time) * 1000
+            print(f"❌ [TaggingStats] Error after {elapsed_time:.2f}ms: {e}")
+            import traceback
+            print(f"❌ [TaggingStats] Stack trace:\n{traceback.format_exc()}")
+            
             return jsonify({
                 'success': False,
                 'message': 'Failed to get tagging statistics',

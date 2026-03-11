@@ -4,11 +4,16 @@ Handles Income & Expense creation with atomic FC deduction
 Either BOTH entry creation AND FC deduction succeed, or NEITHER happens
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId
 from utils.payment_utils import normalize_payment_method, validate_payment_method
 from utils.monthly_entry_tracker import MonthlyEntryTracker
+from utils.decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in calculations
 import traceback
 
 
@@ -83,7 +88,32 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             # Import auto-population utility
-            from ..utils.expense_utils import auto_populate_expense_fields
+            from utils.expense_utils import auto_populate_expense_fields
+            
+            # 🏷️ QUICK TAG INTEGRATION (Feb 21, 2026): Accept entryType from frontend
+            # DEFAULT TO 'personal' IF NOT PROVIDED (Backend Safeguard)
+            entry_type = data.get('entryType') or 'personal'  # Default to 'personal' if None or empty
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  ATOMIC ENDPOINT - TAGGING DEBUG")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Entry type received: {data.get('entryType')}")
+            print(f"🏷️  Entry type after default: {entry_type}")
+            print(f"🏷️  Entry type is None: {data.get('entryType') is None}")
+            print(f"🏷️  Entry type is empty: {data.get('entryType') == ''}")
+            print(f"🏷️  Entry type type: {type(entry_type)}")
+            if data.get('entryType'):
+                print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG PROVIDED - DEFAULTED TO: '{entry_type}'")
+            print(f"{'🏷️ '*40}\n")
+            
+            # Validate entryType if provided
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
             
             # Validate payment method
             raw_payment = data.get('paymentMethod')
@@ -172,6 +202,9 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     }), 402  # Payment Required
             
             # STEP 5: Create expense document
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            is_premium_entry = is_premium  # Already calculated above
+            
             expense_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -183,6 +216,12 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'paymentMethod': normalized_payment,
                 'location': data.get('location', ''),
                 'notes': data.get('notes', ''),
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # 🏷️ QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # 🏷️ QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # 🏷️ QUICK TAG: Tagged by user
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),
                 # Track FC charge status
@@ -192,11 +231,39 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'fcChargeAttemptedAt': None
             }
             
+            # 🏷️  TAGGING DEBUG: Log what will be saved to database
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  ATOMIC ENDPOINT - DATABASE INSERT")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  entryType field: {expense_data.get('entryType')}")
+            print(f"🏷️  taggedAt field: {expense_data.get('taggedAt')}")
+            print(f"🏷️  taggedBy field: {expense_data.get('taggedBy')}")
+            if expense_data.get('entryType'):
+                print(f"🏷️  ✅ WILL SAVE WITH TAG: '{expense_data.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  WILL SAVE WITHOUT TAG (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
+            
             # STEP 6: Insert expense into database
             result = atomic_entries_bp.mongo.db.expenses.insert_one(expense_data)
             expense_id = str(result.inserted_id)
             
             print(f"✓ Expense created: {expense_id}")
+            
+            # 🏷️  TAGGING DEBUG: Verify tag was saved correctly
+            verification = atomic_entries_bp.mongo.db.expenses.find_one({'_id': result.inserted_id})
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  ATOMIC ENDPOINT - POST-INSERT VERIFICATION")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Expense ID: {expense_id}")
+            print(f"🏷️  entryType in DB: {verification.get('entryType')}")
+            print(f"🏷️  taggedAt in DB: {verification.get('taggedAt')}")
+            print(f"🏷️  taggedBy in DB: {verification.get('taggedBy')}")
+            if verification.get('entryType'):
+                print(f"🏷️  ✅ TAG SAVED SUCCESSFULLY: '{verification.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
             
             # STEP 7: Deduct FC if required (ATOMIC OPERATION)
             new_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -211,7 +278,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     
                     # Get current balance again (double-check for race conditions)
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_fc_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_fc_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     
                     if current_fc_balance < fc_cost:
                         # Balance changed between check and deduction - ROLLBACK
@@ -292,7 +360,92 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             except Exception as analytics_error:
                 print(f"Analytics tracking failed (non-critical): {analytics_error}")
             
-            # STEP 9: Prepare response
+            # STEP 9: Create notification to remind user to attach supporting documents
+            notification_data = None  # FIX 3.1: Capture notification for response
+            try:
+                from blueprints.notifications import create_user_notification
+                
+                # CRITICAL: Format relatedId as "expense_<id>" for frontend navigation
+                formatted_related_id = f'expense_{expense_id}'
+                
+                notification_id = create_user_notification(
+                    mongo=atomic_entries_bp.mongo,
+                    user_id=str(current_user['_id']),
+                    category='missingReceipt',
+                    title='Don\'t forget to attach supporting documents',
+                    body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} expense entry to keep better records.',
+                    related_id=formatted_related_id,
+                    metadata={
+                        'transactionType': 'expense',
+                        'amount': float(data['amount']),
+                        'category': data['category'],
+                        'description': data['description']
+                    },
+                    priority='normal'
+                )
+                
+                if notification_id:
+                    print(f"✓ Notification created: {notification_id} (relatedId: {formatted_related_id})")
+                    
+                    # FIX 3: Send FCM push notification
+                    try:
+                        from services.firebase_service import firebase_service
+                        
+                        # Get user's FCM token
+                        user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
+                        fcm_token = user.get('fcmToken')
+                        
+                        if fcm_token:
+                            # Send push notification
+                            push_sent = firebase_service.send_push_notification(
+                                fcm_token=fcm_token,
+                                title='Don\'t forget to attach supporting documents',
+                                body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} expense entry to keep better records.',
+                                data={
+                                    'notificationId': notification_id,
+                                    'category': 'missingReceipt',
+                                    'relatedId': formatted_related_id,
+                                    'transactionType': 'expense',
+                                    'amount': str(data['amount']),
+                                    'click_action': 'FLUTTER_NOTIFICATION_CLICK'
+                                }
+                            )
+                            
+                            if push_sent:
+                                print(f"✓ FCM push sent successfully for notification {notification_id}")
+                            else:
+                                print(f"⚠ FCM push failed for notification {notification_id} (non-critical)")
+                        else:
+                            print(f"⚠ No FCM token for user {current_user['email']}, skipping push")
+                            
+                    except Exception as push_error:
+                        print(f"⚠ FCM push failed (non-critical): {push_error}")
+                    
+                    # FIX 3.1: Prepare notification data for response (eliminates race condition)
+                    notification_data = {
+                        'id': notification_id,
+                        'category': 'missingReceipt',
+                        'title': 'Don\'t forget to attach supporting documents',
+                        'body': f'You can add receipts or documents to your ₦{data["amount"]:,.2f} expense entry to keep better records.',
+                        'relatedId': formatted_related_id,
+                        'priority': 'normal',
+                        'timestamp': datetime.utcnow().isoformat() + 'Z',
+                        'isRead': False,
+                        'isArchived': False,
+                        'metadata': {
+                            'transactionType': 'expense',
+                            'amount': float(data['amount']),
+                            'category': data['category'],
+                            'description': data['description']
+                        }
+                    }
+                else:
+                    print(f"⚠ Notification creation returned None (non-critical)")
+                    
+            except Exception as notification_error:
+                print(f"Notification creation failed (non-critical): {notification_error}")
+            
+            # STEP 10: Prepare response
             created_expense = atomic_entries_bp.serialize_doc(expense_data.copy())
             created_expense['id'] = expense_id
             # Keep auto-generated title, don't override with description
@@ -316,6 +469,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             else:
                 message = f"Expense created successfully. {monthly_data['remaining'] - 1} free entries remaining this month."
             
+            # FIX 3.1: Include notification in response (eliminates race condition)
             return jsonify({
                 'success': True,
                 'data': {
@@ -326,7 +480,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                         'count': monthly_data['count'] + 1,
                         'limit': monthly_data['limit'] if not is_premium else None,
                         'remaining': max(0, monthly_data['remaining'] - 1) if not is_premium else None
-                    }
+                    },
+                    'notification': notification_data  # FIX 3.1: Include notification in response
                 },
                 'message': message
             }), 201
@@ -349,7 +504,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 try:
                     # Restore FC balance
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     restored_balance = current_balance + fc_cost
                     
                     atomic_entries_bp.mongo.db.users.update_one(
@@ -388,7 +544,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             "description": string (optional),
             "frequency": string (optional),
             "category": string (required),
-            "dateReceived": ISO datetime string (optional),
+            "date": ISO datetime string (optional),
             "isRecurring": bool (optional),
             "nextRecurringDate": ISO datetime string (optional),
             "metadata": object (optional)
@@ -492,6 +648,31 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     }), 402  # Payment Required
             
             # STEP 5: Create income document
+            # ✅ CRITICAL FIX: Mark if entry was created during premium period
+            is_premium_entry = is_premium  # Already calculated above
+            
+            # 🏷️ QUICK TAG INTEGRATION (Feb 21, 2026): Accept entryType from frontend
+            # DEFAULT TO 'personal' IF NOT PROVIDED (Backend Safeguard)
+            entry_type = data.get('entryType') or 'personal'  # Default to 'personal' if None or empty
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  INCOME ATOMIC ENDPOINT - TAGGING DEBUG")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Entry type received: {data.get('entryType')}")
+            print(f"🏷️  Entry type after default: {entry_type}")
+            if data.get('entryType'):
+                print(f"🏷️  ✅ TAG PROVIDED: '{entry_type}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG PROVIDED - DEFAULTED TO: '{entry_type}'")
+            print(f"{'🏷️ '*40}\n")
+            
+            # Validate entryType if provided
+            if entry_type and entry_type not in ['business', 'personal']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid entryType. Must be "business" or "personal"',
+                    'errors': {'entryType': ['Invalid value']}
+                }), 400
+            
             income_data = {
                 'userId': current_user['_id'],
                 'amount': float(data['amount']),
@@ -499,9 +680,15 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'description': data.get('description', ''),
                 'frequency': data.get('frequency', 'one_time'),
                 'category': data['category'],
-                'dateReceived': datetime.fromisoformat(data.get('dateReceived', datetime.utcnow().isoformat()).replace('Z', '')),
+                'date': datetime.fromisoformat(data.get('date', datetime.utcnow().isoformat()).replace('Z', '')),
                 'isRecurring': data.get('isRecurring', False),
                 'nextRecurringDate': datetime.fromisoformat(data['nextRecurringDate'].replace('Z', '')) if data.get('nextRecurringDate') else None,
+                'status': 'active',  # CRITICAL: Required for immutability system
+                'isDeleted': False,  # CRITICAL: Required for immutability system
+                'entryType': entry_type,  # 🏷️ QUICK TAG: Save tag during creation
+                'taggedAt': datetime.utcnow() if entry_type else None,  # 🏷️ QUICK TAG: Timestamp
+                'taggedBy': 'user' if entry_type else None,  # 🏷️ QUICK TAG: Tagged by user
+                'wasPremiumEntry': is_premium_entry,  # ✅ NEW: Track if created during premium period
                 'metadata': data.get('metadata', {}),
                 'createdAt': datetime.utcnow(),
                 'updatedAt': datetime.utcnow(),
@@ -512,8 +699,21 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 'fcChargeAttemptedAt': None
             }
             
+            # 🏷️  TAGGING DEBUG: Log what will be saved to database
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  INCOME ATOMIC ENDPOINT - DATABASE INSERT")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  entryType field: {income_data.get('entryType')}")
+            print(f"🏷️  taggedAt field: {income_data.get('taggedAt')}")
+            print(f"🏷️  taggedBy field: {income_data.get('taggedBy')}")
+            if income_data.get('entryType'):
+                print(f"🏷️  ✅ WILL SAVE WITH TAG: '{income_data.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  WILL SAVE WITHOUT TAG (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
+            
             # Import and apply auto-population for proper source/description
-            from ..utils.income_utils import auto_populate_income_fields
+            from utils.income_utils import auto_populate_income_fields
             income_data = auto_populate_income_fields(income_data)
             
             # STEP 6: Insert income into database
@@ -521,6 +721,21 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             income_id = str(result.inserted_id)
             
             print(f"✓ Income created: {income_id}")
+            
+            # 🏷️  TAGGING DEBUG: Verify tag was saved correctly
+            verification = atomic_entries_bp.mongo.db.incomes.find_one({'_id': result.inserted_id})
+            print(f"\n{'🏷️ '*40}")
+            print(f"🏷️  INCOME ATOMIC ENDPOINT - POST-INSERT VERIFICATION")
+            print(f"{'🏷️ '*40}")
+            print(f"🏷️  Income ID: {income_id}")
+            print(f"🏷️  entryType in DB: {verification.get('entryType')}")
+            print(f"🏷️  taggedAt in DB: {verification.get('taggedAt')}")
+            print(f"🏷️  taggedBy in DB: {verification.get('taggedBy')}")
+            if verification.get('entryType'):
+                print(f"🏷️  ✅ TAG SAVED SUCCESSFULLY: '{verification.get('entryType')}'")
+            else:
+                print(f"🏷️  ⚠️  NO TAG IN DATABASE (entryType=None)")
+            print(f"{'🏷️ '*40}\n")
             
             # STEP 7: Deduct FC if required (ATOMIC OPERATION)
             new_fc_balance = user.get('ficoreCreditBalance', 0.0)
@@ -535,7 +750,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                     
                     # Get current balance again (double-check for race conditions)
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_fc_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_fc_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     
                     if current_fc_balance < fc_cost:
                         # Balance changed between check and deduction - ROLLBACK
@@ -616,10 +832,97 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             except Exception as analytics_error:
                 print(f"Analytics tracking failed (non-critical): {analytics_error}")
             
-            # STEP 9: Prepare response
+            # STEP 9: Create notification to remind user to attach supporting documents
+            notification_data = None  # FIX 3.1: Capture notification for response
+            try:
+                from blueprints.notifications import create_user_notification
+                
+                # CRITICAL: Format relatedId as "income_<id>" for frontend navigation
+                formatted_related_id = f'income_{income_id}'
+                
+                notification_id = create_user_notification(
+                    mongo=atomic_entries_bp.mongo,
+                    user_id=str(current_user['_id']),
+                    category='missingReceipt',
+                    title='Don\'t forget to attach supporting documents',
+                    body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} income entry to keep better records.',
+                    related_id=formatted_related_id,
+                    metadata={
+                        'transactionType': 'income',
+                        'amount': float(data['amount']),
+                        'category': data['category'],
+                        'source': data['source']
+                    },
+                    priority='normal'
+                )
+                
+                if notification_id:
+                    print(f"✓ Notification created: {notification_id} (relatedId: {formatted_related_id})")
+                    
+                    # FIX 3: Send FCM push notification
+                    try:
+                        from services.firebase_service import firebase_service
+                        
+                        # Get user's FCM token
+                        user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
+                        fcm_token = user.get('fcmToken')
+                        
+                        if fcm_token:
+                            # Send push notification
+                            push_sent = firebase_service.send_push_notification(
+                                fcm_token=fcm_token,
+                                title='Don\'t forget to attach supporting documents',
+                                body=f'You can add receipts or documents to your ₦{data["amount"]:,.2f} income entry to keep better records.',
+                                data={
+                                    'notificationId': notification_id,
+                                    'category': 'missingReceipt',
+                                    'relatedId': formatted_related_id,
+                                    'transactionType': 'income',
+                                    'amount': str(data['amount']),
+                                    'click_action': 'FLUTTER_NOTIFICATION_CLICK'
+                                }
+                            )
+                            
+                            if push_sent:
+                                print(f"✓ FCM push sent successfully for notification {notification_id}")
+                            else:
+                                print(f"⚠ FCM push failed for notification {notification_id} (non-critical)")
+                        else:
+                            print(f"⚠ No FCM token for user {current_user['email']}, skipping push")
+                            
+                    except Exception as push_error:
+                        print(f"⚠ FCM push failed (non-critical): {push_error}")
+                    
+                    # FIX 3.1: Prepare notification data for response (eliminates race condition)
+                    notification_data = {
+                        'id': notification_id,
+                        'category': 'missingReceipt',
+                        'title': 'Don\'t forget to attach supporting documents',
+                        'body': f'You can add receipts or documents to your ₦{data["amount"]:,.2f} income entry to keep better records.',
+                        'relatedId': formatted_related_id,
+                        'priority': 'normal',
+                        'timestamp': datetime.utcnow().isoformat() + 'Z',
+                        'isRead': False,
+                        'isArchived': False,
+                        'metadata': {
+                            'transactionType': 'income',
+                            'amount': float(data['amount']),
+                            'category': data['category'],
+                            'source': data['source']
+                        }
+                    }
+                else:
+                    print(f"⚠ Notification creation returned None (non-critical)")
+                    
+            except Exception as notification_error:
+                print(f"Notification creation failed (non-critical): {notification_error}")
+            
+            # STEP 10: Prepare response
             created_income = atomic_entries_bp.serialize_doc(income_data.copy())
             created_income['id'] = income_id
-            created_income['dateReceived'] = created_income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+            # Keep both 'date' (new standard) and 'dateReceived' (backward compatibility) for now
+            created_income['date'] = created_income.get('date', datetime.utcnow()).isoformat() + 'Z'
+            created_income['dateReceived'] = created_income.get('date', datetime.utcnow()).isoformat() + 'Z'  # Backward compatibility
             created_income['createdAt'] = created_income.get('createdAt', datetime.utcnow()).isoformat() + 'Z'
             created_income['updatedAt'] = created_income.get('updatedAt', datetime.utcnow()).isoformat() + 'Z'
             if created_income.get('nextRecurringDate'):
@@ -639,6 +942,7 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
             else:
                 message = f"Income created successfully. {monthly_data['remaining'] - 1} free entries remaining this month."
             
+            # FIX 3.1: Include notification in response (eliminates race condition)
             return jsonify({
                 'success': True,
                 'data': {
@@ -649,7 +953,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                         'count': monthly_data['count'] + 1,
                         'limit': monthly_data['limit'] if not is_premium else None,
                         'remaining': max(0, monthly_data['remaining'] - 1) if not is_premium else None
-                    }
+                    },
+                    'notification': notification_data  # FIX 3.1: Include notification in response
                 },
                 'message': message
             }), 201
@@ -672,7 +977,8 @@ def init_atomic_entries_blueprint(mongo, token_required, serialize_doc):
                 try:
                     # Restore FC balance
                     user = atomic_entries_bp.mongo.db.users.find_one({'_id': current_user['_id']})
-                    current_balance = user.get('ficoreCreditBalance', 0.0)
+                    # CRITICAL FIX (Mar 9, 2026): Use safe_float() to handle Decimal128 from MongoDB
+                    current_balance = safe_float(user.get('ficoreCreditBalance', 0.0))
                     restored_balance = current_balance + fc_cost
                     
                     atomic_entries_bp.mongo.db.users.update_one(

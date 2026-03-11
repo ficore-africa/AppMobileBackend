@@ -1,3 +1,8 @@
+import sys
+import os
+from utils.decimal_helpers import safe_sum
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
@@ -7,6 +12,7 @@ import logging
 from utils.database_optimizer import DatabaseOptimizer, aggregation_cache
 from utils.enhanced_cache import enhanced_cache, CacheWarmer
 from utils.cache_invalidation import get_cache_invalidation_service
+from utils.decimal_helpers import safe_float, safe_sum
 from utils.performance_monitor import performance_monitor, performance_logger
 
 logger = logging.getLogger(__name__)
@@ -413,26 +419,26 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
             income_counts = list(self.db.incomes.aggregate(income_pipeline))
             expense_counts = list(self.db.expenses.aggregate(expense_pipeline))
             
-            # Format results
-            income_by_category = {item['_id']: {'count': item['count'], 'amount': item['totalAmount']} for item in income_counts}
-            expense_by_category = {item['_id']: {'count': item['count'], 'amount': item['totalAmount']} for item in expense_counts}
+            # Format results - CRITICAL FIX: Convert Decimal128 to float for JSON serialization
+            income_by_category = {item['_id']: {'count': item['count'], 'amount': safe_float(item['totalAmount'])} for item in income_counts}
+            expense_by_category = {item['_id']: {'count': item['count'], 'amount': safe_float(item['totalAmount'])} for item in expense_counts}
             
-            # Calculate totals - CRITICAL FIX: Include expense amounts for all-time calculations
+            # Calculate totals - CRITICAL FIX: Use safe_sum to handle Decimal128
             total_income_count = sum(item['count'] for item in income_counts)
             total_expense_count = sum(item['count'] for item in expense_counts)
             
-            # CRITICAL FIX: Calculate total all-time amounts (not just counts)
-            total_income_amount = sum(item['totalAmount'] for item in income_counts)
-            total_expense_amount = sum(item['totalAmount'] for item in expense_counts)
+            # CRITICAL FIX: Use safe_sum to handle Decimal128 amounts
+            total_income_amount = safe_sum([item['totalAmount'] for item in income_counts])
+            total_expense_amount = safe_sum([item['totalAmount'] for item in expense_counts])
             
             # Get earliest and latest transaction dates for period info
             try:
-                earliest_income = self.db.incomes.find_one({'userId': user_id}, sort=[('dateReceived', 1)])
+                earliest_income = self.db.incomes.find_one({'userId': user_id}, sort=[('date', 1)])
                 earliest_expense = self.db.expenses.find_one({'userId': user_id}, sort=[('date', 1)])
                 
                 earliest_date = None
                 if earliest_income and earliest_expense:
-                    income_date = earliest_income.get('dateReceived')
+                    income_date = earliest_income.get('date')
                     expense_date = earliest_expense.get('date')
                     if income_date and expense_date:
                         earliest_date = min(income_date, expense_date)
@@ -441,7 +447,7 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
                     elif expense_date:
                         earliest_date = expense_date
                 elif earliest_income:
-                    earliest_date = earliest_income.get('dateReceived')
+                    earliest_date = earliest_income.get('date')
                 elif earliest_expense:
                     earliest_date = earliest_expense.get('date')
             except Exception as date_error:
@@ -507,7 +513,7 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
                     {
                         '$match': {
                             'userId': user_id,
-                            'dateReceived': {
+                            'date': {
                                 '$gte': start_of_month,
                                 '$lte': end_of_month
                             },
@@ -658,7 +664,7 @@ def init_financial_aggregation_blueprint(mongo, token_required, serialize_doc):
                     {
                         '$match': {
                             'userId': user_id,
-                            'dateReceived': {
+                            'date': {
                                 '$gte': start_of_year,
                                 '$lte': end_of_year
                             },

@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -5,6 +9,7 @@ import jwt
 import uuid
 from bson import ObjectId
 from functools import wraps
+from utils.business_bookkeeping import *
 from utils.analytics_tracker import create_tracker
 from utils.profile_picture_helper import generate_profile_picture_url
 from utils.email_service import get_email_service
@@ -110,13 +115,7 @@ def login():
             'exp': datetime.utcnow() + timedelta(days=30)
         }, auth_bp.config['SECRET_KEY'], algorithm='HS256')
         
-        # Update last login
-        auth_bp.mongo.db.users.update_one(
-            {'_id': user['_id']},
-            {'$set': {'lastLogin': datetime.utcnow()}}
-        )
-        
-        # Track login event
+        # Track login event (also updates lastLoginAt and loginCount)
         try:
             device_info = {
                 'user_agent': request.headers.get('User-Agent', 'Unknown'),
@@ -125,6 +124,11 @@ def login():
             auth_bp.tracker.track_login(user['_id'], device_info=device_info)
         except Exception as e:
             print(f"Analytics tracking failed: {e}")
+            # Fallback: Update lastLogin manually if tracker fails
+            auth_bp.mongo.db.users.update_one(
+                {'_id': user['_id']},
+                {'$set': {'lastLogin': datetime.utcnow()}}
+            )
         
         # Determine admin permissions based on role
         permissions = []
@@ -292,6 +296,37 @@ def signup():
         result = auth_bp.mongo.db.users.insert_one(user_data)
         user_id = str(result.inserted_id)
         
+        # 🆕 SEND WELCOME EMAIL (Feb 27, 2026)
+        try:
+            email_service = get_email_service(mongo_db=auth_bp.mongo.db)
+            email_service.send_welcome_email(
+                to_email=email,
+                user_name=user_data.get('displayName'),
+                user_id=user_id
+            )
+            print(f'✅ Welcome email sent to {email}')
+        except Exception as e:
+            # Log but don't fail signup if email fails
+            print(f'⚠️ Welcome email failed: {e}')
+        
+        # 🆕 SYNC USER TO RESEND AUDIENCE (Feb 27, 2026)
+        try:
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=auth_bp.mongo.db)
+            sync_result = announcement_service.sync_user_to_audience(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                user_id=user_id
+            )
+            if sync_result['success']:
+                print(f'✅ User synced to Resend Audience: {email}')
+            else:
+                print(f'⚠️ Audience sync failed: {sync_result["error"]}')
+        except Exception as e:
+            # Log but don't fail signup if audience sync fails
+            print(f'⚠️ Audience sync failed: {e}')
+        
         # If referred, create referral tracking entry (NEW - Feb 4, 2026)
         if referrer:
             referral_doc = {
@@ -335,6 +370,51 @@ def signup():
             }
         }
         auth_bp.mongo.db.credit_transactions.insert_one(signup_transaction)
+        
+        # 🆕 ATOMIC FC SIGNUP BONUS (March 11, 2026)
+        # Record signup bonus using atomic operations (4-transaction pattern)
+        try:
+            atomic_result = award_and_consume_fc_credits_atomic(
+                mongo=auth_bp.mongo,
+                user_id=result.inserted_id,
+                fc_amount=10.0,
+                operation='signup_bonus',
+                description='Welcome bonus - Thank you for joining Ficore!'
+            )
+            if atomic_result.get('success'):
+                print(f'✅ Atomic signup bonus completed: {len(atomic_result["transactions"])} transactions')
+            else:
+                print(f'⚠️  Atomic signup bonus failed: {atomic_result.get("error")}')
+        except Exception as e:
+            print(f'⚠️  Failed to record atomic signup bonus: {str(e)}')
+            # Don't fail signup if bookkeeping fails
+        
+        # 🆕 AUTO-CREATE VAS WALLET (Feb 10, 2026)
+        # Create a basic VAS wallet for new user - no KYC required initially
+        # This prevents 404 errors when user tries to access VAS features
+        try:
+            wallet_data = {
+                '_id': ObjectId(),
+                'userId': result.inserted_id,
+                'balance': 0.0,
+                'status': 'pending_activation',  # Will be activated when user creates reserved account
+                'tier': 'TIER_1',  # TIER_1 is the default ground zero
+                'kycTier': 0,
+                'kycVerified': False,
+                'kycStatus': 'not_submitted',
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'accounts': [],  # Empty until reserved account created
+                'accountReference': None,
+                'accountName': None,
+                'reservedAmount': 0.0
+            }
+            auth_bp.mongo.db.vas_wallets.insert_one(wallet_data)
+            print(f"✅ VAS wallet auto-created for new user {user_id}")
+        except Exception as wallet_error:
+            # Log but don't fail signup if wallet creation fails
+            # User can still use the app, wallet will be created on first VAS access
+            print(f"⚠️ Failed to auto-create VAS wallet for user {user_id}: {wallet_error}")
         
         # Track registration event
         try:
@@ -469,15 +549,22 @@ def forgot_password():
             }}
         )
         
-        # ₦0 COMMUNICATION STRATEGY: Send email with reset link
-        email_service = get_email_service()
+        # 🆕 SEND PASSWORD RESET EMAIL (Feb 27, 2026)
+        email_service = get_email_service(mongo_db=auth_bp.mongo.db)
         user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
         
-        email_result = email_service.send_password_reset(
-            to_email=user['email'],
-            reset_token=reset_token,
-            user_name=user_name if user_name else None
-        )
+        try:
+            email_result = email_service.send_password_reset_email(
+                to_email=user['email'],
+                reset_token=reset_token,
+                user_name=user_name if user_name else 'User',
+                user_id=str(user['_id'])
+            )
+            print(f'✅ Password reset email sent to {email}')
+        except Exception as e:
+            # Log but don't fail - admin fallback still works
+            print(f'⚠️ Password reset email failed: {e}')
+            email_result = {'success': False, 'error': str(e)}
         
         # DUAL-TRACK APPROACH: Also create admin request for password reset
         # This allows admins to help users while email service is not ready
@@ -774,85 +861,3 @@ def mark_onboarding_complete():
         }), 500
 
 
-# Added: Jan 30, 2026 - Redo Setup Wizard feature for Google Play
-@auth_bp.route('/reset-onboarding', methods=['POST'])
-def reset_onboarding():
-    """
-    Reset onboarding state to allow user to redo wizard.
-    Useful for users who skipped wizard and want to try again.
-    
-    This endpoint:
-    - Sets hasCompletedOnboarding = False
-    - Clears onboardingSkipped flag
-    - Clears onboarding timestamps
-    - User will see wizard on next app restart or manual navigation
-    """
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'success': False,
-                'message': 'Authorization token required',
-                'errors': {'auth': ['Missing or invalid authorization header']}
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        
-        # Decode JWT token
-        try:
-            payload = jwt.decode(token, auth_bp.config['SECRET_KEY'], algorithms=['HS256'])
-            user_id = payload.get('user_id')
-        except jwt.ExpiredSignatureError:
-            return jsonify({
-                'success': False,
-                'message': 'Token expired',
-                'errors': {'auth': ['Token has expired']}
-            }), 401
-        except jwt.InvalidTokenError:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid token',
-                'errors': {'auth': ['Invalid token']}
-            }), 401
-        
-        # Reset onboarding state
-        result = auth_bp.mongo.db.users.update_one(
-            {'_id': ObjectId(user_id)},
-            {
-                '$set': {
-                    'hasCompletedOnboarding': False,
-                    'onboardingSkipped': False
-                },
-                '$unset': {
-                    'onboardingCompletedAt': '',
-                    'onboardingSkippedAt': ''
-                }
-            }
-        )
-        
-        if result.matched_count == 0:
-            return jsonify({
-                'success': False,
-                'message': 'User not found',
-                'errors': {'user': ['User not found']}
-            }), 404
-        
-        print(f'✅ Onboarding reset for user {user_id}')
-        
-        return jsonify({
-            'success': True,
-            'message': 'Onboarding reset successfully. You can now redo the setup wizard.',
-            'data': {
-                'hasCompletedOnboarding': False,
-                'onboardingSkipped': False
-            }
-        }), 200
-        
-    except Exception as e:
-        print(f'❌ Error resetting onboarding: {str(e)}')
-        return jsonify({
-            'success': False,
-            'message': 'Failed to reset onboarding',
-            'errors': {'general': [str(e)]}
-        }), 500

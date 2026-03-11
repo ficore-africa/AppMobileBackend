@@ -6,15 +6,16 @@ import requests
 import hmac
 import hashlib
 import traceback
+import uuid
 
 def init_subscription_blueprint(mongo, token_required, serialize_doc):
     from utils.analytics_tracker import create_tracker
+    from utils.test_account_filter import is_test_account, get_paystack_keys
+    
     subscription_bp = Blueprint('subscription', __name__, url_prefix='/subscription')
     tracker = create_tracker(mongo.db)
     
-    # Paystack configuration
-    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_your_secret_key')
-    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_your_public_key')
+    # Paystack configuration (defaults - will be overridden per user)
     PAYSTACK_BASE_URL = 'https://api.paystack.co'
     
     # Subscription plans configuration
@@ -53,10 +54,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
         }
     }
 
-    def _make_paystack_request(endpoint, method='GET', data=None):
-        """Make authenticated request to Paystack API"""
+    def _make_paystack_request(endpoint, method='GET', data=None, user_email=None):
+        """Make authenticated request to Paystack API with test mode support"""
+        # Get appropriate keys based on user
+        paystack_keys = get_paystack_keys(user_email) if user_email else {
+            'secret_key': os.getenv('PAYSTACK_SECRET_KEY'),
+            'mode': 'live'
+        }
+        
         headers = {
-            'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
+            'Authorization': f'Bearer {paystack_keys["secret_key"]}',
             'Content-Type': 'application/json'
         }
         
@@ -72,7 +79,10 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            return response.json()
+            result = response.json()
+            if paystack_keys['mode'] == 'test':
+                print(f"[TEST MODE] Paystack {method} {endpoint}: {result}")
+            return result
         except Exception as e:
             print(f"Paystack API error: {str(e)}")
             return {'status': False, 'message': f'Payment service error: {str(e)}'}
@@ -128,12 +138,16 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
     @subscription_bp.route('/initialize', methods=['POST'])
     @token_required
     def initialize_subscription(current_user):
-        """Initialize subscription payment with Paystack"""
+        """Initialize subscription payment with Paystack (with test mode support)"""
         try:
             data = request.get_json()
             
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            user_email = user.get('email', '')
+            
             # Log incoming request for debugging
-            print(f"[SUBSCRIPTION INIT] User: {current_user.get('email', 'unknown')}")
+            print(f"[SUBSCRIPTION INIT] User: {user_email}")
+            print(f"[SUBSCRIPTION INIT] Test mode: {is_test_account(user_email)}")
             print(f"[SUBSCRIPTION INIT] Request data: {data}")
             
             # Validate required fields
@@ -168,7 +182,6 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 }), 400
             
             plan = SUBSCRIPTION_PLANS[plan_type]
-            user = mongo.db.users.find_one({'_id': current_user['_id']})
             
             # Check if user is already subscribed
             if user.get('isSubscribed', False):
@@ -184,12 +197,47 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             # Initialize Paystack transaction
             reference = f"sub_{current_user['_id']}_{plan_type}_{int(datetime.utcnow().timestamp())}"
+            
+            # TEST MODE: For test accounts, simulate instant success
+            if is_test_account(user_email):
+                print(f"[TEST MODE] Simulating subscription payment for {user_email}")
+                
+                # Store pending subscription
+                pending_subscription = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'reference': reference,
+                    'planType': plan_type,
+                    'amount': plan['price'],
+                    'status': 'pending',
+                    'createdAt': datetime.utcnow(),
+                    'testMode': True
+                }
+                mongo.db.pending_subscriptions.insert_one(pending_subscription)
+                
+                # Return mock authorization URL that will auto-verify
+                mock_url = f"{request.host_url.rstrip('/')}/subscription/verify-callback?reference={reference}&test_mode=true"
+                
+                print(f"[TEST MODE] Mock payment URL: {mock_url}")
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'authorization_url': mock_url,
+                        'access_code': f'TEST_{uuid.uuid4().hex[:10]}',
+                        'reference': reference,
+                        'test_mode': True
+                    },
+                    'message': 'Payment initialized successfully (TEST MODE)'
+                })
+            
+            # LIVE MODE: Normal Paystack flow
             paystack_data = {
                 'email': user['email'],
                 'amount': int(plan['price'] * 100),  # Paystack expects kobo
                 'currency': 'NGN',
                 'reference': reference,
-                'callback_url': f"{request.host_url.rstrip('/')}subscription/verify-callback?reference={reference}",
+                'callback_url': f"{request.host_url.rstrip('/')}/subscription/verify-callback?reference={reference}",
                 'metadata': {
                     'user_id': str(current_user['_id']),
                     'plan_type': plan_type,
@@ -198,7 +246,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             }
             
             print(f"[SUBSCRIPTION INIT] Calling Paystack with data: {paystack_data}")
-            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data)
+            paystack_response = _make_paystack_request('/transaction/initialize', 'POST', paystack_data, user_email)
             print(f"[SUBSCRIPTION INIT] Paystack response: {paystack_response}")
             
             if paystack_response.get('status'):
@@ -256,6 +304,7 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             from flask import redirect, render_template
             
             reference = request.args.get('reference')
+            test_mode = request.args.get('test_mode', 'false').lower() == 'true'
             
             if not reference:
                 # Return HTML page with error
@@ -263,8 +312,125 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                                      status='failed', 
                                      error='missing_reference'), 400
             
-            print(f"[SUBSCRIPTION CALLBACK] Received callback for reference: {reference}")
+            print(f"[SUBSCRIPTION CALLBACK] Received callback for reference: {reference}, test_mode: {test_mode}")
             
+            # Find pending subscription
+            pending_sub = mongo.db.pending_subscriptions.find_one({'reference': reference})
+            
+            if not pending_sub:
+                print(f"[SUBSCRIPTION CALLBACK] Pending subscription not found for reference: {reference}")
+                return render_template('payment_callback.html',
+                                     status='failed',
+                                     reference=reference,
+                                     error='not_found'), 404
+            
+            user_id = pending_sub['userId']
+            plan_type = pending_sub['planType']
+            plan = SUBSCRIPTION_PLANS[plan_type]
+            
+            # ==================== TEST MODE AUTO-COMPLETE ====================
+            if test_mode or pending_sub.get('testMode', False):
+                print(f'[TEST MODE] Auto-completing subscription for user {user_id}')
+                
+                # Activate subscription
+                start_date = datetime.utcnow()
+                end_date = start_date + timedelta(days=plan['duration_days'])
+                
+                # Update user subscription
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {
+                        '$set': {
+                            'isSubscribed': True,
+                            'isPremium': True,  # ✅ FIX: Add isPremium
+                            'hasActiveSubscription': True,  # ✅ FIX: Add hasActiveSubscription
+                            'subscriptionStatus': 'active',  # ✅ FIX: Add subscriptionStatus
+                            'subscriptionType': plan_type,
+                            'subscriptionStartDate': start_date,
+                            'subscriptionEndDate': end_date,
+                            'subscriptionAutoRenew': True,
+                            'paymentMethodDetails': {
+                                'last4': 'TEST',
+                                'brand': 'TEST',
+                                'authorization_code': 'TEST_AUTH'
+                            }
+                        }
+                    }
+                )
+                
+                # Create subscription record
+                subscription_record = {
+                    '_id': ObjectId(),
+                    'userId': user_id,
+                    # Plan variants (ALL 4 for compatibility)
+                    'plan': plan_type,  # ✅ FIX: Add plan
+                    'planId': plan_type,  # ✅ FIX: Add planId
+                    'planName': plan['name'],  # ✅ FIX: Add planName
+                    'planType': plan_type.upper() if plan_type.islower() else plan_type,
+                    # Date variants (ALL 3 for compatibility)
+                    'startDate': start_date,
+                    'endDate': end_date,
+                    'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                    # Status variants (ALL 3 for consistency)
+                    'status': 'active',
+                    'isActive': True,  # ✅ FIX: Add isActive
+                    'isDeleted': False,  # ✅ FIX: Add isDeleted
+                    # Amount & Duration
+                    'amount': plan['price'],
+                    'durationDays': plan['duration_days'],  # ✅ FIX: Add durationDays
+                    # Source tracking
+                    'type': 'paystack_purchase',  # ✅ FIX: Add type
+                    'source': 'paystack',  # ✅ FIX: Add source
+                    # Payment tracking
+                    'paymentMethod': 'paystack',  # ✅ FIX: Add paymentMethod
+                    'paymentReference': reference,
+                    'paystackTransactionId': 'TEST_MODE',
+                    'autoRenew': True,  # ✅ FIX: Add autoRenew
+                    # Audit trail
+                    'testMode': True,
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()  # ✅ FIX: Add updatedAt
+                }
+                
+                mongo.db.subscriptions.insert_one(subscription_record)
+                
+                # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
+                from utils.gateway_fee_accounting import record_subscription_purchase_with_gateway_fees
+                
+                revenue_result = record_subscription_purchase_with_gateway_fees(
+                    mongo=mongo,
+                    user_id=user_id,
+                    subscription_amount=plan['price'],
+                    plan_type=plan_type,
+                    plan_name=plan['name'],
+                    duration_days=plan['duration_days'],
+                    payment_reference=reference,
+                    paystack_transaction_id='TEST_MODE',
+                    payment_method='paystack_test'
+                )
+                
+                if revenue_result.get('success'):
+                    print(f'💰 PAID subscription revenue recorded (TEST MODE): {plan["name"]} (₦{plan["price"]}) - User {user_id}')
+                else:
+                    print(f'⚠️  Failed to record subscription revenue (TEST MODE): {revenue_result.get("error")}')
+                
+                # Mark pending subscription as completed
+                mongo.db.pending_subscriptions.update_one(
+                    {'_id': pending_sub['_id']},
+                    {'$set': {'status': 'completed', 'completedAt': datetime.utcnow()}}
+                )
+                
+                print(f'[TEST MODE] Subscription activated for user {user_id}')
+                
+                # Return success page
+                return render_template('payment_callback.html',
+                                     status='success',
+                                     reference=reference,
+                                     amount=f'{plan["name"]} - ₦{plan["price"]:,}',
+                                     test_mode=True,
+                                     message=f'Subscription activated! You now have access to all premium features.'), 200
+            
+            # ==================== LIVE MODE: VERIFY WITH PAYSTACK ====================
             # Verify with Paystack
             paystack_response = _make_paystack_request(f'/transaction/verify/{reference}')
             
@@ -285,20 +451,6 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                                      reference=reference,
                                      error=transaction_data['status']), 400
             
-            # Find pending subscription
-            pending_sub = mongo.db.pending_subscriptions.find_one({'reference': reference})
-            
-            if not pending_sub:
-                print(f"[SUBSCRIPTION CALLBACK] Pending subscription not found for reference: {reference}")
-                return render_template('payment_callback.html',
-                                     status='failed',
-                                     reference=reference,
-                                     error='not_found'), 404
-            
-            user_id = pending_sub['userId']
-            plan_type = pending_sub['planType']
-            plan = SUBSCRIPTION_PLANS[plan_type]
-            
             # Activate subscription
             start_date = datetime.utcnow()
             end_date = start_date + timedelta(days=plan['duration_days'])
@@ -309,7 +461,11 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 {
                     '$set': {
                         'isSubscribed': True,
+                        'isPremium': True,  # ✅ FIX: Add isPremium
+                        'hasActiveSubscription': True,  # ✅ FIX: Add hasActiveSubscription
                         'subscriptionType': plan_type,
+                        'subscriptionStatus': 'active',  # ✅ FIX: Add subscriptionStatus
+                        'subscriptionPlan': plan_type,  # ✅ FIX: Add subscriptionPlan
                         'subscriptionStartDate': start_date,
                         'subscriptionEndDate': end_date,
                         'subscriptionAutoRenew': True,
@@ -336,17 +492,57 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             subscription_record = {
                 '_id': ObjectId(),
                 'userId': user_id,
-                'planType': plan_type,
-                'amount': plan['price'],
+                # Plan variants (ALL 4 for compatibility)
+                'plan': plan_type,  # ✅ FIX: Add plan
+                'planId': plan_type,  # ✅ FIX: Add planId
+                'planName': plan['name'],  # ✅ FIX: Add planName
+                'planType': plan_type.upper() if plan_type.islower() else plan_type,
+                # Date variants (ALL 3 for compatibility)
                 'startDate': start_date,
                 'endDate': end_date,
+                'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                # Status variants (ALL 3 for consistency)
                 'status': 'active',
+                'isActive': True,  # ✅ FIX: Add isActive
+                'isDeleted': False,  # ✅ FIX: Add isDeleted
+                # Amount & Duration
+                'amount': plan['price'],
+                'durationDays': plan['duration_days'],  # ✅ FIX: Add durationDays
+                # Source tracking
+                'type': 'paystack_purchase',  # ✅ FIX: Add type
+                'source': 'paystack',  # ✅ FIX: Add source
+                # Payment tracking
+                'paymentMethod': 'paystack',  # ✅ FIX: Add paymentMethod
                 'paymentReference': reference,
                 'paystackTransactionId': transaction_data['id'],
-                'createdAt': datetime.utcnow()
+                'autoRenew': True,  # ✅ FIX: Add autoRenew
+                # Audit trail
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()  # ✅ FIX: Add updatedAt
             }
             
             mongo.db.subscriptions.insert_one(subscription_record)
+            
+            # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
+            from utils.gateway_fee_accounting import record_subscription_purchase_with_gateway_fees
+            
+            revenue_result = record_subscription_purchase_with_gateway_fees(
+                mongo=mongo,
+                user_id=user_id,
+                subscription_amount=plan['price'],
+                plan_type=plan_type,
+                plan_name=plan['name'],
+                duration_days=plan['duration_days'],
+                payment_reference=reference,
+                paystack_transaction_id=transaction_data['id'],
+                payment_method='paystack'
+            )
+            
+            if revenue_result.get('success'):
+                print(f'💰 PAID subscription revenue recorded (CALLBACK): {plan["name"]} (₦{plan["price"]}) - User {user_id}')
+                print(f'   Net revenue: ₦{revenue_result["net_revenue"]:.2f} (after ₦{revenue_result["gateway_fee"]:.2f} gateway fee)')
+            else:
+                print(f'⚠️  Failed to record subscription revenue (CALLBACK): {revenue_result.get("error")}')
             
             # ==================== REFERRAL SYSTEM: SUBSCRIPTION COMMISSION (NEW - Feb 4, 2026) ====================
             # Check if user was referred and grant commission to referrer
@@ -583,31 +779,26 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             
             mongo.db.subscriptions.insert_one(subscription_record)
             
-            # Record corporate revenue
-            corporate_revenue = {
-                '_id': ObjectId(),
-                'type': 'SUBSCRIPTION',
-                'category': 'MONTHLY' if plan_type == 'monthly' else 'ANNUAL',
-                'amount': plan['price'],
-                'userId': current_user['_id'],
-                'relatedTransaction': reference,
-                'description': f'{plan["name"]} subscription payment',
-                'status': 'RECORDED',
-                'createdAt': datetime.utcnow(),
-                # 💰 UNIT ECONOMICS TRACKING (Phase 2)
-                'gatewayFee': round(plan['price'] * 0.016, 2),  # 1.6% Paystack fee
-                'gatewayProvider': 'paystack',
-                'netRevenue': round(plan['price'] * 0.984, 2),  # Net after gateway fee
-                'metadata': {
-                    'planType': plan_type,
-                    'planName': plan['name'],
-                    'durationDays': plan['duration_days'],
-                    'paystackTransactionId': transaction_data['id'],
-                    'gatewayFeePercentage': 1.6
-                }
-            }
-            mongo.db.corporate_revenue.insert_one(corporate_revenue)
-            print(f'💰 Corporate revenue recorded: ₦{plan["price"]} subscription (net: ₦{plan["price"] * 0.984:.2f} after gateway) - User {current_user["_id"]}')
+            # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
+            from utils.gateway_fee_accounting import record_subscription_purchase_with_gateway_fees
+            
+            revenue_result = record_subscription_purchase_with_gateway_fees(
+                mongo=mongo,
+                user_id=current_user['_id'],
+                subscription_amount=plan['price'],
+                plan_type=plan_type,
+                plan_name=plan['name'],
+                duration_days=plan['duration_days'],
+                payment_reference=reference,
+                paystack_transaction_id=transaction_data['id'],
+                payment_method='paystack'
+            )
+            
+            if revenue_result.get('success'):
+                print(f'💰 Subscription revenue recorded: ₦{plan["price"]} (net: ₦{revenue_result["net_revenue"]:.2f}) - User {current_user["_id"]}')
+                print(f'   Transactions: {len(revenue_result["transactions"])} created (Cash + Liability + Revenue)')
+            else:
+                print(f'⚠️  Failed to record subscription revenue: {revenue_result.get("error")}')
             
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(
@@ -734,14 +925,29 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             if 'auto_renew' in data:
                 auto_renew_value = bool(data['auto_renew'])
                 update_data['subscriptionAutoRenew'] = auto_renew_value
+                update_data['updatedAt'] = datetime.utcnow()  # ✅ FIX: Add updatedAt timestamp
                 
                 print(f"[MANAGE_SUBSCRIPTION] User {current_user['_id']} setting auto_renew to {auto_renew_value}")
             
             if update_data:
+                # ✅ FIX: Update user document
                 result = mongo.db.users.update_one(
                     {'_id': current_user['_id']},
                     {'$set': update_data}
                 )
+                
+                # ✅ FIX: Also update subscriptions collection
+                if 'auto_renew' in data:
+                    mongo.db.subscriptions.update_one(
+                        {'userId': current_user['_id'], 'status': 'active'},
+                        {
+                            '$set': {
+                                'autoRenew': auto_renew_value,
+                                'updatedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f"[MANAGE_SUBSCRIPTION] Updated autoRenew in subscriptions collection")
                 
                 print(f"[MANAGE_SUBSCRIPTION] Update result: matched={result.matched_count}, modified={result.modified_count}")
                 
@@ -821,11 +1027,29 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             data = request.get_json() or {}
             reason = data.get('reason', '').strip()
             
-            # Disable auto-renew (subscription remains active until end date)
+            # ✅ FIX: Update user document with updatedAt timestamp
             mongo.db.users.update_one(
                 {'_id': current_user['_id']},
-                {'$set': {'subscriptionAutoRenew': False}}
+                {
+                    '$set': {
+                        'subscriptionAutoRenew': False,
+                        'updatedAt': datetime.utcnow()  # ✅ FIX: Add updatedAt timestamp
+                    }
+                }
             )
+            
+            # ✅ FIX: Also update subscriptions collection
+            mongo.db.subscriptions.update_one(
+                {'userId': current_user['_id'], 'status': 'active'},
+                {
+                    '$set': {
+                        'autoRenew': False,
+                        'status': 'cancelled',  # ✅ FIX: Mark as cancelled
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            print(f"[CANCEL_SUBSCRIPTION] Updated subscription status to cancelled for user {current_user['_id']}")
             
             # Create cancellation request for admin review
             cancellation_request = {

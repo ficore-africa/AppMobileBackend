@@ -1,7 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
 from collections import defaultdict
+from utils.decimal_helpers import safe_float  # CRITICAL FIX (Mar 9, 2026): Handle Decimal128 in formatting
 
 def init_dashboard_blueprint(mongo, token_required, serialize_doc):
     """Initialize the enhanced dashboard blueprint with database and auth decorator"""
@@ -32,7 +37,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             # Get income data
             incomes = list(mongo.db.incomes.find({
                 'userId': user_id,
-                'dateReceived': {'$gte': start_date, '$lte': end_date}
+                'date': {'$gte': start_date, '$lte': end_date}
             }))
             
             # Get expense data
@@ -120,7 +125,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                     'type': 'overdue_debt',
                     'severity': 'high' if debtor.get('overdueDays', 0) > 30 else 'medium',
                     'title': 'Overdue Payment',
-                    'message': f"{debtor['customerName']} payment is {debtor.get('overdueDays', 0)} days overdue (₦{debtor['remainingDebt']:,.2f})",
+                    'message': f"{debtor['customerName']} payment is {debtor.get('overdueDays', 0)} days overdue (₦{safe_float(debtor['remainingDebt']):,.2f})",
                     'debtorId': str(debtor['_id']),
                     'customerName': debtor['customerName'],
                     'remainingDebt': debtor['remainingDebt'],
@@ -139,7 +144,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                     'type': 'overdue_payment',
                     'severity': 'high' if creditor.get('overdueDays', 0) > 30 else 'medium',
                     'title': 'Payment Due',
-                    'message': f"Payment to {creditor['vendorName']} is {creditor.get('overdueDays', 0)} days overdue (₦{creditor['remainingOwed']:,.2f})",
+                    'message': f"Payment to {creditor['vendorName']} is {creditor.get('overdueDays', 0)} days overdue (₦{safe_float(creditor['remainingOwed']):,.2f})",
                     'creditorId': str(creditor['_id']),
                     'vendorName': creditor['vendorName'],
                     'remainingOwed': creditor['remainingOwed'],
@@ -200,7 +205,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                     'amount': income['amount'],
                     'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
                     'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Explicit timestamp field
-                    'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
+                    'transactionDate': income.get('date', datetime.utcnow()).isoformat() + 'Z',  # UPDATED: Use 'date' field (standardized)
                     'category': income.get('category', ''),
                     'id': str(income['_id'])
                 })
@@ -694,7 +699,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                 reminders.append({
                     'type': 'debtor_payment_due',
                     'title': f'Payment Due: {debtor["customerName"]}',
-                    'description': f'Payment of ₦{debtor["remainingDebt"]:,.2f} due in {days_until_due} days',
+                    'description': f'Payment of ₦{safe_float(debtor["remainingDebt"]):,.2f} due in {days_until_due} days',
                     'dueDate': debtor['nextPaymentDue'].isoformat() + 'Z',
                     'daysUntilDue': days_until_due,
                     'amount': debtor['remainingDebt'],
@@ -718,7 +723,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                 reminders.append({
                     'type': 'creditor_payment_due',
                     'title': f'Payment Due: {creditor["vendorName"]}',
-                    'description': f'Payment of ₦{creditor["remainingOwed"]:,.2f} due in {days_until_due} days',
+                    'description': f'Payment of ₦{safe_float(creditor["remainingOwed"]):,.2f} due in {days_until_due} days',
                     'dueDate': creditor['nextPaymentDue'].isoformat() + 'Z',
                     'daysUntilDue': days_until_due,
                     'amount': creditor['remainingOwed'],
@@ -847,7 +852,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
             # Get income data for period
             incomes = list(mongo.db.incomes.find({
                 'userId': current_user['_id'],
-                'dateReceived': {'$gte': start_date, '$lte': end_date}
+                'date': {'$gte': start_date, '$lte': end_date}
             }))
             
             # Calculate summary
@@ -865,11 +870,12 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                 income_by_category[income.get('category', 'Other')] += income['amount']
             
             # Recent incomes
-            recent_incomes = sorted(incomes, key=lambda x: x['dateReceived'], reverse=True)[:5]
+            recent_incomes = sorted(incomes, key=lambda x: x['date'], reverse=True)[:5]
             recent_income_data = []
             for income in recent_incomes:
                 income_data = serialize_doc(income.copy())
-                income_data['dateReceived'] = income_data.get('dateReceived', datetime.utcnow()).isoformat() + 'Z'
+                income_data['date'] = income_data.get('date', datetime.utcnow()).isoformat() + 'Z'
+                income_data['dateReceived'] = income_data['date']  # Backward compatibility
                 recent_income_data.append(income_data)
             
             summary_data = {
@@ -1421,7 +1427,7 @@ def init_dashboard_blueprint(mongo, token_required, serialize_doc):
                 # Income summary
                 incomes = list(mongo.db.incomes.find({
                     'userId': current_user['_id'],
-                    'dateReceived': {'$gte': start_date, '$lte': end_date}
+                    'date': {'$gte': start_date, '$lte': end_date}
                 }))
                 export_data['moduleSummaries']['income'] = {
                     'totalAmount': sum(income['amount'] for income in incomes),

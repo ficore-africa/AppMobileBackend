@@ -1,10 +1,16 @@
 """
+from utils.decimal_helpers import safe_sum
 Asset Register Blueprint
 Handles fixed asset tracking for 0% tax qualification (≤₦250M threshold)
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from bson import ObjectId
+from utils.decimal_helpers import safe_float, safe_sum
 
 
 def init_assets_blueprint(mongo, token_required, serialize_doc):
@@ -208,11 +214,15 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
 
             # Check if user is premium subscriber or admin (they get unlimited access)
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            is_subscribed = user.get('isSubscribed', False)
             is_admin = user.get('isAdmin', False)
             
+            # ✅ CRITICAL FIX: Validate subscription end date, not just flag
+            is_subscribed = user.get('isSubscribed', False)
+            subscription_end = user.get('subscriptionEndDate')
+            is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
+            
             # FC Cost: 2 FCs for creating an asset (premium users bypass this)
-            if not is_subscribed and not is_admin:
+            if not is_premium:
                 fc_cost = 2.0
                 current_balance = user.get('ficoreCreditBalance', 0.0)
                 
@@ -275,18 +285,21 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                     pass  # ignore invalid disposal date
 
             now = datetime.utcnow()
+            purchase_price = float(data['purchasePrice'])
             asset_doc = {
                 'userId': current_user['_id'],
                 'assetName': data['assetName'].strip(),
                 'assetCode': data.get('assetCode').strip() if data.get('assetCode') else None,
                 'description': data.get('description').strip() if data.get('description') else None,
                 'category': data['category'],
-                'purchasePrice': float(data['purchasePrice']),
+                'purchasePrice': purchase_price,
+                'originalCost': purchase_price,  # CRITICAL FIX (Feb 28, 2026): Always set originalCost = purchasePrice
                 'currentValue': float(data['currentValue']),
                 'purchaseDate': purchase_date,
                 'supplier': data.get('supplier').strip() if data.get('supplier') else None,
                 'location': data.get('location').strip() if data.get('location') else None,
                 'status': data['status'],
+                'isDeleted': False,  # CRITICAL FIX (Feb 28, 2026): Always initialize isDeleted field
                 'depreciationRate': float(data['depreciationRate']) if data.get('depreciationRate') else None,
                 'depreciationMethod': data['depreciationMethod'],
                 'usefulLifeYears': int(data['usefulLifeYears']) if data.get('usefulLifeYears') else None,
@@ -304,6 +317,58 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
 
             result = mongo.db.assets.insert_one(asset_doc)
             asset_doc['_id'] = result.inserted_id
+            
+            # ✅ AUTO-CREATE CAPITAL EXPENDITURE EXPENSE (Feb 28, 2026)
+            # This supersedes the old manual payment recording flow
+            # Expense is created automatically, user is informed via response message
+            expense_created = False
+            expense_id = None
+            
+            try:
+                expense_entry = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'amount': purchase_price,
+                    'category': 'Capital Expenditure',
+                    'description': f'Asset Purchase - {data["assetName"]}',
+                    'title': f'Asset Purchase - {data["assetName"]}',
+                    'date': purchase_date,
+                    'budgetId': None,
+                    'tags': ['asset_purchase', 'capital_expenditure'],
+                    'paymentMethod': 'cash',
+                    'location': '',
+                    'notes': f'Auto-generated from asset creation: {data["assetName"]}',
+                    'status': 'active',  # CRITICAL: Required for immutability (Golden Rule #20, #43)
+                    'isDeleted': False,  # CRITICAL: Required for immutability (Golden Rule #20, #43)
+                    'excludeFromProfitLoss': True,  # ✅ CRITICAL: Exclude from P&L (CAPEX)
+                    'isCapitalExpenditure': True,  # Additional flag for clarity
+                    'linkedAssetId': str(result.inserted_id),  # Link to asset
+                    'sourceType': 'asset_purchase',  # Source tracking (Golden Rule #1)
+                    'createdAt': now,
+                    'updatedAt': now
+                }
+                
+                mongo.db.expenses.insert_one(expense_entry)
+                expense_id = str(expense_entry['_id'])
+                expense_created = True
+                print(f'✅ Auto-created capital expenditure expense {expense_id} for asset {result.inserted_id}')
+                
+                # Update asset with expense tracking info
+                mongo.db.assets.update_one(
+                    {'_id': result.inserted_id},
+                    {
+                        '$set': {
+                            'expenseAutoCreated': True,  # ✅ NEW: Flag for UI display
+                            'linkedExpenseId': expense_id,  # Link back to expense
+                            'updatedAt': now
+                        }
+                    }
+                )
+                
+            except Exception as e:
+                # Don't fail asset creation if expense creation fails
+                expense_created = False
+                print(f'⚠️ Failed to create capital expenditure expense (non-critical): {e}')
 
             asset_data = serialize_doc(asset_doc)
             asset_data['purchaseDate'] = asset_data['purchaseDate'].isoformat() + 'Z'
@@ -311,11 +376,21 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             asset_data['updatedAt'] = asset_data['updatedAt'].isoformat() + 'Z'
             if asset_data.get('disposalDate'):
                 asset_data['disposalDate'] = asset_data['disposalDate'].isoformat() + 'Z'
+            
+            # Add expense creation info to response
+            asset_data['expenseAutoCreated'] = expense_created
+            if expense_id:
+                asset_data['linkedExpenseId'] = expense_id
 
             return jsonify({
                 'success': True,
                 'data': asset_data,
-                'message': 'Asset created successfully'
+                'message': 'Asset created successfully' + (' (expense auto-recorded)' if expense_created else ''),
+                'expenseInfo': {
+                    'autoCreated': expense_created,
+                    'expenseId': expense_id,
+                    'message': 'Capital expenditure expense automatically created and excluded from P&L' if expense_created else 'Expense creation failed (non-critical)'
+                }
             }), 201
 
         except Exception as e:
@@ -450,11 +525,15 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
 
             # Check if user is premium subscriber or admin (they get unlimited access)
             user = mongo.db.users.find_one({'_id': current_user['_id']})
-            is_subscribed = user.get('isSubscribed', False)
             is_admin = user.get('isAdmin', False)
             
+            # ✅ CRITICAL FIX: Validate subscription end date, not just flag
+            is_subscribed = user.get('isSubscribed', False)
+            subscription_end = user.get('subscriptionEndDate')
+            is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
+            
             # FC Cost: 2 FCs for deleting an asset (premium users bypass this)
-            if not is_subscribed and not is_admin:
+            if not is_premium:
                 fc_cost = 2.0
                 current_balance = user.get('ficoreCreditBalance', 0.0)
                 
@@ -500,6 +579,94 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                 }
                 mongo.db.credit_transactions.insert_one(credit_transaction)
 
+            # ✅ ENHANCED CLEANUP: Clean up related payment records and provide user guidance
+            cleanup_results = []
+            user_guidance = []
+            payment_method = asset.get('paymentMethod', 'unknown')
+            asset_name = asset.get('assetName', 'Unknown Asset')
+            asset_cost = asset.get('purchasePrice', 0)
+            
+            # 1. Clean up cash adjustments (business_cash, capital_contribution)
+            if asset.get('cashAdjustmentId'):
+                cash_result = mongo.db.cash_adjustments.update_one(
+                    {'_id': asset['cashAdjustmentId'], 'userId': current_user['_id']},
+                    {
+                        '$set': {
+                            'status': 'deleted',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow(),
+                            'deletedReason': f'Asset "{asset_name}" was deleted',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                if cash_result.modified_count > 0:
+                    cleanup_results.append(f"Cash adjustment: {cash_result.modified_count} cleaned")
+                    user_guidance.append(f"Reversed cash reduction of ₦{asset_cost:,.2f}")
+            
+            if asset.get('capitalEntryId'):
+                capital_result = mongo.db.cash_adjustments.update_one(
+                    {'_id': asset['capitalEntryId'], 'userId': current_user['_id']},
+                    {
+                        '$set': {
+                            'status': 'deleted',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow(),
+                            'deletedReason': f'Asset "{asset_name}" was deleted',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                if capital_result.modified_count > 0:
+                    cleanup_results.append(f"Capital entry: {capital_result.modified_count} cleaned")
+                    user_guidance.append(f"Reversed capital contribution of ₦{asset_cost:,.2f}")
+            
+            # 2. Clean up linked expense (auto-created CAPEX expense)
+            if asset.get('linkedExpenseId'):
+                expense_result = mongo.db.expenses.update_one(
+                    {'_id': ObjectId(asset['linkedExpenseId']), 'userId': current_user['_id']},
+                    {
+                        '$set': {
+                            'status': 'deleted',
+                            'isDeleted': True,
+                            'deletedAt': datetime.utcnow(),
+                            'deletedReason': f'Asset "{asset_name}" was deleted',
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                if expense_result.modified_count > 0:
+                    cleanup_results.append(f"Linked expense: {expense_result.modified_count} cleaned")
+                    user_guidance.append(f"Removed CAPEX expense of ₦{asset_cost:,.2f}")
+            
+            # 3. Clean up any expenses that reference this asset
+            expense_cleanup = mongo.db.expenses.update_many(
+                {'linkedAssetId': str(asset_id), 'userId': current_user['_id']},
+                {
+                    '$set': {
+                        'status': 'deleted',
+                        'isDeleted': True,
+                        'deletedAt': datetime.utcnow(),
+                        'deletedReason': f'Asset "{asset_name}" was deleted',
+                        'updatedAt': datetime.utcnow()
+                    }
+                }
+            )
+            if expense_cleanup.modified_count > 0:
+                cleanup_results.append(f"Asset-linked expenses: {expense_cleanup.modified_count} cleaned")
+                user_guidance.append(f"Cleaned up {expense_cleanup.modified_count} related expense(s)")
+
+            # 4. Special handling for manual payment method
+            manual_payment_guidance = None
+            if payment_method == 'manual' and not asset.get('paymentRecorded', False):
+                manual_payment_guidance = {
+                    'type': 'manual_payment_reminder',
+                    'message': f'If you recorded a separate payment for "{asset_name}" (₦{asset_cost:,.2f}), you may want to delete that entry too to keep your books balanced.',
+                    'amount': asset_cost,
+                    'assetName': asset_name,
+                    'suggestion': 'Check your recent expenses or cash adjustments for this payment.'
+                }
+
             # Delete the asset
             result = mongo.db.assets.delete_one({
                 '_id': ObjectId(asset_id),
@@ -509,10 +676,26 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             if result.deleted_count == 0:
                 return jsonify({'success': False, 'message': 'Asset not found'}), 404
 
-            return jsonify({
+            # Log cleanup results for debugging
+            if cleanup_results:
+                print(f"✅ Asset {asset_id} deleted with cleanup: {', '.join(cleanup_results)}")
+
+            # Prepare response with user guidance
+            response_data = {
                 'success': True,
-                'message': 'Asset deleted successfully'
-            })
+                'message': 'Asset deleted successfully',
+                'cleanup': {
+                    'recordsCleaned': len(cleanup_results),
+                    'details': cleanup_results,
+                    'userGuidance': user_guidance
+                }
+            }
+            
+            # Add manual payment guidance if applicable
+            if manual_payment_guidance:
+                response_data['manualPaymentGuidance'] = manual_payment_guidance
+
+            return jsonify(response_data)
 
         except Exception as e:
             print(f"Error in delete_asset: {e}")
@@ -641,6 +824,221 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to search assets',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @assets_bp.route('/without-payment', methods=['GET'])
+    @token_required
+    def get_assets_without_payment(current_user):
+        """
+        Get all assets that don't have payment recorded
+        Used for recovery flow in Balance Adjustment screen
+        """
+        try:
+            # Find assets without payment recorded
+            assets = list(mongo.db.assets.find({
+                'userId': current_user['_id'],
+                'status': {'$ne': 'disposed'},
+                '$or': [
+                    {'paymentRecorded': False},
+                    {'paymentRecorded': {'$exists': False}},
+                    {'paymentMethod': 'manual'}
+                ]
+            }).sort('purchaseDate', -1))
+            
+            assets_list = []
+            for asset in assets:
+                assets_list.append({
+                    'id': str(asset['_id']),
+                    'name': asset.get('assetName', 'Unknown Asset'),
+                    'category': asset.get('category', 'Uncategorized'),
+                    'cost': float(asset.get('purchasePrice', 0.0)),
+                    'purchaseDate': asset.get('purchaseDate', datetime.utcnow()).isoformat() + 'Z',
+                    'paymentMethod': asset.get('paymentMethod', 'unknown'),
+                    'paymentRecorded': asset.get('paymentRecorded', False)
+                })
+            
+            return jsonify({
+                'success': True,
+                'assets': assets_list,
+                'count': len(assets_list),
+                'message': f'Found {len(assets_list)} assets without payment recorded'
+            }), 200
+
+        except Exception as e:
+            print(f"Error in get_assets_without_payment: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve assets without payment',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @assets_bp.route('/record-payment', methods=['POST'])
+    @token_required
+    def record_asset_payment(current_user):
+        """
+        Record payment for asset purchase
+        Creates appropriate entries to balance the accounting equation
+        """
+        try:
+            data = request.get_json()
+            
+            asset_id = data.get('assetId')
+            payment_method = data.get('paymentMethod')
+            amount = float(data.get('amount', 0))
+            description = data.get('description', 'Asset payment')
+            
+            # Validate required fields
+            if not asset_id or not payment_method:
+                return jsonify({
+                    'success': False,
+                    'message': 'Asset ID and payment method are required'
+                }), 400
+            
+            if not ObjectId.is_valid(asset_id):
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid asset ID'
+                }), 400
+            
+            # Validate asset exists and belongs to user
+            asset = mongo.db.assets.find_one({
+                '_id': ObjectId(asset_id),
+                'userId': current_user['_id']
+            })
+            
+            if not asset:
+                return jsonify({
+                    'success': False,
+                    'message': 'Asset not found'
+                }), 404
+            
+            # Handle different payment methods
+            if payment_method == 'business_cash':
+                # Create cash adjustment to reduce Cash & Bank
+                cash_adjustment = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'type': 'asset_purchase',
+                    'amount': amount,
+                    'description': description,
+                    'assetId': ObjectId(asset_id),
+                    'date': datetime.utcnow(),
+                    'status': 'active',
+                    'isDeleted': False,
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                
+                mongo.db.cash_adjustments.insert_one(cash_adjustment)
+                
+                # Update asset with payment reference
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'business_cash',
+                            'paymentRecorded': True,
+                            'cashAdjustmentId': cash_adjustment['_id'],
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Payment recorded - Cash & Bank reduced',
+                    'cashAdjustmentId': str(cash_adjustment['_id'])
+                }), 200
+            
+            elif payment_method == 'capital_contribution':
+                # Create capital contribution entry
+                capital_entry = {
+                    '_id': ObjectId(),
+                    'userId': current_user['_id'],
+                    'type': 'capital',
+                    'amount': amount,
+                    'description': f'Capital contribution for {asset.get("assetName", "asset")}',
+                    'assetId': ObjectId(asset_id),
+                    'date': datetime.utcnow(),
+                    'status': 'active',
+                    'isDeleted': False,
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
+                }
+                
+                mongo.db.cash_adjustments.insert_one(capital_entry)
+                
+                # Update asset
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'capital_contribution',
+                            'paymentRecorded': True,
+                            'capitalEntryId': capital_entry['_id'],
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Capital contribution recorded',
+                    'capitalEntryId': str(capital_entry['_id'])
+                }), 200
+            
+            elif payment_method == 'existed_before':
+                # Mark asset as pre-existing
+                # User should adjust Opening Balance manually
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'existed_before',
+                            'paymentRecorded': True,
+                            'preExisting': True,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Asset marked as pre-existing. Please adjust Opening Balance in Settings.',
+                    'note': 'Opening Balance should include the value of pre-existing assets'
+                }), 200
+            
+            elif payment_method == 'manual':
+                # User will record payment separately
+                mongo.db.assets.update_one(
+                    {'_id': ObjectId(asset_id)},
+                    {
+                        '$set': {
+                            'paymentMethod': 'manual',
+                            'paymentRecorded': False,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Asset recorded. Remember to record the payment separately.',
+                    'warning': 'Your Cash & Bank balance may be incorrect until you record the payment'
+                }), 200
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid payment method. Must be: business_cash, capital_contribution, existed_before, or manual'
+                }), 400
+
+        except Exception as e:
+            print(f"Error in record_asset_payment: {e}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to record asset payment',
                 'errors': {'general': [str(e)]}
             }), 500
 

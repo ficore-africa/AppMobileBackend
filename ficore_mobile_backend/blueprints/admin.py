@@ -5,6 +5,8 @@ from werkzeug.security import generate_password_hash
 import uuid
 import re
 
+from utils.business_bookkeeping import *
+from utils.balance_sync import get_liquid_wallet_balance
 def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -214,6 +216,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'Phone',
                 'Role',
                 'Credit Balance',
+                'Login Count',
                 'Is Active',
                 'Is Subscribed',
                 'Subscription Type',
@@ -234,6 +237,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     user.get('phone', ''),
                     user.get('role', 'personal'),
                     user.get('ficoreCreditBalance', 0.0),
+                    user.get('loginCount', 0),
                     'Yes' if user.get('isActive', True) else 'No',
                     'Yes' if user.get('isSubscribed', False) else 'No',
                     user.get('subscriptionType', 'None'),
@@ -454,6 +458,11 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Serialize users (exclude sensitive data)
             user_data = []
             for user in users:
+                # Check subscription status
+                is_subscribed = user.get('isSubscribed', False)
+                subscription_end_date = user.get('subscriptionEndDate')
+                subscription_status = user.get('subscriptionStatus', 'inactive')
+                
                 user_info = {
                     'id': str(user['_id']),
                     'email': user.get('email', ''),
@@ -469,7 +478,15 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'isActive': user.get('isActive', True),
                     'createdAt': user.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
                     'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None,
-                    'financialGoals': user.get('financialGoals', [])
+                    'financialGoals': user.get('financialGoals', []),
+                    # Add subscription information for premium users page
+                    'isSubscribed': is_subscribed,
+                    'subscriptionStatus': subscription_status,
+                    'subscriptionType': user.get('subscriptionType'),
+                    'subscriptionPlan': user.get('subscriptionPlan'),
+                    'subscriptionStartDate': user.get('subscriptionStartDate').isoformat() + 'Z' if user.get('subscriptionStartDate') else None,
+                    'subscriptionEndDate': subscription_end_date.isoformat() + 'Z' if subscription_end_date else None,
+                    'autoRenew': user.get('autoRenew', False)
                 }
                 user_data.append(user_info)
 
@@ -1292,7 +1309,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 activities.append({
                     'action': 'Income recorded',
                     'timestamp': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
-                    'transactionDate': income.get('dateReceived', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
+                    'transactionDate': income.get('date', datetime.utcnow()).isoformat() + 'Z',  # ADDED: Keep user-selected date for reference
                     'details': f'{income["amount"]} NGN - {income.get("description", income.get("source", ""))}'
                 })
 
@@ -2474,6 +2491,123 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'errors': {'general': [str(e)]}
             }), 500
 
+    @admin_bp.route('/credit-purchases', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_credit_purchases(current_user):
+        """Get all credit purchases (Paystack automated flow)"""
+        try:
+            # Get pagination parameters
+            page = int(request.args.get('page', 1))
+            limit = int(request.args.get('limit', 50))
+            status = request.args.get('status', 'all')  # all, pending, completed, failed, expired
+            test_mode = request.args.get('testMode', 'all')  # all, test, live
+            
+            # Build query for credit_transactions (type: credit, automated purchases)
+            query = {
+                'type': 'credit',
+                'metadata.purchaseType': {'$in': ['test_mode_auto', 'paystack_callback', 'paystack_webhook']}
+            }
+            
+            # Filter by status
+            if status != 'all':
+                query['status'] = status
+            
+            # Filter by test mode
+            if test_mode == 'test':
+                query['metadata.testMode'] = True
+            elif test_mode == 'live':
+                query['$or'] = [
+                    {'metadata.testMode': False},
+                    {'metadata.testMode': {'$exists': False}}
+                ]
+            
+            # Get total count
+            total = mongo.db.credit_transactions.count_documents(query)
+            
+            # Get transactions with pagination
+            skip = (page - 1) * limit
+            transactions = list(mongo.db.credit_transactions.find(query)
+                              .sort('createdAt', -1)
+                              .skip(skip)
+                              .limit(limit))
+            
+            # Enrich with user details
+            transaction_data = []
+            for txn in transactions:
+                txn_data = serialize_doc(txn.copy())
+                
+                # Get user info
+                user = mongo.db.users.find_one({'_id': txn['userId']})
+                if user:
+                    txn_data['user'] = {
+                        'id': str(user['_id']),
+                        'email': user.get('email', ''),
+                        'displayName': user.get('displayName', ''),
+                        'name': user.get('displayName', '')
+                    }
+                
+                # Format dates
+                if txn_data.get('createdAt'):
+                    txn_data['createdAt'] = txn['createdAt'].isoformat() + 'Z'
+                
+                # Extract test mode from metadata
+                txn_data['testMode'] = txn.get('metadata', {}).get('testMode', False)
+                
+                # Extract payment reference
+                txn_data['paymentReference'] = txn.get('metadata', {}).get('paymentReference', '')
+                
+                # Extract amount in Naira
+                txn_data['amountNaira'] = txn.get('metadata', {}).get('amountNaira', 0)
+                
+                transaction_data.append(txn_data)
+            
+            # Get statistics
+            stats = {
+                'total': total,
+                'completed': mongo.db.credit_transactions.count_documents({**query, 'status': 'completed'}),
+                'pending': mongo.db.credit_transactions.count_documents({**query, 'status': 'pending'}),
+                'failed': mongo.db.credit_transactions.count_documents({**query, 'status': 'failed'}),
+                'test': mongo.db.credit_transactions.count_documents({
+                    'type': 'credit',
+                    'metadata.purchaseType': {'$in': ['test_mode_auto', 'paystack_callback', 'paystack_webhook']},
+                    'metadata.testMode': True
+                }),
+                'live': mongo.db.credit_transactions.count_documents({
+                    'type': 'credit',
+                    'metadata.purchaseType': {'$in': ['test_mode_auto', 'paystack_callback', 'paystack_webhook']},
+                    '$or': [
+                        {'metadata.testMode': False},
+                        {'metadata.testMode': {'$exists': False}}
+                    ]
+                })
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'transactions': transaction_data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    },
+                    'statistics': stats
+                },
+                'message': 'Credit purchases retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error in get_credit_purchases: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve credit purchases',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     # ===== SUBSCRIPTION MANAGEMENT ENDPOINTS =====
 
     @admin_bp.route('/users/<user_id>/subscription', methods=['GET'])
@@ -2592,19 +2726,32 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 mongo.db.subscriptions.update_one(
                     {'userId': ObjectId(user_id)},
                     {'$set': {
-                        'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
+                        # Plan variants (ALL 4 for compatibility)
+                        'plan': plan_id,
                         'planId': plan_id,
                         'planName': data.get('planName', plan_id),
+                        'planType': plan_id.upper(),  # ✅ FIX: Add planType
+                        # Date variants (ALL 3 for compatibility)
                         'startDate': start_date,
                         'endDate': end_date,
-                        'isActive': True,
-                        'autoRenew': auto_renew,
-                        'amount': amount,
-                        'paymentMethod': 'admin_grant',
+                        'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                        # Status variants (ALL 3 for consistency)
                         'status': 'active',
-                        'updatedAt': datetime.utcnow(),
+                        'isActive': True,
+                        'isDeleted': False,  # ✅ FIX: Add isDeleted
+                        # Amount & Duration
+                        'amount': amount,
+                        'durationDays': duration_days,  # ✅ FIX: Add durationDays
+                        # Source tracking
+                        'type': 'admin_grant',  # ✅ FIX: Add type
+                        'source': 'admin_grant',  # ✅ FIX: Add source
                         'grantedBy': current_user['_id'],
-                        'grantReason': reason
+                        'grantReason': reason,
+                        # Payment tracking
+                        'paymentMethod': 'admin_grant',
+                        'autoRenew': auto_renew,
+                        # Audit trail
+                        'updatedAt': datetime.utcnow()
                     }}
                 )
             else:
@@ -2613,28 +2760,63 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 subscription_data = {
                     '_id': subscription_id,
                     'userId': ObjectId(user_id),
-                    'plan': plan_id,  # CRITICAL FIX: Set plan field for frontend compatibility
+                    # Plan variants (ALL 4 for compatibility)
+                    'plan': plan_id,
                     'planId': plan_id,
                     'planName': data.get('planName', plan_id),
+                    'planType': plan_id.upper(),  # ✅ FIX: Add planType
+                    # Date variants (ALL 3 for compatibility)
                     'startDate': start_date,
                     'endDate': end_date,
-                    'isActive': True,
-                    'autoRenew': auto_renew,
-                    'amount': amount,
-                    'paymentMethod': 'admin_grant',
+                    'expiresAt': end_date,  # ✅ FIX: Add expiresAt
+                    # Status variants (ALL 3 for consistency)
                     'status': 'active',
-                    'createdAt': datetime.utcnow(),
-                    'updatedAt': datetime.utcnow(),
+                    'isActive': True,
+                    'isDeleted': False,  # ✅ FIX: Add isDeleted
+                    # Amount & Duration
+                    'amount': amount,
+                    'durationDays': duration_days,  # ✅ FIX: Add durationDays
+                    # Source tracking
+                    'type': 'admin_grant',  # ✅ FIX: Add type
+                    'source': 'admin_grant',  # ✅ FIX: Add source
                     'grantedBy': current_user['_id'],
-                    'grantReason': reason
+                    'grantReason': reason,
+                    # Payment tracking
+                    'paymentMethod': 'admin_grant',
+                    'autoRenew': auto_renew,
+                    # Audit trail
+                    'createdAt': datetime.utcnow(),
+                    'updatedAt': datetime.utcnow()
                 }
                 mongo.db.subscriptions.insert_one(subscription_data)
+                
+                # 🆕 ATOMIC SUBSCRIPTION GRANT (March 11, 2026)
+                # Record admin-granted subscription using atomic operations (4-transaction pattern)
+                try:
+                    atomic_result = award_and_consume_subscription_atomic(
+                        mongo=mongo,
+                        user_id=ObjectId(user_id),
+                        subscription_id=subscription_id,
+                        amount=amount,
+                        plan_type=plan_id.upper(),
+                        granted_by=current_user.get('displayName', 'Admin'),
+                        grant_reason=reason
+                    )
+                    if atomic_result.get('success'):
+                        print(f'✅ Atomic subscription grant completed: {len(atomic_result["transactions"])} transactions')
+                    else:
+                        print(f'⚠️  Atomic subscription grant failed: {atomic_result.get("error")}')
+                except Exception as e:
+                    print(f'⚠️  Failed to record atomic subscription grant: {str(e)}')
+                    # Don't fail subscription grant if bookkeeping fails
 
             # Update user subscription fields to sync with subscription collection
             mongo.db.users.update_one(
                 {'_id': ObjectId(user_id)},
                 {'$set': {
                     'isSubscribed': True,
+                    'isPremium': True,  # ✅ FIX: Add isPremium
+                    'hasActiveSubscription': True,  # ✅ FIX: Add hasActiveSubscription
                     'subscriptionStatus': 'active',  # CRITICAL FIX: Add this field for VAS webhook compatibility
                     'subscriptionPlan': plan_id,  # CRITICAL FIX: Add this field for consistency
                     'subscriptionType': plan_id,
@@ -2975,6 +3157,11 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                         'name': user.get('displayName', '')
                     }
                 
+                # Add test mode and payment details
+                sub_data['testMode'] = sub.get('testMode', False)
+                sub_data['paymentReference'] = sub.get('paymentReference', '')
+                sub_data['paystackTransactionId'] = sub.get('paystackTransactionId', '')
+                
                 # Calculate days remaining
                 days_remaining = None
                 if sub.get('endDate'):
@@ -3051,6 +3238,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'User ID',
                 'Email',
                 'Display Name',
+                'Login Count',
                 'Business Name',
                 'Business Type',
                 'Business Type Other',
@@ -3076,6 +3264,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     str(user['_id']),
                     user.get('email', ''),
                     user.get('displayName', ''),
+                    user.get('loginCount', 0),
                     user.get('businessName', ''),
                     user.get('businessType', ''),
                     user.get('businessTypeOther', ''),
@@ -4322,9 +4511,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     date_filter['$gte'] = start_date
                 if end_date:
                     date_filter['$lte'] = end_date
-                income_query['dateReceived'] = date_filter
+                income_query['date'] = date_filter
             
-            incomes = list(mongo.db.incomes.find(income_query).sort('dateReceived', 1))
+            incomes = list(mongo.db.incomes.find(income_query).sort('date', 1))
             
             # Get all expenses
             expense_query = query.copy()
@@ -4484,11 +4673,13 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     @admin_required
     def get_treasury_analytics(current_user):
         """
-        💰 PHASE 3: Enhanced Treasury Analytics with Actual Commission Data
+        💰 PHASE 3: Enhanced Treasury Analytics with Gateway Fee Accounting
         Real-time unit economics tracking with accurate costs and revenues
         """
         try:
             from datetime import datetime, timedelta
+            from utils.test_account_filter import add_test_account_exclusion
+            from utils.gateway_fee_accounting import get_total_gateway_fees, get_net_revenue_summary
             
             # Get time period filter
             period = request.args.get('period', 'all')
@@ -4501,35 +4692,51 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 start_date = datetime.utcnow() - timedelta(days=days)
                 date_filter = {'createdAt': {'$gte': start_date}}
             
-            # ===== 1. VAS COMMISSIONS (from corporate_revenue) =====
-            commission_query = {'type': 'VAS_COMMISSION'}
-            commission_query.update(date_filter)
+            # ===== 1. VAS COMMISSIONS (from vas_transactions.providerCommission) =====
+            # CRITICAL FIX (Feb 21, 2026): Calculate commissions from actual transactions, not corporate_revenue
+            # This is more accurate and real-time
             
-            commissions = list(mongo.db.corporate_revenue.find(commission_query))
+            # Get all SUCCESS VAS transactions (EXCLUDE TEST ACCOUNTS)
+            commission_txn_query = {
+                'status': 'SUCCESS',
+                'type': {'$in': ['AIRTIME', 'DATA', 'BILLS', 'electricity', 'ELECTRICITY', 'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION']}
+            }
+            commission_txn_query.update(date_filter)
+            commission_txn_query = add_test_account_exclusion(commission_txn_query, mongo)  # ✅ Exclude test accounts
+            commission_txns = list(mongo.db.vas_transactions.find(commission_txn_query))
             
-            # Calculate by provider
-            monnify_commission = sum(c['amount'] for c in commissions if 'MONNIFY' in c.get('category', ''))
-            peyflex_commission = sum(c['amount'] for c in commissions if 'PEYFLEX' in c.get('category', ''))
+            # Calculate by provider (handle None and 0 values)
+            monnify_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('provider', '').lower() == 'monnify')
+            peyflex_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('provider', '').lower() == 'peyflex')
             total_vas_commissions = monnify_commission + peyflex_commission
             
-            # Calculate by transaction type
-            airtime_commission = sum(c['amount'] for c in commissions if 'AIRTIME' in c.get('category', ''))
-            data_commission = sum(c['amount'] for c in commissions if 'DATA' in c.get('category', ''))
+            # Calculate by transaction type (handle None and 0 values)
+            airtime_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('type') == 'AIRTIME')
+            data_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('type') == 'DATA')
+            electricity_commission = sum(t.get('providerCommission') or 0 for t in commission_txns if t.get('type') == 'BILL' and t.get('billCategory', '').lower() == 'electricity')
             
-            # ===== 2. GATEWAY FEES (from vas_transactions and corporate_revenue) =====
+            # ===== 2. GATEWAY FEES (Enhanced with new accounting system) =====
+            # Use the new gateway fee accounting system for accurate fee tracking
+            gateway_fees_data = get_total_gateway_fees(mongo, start_date, datetime.utcnow() if start_date else None)
+            total_gateway_fees = gateway_fees_data.get('total', 0)
+            
+            # Get net revenue summary using new accounting system
+            net_revenue_data = get_net_revenue_summary(mongo, start_date, datetime.utcnow() if start_date else None)
+            
+            # Legacy calculation for comparison (can be removed later)
             # Get deposit gateway fees
             deposit_query = {'type': 'WALLET_FUNDING', 'status': 'SUCCESS', 'gatewayFee': {'$exists': True}}
             deposit_query.update(date_filter)
             deposits = list(mongo.db.vas_transactions.find(deposit_query))
-            total_deposit_gateway_fees = sum(d.get('gatewayFee', 0) for d in deposits)
+            legacy_deposit_gateway_fees = sum(d.get('gatewayFee', 0) for d in deposits)
             
             # Get subscription/credits gateway fees from corporate_revenue
             revenue_query = {'gatewayFee': {'$exists': True}}
             revenue_query.update(date_filter)
             revenue_with_fees = list(mongo.db.corporate_revenue.find(revenue_query))
-            total_revenue_gateway_fees = sum(r.get('gatewayFee', 0) for r in revenue_with_fees)
+            legacy_revenue_gateway_fees = sum(r.get('gatewayFee', 0) for r in revenue_with_fees)
             
-            total_gateway_fees = total_deposit_gateway_fees + total_revenue_gateway_fees
+            legacy_total_gateway_fees = legacy_deposit_gateway_fees + legacy_revenue_gateway_fees
             
             # ===== 3. SUBSCRIPTION REVENUE =====
             subscription_query = {'type': 'SUBSCRIPTION'}
@@ -4572,9 +4779,28 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             profit_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else 0
             
             # ===== 7. VAS TRANSACTION BREAKDOWN =====
-            vas_query = {'status': 'SUCCESS', 'type': {'$in': ['AIRTIME', 'DATA']}}
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types, not just AIRTIME and DATA
+            # VAS types: AIRTIME, DATA, BILLS, electricity (lowercase), ELECTRICITY (uppercase), CABLE_TV
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts from metrics
+            vas_query = {
+                'status': 'SUCCESS', 
+                'type': {
+                    '$in': [
+                        'AIRTIME',      # Airtime purchases
+                        'DATA',         # Data purchases
+                        'BILLS',        # Generic bills
+                        'electricity',  # Electricity bills (lowercase - from production)
+                        'ELECTRICITY',  # Electricity bills (uppercase - for consistency)
+                        'CABLE_TV',     # Cable TV subscriptions
+                        'INTERNET',     # Internet bills
+                        'WATER',        # Water bills
+                        'TRANSPORTATION' # Transportation bills
+                    ]
+                }
+            }
             vas_query.update(date_filter)
-            vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
+            vas_query = add_test_account_exclusion(vas_query, mongo)  # ✅ Exclude test accounts
+            vas_transactions = list(mongo.db.vas_transactions.find(vas_query).sort('createdAt', -1))  # ✅ Sort by date descending (latest first)
             
             # Provider breakdown with commissions
             provider_stats = {}
@@ -4622,16 +4848,46 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 
                 recent_transactions.append(serialized_txn)
             
-            # ===== 9. FORMAT RESPONSE =====
+            # ===== 9. REVENUE WEIGHTING: SUBSCRIPTION VS TRANSACTIONAL =====
+            subscription_revenue_total = net_subscription_revenue + net_credits_revenue
+            transactional_revenue_total = total_vas_commissions + net_deposit_fees
+            
+            subscription_percentage = (subscription_revenue_total / total_revenue * 100) if total_revenue > 0 else 0
+            transactional_percentage = (transactional_revenue_total / total_revenue * 100) if total_revenue > 0 else 0
+            
+            # ===== 10. CALCULATE TOTAL VAS VOLUME =====
+            # Total VAS Volume = Sum of all VAS transaction amounts (what customers paid)
+            total_vas_volume = sum(txn.get('amount', 0) for txn in vas_transactions)
+            
+            # ===== 11. FORMAT RESPONSE =====
             return jsonify({
                 'success': True,
                 'data': {
                     'overview': {
-                        'totalRevenue': round(total_revenue, 2),
+                        'totalRevenue': round(total_revenue, 2),  # Corporate revenue (commissions + fees)
+                        'totalVasVolume': round(total_vas_volume, 2),  # VAS transaction volume (what customers paid)
                         'totalCosts': round(total_costs, 2),
                         'netProfit': round(net_profit, 2),
                         'profitMargin': round(profit_margin, 2),
                         'totalTransactions': len(vas_transactions)
+                    },
+                    'revenueWeighting': {
+                        'subscriptionRevenue': {
+                            'amount': round(subscription_revenue_total, 2),
+                            'percentage': round(subscription_percentage, 2),
+                            'breakdown': {
+                                'activeSubscriptions': round(net_subscription_revenue, 2),
+                                'fcCreditsPurchased': round(net_credits_revenue, 2)
+                            }
+                        },
+                        'transactionalRevenue': {
+                            'amount': round(transactional_revenue_total, 2),
+                            'percentage': round(transactional_percentage, 2),
+                            'breakdown': {
+                                'vasCommissions': round(total_vas_commissions, 2),
+                                'depositFees': round(net_deposit_fees, 2)
+                            }
+                        }
                     },
                     'revenueBreakdown': {
                         'vasCommissions': {
@@ -4639,7 +4895,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                             'monnify': round(monnify_commission, 2),
                             'peyflex': round(peyflex_commission, 2),
                             'airtime': round(airtime_commission, 2),
-                            'data': round(data_commission, 2)
+                            'data': round(data_commission, 2),
+                            'electricity': round(electricity_commission, 2)
                         },
                         'subscriptions': {
                             'gross': round(total_subscription_revenue, 2),
@@ -4660,9 +4917,12 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'costBreakdown': {
                         'gatewayFees': {
                             'total': round(total_gateway_fees, 2),
-                            'deposits': round(total_deposit_gateway_fees, 2),
+                            'byProvider': gateway_fees_data.get('gateway_fees_by_provider', {}),
+                            'deposits': round(legacy_deposit_gateway_fees, 2),
                             'subscriptions': round(subscription_gateway_fees, 2),
-                            'credits': round(credits_gateway_fees, 2)
+                            'credits': round(credits_gateway_fees, 2),
+                            'legacy_total': round(legacy_total_gateway_fees, 2),
+                            'new_accounting_system': round(total_gateway_fees, 2)
                         }
                     },
                     'providerStats': [
@@ -4700,7 +4960,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to get treasury analytics',
+                'message': f'Failed to load treasury data: {str(e)}',
                 'error': str(e)
             }), 500
 
@@ -4794,10 +5054,17 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             total_deposited = sum(d.get('amountPaid', 0) for d in deposits)
             
             # ===== 6. VAS USAGE =====
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
             vas_query = {
                 'userId': ObjectId(user_id),
                 'status': 'SUCCESS',
-                'type': {'$in': ['AIRTIME', 'DATA']}
+                'type': {
+                    '$in': [
+                        'AIRTIME', 'DATA', 'BILLS', 
+                        'electricity', 'ELECTRICITY', 
+                        'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                    ]
+                }
             }
             vas_query.update(date_filter)
             vas_transactions = list(mongo.db.vas_transactions.find(vas_query))
@@ -5147,6 +5414,820 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'message': 'Failed to get referral metrics',
                 'error': str(e)
             }), 500
+
+    # ===== USER LEADERBOARD ENDPOINT =====
+
+    @admin_bp.route('/treasury/leaderboard', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_user_leaderboard(current_user):
+        """
+        🏆 User Leaderboard: Top users by spending, subscriptions, and activity
+        Three tabs: Spending/Revenue, Recurring Subs, Login Frequency
+        """
+        try:
+            from datetime import datetime, timedelta
+            from utils.test_account_filter import get_test_account_user_ids
+
+            # Get time period filter
+            period = request.args.get('period', '30')  # Default 30 days
+            
+            # Handle "all" period
+            if period == 'all':
+                start_date = datetime(2020, 1, 1)  # Beginning of time
+            else:
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+
+            # ===== TAB 1: TOP SPENDERS (VAS Transactions) =====
+            vas_query = {
+                'status': 'SUCCESS',
+                'type': {'$in': ['AIRTIME', 'DATA', 'BILLS', 'electricity', 'ELECTRICITY', 'CABLE_TV']},
+                'createdAt': {'$gte': start_date},
+                'userId': {'$nin': test_user_ids}
+            }
+
+            # Aggregate spending by user
+            spending_pipeline = [
+                {'$match': vas_query},
+                {'$group': {
+                    '_id': '$userId',
+                    'totalSpending': {'$sum': '$amount'},
+                    'transactionCount': {'$sum': 1},
+                    'totalCommission': {'$sum': '$providerCommission'}
+                }},
+                {'$sort': {'totalSpending': -1}},
+                {'$limit': 10}
+            ]
+
+            top_spenders_raw = list(mongo.db.vas_transactions.aggregate(spending_pipeline))
+
+            # Enrich with user details
+            top_spenders = []
+            for spender in top_spenders_raw:
+                user = mongo.db.users.find_one({'_id': spender['_id']}, {'email': 1, 'fullName': 1, 'displayName': 1})
+                if user:
+                    top_spenders.append({
+                        'userId': str(spender['_id']),
+                        'email': user.get('email', 'N/A'),
+                        'displayName': user.get('displayName') or user.get('fullName', 'N/A'),
+                        'totalSpending': round(spender['totalSpending'], 2),
+                        'transactionCount': spender['transactionCount'],
+                        'totalCommission': round(spender['totalCommission'], 2),
+                        'avgTransactionSize': round(spender['totalSpending'] / spender['transactionCount'], 2)
+                    })
+
+            # ===== TAB 2: RECURRING SUBSCRIBERS =====
+            # Users with active subscriptions
+            active_subs_query = {
+                'isSubscribed': True,
+                'subscriptionEndDate': {'$gt': datetime.utcnow()},
+                '_id': {'$nin': test_user_ids}
+            }
+
+            active_subscribers = list(mongo.db.users.find(active_subs_query, {
+                'email': 1,
+                'fullName': 1,
+                'displayName': 1,
+                'subscriptionStartDate': 1,
+                'subscriptionEndDate': 1,
+                'subscriptionPlan': 1
+            }).sort('subscriptionStartDate', 1))  # Oldest first = longest subscribers
+
+            recurring_subs = []
+            for sub in active_subscribers[:10]:  # Top 10
+                # Calculate subscription duration
+                start_date_sub = sub.get('subscriptionStartDate', datetime.utcnow())
+                duration_days = (datetime.utcnow() - start_date_sub).days
+
+                # Get subscription revenue from this user
+                sub_revenue = mongo.db.corporate_revenue.find({
+                    'userId': sub['_id'],
+                    'type': 'SUBSCRIPTION'
+                })
+                total_sub_revenue = sum(r.get('amount', 0) for r in sub_revenue)
+
+                recurring_subs.append({
+                    'userId': str(sub['_id']),
+                    'email': sub.get('email', 'N/A'),
+                    'displayName': sub.get('displayName') or sub.get('fullName', 'N/A'),
+                    'subscriptionPlan': sub.get('subscriptionPlan', 'N/A'),
+                    'subscriptionDays': duration_days,
+                    'subscriptionEndDate': sub.get('subscriptionEndDate').isoformat() if sub.get('subscriptionEndDate') else None,
+                    'totalRevenue': round(total_sub_revenue, 2)
+                })
+
+            # ===== TAB 3: MOST ACTIVE USERS (Analytics Events) =====
+            # Get users with most analytics events (real activity tracking)
+            activity_pipeline = [
+                {'$match': {
+                    'timestamp': {'$gte': start_date}
+                }},
+                {'$group': {
+                    '_id': '$userId',
+                    'eventCount': {'$sum': 1},
+                    'lastActivity': {'$max': '$timestamp'}
+                }},
+                {'$sort': {'eventCount': -1}},
+                {'$limit': 10}
+            ]
+
+            active_users_raw = list(mongo.db.analytics_events.aggregate(activity_pipeline))
+
+            most_active = []
+            for activity in active_users_raw:
+                user = mongo.db.users.find_one({'_id': activity['_id']}, {
+                    'email': 1,
+                    'fullName': 1,
+                    'displayName': 1,
+                    'createdAt': 1
+                })
+                
+                if user:
+                    # Calculate days since signup
+                    signup_date = user.get('createdAt', datetime.utcnow())
+                    days_since_signup = (datetime.utcnow() - signup_date).days or 1
+
+                    # Calculate average events per day
+                    event_count = activity['eventCount']
+                    avg_events_per_day = event_count / days_since_signup if days_since_signup > 0 else 0
+
+                    # Get last activity
+                    last_activity = activity.get('lastActivity')
+                    hours_since_activity = (datetime.utcnow() - last_activity).total_seconds() / 3600 if last_activity else None
+
+                    most_active.append({
+                        'userId': str(user['_id']),
+                        'email': user.get('email', 'N/A'),
+                        'displayName': user.get('displayName') or user.get('fullName', 'N/A'),
+                        'eventCount': event_count,
+                        'daysSinceSignup': days_since_signup,
+                        'avgEventsPerDay': round(avg_events_per_day, 2),
+                        'lastActivityAt': last_activity.isoformat() if last_activity else None,
+                        'hoursSinceActivity': round(hours_since_activity, 1) if hours_since_activity else None
+                    })
+
+            # ===== FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'topSpenders': top_spenders,
+                    'recurringSubscribers': recurring_subs,
+                    'mostActiveUsers': most_active,
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat(),
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': f'Leaderboard retrieved successfully ({period} days)'
+            })
+
+        except Exception as e:
+            print(f"Error getting leaderboard: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get leaderboard',
+                'error': str(e)
+            }), 500
+
+    # ===== INTERNAL ECONOMY METRICS ENDPOINT =====
+
+    @admin_bp.route('/treasury/internal-economy', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_internal_economy_metrics(current_user):
+        """
+        💰 Internal Economy Metrics: FC Credits & Wallet Float
+        Track the "gas" in your system - prepaid credits and wallet balances
+        """
+        try:
+            from datetime import datetime, timedelta
+            from utils.test_account_filter import get_test_account_user_ids, add_test_account_exclusion
+
+            # Get time period filter
+            period = request.args.get('period', 'all')
+
+            # Calculate date filter
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+
+            # ===== EXCLUDE TEST ACCOUNTS =====
+            test_user_ids = get_test_account_user_ids(mongo)
+
+            # ===== 1. FC CREDITS OUTSTANDING =====
+            # Total FC balance across all users (deferred revenue)
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
+            fc_pipeline = [
+                {'$match': {'_id': {'$nin': test_user_ids}}},  # ✅ Exclude test accounts
+                {'$group': {
+                    '_id': None,
+                    'totalFCBalance': {'$sum': '$ficoreCreditBalance'},
+                    'userCount': {'$sum': 1}
+                }}
+            ]
+            fc_result = list(mongo.db.users.aggregate(fc_pipeline))
+            total_fc_outstanding = fc_result[0]['totalFCBalance'] if fc_result else 0.0
+            users_with_fc = mongo.db.users.count_documents({
+                'ficoreCreditBalance': {'$gt': 0},
+                '_id': {'$nin': test_user_ids}  # ✅ Exclude test accounts
+            })
+
+            # ===== 2. WALLET FLOAT =====
+            # Total wallet balance across all users
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
+            wallet_pipeline = [
+                {'$match': {'userId': {'$nin': test_user_ids}}},  # ✅ Exclude test accounts
+                {'$group': {
+                    '_id': None,
+                    'totalWalletBalance': {'$sum': '$balance'},
+                    'walletCount': {'$sum': 1}
+                }}
+            ]
+            wallet_result = list(mongo.db.vas_wallets.aggregate(wallet_pipeline))
+            total_wallet_float = wallet_result[0]['totalWalletBalance'] if wallet_result else 0.0
+            wallets_with_balance = mongo.db.vas_wallets.count_documents({
+                'balance': {'$gt': 0},
+                'userId': {'$nin': test_user_ids}  # ✅ Exclude test accounts
+            })
+
+            # ===== 3. FC CREDITS PURCHASED (THIS PERIOD) =====
+            credits_purchased_query = {'type': 'CREDITS_PURCHASE'}
+            credits_purchased_query.update(date_filter)
+            credits_purchased = list(mongo.db.corporate_revenue.find(credits_purchased_query))
+
+            fc_purchased_amount = sum(c['amount'] for c in credits_purchased)
+            fc_purchased_count = len(credits_purchased)
+
+            # ===== 4. FC CREDITS CONSUMED (THIS PERIOD) =====
+            credits_consumed_query = {'type': 'debit', 'status': 'completed'}
+            credits_consumed_query.update(date_filter)
+            credits_consumed_query = add_test_account_exclusion(credits_consumed_query, mongo)  # ✅ CRITICAL FIX: Exclude test accounts
+            credits_consumed = list(mongo.db.credit_transactions.find(credits_consumed_query))
+
+            fc_consumed_amount = sum(c['amount'] for c in credits_consumed)
+            fc_consumed_count = len(credits_consumed)
+
+            # ===== 5. NET FC POSITION =====
+            net_fc_position = fc_purchased_amount - fc_consumed_amount
+
+            # ===== 6. WALLET DEPOSITS (THIS PERIOD) =====
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
+            deposits_query = {'type': 'WALLET_FUNDING', 'status': 'SUCCESS'}
+            deposits_query.update(date_filter)
+            deposits_query = add_test_account_exclusion(deposits_query, mongo)  # ✅ Exclude test accounts
+            deposits = list(mongo.db.vas_transactions.find(deposits_query))
+
+            total_deposits_amount = sum(d.get('amountPaid', 0) for d in deposits)
+            total_deposits_count = len(deposits)
+
+            # ===== 7. WALLET SPEND (THIS PERIOD) =====
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types + Exclude test accounts
+            spend_query = {
+                'status': 'SUCCESS', 
+                'type': {
+                    '$in': [
+                        'AIRTIME', 'DATA', 'BILLS',
+                        'electricity', 'ELECTRICITY',
+                        'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                    ]
+                }
+            }
+            spend_query.update(date_filter)
+            spend_query = add_test_account_exclusion(spend_query, mongo)  # ✅ Exclude test accounts
+            spend_txns = list(mongo.db.vas_transactions.find(spend_query))
+
+            total_spend_amount = sum(t.get('amount', 0) for t in spend_txns)
+            total_spend_count = len(spend_txns)
+
+            # ===== 8. NET WALLET POSITION =====
+            net_wallet_position = total_deposits_amount - total_spend_amount
+
+            # ===== 9. AVERAGE BALANCES =====
+            avg_fc_balance = total_fc_outstanding / users_with_fc if users_with_fc > 0 else 0
+            avg_wallet_balance = total_wallet_float / wallets_with_balance if wallets_with_balance > 0 else 0
+
+            # ===== 10. TOP 3 BALANCE HOLDERS (NEW - Feb 21, 2026) =====
+            # Top 3 Wallet Balances
+            top_wallet_users = list(mongo.db.vas_wallets.aggregate([
+                {'$match': {'balance': {'$gt': 0}, 'userId': {'$nin': test_user_ids}}},
+                {'$sort': {'balance': -1}},
+                {'$limit': 3},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'userId',
+                    'foreignField': '_id',
+                    'as': 'user'
+                }},
+                {'$unwind': '$user'},
+                {'$project': {
+                    '_id': 0,  # Exclude _id from response
+                    'userId': {'$toString': '$userId'},
+                    'balance': 1,
+                    'displayName': '$user.displayName',
+                    'email': '$user.email'
+                }}
+            ]))
+
+            # Top 3 FC Credit Balances
+            top_fc_users = list(mongo.db.users.aggregate([
+                {'$match': {'ficoreCreditBalance': {'$gt': 0}, '_id': {'$nin': test_user_ids}}},
+                {'$sort': {'ficoreCreditBalance': -1}},
+                {'$limit': 3},
+                {'$project': {
+                    '_id': 0,  # Exclude _id from response
+                    'userId': {'$toString': '$_id'},
+                    'balance': '$ficoreCreditBalance',
+                    'displayName': 1,
+                    'email': 1
+                }}
+            ]))
+
+            # ===== 11. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'fcCredits': {
+                        'totalOutstanding': round(total_fc_outstanding, 2),
+                        'usersWithBalance': users_with_fc,
+                        'averageBalance': round(avg_fc_balance, 2),
+                        'purchasedThisPeriod': {
+                            'amount': round(fc_purchased_amount, 2),
+                            'count': fc_purchased_count
+                        },
+                        'consumedThisPeriod': {
+                            'amount': round(fc_consumed_amount, 2),
+                            'count': fc_consumed_count
+                        },
+                        'netPosition': round(net_fc_position, 2)
+                    },
+                    'walletFloat': {
+                        'totalOutstanding': round(total_wallet_float, 2),
+                        'walletsWithBalance': wallets_with_balance,
+                        'averageBalance': round(avg_wallet_balance, 2),
+                        'depositsThisPeriod': {
+                            'amount': round(total_deposits_amount, 2),
+                            'count': total_deposits_count
+                        },
+                        'spendThisPeriod': {
+                            'amount': round(total_spend_amount, 2),
+                            'count': total_spend_count
+                        },
+                        'netPosition': round(net_wallet_position, 2)
+                    },
+                    # CRITICAL FIX (Feb 21, 2026): FC Credits are NOT 1:1 with Naira
+                    # Base rate: ₦30 per 1 FC Credit (from credits.py NAIRA_PER_CREDIT)
+                    # Total Internal Economy = (FC Credits × ₦30) + Wallet Float
+                    'totalInternalEconomy': round((total_fc_outstanding * 30) + total_wallet_float, 2),
+                    'fcCreditsNairaValue': round(total_fc_outstanding * 30, 2),  # For reference
+                    # NEW (Feb 21, 2026): Top balance holders for incentives/rewards
+                    'topWalletBalances': top_wallet_users,
+                    'topFcBalances': top_fc_users,
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': 'Internal economy metrics retrieved successfully'
+            })
+
+        except Exception as e:
+            print(f"Error getting internal economy metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get internal economy metrics',
+                'error': str(e)
+            }), 500
+
+    # ===== EXPORT BALANCE HOLDERS ENDPOINTS (NEW - Feb 21, 2026) =====
+    
+    @admin_bp.route('/treasury/export-wallet-balances', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_wallet_balances(current_user):
+        """
+        Export all users with wallet balances sorted highest to lowest (CSV)
+        For incentives and rewards selection
+        """
+        try:
+            from utils.test_account_filter import get_test_account_user_ids
+            import csv
+            from io import StringIO
+            from flask import make_response
+            
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+            
+            # Get all wallets with balance > 0, sorted by balance descending
+            wallets = list(mongo.db.vas_wallets.aggregate([
+                {'$match': {'balance': {'$gt': 0}, 'userId': {'$nin': test_user_ids}}},
+                {'$sort': {'balance': -1}},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'userId',
+                    'foreignField': '_id',
+                    'as': 'user'
+                }},
+                {'$unwind': '$user'},
+                {'$project': {
+                    '_id': 0,  # Exclude _id
+                    'userId': {'$toString': '$userId'},
+                    'displayName': '$user.displayName',
+                    'email': '$user.email',
+                    'balance': 1,
+                    'isPremium': '$user.isSubscribed',
+                    'createdAt': 1
+                }}
+            ]))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow(['Rank', 'User ID', 'Name', 'Email', 'Wallet Balance (₦)', 'Premium Status', 'Wallet Created'])
+            
+            # Write data
+            for idx, wallet in enumerate(wallets, 1):
+                writer.writerow([
+                    idx,
+                    wallet['userId'],
+                    wallet.get('displayName', 'Unknown'),
+                    wallet.get('email', 'N/A'),
+                    f"{wallet['balance']:.2f}",
+                    'Premium' if wallet.get('isPremium', False) else 'Free',
+                    wallet.get('createdAt', '').strftime('%Y-%m-%d') if wallet.get('createdAt') else 'N/A'
+                ])
+            
+            # Create response
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=wallet_balances_{datetime.utcnow().strftime("%Y%m%d")}.csv'
+            
+            print(f"✅ Admin {current_user.get('email')} exported {len(wallets)} wallet balances")
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting wallet balances: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export wallet balances',
+                'error': str(e)
+            }), 500
+    
+    @admin_bp.route('/treasury/export-fc-balances', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_fc_balances(current_user):
+        """
+        Export all users with FC credit balances sorted highest to lowest (CSV)
+        For incentives and rewards selection
+        """
+        try:
+            from utils.test_account_filter import get_test_account_user_ids
+            import csv
+            from io import StringIO
+            from flask import make_response
+            
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+            
+            # Get all users with FC balance > 0, sorted by balance descending
+            users = list(mongo.db.users.aggregate([
+                {'$match': {'ficoreCreditBalance': {'$gt': 0}, '_id': {'$nin': test_user_ids}}},
+                {'$sort': {'ficoreCreditBalance': -1}},
+                {'$project': {
+                    '_id': 0,  # Exclude _id
+                    'userId': {'$toString': '$_id'},
+                    'displayName': 1,
+                    'email': 1,
+                    'ficoreCreditBalance': 1,
+                    'isSubscribed': 1,
+                    'createdAt': 1
+                }}
+            ]))
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow(['Rank', 'User ID', 'Name', 'Email', 'FC Balance', 'Naira Value (≈₦)', 'Premium Status', 'Account Created'])
+            
+            # Write data
+            for idx, user in enumerate(users, 1):
+                fc_balance = user.get('ficoreCreditBalance', 0)
+                naira_value = fc_balance * 30  # ₦30 per FC Credit
+                
+                writer.writerow([
+                    idx,
+                    user['userId'],
+                    user.get('displayName', 'Unknown'),
+                    user.get('email', 'N/A'),
+                    f"{fc_balance:.2f}",
+                    f"{naira_value:.2f}",
+                    'Premium' if user.get('isSubscribed', False) else 'Free',
+                    user.get('createdAt', '').strftime('%Y-%m-%d') if user.get('createdAt') else 'N/A'
+                ])
+            
+            # Create response
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=fc_balances_{datetime.utcnow().strftime("%Y%m%d")}.csv'
+            
+            print(f"✅ Admin {current_user.get('email')} exported {len(users)} FC credit balances")
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting FC balances: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export FC balances',
+                'error': str(e)
+            }), 500
+
+    # ===== EXPIRED USER ACTIVITY TRACKING ENDPOINT =====
+
+    @admin_bp.route('/treasury/expired-user-activity', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_expired_user_activity(current_user):
+        """
+        📊 Expired User Activity: Track VAS usage after subscription expiry
+        Validates the "freemium" model - users avoid monthly fees but still transact
+        """
+        try:
+            from datetime import datetime, timedelta
+            from utils.test_account_filter import get_test_account_user_ids, add_test_account_exclusion
+
+            # Get time period filter (how far back to look for expired users)
+            days_back = int(request.args.get('days', 90))
+            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+
+            # ===== EXCLUDE TEST ACCOUNTS =====
+            test_user_ids = get_test_account_user_ids(mongo)
+
+            # ===== 1. FIND EXPIRED USERS =====
+            # Users who were premium but subscription has expired
+            # CRITICAL FIX (Feb 21, 2026): Exclude test accounts
+            expired_users = list(mongo.db.users.find({
+                'wasPremium': True,
+                'isSubscribed': False,
+                'subscriptionEndDate': {'$gte': cutoff_date, '$lt': datetime.utcnow()},
+                '_id': {'$nin': test_user_ids}  # ✅ Exclude test accounts
+            }))
+
+            # ===== 2. ANALYZE EACH EXPIRED USER =====
+            expired_user_analysis = []
+
+            for user in expired_users:
+                user_id = user['_id']
+                email = user.get('email', 'N/A')
+                display_name = user.get('displayName', 'Unknown')
+                expiry_date = user.get('subscriptionEndDate')
+
+                if not expiry_date:
+                    continue
+
+                days_since_expiry = (datetime.utcnow() - expiry_date).days
+
+                # Get VAS transactions AFTER expiry
+                # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types
+                post_expiry_txns = list(mongo.db.vas_transactions.find({
+                    'userId': user_id,
+                    'status': 'SUCCESS',
+                    'type': {
+                        '$in': [
+                            'AIRTIME', 'DATA', 'BILLS',
+                            'electricity', 'ELECTRICITY',
+                            'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                        ]
+                    },
+                    'createdAt': {'$gte': expiry_date}
+                }))
+
+                # Calculate metrics
+                txn_count = len(post_expiry_txns)
+                total_volume = sum(t.get('amount', 0) for t in post_expiry_txns)
+                total_commission = sum(t.get('providerCommission', 0) for t in post_expiry_txns)
+
+                # Determine status
+                if txn_count > 0:
+                    status = 'Active Freemium'
+                elif days_since_expiry <= 30:
+                    status = 'Recently Expired'
+                else:
+                    status = 'Inactive'
+
+                expired_user_analysis.append({
+                    'userId': str(user_id),
+                    'email': email,
+                    'displayName': display_name,
+                    'subscriptionExpired': expiry_date.isoformat() if expiry_date else None,
+                    'daysSinceExpiry': days_since_expiry,
+                    'postExpiryActivity': {
+                        'transactionCount': txn_count,
+                        'totalVolume': round(total_volume, 2),
+                        'totalCommission': round(total_commission, 2)
+                    },
+                    'status': status
+                })
+
+            # ===== 3. AGGREGATE STATISTICS =====
+            total_expired = len(expired_user_analysis)
+            active_freemium = len([u for u in expired_user_analysis if u['status'] == 'Active Freemium'])
+            inactive = len([u for u in expired_user_analysis if u['status'] == 'Inactive'])
+
+            total_freemium_volume = sum(u['postExpiryActivity']['totalVolume'] for u in expired_user_analysis)
+            total_freemium_commission = sum(u['postExpiryActivity']['totalCommission'] for u in expired_user_analysis)
+
+            # ===== 4. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'summary': {
+                        'totalExpiredUsers': total_expired,
+                        'activeFreemiumUsers': active_freemium,
+                        'inactiveUsers': inactive,
+                        'freemiumConversionRate': round((active_freemium / total_expired * 100) if total_expired > 0 else 0, 2),
+                        'totalFreemiumVolume': round(total_freemium_volume, 2),
+                        'totalFreemiumCommission': round(total_freemium_commission, 2)
+                    },
+                    'expiredUsers': sorted(expired_user_analysis, key=lambda x: x['postExpiryActivity']['totalCommission'], reverse=True),
+                    'daysBack': days_back
+                },
+                'message': f'Expired user activity retrieved successfully (last {days_back} days)'
+            })
+
+        except Exception as e:
+            print(f"Error getting expired user activity: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get expired user activity',
+                'error': str(e)
+            }), 500
+
+    # ===== FREEMIUM USER ENGAGEMENT METRICS ENDPOINT =====
+
+    @admin_bp.route('/treasury/freemium-engagement', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_freemium_engagement(current_user):
+        """
+        📈 Freemium User Engagement: Track non-subscribed VAS users
+        Shows that 96%+ of users are "pay-as-you-go" - validates Nigerian market behavior
+        """
+        try:
+            from datetime import datetime, timedelta
+            from utils.test_account_filter import add_test_account_exclusion
+
+            # Get time period filter
+            period = request.args.get('period', 'all')
+
+            # Calculate date filter
+            date_filter = {}
+            start_date = None
+            if period != 'all':
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+
+            # ===== 1. GET ALL ACTIVE VAS USERS (THIS PERIOD) =====
+            # CRITICAL FIX (Feb 21, 2026): Include ALL VAS types + Exclude test accounts
+            vas_query = {
+                'status': 'SUCCESS', 
+                'type': {
+                    '$in': [
+                        'AIRTIME', 'DATA', 'BILLS',
+                        'electricity', 'ELECTRICITY',
+                        'CABLE_TV', 'INTERNET', 'WATER', 'TRANSPORTATION'
+                    ]
+                }
+            }
+            vas_query.update(date_filter)
+            vas_query = add_test_account_exclusion(vas_query, mongo)  # ✅ Exclude test accounts
+
+            # Get unique user IDs with VAS transactions
+            active_user_ids = mongo.db.vas_transactions.distinct('userId', vas_query)
+            total_active_users = len(active_user_ids)
+
+            # ===== 2. SEPARATE PREMIUM VS FREEMIUM =====
+            premium_user_ids = []
+            freemium_user_ids = []
+
+            for user_id in active_user_ids:
+                user = mongo.db.users.find_one({'_id': user_id}, {'isSubscribed': 1})
+                if user:
+                    if user.get('isSubscribed', False):
+                        premium_user_ids.append(user_id)
+                    else:
+                        freemium_user_ids.append(user_id)
+
+            premium_count = len(premium_user_ids)
+            freemium_count = len(freemium_user_ids)
+
+            # ===== 3. CALCULATE PREMIUM USER METRICS =====
+            premium_txns = list(mongo.db.vas_transactions.find({
+                **vas_query,
+                'userId': {'$in': premium_user_ids}
+            }))
+
+            premium_volume = sum(t.get('amount', 0) for t in premium_txns)
+            premium_commission = sum(t.get('providerCommission', 0) for t in premium_txns)
+            premium_txn_count = len(premium_txns)
+
+            # ===== 4. CALCULATE FREEMIUM USER METRICS =====
+            freemium_txns = list(mongo.db.vas_transactions.find({
+                **vas_query,
+                'userId': {'$in': freemium_user_ids}
+            }))
+
+            freemium_volume = sum(t.get('amount', 0) for t in freemium_txns)
+            freemium_commission = sum(t.get('providerCommission', 0) for t in freemium_txns)
+            freemium_txn_count = len(freemium_txns)
+
+            # ===== 5. CALCULATE PERCENTAGES =====
+            premium_percentage = (premium_count / total_active_users * 100) if total_active_users > 0 else 0
+            freemium_percentage = (freemium_count / total_active_users * 100) if total_active_users > 0 else 0
+
+            freemium_commission_percentage = (freemium_commission / (premium_commission + freemium_commission) * 100) if (premium_commission + freemium_commission) > 0 else 0
+
+            # ===== 6. AVERAGE METRICS =====
+            avg_premium_volume = premium_volume / premium_count if premium_count > 0 else 0
+            avg_freemium_volume = freemium_volume / freemium_count if freemium_count > 0 else 0
+
+            # ===== 7. FORMAT RESPONSE =====
+            return jsonify({
+                'success': True,
+                'data': {
+                    'overview': {
+                        'totalActiveUsers': total_active_users,
+                        'premiumUsers': {
+                            'count': premium_count,
+                            'percentage': round(premium_percentage, 2)
+                        },
+                        'freemiumUsers': {
+                            'count': freemium_count,
+                            'percentage': round(freemium_percentage, 2)
+                        }
+                    },
+                    'premiumMetrics': {
+                        'transactionCount': premium_txn_count,
+                        'totalVolume': round(premium_volume, 2),
+                        'totalCommission': round(premium_commission, 2),
+                        'averageVolumePerUser': round(avg_premium_volume, 2)
+                    },
+                    'freemiumMetrics': {
+                        'transactionCount': freemium_txn_count,
+                        'totalVolume': round(freemium_volume, 2),
+                        'totalCommission': round(freemium_commission, 2),
+                        'averageVolumePerUser': round(avg_freemium_volume, 2),
+                        'commissionPercentage': round(freemium_commission_percentage, 2)
+                    },
+                    'insights': {
+                        'freemiumDominance': freemium_percentage > 90,
+                        'freemiumRevenueShare': freemium_commission_percentage,
+                        'message': f'{freemium_percentage:.1f}% of active users are freemium, generating {freemium_commission_percentage:.1f}% of VAS commission revenue'
+                    },
+                    'period': period,
+                    'dateRange': {
+                        'start': start_date.isoformat() if start_date else None,
+                        'end': datetime.utcnow().isoformat()
+                    }
+                },
+                'message': 'Freemium engagement metrics retrieved successfully'
+            })
+
+        except Exception as e:
+            print(f"Error getting freemium engagement: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get freemium engagement',
+                'error': str(e)
+            }), 500
+
     
     # ===== WITHDRAWAL MANAGEMENT ENDPOINTS =====
     
@@ -5262,20 +6343,26 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # 4. Start atomic transaction
             try:
                 # 4a. Update user balances
-                # CRITICAL: Update ALL THREE wallet balance fields (Golden Rule 38)
+                # CRITICAL: Update wallet balance using centralized utility (Golden Rule 38)
+                from utils.balance_sync import update_liquid_wallet_balance, get_liquid_wallet_balance
+                
+                # Deduct from withdrawable balance
                 mongo.db.users.update_one(
                     {'_id': user['_id']},
                     {
-                        '$inc': {
-                            'withdrawableCommissionBalance': -withdrawal['amount'],
-                            'walletBalance': withdrawal['amount'],
-                            'liquidWalletBalance': withdrawal['amount'],
-                            'vasWalletBalance': withdrawal['amount']
-                        },
-                        '$set': {
-                            'updatedAt': datetime.utcnow()
-                        }
+                        '$inc': {'withdrawableCommissionBalance': -withdrawal['amount']},
+                        '$set': {'updatedAt': datetime.utcnow()}
                     }
+                )
+                
+                # Add to wallet balance (all 4 places synced)
+                current_balance = get_liquid_wallet_balance(mongo, user['_id'])
+                new_balance = current_balance + withdrawal['amount']
+                update_liquid_wallet_balance(
+                    mongo=mongo,
+                    user_id=user['_id'],
+                    new_balance=new_balance,
+                    reason=f"Withdrawal approved: {withdrawal['_id']}"
                 )
                 
                 # 4b. Create VAS transaction for wallet funding
@@ -5660,7 +6747,8 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'message': 'User not found'
                 }), 404
             
-            # Get wallet data
+            # Get wallet data directly from database
+            # Note: Auto-recovery happens automatically when user accesses wallet via mobile app
             wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
             
             if not wallet:
@@ -5683,6 +6771,510 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to get wallet information',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/create', methods=['POST'])
+    @token_required
+    @admin_required
+    def create_user_wallet(current_user, user_id):
+        """
+        Create VAS wallet for user (Admin action)
+        Used when wallet creation failed during signup or for existing users
+        """
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check if wallet already exists
+            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if existing_wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet already exists for this user',
+                    'data': serialize_doc(existing_wallet)
+                }), 400
+            
+            # Create wallet with same structure as signup auto-creation
+            wallet_data = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'balance': 0.0,
+                'status': 'pending_activation',  # Will be activated when reserved account is created
+                'tier': 'TIER_1',  # TIER_1 is the default ground zero
+                'kycTier': 0,
+                'kycVerified': False,
+                'kycStatus': 'not_submitted',
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'accounts': [],  # Empty until reserved account created
+                'accountReference': None,
+                'accountName': user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip(),
+                'reservedAmount': 0.0
+            }
+            
+            mongo.db.vas_wallets.insert_one(wallet_data)
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'CREATE_VAS_WALLET',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'walletId': str(wallet_data['_id']),
+                    'initialBalance': 0.0,
+                    'tier': 'TIER_1',
+                    'reason': 'Admin manual wallet creation'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} created VAS wallet for user {user_id}")
+            
+            return jsonify({
+                'success': True,
+                'data': serialize_doc(wallet_data),
+                'message': 'VAS wallet created successfully'
+            }), 201
+            
+        except Exception as e:
+            print(f"❌ Error creating user wallet: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to create wallet',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/complete-setup', methods=['POST'])
+    @token_required
+    @admin_required
+    def complete_wallet_setup(current_user, user_id):
+        """
+        Complete wallet setup for broken/incomplete wallets
+        This is for admin support when users get stuck with account creation
+        """
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check if wallet exists
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'No wallet found for this user'
+                }), 404
+            
+            # Check if wallet needs fixing
+            needs_fixing = (
+                wallet.get('status') == 'pending_activation' or
+                not wallet.get('accounts') or
+                len(wallet.get('accounts', [])) == 0
+            )
+            
+            if not needs_fixing:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet does not need fixing. It already has accounts and is active.'
+                }), 400
+            
+            # CRITICAL: Check if BVN/NIN already submitted to Monnify (prevents duplicate charges)
+            already_submitted_bvn = wallet.get('bvnSubmittedToMonnify', False)
+            already_submitted_nin = wallet.get('ninSubmittedToMonnify', False)
+            
+            if already_submitted_bvn or already_submitted_nin:
+                print(f"⚠️ WARNING: User {user_id} already submitted BVN/NIN to Monnify")
+                print(f"   Submitted at: {wallet.get('kycSubmittedAt')}")
+                print(f"   This retry will NOT send BVN/NIN again (avoid duplicate charges)")
+                send_kyc = False
+            else:
+                # First time or old wallet (created before Feb 2026) - check if user has BVN/NIN
+                user_bvn = user.get('bvn', '').strip()
+                user_nin = user.get('nin', '').strip()
+                
+                if not user_bvn and not user_nin:
+                    return jsonify({
+                        'success': False,
+                        'message': 'User has no BVN/NIN. Cannot create reserved account.',
+                        'errors': {
+                            'kyc': ['User must submit BVN or NIN through the app KYC flow first']
+                        },
+                        'adminAction': 'Ask user to complete KYC verification in the app',
+                        'userEmail': user.get('email', 'unknown')
+                    }), 400
+                
+                send_kyc = True
+                print(f"✅ User has BVN/NIN and hasn't submitted yet - will send to Monnify")
+            
+            # Create reserved account
+            account_name = wallet.get('accountName') or user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
+            user_email = user.get('email', '')
+            
+            print(f"🔧 Admin completing wallet setup for {user_email}...")
+            print(f"   Creating reserved account with name: {account_name}")
+            print(f"   Send BVN/NIN: {send_kyc}")
+            
+            # Import monnify utils
+            from utils.monnify_utils import get_monnify_access_token
+            import requests
+            from config.environment import MONNIFY_BASE_URL, MONNIFY_CONTRACT_CODE
+            
+            # Get access token
+            access_token = get_monnify_access_token()
+            if not access_token:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to authenticate with payment provider'
+                }), 500
+            
+            # Build request data
+            request_data = {
+                'accountReference': wallet.get('accountReference') or f"USER_{user_id}_{int(datetime.utcnow().timestamp())}",
+                'accountName': account_name,
+                'currencyCode': 'NGN',
+                'contractCode': MONNIFY_CONTRACT_CODE,
+                'customerEmail': user_email,
+                'customerName': account_name,
+                'getAllAvailableBanks': True
+            }
+            
+            # Only add BVN/NIN if not already submitted (prevents duplicate charges)
+            if send_kyc:
+                request_data['bvn'] = user.get('bvn', '')
+                request_data['nin'] = user.get('nin', '')
+                print(f"   Including BVN/NIN in request")
+            
+            # Create reserved account
+            van_response = requests.post(
+                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                json=request_data,
+                headers={
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=30
+            )
+            
+            if van_response.status_code != 200:
+                error_msg = van_response.json().get('responseMessage', 'Unknown error')
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to create reserved account: {error_msg}"
+                }), 500
+            
+            # Update wallet with reserved account info
+            account_data = van_response.json().get('responseBody', {})
+            
+            update_data = {
+                'accounts': account_data.get('accounts', []),
+                'accountReference': account_data.get('accountReference'),
+                'accountName': account_data.get('accountName', account_name),
+                
+                # NEW: Store customer info (for audit trail)
+                'customerEmail': account_data.get('customerEmail', user_email),
+                'customerName': account_data.get('customerName', account_name),
+                
+                # NEW: Store Monnify metadata
+                'reservationReference': account_data.get('reservationReference'),
+                'reservedAccountType': account_data.get('reservedAccountType', 'GENERAL'),
+                'collectionChannel': account_data.get('collectionChannel', 'RESERVED_ACCOUNT'),
+                'monnifyStatus': account_data.get('status', 'ACTIVE'),
+                'monnifyCreatedOn': account_data.get('createdOn'),
+                
+                # NEW: Track BVN/NIN submission if sent (CRITICAL - prevents duplicates)
+                'bvnSubmittedToMonnify': send_kyc and bool(user.get('bvn', '').strip()),
+                'ninSubmittedToMonnify': send_kyc and bool(user.get('nin', '').strip()),
+                'kycSubmittedAt': datetime.utcnow() if send_kyc else wallet.get('kycSubmittedAt'),
+                
+                # NEW: Payment restrictions
+                'restrictPaymentSource': account_data.get('restrictPaymentSource', False),
+                'allowedPaymentSources': account_data.get('allowedPaymentSources'),
+                
+                'status': 'active',
+                'tier': 'TIER_1',  # TIER_1 is the default with reserved account
+                'updatedAt': datetime.utcnow()
+            }
+            
+            mongo.db.vas_wallets.update_one(
+                {'_id': wallet['_id']},
+                {'$set': update_data}
+            )
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'COMPLETE_WALLET_SETUP',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'walletId': str(wallet['_id']),
+                    'accountReference': account_data.get('accountReference'),
+                    'accountsCreated': len(account_data.get('accounts', [])),
+                    'newStatus': 'active',
+                    'newTier': 'TIER_1',
+                    'reason': 'Admin manual wallet completion'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} completed wallet setup for user {user_id}")
+            
+            # Get updated wallet
+            updated_wallet = mongo.db.vas_wallets.find_one({'_id': wallet['_id']})
+            
+            return jsonify({
+                'success': True,
+                'data': serialize_doc(updated_wallet),
+                'message': 'Wallet setup completed successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error completing wallet setup: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to complete wallet setup',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet/recreate', methods=['POST'])
+    @token_required
+    @admin_required
+    def recreate_user_wallet(current_user, user_id):
+        """
+        Delete and recreate wallet (for completely broken wallets)
+        This is for admin support when wallet is beyond repair
+        """
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Check if wallet exists
+            existing_wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            
+            if existing_wallet:
+                # CRITICAL: NEVER DELETE WALLETS!
+                # If wallet exists, update it instead of deleting
+                print(f"⚠️ Wallet already exists for user {user_id}")
+                print(f"   Existing balance: ₦{existing_wallet.get('balance', 0.0)}")
+                print(f"   Updating wallet instead of deleting...")
+                
+                # Return existing wallet info
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet already exists. Use update endpoint instead of recreate.',
+                    'data': {
+                        'walletId': str(existing_wallet['_id']),
+                        'balance': existing_wallet.get('balance', 0.0),
+                        'accountReference': existing_wallet.get('accountReference')
+                    }
+                }), 400
+            
+            # Prepare account name
+            account_name = user.get('displayName', f"{user.get('firstName', '')} {user.get('lastName', '')}").strip()
+            user_email = user.get('email', '')
+            
+            print(f"🔧 Admin creating wallet for {user_email}...")
+            print(f"   Creating reserved account with name: {account_name}")
+            
+            # Import monnify utils
+            from utils.monnify_utils import get_monnify_access_token
+            import requests
+            from config.environment import MONNIFY_BASE_URL, MONNIFY_CONTRACT_CODE
+            
+            # Get access token
+            access_token = get_monnify_access_token()
+            if not access_token:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to authenticate with payment provider'
+                }), 500
+            
+            # Create reserved account
+            account_reference = f"USER_{user_id}_{int(datetime.utcnow().timestamp())}"
+            van_response = requests.post(
+                f'{MONNIFY_BASE_URL}/api/v2/bank-transfer/reserved-accounts',
+                json={
+                    'accountReference': account_reference,
+                    'accountName': account_name,
+                    'currencyCode': 'NGN',
+                    'contractCode': MONNIFY_CONTRACT_CODE,
+                    'customerEmail': user_email,
+                    'customerName': account_name,
+                    'getAllAvailableBanks': True,
+                    'bvn': user.get('bvn', '')
+                },
+                headers={
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=30
+            )
+            
+            if van_response.status_code != 200:
+                error_msg = van_response.json().get('responseMessage', 'Unknown error')
+                return jsonify({
+                    'success': False,
+                    'message': f"Failed to create reserved account: {error_msg}"
+                }), 500
+            
+            # Create new wallet
+            account_data = van_response.json().get('responseBody', {})
+            wallet_data = {
+                '_id': ObjectId(),
+                'userId': ObjectId(user_id),
+                'balance': 0.0,  # Reset balance
+                'status': 'active',
+                'tier': 'TIER_1',
+                'kycTier': 0,
+                'kycVerified': False,
+                'kycStatus': user.get('kycStatus', 'not_submitted'),
+                'createdAt': datetime.utcnow(),
+                'updatedAt': datetime.utcnow(),
+                'accounts': account_data.get('accounts', []),
+                'accountReference': account_data.get('accountReference'),
+                'accountName': account_data.get('accountName', account_name),
+                'reservedAmount': 0.0
+            }
+            
+            mongo.db.vas_wallets.insert_one(wallet_data)
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'RECREATE_VAS_WALLET',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'oldWalletId': str(existing_wallet['_id']) if existing_wallet else None,
+                    'oldBalance': old_balance,
+                    'newWalletId': str(wallet_data['_id']),
+                    'newBalance': 0.0,
+                    'accountReference': account_data.get('accountReference'),
+                    'accountsCreated': len(account_data.get('accounts', [])),
+                    'reason': 'Admin wallet recreation - old wallet was broken'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} recreated VAS wallet for user {user_id}")
+            
+            return jsonify({
+                'success': True,
+                'data': serialize_doc(wallet_data),
+                'message': 'Wallet recreated successfully'
+            }), 201
+            
+        except Exception as e:
+            print(f"❌ Error recreating wallet: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to recreate wallet',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/users/<user_id>/wallet', methods=['DELETE'])
+    @token_required
+    @admin_required
+    def delete_user_wallet(current_user, user_id):
+        """
+        Delete user's wallet (use with caution)
+        """
+        try:
+            # Validate user exists
+            user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            # Get wallet
+            wallet = mongo.db.vas_wallets.find_one({'userId': ObjectId(user_id)})
+            if not wallet:
+                return jsonify({
+                    'success': False,
+                    'message': 'Wallet not found'
+                }), 404
+            
+            # CRITICAL: NEVER DELETE WALLETS!
+            # Instead of deleting, mark as inactive/suspended
+            return jsonify({
+                'success': False,
+                'message': 'Wallet deletion is not allowed. Use deactivation or suspension instead.'
+            }), 403
+            
+            # Log audit trail
+            audit_log = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', 'unknown'),
+                'action': 'DELETE_VAS_WALLET',
+                'targetUserId': ObjectId(user_id),
+                'targetUserEmail': user.get('email', 'unknown'),
+                'details': {
+                    'walletId': str(wallet['_id']),
+                    'finalBalance': wallet.get('balance', 0.0),
+                    'status': wallet.get('status'),
+                    'tier': wallet.get('tier'),
+                    'reason': 'Admin wallet deletion'
+                },
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent', 'Unknown')
+            }
+            mongo.db.audit_logs.insert_one(audit_log)
+            
+            print(f"✅ Admin {current_user.get('email')} deleted VAS wallet for user {user_id}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Wallet deleted successfully'
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error deleting wallet: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to delete wallet',
                 'errors': {'general': [str(e)]}
             }), 500
     
@@ -5994,6 +7586,69 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # Calculate new balance
             current_balance = wallet.get('balance', 0.0)
             new_balance = current_balance + amount
+            
+            # 🔍 CRITICAL FIX (Feb 18, 2026): Check for linked drawings and expenses
+            # If this refund is for a failed Personal wallet spend, we need to:
+            # 1. Void the drawing entry (so Equity calculation is correct)
+            # 2. Void the expense entry (so books balance)
+            voided_drawing = None
+            voided_expense = None
+            
+            if reference_transaction_id:
+                try:
+                    # Find the original failed transaction
+                    original_txn = mongo.db.vas_transactions.find_one({
+                        '_id': ObjectId(reference_transaction_id)
+                    })
+                    
+                    if original_txn:
+                        # Find linked expense entry (created by auto-bookkeeping)
+                        linked_expense = mongo.db.expenses.find_one({
+                            'metadata.vasTransactionId': str(original_txn['_id']),
+                            'status': 'active',
+                            'isDeleted': False
+                        })
+                        
+                        if linked_expense:
+                            # Check if this was a Personal expense (has drawing)
+                            if linked_expense.get('entryType') == 'personal':
+                                # Find and void the drawing entry
+                                drawing = mongo.db.drawings.find_one({
+                                    'linkedExpenseId': linked_expense['_id'],
+                                    'status': 'active',
+                                    'isDeleted': False
+                                })
+                                
+                                if drawing:
+                                    from blueprints.drawings_auto import void_drawing_entry
+                                    success = void_drawing_entry(mongo, drawing['_id'])
+                                    if success:
+                                        voided_drawing = {
+                                            'id': str(drawing['_id']),
+                                            'amount': drawing['amount']
+                                        }
+                                        print(f"✅ REFUND: Voided drawing entry ₦{drawing['amount']:,.2f} for failed transaction")
+                            
+                            # Void the expense entry (soft delete with reversal)
+                            from utils.immutable_ledger_helper import soft_delete_transaction
+                            result = soft_delete_transaction(
+                                db=mongo.db,
+                                collection_name='expenses',
+                                transaction_id=str(linked_expense['_id']),
+                                user_id=linked_expense['userId']
+                            )
+                            
+                            if result['success']:
+                                voided_expense = {
+                                    'id': str(linked_expense['_id']),
+                                    'amount': linked_expense['amount'],
+                                    'reversalId': result.get('reversal_id')
+                                }
+                                print(f"✅ REFUND: Voided expense entry ₦{linked_expense['amount']:,.2f} for failed transaction")
+                        
+                except Exception as void_error:
+                    print(f"WARNING: Failed to void linked entries during refund: {str(void_error)}")
+                    # Don't fail the refund if voiding fails - log and continue
 
             # CRITICAL FIX: Update BOTH balances simultaneously for instant sync
             # Update VAS wallet balance
@@ -6007,19 +7662,15 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }
             )
             
-            # 🚀 STREAM FIX: Update ALL THREE wallet balance fields for instant frontend updates
-            # CRITICAL: walletBalance, liquidWalletBalance, and vasWalletBalance MUST always be the same
-            mongo.db.users.update_one(
-                {'_id': ObjectId(user_id)},
-                {
-                    '$set': {
-                        'walletBalance': new_balance,
-                        'liquidWalletBalance': new_balance,
-                        'vasWalletBalance': new_balance,
-                        'liquidWalletLastUpdated': datetime.utcnow(),
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
+            # 🚀 Use centralized balance sync utility (Golden Rule 38)
+            from utils.balance_sync import update_liquid_wallet_balance
+            
+            update_liquid_wallet_balance(
+                mongo=mongo,
+                user_id=user_id,
+                new_balance=new_balance,
+                reason="Admin balance adjustment",
+                skip_wallet_update=True  # Already updated above
             )
             
             print(f'SUCCESS: Updated BOTH balances after admin refund - VAS wallet: ₦{new_balance:,.2f}, Liquid wallet: ₦{new_balance:,.2f}')
@@ -6050,7 +7701,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'adminEmail': current_user.get('email', ''),
                     'reason': reason,
                     'referenceTransactionId': reference_transaction_id,
-                    'processedAt': datetime.utcnow().isoformat() + 'Z'
+                    'processedAt': datetime.utcnow().isoformat() + 'Z',
+                    'voidedDrawing': voided_drawing,  # Track if drawing was voided
+                    'voidedExpense': voided_expense   # Track if expense was voided
                 }
             }
             
@@ -6075,7 +7728,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'wallet_balance_before': current_balance,
                     'wallet_balance_after': new_balance,
                     'transaction_id': str(refund_transaction['_id']),
-                    'reference_transaction': reference_transaction_id
+                    'reference_transaction': reference_transaction_id,
+                    'voided_drawing': voided_drawing,
+                    'voided_expense': voided_expense
                 }
             }
             
@@ -6227,15 +7882,15 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                     'error': 'RACE_CONDITION_DETECTED'
                 }), 409  # Conflict
             
-            # Update user's liquid wallet balance (for backward compatibility)
-            mongo.db.users.update_one(
-                {'_id': ObjectId(user_id)},
-                {
-                    '$set': {
-                        'liquidWalletBalance': new_balance,
-                        'updatedAt': datetime.utcnow()
-                    }
-                }
+            # Update all wallet balance fields using centralized utility
+            from utils.balance_sync import update_liquid_wallet_balance
+            
+            update_liquid_wallet_balance(
+                mongo=mongo,
+                user_id=user_id,
+                new_balance=new_balance,
+                reason="Admin balance correction",
+                skip_wallet_update=True  # Already updated above atomically
             )
             
             print(f'SUCCESS: Updated balance after admin deduction - Liquid wallet: ₦{current_balance:,.2f} → ₦{new_balance:,.2f}')
@@ -6473,311 +8128,1376 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 'error': str(e)
             }), 500
     
-    # ===== WITHDRAWAL MANAGEMENT ENDPOINTS (Phase 4A) =====
+    # ===== VERSION CONTROL & AUDIT ENDPOINTS (NEW - Feb 7, 2026) =====
     
-    @admin_bp.route('/withdrawals/pending', methods=['GET'])
+    @admin_bp.route('/financial-entries', methods=['GET'])
     @token_required
     @admin_required
-    def get_pending_withdrawals(current_user):
+    def get_all_financial_entries(current_user):
         """
-        Get all pending withdrawal requests for admin review.
+        Get all income/expense entries across all users (admin only)
+        
+        Query Parameters:
+        - user_id: Filter by specific user (optional)
+        - entry_type: 'income' | 'expense' | 'both' (default: 'both')
+        - status: 'active' | 'voided' | 'superseded' | 'all' (default: 'active')
+        - start_date: Start date (YYYY-MM-DD) (optional)
+        - end_date: End date (YYYY-MM-DD) (optional)
+        - page: Page number (default: 1)
+        - limit: Items per page (default: 50, max: 100)
+        - search: Search in description/category (optional)
         """
         try:
-            # Get all pending requests
-            pending_requests = list(mongo.db.withdrawal_requests.find({
-                'status': 'PENDING'
-            }).sort('requestedAt', 1))  # Oldest first
+            # Get query parameters
+            user_id = request.args.get('user_id', '')
+            entry_type = request.args.get('entry_type', 'both')
+            status = request.args.get('status', 'active')
+            start_date_str = request.args.get('start_date', '')
+            end_date_str = request.args.get('end_date', '')
+            page = int(request.args.get('page', 1))
+            limit = min(int(request.args.get('limit', 50)), 100)
+            search = request.args.get('search', '').strip()
             
-            # Enrich with user details and referral stats
-            formatted_requests = []
-            for req in pending_requests:
-                user = mongo.db.users.find_one({'_id': req['userId']})
-                if not user:
-                    continue
+            # Build base query
+            base_query = {}
+            
+            # User filter
+            if user_id:
+                base_query['userId'] = ObjectId(user_id)
+            
+            # Status filter
+            if status != 'all':
+                base_query['status'] = status
+                if status == 'active':
+                    base_query['isDeleted'] = False
+            
+            # Date filter
+            date_filter = {}
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                date_filter['$gte'] = start_date
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                date_filter['$lte'] = end_date
+            
+            # Search filter
+            if search:
+                search_filter = {
+                    '$or': [
+                        {'description': {'$regex': search, '$options': 'i'}},
+                        {'title': {'$regex': search, '$options': 'i'}},
+                        {'category': {'$regex': search, '$options': 'i'}}
+                    ]
+                }
+            
+            # Collect entries
+            all_entries = []
+            
+            # Get income entries
+            if entry_type in ['income', 'both']:
+                income_query = base_query.copy()
+                if date_filter:
+                    income_query['date'] = date_filter
+                if search:
+                    income_query.update(search_filter)
                 
-                # Get referral stats
-                referrals = list(mongo.db.referrals.find({'referrerId': req['userId']}))
-                active_referrals = len([r for r in referrals if r['status'] in ['active', 'qualified']])
+                incomes = list(mongo.db.incomes.find(income_query).sort('date', -1))
+                for income in incomes:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': income['userId']})
+                    
+                    entry = serialize_doc(income)
+                    entry['entryType'] = 'income'
+                    entry['date'] = income.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    entry['version'] = income.get('version', 1)
+                    entry['user'] = {
+                        'id': str(user['_id']) if user else '',
+                        'email': user.get('email', '') if user else '',
+                        'displayName': user.get('displayName', '') if user else ''
+                    }
+                    all_entries.append(entry)
+            
+            # Get expense entries
+            if entry_type in ['expense', 'both']:
+                expense_query = base_query.copy()
+                if date_filter:
+                    expense_query['date'] = date_filter
+                if search:
+                    expense_query.update(search_filter)
                 
-                # Get total earnings
-                total_earnings = user.get('referralEarnings', 0.0)
-                
-                formatted_requests.append({
-                    'id': str(req['_id']),
-                    'user': {
-                        'id': str(user['_id']),
-                        'name': user.get('displayName', 'Unknown'),
-                        'email': user.get('email', 'N/A'),
-                        'referralCode': user.get('referralCode', 'N/A'),
-                        'createdAt': user.get('createdAt').isoformat() if user.get('createdAt') else None
-                    },
-                    'amount': req['amount'],
-                    'withdrawableBalance': req['withdrawableBalanceAtRequest'],
-                    'pendingBalance': req['pendingBalanceAtRequest'],
-                    'creditBalance': req['creditBalanceAtRequest'],
-                    'requestedAt': req['requestedAt'].isoformat(),
-                    'referralStats': {
-                        'totalReferrals': len(referrals),
-                        'activeReferrals': active_referrals,
-                        'totalEarnings': total_earnings
-                    },
-                    'ipAddress': req.get('ipAddress', 'N/A'),
-                    'deviceInfo': req.get('deviceInfo', 'N/A')
+                expenses = list(mongo.db.expenses.find(expense_query).sort('date', -1))
+                for expense in expenses:
+                    # Get user info
+                    user = mongo.db.users.find_one({'_id': expense['userId']})
+                    
+                    entry = serialize_doc(expense)
+                    entry['entryType'] = 'expense'
+                    entry['date'] = expense.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    entry['version'] = expense.get('version', 1)
+                    entry['user'] = {
+                        'id': str(user['_id']) if user else '',
+                        'email': user.get('email', '') if user else '',
+                        'displayName': user.get('displayName', '') if user else ''
+                    }
+                    all_entries.append(entry)
+            
+            # Sort by date (newest first)
+            all_entries.sort(key=lambda x: x['date'], reverse=True)
+            
+            # Pagination
+            total = len(all_entries)
+            skip = (page - 1) * limit
+            paginated_entries = all_entries[skip:skip + limit]
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'entries': paginated_entries,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    }
+                },
+                'message': 'Financial entries retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting financial entries: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve financial entries',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/financial-entries/<entry_id>/version-history', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_entry_version_history(current_user, entry_id):
+        """
+        Get version history for any entry (income or expense)
+        
+        Query Parameters:
+        - entry_type: 'income' | 'expense' (required)
+        """
+        try:
+            entry_type = request.args.get('entry_type', '').lower()
+            
+            if entry_type not in ['income', 'expense']:
+                return jsonify({
+                    'success': False,
+                    'message': 'entry_type parameter is required (income or expense)'
+                }), 400
+            
+            # Strip prefix if present (frontend sends income_xxx or expense_xxx)
+            clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            
+            # Get entry from appropriate collection
+            collection = mongo.db.incomes if entry_type == 'income' else mongo.db.expenses
+            entry = collection.find_one({'_id': ObjectId(clean_id)})
+            
+            if not entry:
+                return jsonify({
+                    'success': False,
+                    'message': f'{entry_type.capitalize()} entry not found'
+                }), 404
+            
+            # Get user info
+            user = mongo.db.users.find_one({'_id': entry['userId']})
+            
+            # Get version log
+            version_log = entry.get('versionLog', [])
+            
+            # Format version history
+            history = []
+            for version in version_log:
+                history.append({
+                    'version': version.get('version', 1),
+                    'timestamp': version.get('timestamp', datetime.utcnow()).isoformat() + 'Z',
+                    'data': version.get('data', {}),
+                    'reason': version.get('reason', ''),
+                    'changedBy': version.get('changedBy', 'user')
                 })
             
             return jsonify({
                 'success': True,
                 'data': {
-                    'pendingWithdrawals': formatted_requests,
-                    'count': len(formatted_requests)
-                }
-            }), 200
+                    'entryId': str(entry['_id']),
+                    'entryType': entry_type,
+                    'currentVersion': entry.get('version', 1),
+                    'user': {
+                        'id': str(user['_id']) if user else '',
+                        'email': user.get('email', '') if user else '',
+                        'displayName': user.get('displayName', '') if user else ''
+                    },
+                    'versionHistory': history
+                },
+                'message': 'Version history retrieved successfully'
+            })
             
         except Exception as e:
-            print(f"❌ Get pending withdrawals error: {e}")
+            print(f"Error getting version history: {str(e)}")
             import traceback
             traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to get pending withdrawals'
+                'message': 'Failed to retrieve version history',
+                'errors': {'general': [str(e)]}
             }), 500
     
-    @admin_bp.route('/withdrawals/<withdrawal_id>/approve', methods=['POST'])
+    @admin_bp.route('/financial-entries/<entry_id>/rollback', methods=['POST'])
     @token_required
     @admin_required
-    def approve_withdrawal(current_user, withdrawal_id):
+    def rollback_entry_version(current_user, entry_id):
         """
-        Approve a withdrawal request and transfer to FiCore Credits.
+        Rollback any entry to a previous version (admin only)
+        
+        Request Body:
+        - entry_type: 'income' | 'expense' (required)
+        - target_version: Version number to rollback to (required)
+        - admin_reason: Reason for rollback (required, min 10 characters)
         """
         try:
-            data = request.get_json() or {}
-            notes = data.get('notes', '')
-            admin_id = current_user['_id']
+            data = request.get_json()
             
-            # 1. Get withdrawal request
-            withdrawal = mongo.db.withdrawal_requests.find_one({'_id': ObjectId(withdrawal_id)})
-            if not withdrawal:
-                return jsonify({'success': False, 'message': 'Withdrawal not found'}), 404
+            entry_type = data.get('entry_type', '').lower()
+            target_version = data.get('target_version')
+            admin_reason = data.get('admin_reason', '').strip()
             
-            if withdrawal['status'] != 'PENDING':
-                return jsonify({'success': False, 'message': 'Withdrawal already processed'}), 400
-            
-            # 2. Get user
-            user = mongo.db.users.find_one({'_id': withdrawal['userId']})
-            if not user:
-                return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-            # 3. Verify balance still available
-            if user.get('withdrawableCommissionBalance', 0) < withdrawal['amount']:
+            # Validation
+            if entry_type not in ['income', 'expense']:
                 return jsonify({
                     'success': False,
-                    'message': 'Insufficient balance (balance changed since request)'
+                    'message': 'entry_type is required (income or expense)'
                 }), 400
             
-            # 4. Process withdrawal (atomic operations)
-            try:
-                # 4a. Update user balances
-                mongo.db.users.update_one(
-                    {'_id': user['_id']},
-                    {'$inc': {
-                        'withdrawableCommissionBalance': -withdrawal['amount'],
-                        'ficoreCreditBalance': int(withdrawal['amount'])  # Convert to credits (1:1)
-                    }}
-                )
+            if not target_version:
+                return jsonify({
+                    'success': False,
+                    'message': 'target_version is required'
+                }), 400
+            
+            if not admin_reason or len(admin_reason) < 10:
+                return jsonify({
+                    'success': False,
+                    'message': 'admin_reason is required (minimum 10 characters)'
+                }), 400
+            
+            # Strip prefix if present
+            clean_id = entry_id.replace('income_', '').replace('expense_', '')
+            
+            # Call the appropriate rollback endpoint
+            if entry_type == 'income':
+                # Import income blueprint functions
+                from blueprints.income import income_bp
                 
-                # 4b. Create credit transaction
-                credit_txn = {
-                    'userId': user['_id'],
-                    'type': 'REFERRAL_WITHDRAWAL',
-                    'amount': int(withdrawal['amount']),
-                    'status': 'completed',
-                    'description': f"Referral earnings withdrawal (₦{withdrawal['amount']:,.0f})",
-                    'relatedWithdrawal': withdrawal['_id'],
-                    'createdAt': datetime.utcnow()
-                }
-                credit_result = mongo.db.credit_transactions.insert_one(credit_txn)
+                # Make internal request to rollback endpoint
+                with current_app.test_request_context(
+                    f'/income/{clean_id}/rollback/{target_version}',
+                    method='POST',
+                    json={'reason': f'Admin rollback: {admin_reason}'}
+                ):
+                    # Set current user in request context
+                    from flask import g
+                    g.current_user = current_user
+                    
+                    # Call the rollback function
+                    response = current_app.test_client().post(
+                        f'/income/{clean_id}/rollback/{target_version}',
+                        json={'reason': f'Admin rollback: {admin_reason}'},
+                        headers={'Authorization': f'Bearer {request.headers.get("Authorization", "").replace("Bearer ", "")}'}
+                    )
+                    
+                    result = response.get_json()
+            else:
+                # Import expense blueprint functions
+                from blueprints.expenses import expenses_bp
                 
-                # 4c. Create corporate revenue entry (expense)
-                revenue_entry = {
-                    'type': 'REFERRAL_WITHDRAWAL',
-                    'category': 'REFERRAL_PAYOUT',
-                    'amount': -withdrawal['amount'],  # Negative (expense)
-                    'description': f"Referral withdrawal to FiCore Credits - {user.get('displayName', 'User')}",
-                    'userId': user['_id'],
-                    'relatedWithdrawal': withdrawal['_id'],
-                    'createdAt': datetime.utcnow()
-                }
-                revenue_result = mongo.db.corporate_revenue.insert_one(revenue_entry)
-                
-                # 4d. Update withdrawal request
-                mongo.db.withdrawal_requests.update_one(
-                    {'_id': withdrawal['_id']},
-                    {'$set': {
-                        'status': 'COMPLETED',
-                        'processedAt': datetime.utcnow(),
-                        'completedAt': datetime.utcnow(),
-                        'processedBy': admin_id,
-                        'notes': notes,
-                        'relatedCreditTransaction': credit_result.inserted_id,
-                        'relatedRevenueEntry': revenue_result.inserted_id,
-                        'updatedAt': datetime.utcnow()
-                    }}
-                )
-                
-                # 5. Log admin action
-                mongo.db.admin_actions.insert_one({
-                    'adminId': admin_id,
-                    'action': 'WITHDRAWAL_APPROVED',
-                    'details': f"User: {user.get('displayName')}, Amount: ₦{withdrawal['amount']:,.0f}",
-                    'timestamp': datetime.utcnow()
+                # Make internal request to rollback endpoint
+                with current_app.test_request_context(
+                    f'/expenses/{clean_id}/rollback/{target_version}',
+                    method='POST',
+                    json={'reason': f'Admin rollback: {admin_reason}'}
+                ):
+                    # Set current user in request context
+                    from flask import g
+                    g.current_user = current_user
+                    
+                    # Call the rollback function
+                    response = current_app.test_client().post(
+                        f'/expenses/{clean_id}/rollback/{target_version}',
+                        json={'reason': f'Admin rollback: {admin_reason}'},
+                        headers={'Authorization': f'Bearer {request.headers.get("Authorization", "").replace("Bearer ", "")}'}
+                    )
+                    
+                    result = response.get_json()
+            
+            # Log admin action
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', ''),
+                'action': 'entry_rollback',
+                'targetEntryId': ObjectId(clean_id),
+                'targetEntryType': entry_type,
+                'targetVersion': target_version,
+                'reason': admin_reason,
+                'timestamp': datetime.utcnow(),
+                'result': 'success' if result.get('success') else 'failed'
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+            
+            if result.get('success'):
+                return jsonify({
+                    'success': True,
+                    'data': result.get('data', {}),
+                    'message': f'Entry rolled back to version {target_version} successfully'
                 })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': result.get('message', 'Rollback failed'),
+                    'errors': result.get('errors', {})
+                }), 400
+            
+        except Exception as e:
+            print(f"Error rolling back entry: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to rollback entry',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/financial-entries/discrepancies', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_entry_discrepancies(current_user):
+        """
+        Get all entries that were edited after being exported
+        
+        Query Parameters:
+        - user_id: Filter by specific user (optional)
+        - entry_type: 'income' | 'expense' | 'both' (default: 'both')
+        - severity: 'low' | 'medium' | 'high' | 'all' (default: 'all')
+        - start_date: Start date (YYYY-MM-DD) (optional)
+        - end_date: End date (YYYY-MM-DD) (optional)
+        - page: Page number (default: 1)
+        - limit: Items per page (default: 50, max: 100)
+        """
+        try:
+            # Get query parameters
+            user_id = request.args.get('user_id', '')
+            entry_type = request.args.get('entry_type', 'both')
+            severity = request.args.get('severity', 'all')
+            start_date_str = request.args.get('start_date', '')
+            end_date_str = request.args.get('end_date', '')
+            page = int(request.args.get('page', 1))
+            limit = min(int(request.args.get('limit', 50)), 100)
+            
+            # Build base query - entries with export history
+            base_query = {
+                'exportHistory': {'$exists': True, '$ne': []}
+            }
+            
+            # User filter
+            if user_id:
+                base_query['userId'] = ObjectId(user_id)
+            
+            # Date filter
+            date_filter = {}
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                date_filter['$gte'] = start_date
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                date_filter['$lte'] = end_date
+            
+            # Collect discrepancies
+            discrepancies = []
+            
+            # Check income entries
+            if entry_type in ['income', 'both']:
+                income_query = base_query.copy()
+                if date_filter:
+                    income_query['date'] = date_filter
                 
-                print(f"✅ Withdrawal approved: {user.get('displayName')} - ₦{withdrawal['amount']:,.0f}")
+                incomes = list(mongo.db.incomes.find(income_query))
+                for income in incomes:
+                    # Check if current version > any exported version
+                    current_version = income.get('version', 1)
+                    export_history = income.get('exportHistory', [])
+                    
+                    for export in export_history:
+                        exported_version = export.get('versionAtExport', 1)
+                        if current_version > exported_version:
+                            # Discrepancy found
+                            user = mongo.db.users.find_one({'_id': income['userId']})
+                            
+                            # Determine severity
+                            version_log = income.get('versionLog', [])
+                            changes_after_export = [v for v in version_log if v.get('version', 1) > exported_version]
+                            
+                            severity_level = 'low'
+                            if any('amount' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'high'
+                            elif any('date' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'medium'
+                            
+                            if severity != 'all' and severity_level != severity:
+                                continue
+                            
+                            discrepancies.append({
+                                'entryId': str(income['_id']),
+                                'entryType': 'income',
+                                'user': {
+                                    'id': str(user['_id']) if user else '',
+                                    'email': user.get('email', '') if user else '',
+                                    'displayName': user.get('displayName', '') if user else ''
+                                },
+                                'currentVersion': current_version,
+                                'exportedVersion': exported_version,
+                                'exportedAt': export.get('exportedAt', datetime.utcnow()).isoformat() + 'Z',
+                                'reportName': export.get('reportName', 'Unknown'),
+                                'severity': severity_level,
+                                'amount': income.get('amount', 0),
+                                'category': income.get('category', ''),
+                                'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
+                            })
+            
+            # Check expense entries
+            if entry_type in ['expense', 'both']:
+                expense_query = base_query.copy()
+                if date_filter:
+                    expense_query['date'] = date_filter
+                
+                expenses = list(mongo.db.expenses.find(expense_query))
+                for expense in expenses:
+                    # Check if current version > any exported version
+                    current_version = expense.get('version', 1)
+                    export_history = expense.get('exportHistory', [])
+                    
+                    for export in export_history:
+                        exported_version = export.get('versionAtExport', 1)
+                        if current_version > exported_version:
+                            # Discrepancy found
+                            user = mongo.db.users.find_one({'_id': expense['userId']})
+                            
+                            # Determine severity
+                            version_log = expense.get('versionLog', [])
+                            changes_after_export = [v for v in version_log if v.get('version', 1) > exported_version]
+                            
+                            severity_level = 'low'
+                            if any('amount' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'high'
+                            elif any('date' in str(v.get('data', {})) for v in changes_after_export):
+                                severity_level = 'medium'
+                            
+                            if severity != 'all' and severity_level != severity:
+                                continue
+                            
+                            discrepancies.append({
+                                'entryId': str(expense['_id']),
+                                'entryType': 'expense',
+                                'user': {
+                                    'id': str(user['_id']) if user else '',
+                                    'email': user.get('email', '') if user else '',
+                                    'displayName': user.get('displayName', '') if user else ''
+                                },
+                                'currentVersion': current_version,
+                                'exportedVersion': exported_version,
+                                'exportedAt': export.get('exportedAt', datetime.utcnow()).isoformat() + 'Z',
+                                'reportName': export.get('reportName', 'Unknown'),
+                                'severity': severity_level,
+                                'amount': expense.get('amount', 0),
+                                'category': expense.get('category', ''),
+                                'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z'
+                            })
+            
+            # Sort by severity (high first) and date
+            severity_order = {'high': 0, 'medium': 1, 'low': 2}
+            discrepancies.sort(key=lambda x: (severity_order.get(x['severity'], 3), x['date']), reverse=True)
+            
+            # Pagination
+            total = len(discrepancies)
+            skip = (page - 1) * limit
+            paginated_discrepancies = discrepancies[skip:skip + limit]
+            
+            # Count by severity
+            severity_counts = {
+                'high': len([d for d in discrepancies if d['severity'] == 'high']),
+                'medium': len([d for d in discrepancies if d['severity'] == 'medium']),
+                'low': len([d for d in discrepancies if d['severity'] == 'low'])
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'discrepancies': paginated_discrepancies,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'pages': (total + limit - 1) // limit,
+                        'hasNext': page * limit < total,
+                        'hasPrev': page > 1
+                    },
+                    'severityCounts': severity_counts
+                },
+                'message': 'Discrepancies retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting discrepancies: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to retrieve discrepancies',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/audit-trail/export', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_audit_trail(current_user):
+        """
+        Export complete audit trail as CSV
+        
+        Query Parameters:
+        - user_id: Filter by specific user (optional)
+        - entry_type: 'income' | 'expense' | 'both' (default: 'both')
+        - start_date: Start date (YYYY-MM-DD) (optional)
+        - end_date: End date (YYYY-MM-DD) (optional)
+        """
+        try:
+            from io import StringIO
+            import csv
+            from flask import make_response
+            
+            # Get query parameters
+            user_id = request.args.get('user_id', '')
+            entry_type = request.args.get('entry_type', 'both')
+            start_date_str = request.args.get('start_date', '')
+            end_date_str = request.args.get('end_date', '')
+            
+            # Build base query
+            base_query = {
+                'versionLog': {'$exists': True, '$ne': []}
+            }
+            
+            # User filter
+            if user_id:
+                base_query['userId'] = ObjectId(user_id)
+            
+            # Date filter
+            date_filter = {}
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                date_filter['$gte'] = start_date
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                date_filter['$lte'] = end_date
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Entry ID',
+                'Entry Type',
+                'User Email',
+                'User Name',
+                'Version',
+                'Timestamp',
+                'Amount',
+                'Category',
+                'Description',
+                'Date',
+                'Status',
+                'Changed By',
+                'Reason',
+                'Exported In Reports'
+            ])
+            
+            # Collect audit trail data
+            audit_data = []
+            
+            # Get income entries
+            if entry_type in ['income', 'both']:
+                income_query = base_query.copy()
+                if date_filter:
+                    income_query['date'] = date_filter
+                
+                incomes = list(mongo.db.incomes.find(income_query))
+                for income in incomes:
+                    user = mongo.db.users.find_one({'_id': income['userId']})
+                    version_log = income.get('versionLog', [])
+                    export_history = income.get('exportHistory', [])
+                    
+                    for version in version_log:
+                        data = version.get('data', {})
+                        exported_in = ', '.join([e.get('reportName', '') for e in export_history if e.get('versionAtExport', 1) == version.get('version', 1)])
+                        
+                        audit_data.append([
+                            str(income['_id']),
+                            'income',
+                            user.get('email', '') if user else '',
+                            user.get('displayName', '') if user else '',
+                            version.get('version', 1),
+                            version.get('timestamp', datetime.utcnow()).isoformat(),
+                            data.get('amount', ''),
+                            data.get('category', ''),
+                            data.get('description', ''),
+                            data.get('date', ''),
+                            income.get('status', 'active'),
+                            version.get('changedBy', 'user'),
+                            version.get('reason', ''),
+                            exported_in
+                        ])
+            
+            # Get expense entries
+            if entry_type in ['expense', 'both']:
+                expense_query = base_query.copy()
+                if date_filter:
+                    expense_query['date'] = date_filter
+                
+                expenses = list(mongo.db.expenses.find(expense_query))
+                for expense in expenses:
+                    user = mongo.db.users.find_one({'_id': expense['userId']})
+                    version_log = expense.get('versionLog', [])
+                    export_history = expense.get('exportHistory', [])
+                    
+                    for version in version_log:
+                        data = version.get('data', {})
+                        exported_in = ', '.join([e.get('reportName', '') for e in export_history if e.get('versionAtExport', 1) == version.get('version', 1)])
+                        
+                        audit_data.append([
+                            str(expense['_id']),
+                            'expense',
+                            user.get('email', '') if user else '',
+                            user.get('displayName', '') if user else '',
+                            version.get('version', 1),
+                            version.get('timestamp', datetime.utcnow()).isoformat(),
+                            data.get('amount', ''),
+                            data.get('category', ''),
+                            data.get('description', ''),
+                            data.get('date', ''),
+                            expense.get('status', 'active'),
+                            version.get('changedBy', 'user'),
+                            version.get('reason', ''),
+                            exported_in
+                        ])
+            
+            # Sort by timestamp
+            audit_data.sort(key=lambda x: x[5], reverse=True)
+            
+            # Write data
+            for row in audit_data:
+                writer.writerow(row)
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Log admin action
+            audit_entry = {
+                '_id': ObjectId(),
+                'adminId': current_user['_id'],
+                'adminEmail': current_user.get('email', ''),
+                'action': 'audit_trail_export',
+                'filters': {
+                    'user_id': user_id,
+                    'entry_type': entry_type,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str
+                },
+                'recordCount': len(audit_data),
+                'timestamp': datetime.utcnow()
+            }
+            
+            mongo.db.admin_actions.insert_one(audit_entry)
+            
+            # Return as downloadable file
+            response = make_response(csv_content)
+            response.headers['Content-Type'] = 'text/csv'
+            
+            # Generate filename
+            filename_parts = ['ficore_audit_trail']
+            if user_id:
+                user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+                if user:
+                    filename_parts.append(user.get('email', '').replace('@', '_at_'))
+            if start_date_str:
+                filename_parts.append(f'from_{start_date_str}')
+            if end_date_str:
+                filename_parts.append(f'to_{end_date_str}')
+            filename_parts.append(datetime.utcnow().strftime('%Y%m%d_%H%M%S'))
+            
+            filename = '_'.join(filename_parts) + '.csv'
+            response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting audit trail: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export audit trail',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    # ===== KYC MANAGEMENT ENDPOINTS =====
+    
+    @admin_bp.route('/kyc/pending', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_pending_kyc_submissions(current_user):
+        """Get all pending KYC submissions for admin review"""
+        try:
+            # Get all submissions with status SUBMITTED
+            submissions = list(mongo.db.kyc_submissions.find({
+                'status': 'SUBMITTED'
+            }).sort('submittedAt', -1))
+            
+            # Enrich with user data
+            enriched_submissions = []
+            for submission in submissions:
+                user = mongo.db.users.find_one({'_id': submission['userId']})
+                
+                # Decrypt and mask sensitive data for display
+                from utils.kyc_encryption import decrypt_sensitive_data, mask_sensitive_data
+                
+                bvn_decrypted = decrypt_sensitive_data(submission.get('bvnNumber', ''))
+                nin_decrypted = decrypt_sensitive_data(submission.get('ninNumber', ''))
+                
+                enriched_submission = {
+                    '_id': str(submission['_id']),
+                    'userId': str(submission['userId']),
+                    'userEmail': user.get('email', 'Unknown') if user else 'Unknown',
+                    'submissionType': submission.get('submissionType', 'UNKNOWN'),
+                    'firstName': submission.get('firstName', ''),
+                    'lastName': submission.get('lastName', ''),
+                    'phoneNumber': submission.get('phoneNumber', ''),
+                    'dateOfBirth': submission.get('dateOfBirth', ''),
+                    'bvnNumberMasked': mask_sensitive_data(bvn_decrypted) if bvn_decrypted else None,
+                    'ninNumberMasked': mask_sensitive_data(nin_decrypted) if nin_decrypted else None,
+                    'status': submission.get('status', 'UNKNOWN'),
+                    'submittedAt': submission.get('submittedAt').isoformat() + 'Z' if submission.get('submittedAt') else None,
+                    'metadata': submission.get('metadata', {})
+                }
+                
+                enriched_submissions.append(enriched_submission)
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'submissions': enriched_submissions,
+                    'total': len(enriched_submissions)
+                },
+                'message': 'KYC submissions retrieved successfully'
+            })
+            
+        except Exception as e:
+            print(f"Error getting KYC submissions: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get KYC submissions',
+                'errors': {'general': [str(e)]}
+            }), 500
+    
+    @admin_bp.route('/kyc/verify/<submission_id>', methods=['POST'])
+    @token_required
+    @admin_required
+    def verify_kyc_submission(current_user, submission_id):
+        """Verify or reject a KYC submission and upgrade wallet tier"""
+        try:
+            data = request.get_json()
+            action = data.get('action')  # 'VERIFY' or 'REJECT'
+            reason = data.get('reason', '')  # Required for REJECT
+            
+            if action not in ['VERIFY', 'REJECT']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid action. Must be VERIFY or REJECT'
+                }), 400
+            
+            # Get submission
+            submission = mongo.db.kyc_submissions.find_one({'_id': ObjectId(submission_id)})
+            if not submission:
+                return jsonify({
+                    'success': False,
+                    'message': 'KYC submission not found'
+                }), 404
+            
+            user_id = submission['userId']
+            user = mongo.db.users.find_one({'_id': user_id})
+            if not user:
+                return jsonify({
+                    'success': False,
+                    'message': 'User not found'
+                }), 404
+            
+            if action == 'VERIFY':
+                # Decrypt sensitive data
+                from utils.kyc_encryption import decrypt_sensitive_data
+                
+                bvn = decrypt_sensitive_data(submission.get('bvnNumber', ''))
+                nin = decrypt_sensitive_data(submission.get('ninNumber', ''))
+                
+                # Update submission status
+                mongo.db.kyc_submissions.update_one(
+                    {'_id': ObjectId(submission_id)},
+                    {
+                        '$set': {
+                            'status': 'VERIFIED',
+                            'verifiedAt': datetime.utcnow(),
+                            'verifiedBy': current_user['_id'],
+                            'verifiedByEmail': current_user.get('email', 'Unknown')
+                        }
+                    }
+                )
+                
+                # Update user profile
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {
+                        '$set': {
+                            'kycStatus': 'verified',
+                            'kycVerified': True,
+                            'kycVerifiedAt': datetime.utcnow(),
+                            'bvn': bvn,
+                            'nin': nin,
+                            'bvnVerified': True,
+                            'ninVerified': True,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                # CRITICAL: Upgrade wallet to TIER_2
+                wallet = mongo.db.vas_wallets.find_one({'userId': user_id})
+                if wallet:
+                    mongo.db.vas_wallets.update_one(
+                        {'userId': user_id},
+                        {
+                            '$set': {
+                                'tier': 'TIER_2',
+                                'kycTier': 2,
+                                'kycVerified': True,
+                                'kycStatus': 'verified',
+                                'bvnVerified': True,
+                                'ninVerified': True,
+                                'updatedAt': datetime.utcnow()
+                            }
+                        }
+                    )
+                    print(f"✅ Wallet upgraded to TIER_2 for user {user_id}")
+                else:
+                    print(f"⚠️ No wallet found for user {user_id} - wallet will be TIER_2 when created")
+                
+                # Create audit log
+                audit_log = {
+                    '_id': ObjectId(),
+                    'adminId': current_user['_id'],
+                    'adminEmail': current_user.get('email', 'unknown'),
+                    'action': 'VERIFY_KYC',
+                    'targetUserId': user_id,
+                    'targetUserEmail': user.get('email', 'unknown'),
+                    'details': {
+                        'submissionId': submission_id,
+                        'submissionType': submission.get('submissionType'),
+                        'walletUpgraded': wallet is not None,
+                        'newTier': 'TIER_2'
+                    },
+                    'timestamp': datetime.utcnow(),
+                    'ipAddress': request.remote_addr,
+                    'userAgent': request.headers.get('User-Agent', 'Unknown')
+                }
+                mongo.db.audit_logs.insert_one(audit_log)
+                
+                # Send notification to user
+                from blueprints.notifications import create_user_notification
+                
+                create_user_notification(
+                    mongo=mongo,
+                    user_id=str(user_id),
+                    category='wallet',
+                    title='🎉 KYC Verified!',
+                    body='Your identity verification has been approved. Your wallet has been upgraded to TIER 2 with full VAS access and higher transaction limits.',
+                    metadata={
+                        'type': 'kyc_verified',
+                        'newTier': 'TIER_2',
+                        'verifiedAt': datetime.utcnow().isoformat() + 'Z',
+                        'action': 'view_wallet'
+                    },
+                    priority='high'
+                )
+                
+                print(f"✅ Admin {current_user.get('email')} verified KYC for user {user.get('email')}")
+                print(f"📱 Notification sent to user about KYC verification")
                 
                 return jsonify({
                     'success': True,
-                    'message': 'Withdrawal approved and processed successfully',
+                    'message': 'KYC verified successfully. User wallet upgraded to TIER_2.',
                     'data': {
-                        'newCreditBalance': user.get('ficoreCreditBalance', 0) + int(withdrawal['amount'])
+                        'userId': str(user_id),
+                        'newTier': 'TIER_2',
+                        'verifiedAt': datetime.utcnow().isoformat() + 'Z'
                     }
-                }), 200
+                })
                 
-            except Exception as e:
-                # Rollback on error
-                print(f"❌ Error processing withdrawal: {e}")
-                mongo.db.withdrawal_requests.update_one(
-                    {'_id': withdrawal['_id']},
-                    {'$set': {
-                        'status': 'FAILED',
-                        'notes': f'Processing error: {str(e)}',
-                        'updatedAt': datetime.utcnow()
-                    }}
+            else:  # REJECT
+                if not reason or len(reason) < 10:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Rejection reason must be at least 10 characters'
+                    }), 400
+                
+                # Update submission status
+                mongo.db.kyc_submissions.update_one(
+                    {'_id': ObjectId(submission_id)},
+                    {
+                        '$set': {
+                            'status': 'REJECTED',
+                            'rejectedAt': datetime.utcnow(),
+                            'rejectedBy': current_user['_id'],
+                            'rejectedByEmail': current_user.get('email', 'Unknown'),
+                            'rejectionReason': reason
+                        }
+                    }
                 )
-                return jsonify({
-                    'success': False,
-                    'message': 'Failed to process withdrawal'
-                }), 500
                 
+                # Update user status
+                mongo.db.users.update_one(
+                    {'_id': user_id},
+                    {
+                        '$set': {
+                            'kycStatus': 'rejected',
+                            'kycRejectedAt': datetime.utcnow(),
+                            'kycRejectionReason': reason,
+                            'updatedAt': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                # Create audit log
+                audit_log = {
+                    '_id': ObjectId(),
+                    'adminId': current_user['_id'],
+                    'adminEmail': current_user.get('email', 'unknown'),
+                    'action': 'REJECT_KYC',
+                    'targetUserId': user_id,
+                    'targetUserEmail': user.get('email', 'unknown'),
+                    'details': {
+                        'submissionId': submission_id,
+                        'submissionType': submission.get('submissionType'),
+                        'rejectionReason': reason
+                    },
+                    'timestamp': datetime.utcnow(),
+                    'ipAddress': request.remote_addr,
+                    'userAgent': request.headers.get('User-Agent', 'Unknown')
+                }
+                mongo.db.audit_logs.insert_one(audit_log)
+                
+                # Send notification to user
+                from blueprints.notifications import create_user_notification
+                
+                create_user_notification(
+                    mongo=mongo,
+                    user_id=str(user_id),
+                    category='wallet',
+                    title='❌ KYC Verification Issue',
+                    body=f'Your identity verification was not approved. Reason: {reason}\n\nPlease review and resubmit with correct information.',
+                    metadata={
+                        'type': 'kyc_rejected',
+                        'rejectionReason': reason,
+                        'rejectedAt': datetime.utcnow().isoformat() + 'Z',
+                        'action': 'resubmit_kyc'
+                    },
+                    priority='high'
+                )
+                
+                print(f"❌ Admin {current_user.get('email')} rejected KYC for user {user.get('email')}: {reason}")
+                print(f"📱 Notification sent to user about KYC rejection")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'KYC rejected successfully',
+                    'data': {
+                        'userId': str(user_id),
+                        'rejectedAt': datetime.utcnow().isoformat() + 'Z',
+                        'reason': reason
+                    }
+                })
+            
         except Exception as e:
-            print(f"❌ Approve withdrawal error: {e}")
+            print(f"❌ Error verifying KYC: {str(e)}")
             import traceback
             traceback.print_exc()
             return jsonify({
                 'success': False,
-                'message': 'Failed to approve withdrawal'
+                'message': 'Failed to process KYC verification',
+                'errors': {'general': [str(e)]}
             }), 500
-    
-    @admin_bp.route('/withdrawals/<withdrawal_id>/reject', methods=['POST'])
+
+    # ===== ANNOUNCEMENT SYSTEM ENDPOINTS (NEW - Feb 27, 2026) =====
+
+    @admin_bp.route('/announcements/send', methods=['POST'])
     @token_required
     @admin_required
-    def reject_withdrawal(current_user, withdrawal_id):
+    def send_announcement(current_user):
         """
-        Reject a withdrawal request with reason.
+        Send announcement to all users or test mode
+        
+        Body:
+            subject: Email subject line (required)
+            title: Announcement headline (required)
+            body: Main message content (required)
+            ctaText: Call-to-action button text (optional)
+            ctaLink: Call-to-action button link (optional)
+            imageUrl: Hero image URL (optional)
+            testMode: If true, send only to testEmail (default: false)
+            testEmail: Email address for test mode (required if testMode=true)
+            announcementType: Type of announcement (general, feature, update, promotional, educational)
         """
         try:
-            data = request.get_json() or {}
-            reason = data.get('reason', 'No reason provided')
-            admin_id = current_user['_id']
+            data = request.get_json()
             
-            # 1. Get withdrawal request
-            withdrawal = mongo.db.withdrawal_requests.find_one({'_id': ObjectId(withdrawal_id)})
-            if not withdrawal:
-                return jsonify({'success': False, 'message': 'Withdrawal not found'}), 404
+            # Validate required fields
+            subject = data.get('subject', '').strip()
+            title = data.get('title', '').strip()
+            body = data.get('body', '').strip()
             
-            if withdrawal['status'] != 'PENDING':
-                return jsonify({'success': False, 'message': 'Withdrawal already processed'}), 400
+            if not subject:
+                return jsonify({
+                    'success': False,
+                    'message': 'Subject is required',
+                    'errors': {'subject': ['Subject is required']}
+                }), 400
             
-            # 2. Get user
-            user = mongo.db.users.find_one({'_id': withdrawal['userId']})
+            if not title:
+                return jsonify({
+                    'success': False,
+                    'message': 'Title is required',
+                    'errors': {'title': ['Title is required']}
+                }), 400
             
-            # 3. Update withdrawal request
-            mongo.db.withdrawal_requests.update_one(
-                {'_id': withdrawal['_id']},
-                {'$set': {
-                    'status': 'REJECTED',
-                    'processedAt': datetime.utcnow(),
-                    'processedBy': admin_id,
-                    'rejectionReason': reason,
-                    'updatedAt': datetime.utcnow()
-                }}
+            if not body:
+                return jsonify({
+                    'success': False,
+                    'message': 'Body is required',
+                    'errors': {'body': ['Body is required']}
+                }), 400
+            
+            # Optional fields - handle None values safely
+            cta_text = (data.get('ctaText') or '').strip() or None
+            cta_link = (data.get('ctaLink') or '').strip() or None
+            image_url = (data.get('imageUrl') or '').strip() or None
+            test_mode = data.get('testMode', False)
+            test_email = (data.get('testEmail') or '').strip() or None
+            announcement_type = data.get('announcementType', 'general')
+            excluded_user_ids = data.get('excludedUserIds', [])  # List of user IDs to exclude
+            
+            # Validate test mode
+            if test_mode and not test_email:
+                return jsonify({
+                    'success': False,
+                    'message': 'Test email is required for test mode',
+                    'errors': {'testEmail': ['Test email is required for test mode']}
+                }), 400
+            
+            # Get announcement service
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=mongo.db)
+            
+            # Send announcement
+            result = announcement_service.send_announcement(
+                subject=subject,
+                title=title,
+                body=body,
+                cta_text=cta_text,
+                cta_link=cta_link,
+                image_url=image_url,
+                test_mode=test_mode,
+                test_email=test_email,
+                announcement_type=announcement_type,
+                admin_id=str(current_user['_id']),
+                excluded_user_ids=excluded_user_ids
             )
             
-            # 4. Log admin action
-            mongo.db.admin_actions.insert_one({
-                'adminId': admin_id,
-                'action': 'WITHDRAWAL_REJECTED',
-                'details': f"User: {user.get('displayName') if user else 'Unknown'}, Reason: {reason}",
-                'timestamp': datetime.utcnow()
-            })
+            if result['success']:
+                print(f"✅ Admin {current_user.get('email')} sent announcement: {subject}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': result['message'],
+                    'data': {
+                        'broadcastId': result.get('broadcast_id'),
+                        'recipientCount': result.get('recipient_count', 1 if test_mode else 0),
+                        'testMode': test_mode,
+                        'sentAt': datetime.utcnow().isoformat() + 'Z'
+                    }
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': result['message'],
+                    'errors': {'general': [result.get('error', 'Unknown error')]}
+                }), 500
+        
+        except Exception as e:
+            print(f"❌ Error sending announcement: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to send announcement',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/announcements/stats', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_announcement_stats(current_user):
+        """
+        Get announcement statistics
+        
+        Query params:
+            days: Number of days to look back (default: 30)
+        """
+        try:
+            days = int(request.args.get('days', 30))
             
-            print(f"❌ Withdrawal rejected: {user.get('displayName') if user else 'Unknown'} - Reason: {reason}")
+            # Get announcement service
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=mongo.db)
+            
+            # Get stats
+            stats = announcement_service.get_announcement_stats(days=days)
+            
+            if 'error' in stats:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to get announcement stats',
+                    'errors': {'general': [stats['error']]}
+                }), 500
             
             return jsonify({
                 'success': True,
-                'message': 'Withdrawal rejected successfully'
-            }), 200
-            
+                'data': stats,
+                'message': f'Announcement stats for last {days} days'
+            })
+        
         except Exception as e:
-            print(f"❌ Reject withdrawal error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ Error getting announcement stats: {str(e)}")
             return jsonify({
                 'success': False,
-                'message': 'Failed to reject withdrawal'
+                'message': 'Failed to get announcement stats',
+                'errors': {'general': [str(e)]}
             }), 500
-    
-    @admin_bp.route('/withdrawals/history', methods=['GET'])
+
+    @admin_bp.route('/announcements/audience-count', methods=['GET'])
     @token_required
     @admin_required
-    def get_withdrawal_history(current_user):
+    def get_audience_count(current_user):
         """
-        Get all withdrawal requests (all statuses) for admin review.
+        Get count of users in Resend audience
         """
         try:
-            status_filter = request.args.get('status', 'all')
-            limit = int(request.args.get('limit', 50))
+            # Count users with resendContactId (synced users)
+            synced_count = mongo.db.users.count_documents({'resendContactId': {'$exists': True}})
+            total_count = mongo.db.users.count_documents({})
             
-            # Build query
-            query = {}
-            if status_filter != 'all':
-                query['status'] = status_filter.upper()
+            return jsonify({
+                'success': True,
+                'data': {
+                    'syncedUsers': synced_count,
+                    'totalUsers': total_count,
+                    'unsyncedUsers': total_count - synced_count,
+                    'syncPercentage': round((synced_count / total_count * 100) if total_count > 0 else 0, 2)
+                },
+                'message': 'Audience count retrieved successfully'
+            })
+        
+        except Exception as e:
+            print(f"❌ Error getting audience count: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to get audience count',
+                'errors': {'general': [str(e)]}
+            }), 500
+
+    @admin_bp.route('/announcements/recipient-list', methods=['GET'])
+    @token_required
+    @admin_required
+    def get_recipient_list(current_user):
+        """
+        Get list of all users who will receive announcements
+        Returns real users (excluding test accounts) with their details
+        """
+        try:
+            # Get all users with resendContactId (synced users)
+            users = list(mongo.db.users.find(
+                {'resendContactId': {'$exists': True}},
+                {
+                    '_id': 1,
+                    'email': 1,
+                    'firstName': 1,
+                    'lastName': 1,
+                    'displayName': 1,
+                    'createdAt': 1,
+                    'lastLogin': 1
+                }
+            ).sort('email', 1))
             
-            # Get requests
-            requests = list(mongo.db.withdrawal_requests.find(query).sort('requestedAt', -1).limit(limit))
+            # Filter out test accounts
+            from utils.test_account_filter import filter_test_accounts_from_list
+            real_users = filter_test_accounts_from_list(users)
+            test_count = len(users) - len(real_users)
             
-            # Enrich with user details
-            formatted_requests = []
-            for req in requests:
-                user = mongo.db.users.find_one({'_id': req['userId']})
-                if not user:
-                    continue
-                
-                formatted_requests.append({
-                    'id': str(req['_id']),
-                    'user': {
-                        'name': user.get('displayName', 'Unknown'),
-                        'email': user.get('email', 'N/A')
-                    },
-                    'amount': req['amount'],
-                    'status': req['status'],
-                    'requestedAt': req['requestedAt'].isoformat(),
-                    'processedAt': req['processedAt'].isoformat() if req.get('processedAt') else None,
-                    'rejectionReason': req.get('rejectionReason')
+            # Format user data
+            recipient_list = []
+            for user in real_users:
+                recipient_list.append({
+                    'id': str(user['_id']),
+                    'email': user.get('email', ''),
+                    'firstName': user.get('firstName', ''),
+                    'lastName': user.get('lastName', ''),
+                    'displayName': user.get('displayName', ''),
+                    'createdAt': user.get('createdAt').isoformat() + 'Z' if user.get('createdAt') else None,
+                    'lastLogin': user.get('lastLogin').isoformat() + 'Z' if user.get('lastLogin') else None
                 })
             
             return jsonify({
                 'success': True,
                 'data': {
-                    'withdrawals': formatted_requests,
-                    'count': len(formatted_requests)
-                }
-            }), 200
-            
+                    'recipients': recipient_list,
+                    'totalCount': len(recipient_list),
+                    'testAccountsExcluded': test_count
+                },
+                'message': 'Recipient list retrieved successfully'
+            })
+        
         except Exception as e:
-            print(f"❌ Get withdrawal history error: {e}")
+            print(f"❌ Error getting recipient list: {str(e)}")
             return jsonify({
                 'success': False,
-                'message': 'Failed to get withdrawal history'
+                'message': 'Failed to get recipient list',
+                'errors': {'general': [str(e)]}
             }), 500
-         
+
+    @admin_bp.route('/announcements/sync-all-users', methods=['POST'])
+    @token_required
+    @admin_required
+    def sync_all_users_to_resend(current_user):
+        """
+        Manually sync all existing users to Resend Audience
+        This is a one-time operation for historical users
+        """
+        try:
+            import time
+            
+            # Get announcement service
+            from services.announcement_service import get_announcement_service
+            announcement_service = get_announcement_service(mongo_db=mongo.db)
+            
+            # Import test account filter
+            from utils.test_account_filter import filter_test_accounts_from_list
+            
+            # Get all users that need syncing
+            users_to_sync = list(mongo.db.users.find(
+                {
+                    'resendContactId': {'$exists': False},
+                    'email': {'$exists': True}
+                },
+                {
+                    '_id': 1,
+                    'email': 1,
+                    'firstName': 1,
+                    'lastName': 1
+                }
+            ))
+            
+            # Filter out test accounts using existing utility
+            real_users = filter_test_accounts_from_list(users_to_sync)
+            test_count = len(users_to_sync) - len(real_users)
+            
+            print(f"📊 Found {len(real_users)} real users to sync (excluded {test_count} test accounts)")
+            
+            # Sync users with rate limiting (2 requests/second max)
+            success_count = 0
+            error_count = 0
+            errors = []
+            
+            for i, user in enumerate(real_users):
+                try:
+                    result = announcement_service.sync_user_to_audience(
+                        email=user.get('email'),
+                        first_name=user.get('firstName', ''),
+                        last_name=user.get('lastName', ''),
+                        user_id=str(user.get('_id'))
+                    )
+                    
+                    if result['success']:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        errors.append({
+                            'email': user.get('email'),
+                            'error': result.get('error')
+                        })
+                    
+                    # Rate limiting: Sleep 0.6 seconds between requests (1.67 requests/second)
+                    # This stays under the 2 requests/second limit
+                    if i < len(real_users) - 1:  # Don't sleep after last user
+                        time.sleep(0.6)
+                        
+                except Exception as e:
+                    error_count += 1
+                    errors.append({
+                        'email': user.get('email'),
+                        'error': str(e)
+                    })
+                    
+                    # Still sleep to avoid rate limit on next request
+                    if i < len(real_users) - 1:
+                        time.sleep(0.6)
+            
+            print(f"✅ Sync complete: {success_count} success, {error_count} failed")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Synced {success_count} users to Resend Audience',
+                'data': {
+                    'totalUsers': len(real_users),
+                    'successCount': success_count,
+                    'errorCount': error_count,
+                    'errors': errors[:10]  # Return first 10 errors
+                }
+            })
+        
+        except Exception as e:
+            print(f"❌ Error syncing users: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to sync users',
+                'errors': {'general': [str(e)]}
+            }), 500
+
     return admin_bp
+

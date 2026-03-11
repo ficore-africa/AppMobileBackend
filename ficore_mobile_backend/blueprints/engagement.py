@@ -2,6 +2,10 @@
 Engagement Blueprint for ₦0 Communication Strategy
 Handles weekly engagement reminders and user retention emails
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from utils.engagement_reminder_service import send_weekly_engagement_reminders

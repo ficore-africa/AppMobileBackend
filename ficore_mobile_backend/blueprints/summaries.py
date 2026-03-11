@@ -1,6 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
+from utils.decimal_helpers import safe_float
 
 def init_summaries_blueprint(mongo, token_required, serialize_doc):
     """Initialize the summaries blueprint with database and dependencies"""
@@ -29,13 +34,17 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 now = datetime.utcnow()
                 one_minute_ago = now - timedelta(minutes=1)
                 
-                recent_expenses = list(mongo.db.expenses.find({
-                    'userId': current_user['_id'],
-                    '$or': [
-                        {'date': {'$lte': now}},  # Past & present entries
-                        {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
-                    ]
-                }).sort('createdAt', -1).limit(limit))
+                # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for consistency
+                from utils.immutable_ledger_helper import get_active_transactions_query
+                base_query = get_active_transactions_query(current_user['_id'])
+                
+                # Add date filtering
+                base_query['$or'] = [
+                    {'date': {'$lte': now}},  # Past & present entries
+                    {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                ]
+                
+                recent_expenses = list(mongo.db.expenses.find(base_query).sort('createdAt', -1).limit(limit))
                 
                 # DISABLED FOR LIQUID WALLET FOCUS
                 # print(f"Found {len(recent_expenses)} expense transactions for user {current_user['_id']}")
@@ -46,7 +55,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'type': 'EXPENSE',
                         'subtype': 'EXPENSE',
                         'title': expense.get('title', expense.get('description', 'Expense')),
-                        'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
+                        'description': f"Spent ₦{safe_float(expense.get('amount', 0)):,.2f} on {expense.get('category', 'Unknown')}",
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Unknown'),
                         'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
@@ -69,13 +78,17 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                 now = datetime.utcnow()
                 one_minute_ago = now - timedelta(minutes=1)
                 
-                recent_incomes = list(mongo.db.incomes.find({
-                    'userId': current_user['_id'],
-                    '$or': [
-                        {'dateReceived': {'$lte': now}},  # Past & present entries
-                        {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
-                    ]
-                }).sort('createdAt', -1).limit(limit))
+                # CRITICAL FIX (Feb 8, 2026): Use get_active_transactions_query for consistency
+                from utils.immutable_ledger_helper import get_active_transactions_query
+                base_query = get_active_transactions_query(current_user['_id'])
+                
+                # Add date filtering
+                base_query['$or'] = [
+                    {'dateReceived': {'$lte': now}},  # Past & present entries
+                    {'createdAt': {'$gte': one_minute_ago}}  # Recently created entries
+                ]
+                
+                recent_incomes = list(mongo.db.incomes.find(base_query).sort('createdAt', -1).limit(limit))
                 
                 # DISABLED FOR LIQUID WALLET FOCUS
                 # print(f"Found {len(recent_incomes)} income transactions for user {current_user['_id']}")
@@ -86,7 +99,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         'type': 'INCOME',
                         'subtype': 'INCOME',
                         'title': income.get('title', income.get('source', 'Income')),
-                        'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
+                        'description': f"Received ₦{safe_float(income.get('amount', 0)):,.2f} from {income.get('source', 'Unknown')}",
                         'amount': income.get('amount', 0),
                         'source': income.get('source', 'Unknown'),
                         'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',
@@ -164,26 +177,26 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                         
                         if txn_type == 'WALLET_FUNDING':
                             title = 'Wallet Funded'
-                            description = f'Added ₦{amount:,.2f} to Liquid Wallet'
+                            description = f'Added ₦{safe_float(amount):,.2f} to Liquid Wallet'
                             icon = 'wallet'
                         elif txn_type == 'AIRTIME_PURCHASE':
                             title = 'Airtime Purchase'
                             phone = txn.get('metadata', {}).get('phoneNumber', 'Unknown')
-                            description = f'₦{amount:,.2f} airtime sent to {phone[-4:]}****' if phone != 'Unknown' else f'₦{amount:,.2f} airtime purchase'
+                            description = f'₦{safe_float(amount):,.2f} airtime sent to {phone[-4:]}****' if phone != 'Unknown' else f'₦{safe_float(amount):,.2f} airtime purchase'
                             icon = 'phone'
                         elif txn_type == 'DATA_PURCHASE':
                             title = 'Data Purchase'
                             phone = txn.get('metadata', {}).get('phoneNumber', 'Unknown')
                             plan = txn.get('metadata', {}).get('planName', 'Data')
-                            description = f'{plan} for {phone[-4:]}****' if phone != 'Unknown' else f'₦{amount:,.2f} data purchase'
+                            description = f'{plan} for {phone[-4:]}****' if phone != 'Unknown' else f'₦{safe_float(amount):,.2f} data purchase'
                             icon = 'data'
                         elif txn_type == 'KYC_VERIFICATION':
                             title = 'KYC Verification'
-                            description = f'Account verification fee ₦{amount:,.2f}'
+                            description = f'Account verification fee ₦{safe_float(amount):,.2f}'
                             icon = 'verification'
                         else:
                             title = f'VAS {txn_type.replace("_", " ").title()}'
-                            description = f'₦{amount:,.2f} VAS transaction'
+                            description = f'₦{safe_float(amount):,.2f} VAS transaction'
                             icon = 'vas'
                         
                         activity = {
@@ -226,7 +239,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'id': str(expense['_id']),
                             'type': 'expense',
                             'title': expense.get('title', expense.get('description', 'Expense')),
-                            'description': f"Spent ₦{expense.get('amount', 0):,.2f} on {expense.get('category', 'Unknown')}",
+                            'description': f"Spent ₦{safe_float(expense.get('amount', 0)):,.2f} on {expense.get('category', 'Unknown')}",
                             'amount': expense.get('amount', 0),
                             'category': expense.get('category', 'Unknown'),
                             'date': expense.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
@@ -259,7 +272,7 @@ def init_summaries_blueprint(mongo, token_required, serialize_doc):
                             'id': str(income['_id']),
                             'type': 'income',
                             'title': income.get('title', income.get('source', 'Income')),
-                            'description': f"Received ₦{income.get('amount', 0):,.2f} from {income.get('source', 'Unknown')}",
+                            'description': f"Received ₦{safe_float(income.get('amount', 0)):,.2f} from {income.get('source', 'Unknown')}",
                             'amount': income.get('amount', 0),
                             'source': income.get('source', 'Unknown'),
                             'date': income.get('createdAt', datetime.utcnow()).isoformat() + 'Z',  # FIXED: Use createdAt for activity timestamp
