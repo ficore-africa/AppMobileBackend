@@ -102,9 +102,11 @@ def init_reports_blueprint(mongo, token_required):
     print("DEBUG: init_reports_blueprint called")
     """Initialize the reports blueprint with database and auth decorator"""
     reports_bp = Blueprint('reports', __name__, url_prefix='/api/reports')
+    print("DEBUG: Blueprint object created successfully")
     print("DEBUG: Blueprint created successfully")
     
     # Credit costs for different report types
+    print("DEBUG: About to define REPORT_CREDIT_COSTS")
     REPORT_CREDIT_COSTS = {
         # Basic Reports (2 FC each)
         'income_csv': 2,
@@ -149,9 +151,12 @@ def init_reports_blueprint(mongo, token_required):
         'statement_of_affairs_csv': 5,
     }    
     # Initialize PDF cache (singleton)
+    print("DEBUG: About to initialize PDF cache")
     pdf_cache = get_pdf_cache()
+    print("DEBUG: PDF cache initialized successfully")
     
     
+    print("DEBUG: About to define check_user_access function")
     def check_user_access(current_user, report_type):
         """
         Check if user has access to generate report (Premium or sufficient credits)
@@ -176,395 +181,396 @@ def init_reports_blueprint(mongo, token_required):
         has_access = current_balance >= credit_cost
         return has_access, False, current_balance, credit_cost
 
-def _validate_pdf_integrity(pdf_buffer):
-    """
-    Validate that the generated PDF is not corrupted and can be opened.
-    
-    Args:
-        pdf_buffer: BytesIO buffer containing PDF data
+    def _validate_pdf_integrity(pdf_buffer):
+        """
+        Validate that the generated PDF is not corrupted and can be opened.
         
-    Returns:
-        bool: True if PDF is valid, False if corrupted
-    """
-    try:
-        # Reset buffer position
-        pdf_buffer.seek(0)
-        pdf_data = pdf_buffer.read()
-        
-        # Check minimum size (empty or tiny PDFs are likely corrupted)
-        if len(pdf_data) < 1000:  # PDFs should be at least 1KB
-            print(f"[ERROR] PDF Validation: File too small ({len(pdf_data)} bytes)")
-            return False
-        
-        # Check PDF header
-        if not pdf_data.startswith(b'%PDF-'):
-            print(f"[ERROR] PDF Validation: Invalid PDF header")
-            return False
-        
-        # Check PDF footer (should end with %%EOF)
-        if not pdf_data.rstrip().endswith(b'%%EOF'):
-            print(f"[ERROR] PDF Validation: Invalid PDF footer")
-            return False
-        
-        # Try to parse with PyPDF2 (if available)
+        Args:
+            pdf_buffer: BytesIO buffer containing PDF data
+            
+        Returns:
+            bool: True if PDF is valid, False if corrupted
+        """
         try:
-            import PyPDF2
+            # Reset buffer position
             pdf_buffer.seek(0)
-            reader = PyPDF2.PdfReader(pdf_buffer)
+            pdf_data = pdf_buffer.read()
             
-            # Check if we can read at least one page
-            if len(reader.pages) == 0:
-                print(f"[ERROR] PDF Validation: No pages found")
+            # Check minimum size (empty or tiny PDFs are likely corrupted)
+            if len(pdf_data) < 1000:  # PDFs should be at least 1KB
+                print(f"[ERROR] PDF Validation: File too small ({len(pdf_data)} bytes)")
                 return False
-                
-            # Try to read first page content
-            first_page = reader.pages[0]
-            text = first_page.extract_text()
             
-            print(f"[OK] PDF Validation: Valid PDF with {len(reader.pages)} pages")
+            # Check PDF header
+            if not pdf_data.startswith(b'%PDF-'):
+                print(f"[ERROR] PDF Validation: Invalid PDF header")
+                return False
+            
+            # Check PDF footer (should end with %%EOF)
+            if not pdf_data.rstrip().endswith(b'%%EOF'):
+                print(f"[ERROR] PDF Validation: Invalid PDF footer")
+                return False
+            
+            # Try to parse with PyPDF2 (if available)
+            try:
+                import PyPDF2
+                pdf_buffer.seek(0)
+                reader = PyPDF2.PdfReader(pdf_buffer)
+                
+                # Check if we can read at least one page
+                if len(reader.pages) == 0:
+                    print(f"[ERROR] PDF Validation: No pages found")
+                    return False
+                    
+                # Try to read first page content
+                first_page = reader.pages[0]
+                text = first_page.extract_text()
+                
+                print(f"[OK] PDF Validation: Valid PDF with {len(reader.pages)} pages")
+                return True
+                
+            except ImportError:
+                # PyPDF2 not available, use basic validation
+                print(f"[WARNING] PDF Validation: PyPDF2 not available, using basic validation")
+                
+            # Reset buffer position for further use
+            pdf_buffer.seek(0)
+            
+            print(f"[OK] PDF Validation: Basic validation passed ({len(pdf_data)} bytes)")
             return True
             
-        except ImportError:
-            # PyPDF2 not available, use basic validation
-            print(f"[WARNING] PDF Validation: PyPDF2 not available, using basic validation")
+        except Exception as e:
+            print(f"[ERROR] PDF Validation: Exception during validation - {str(e)}")
+            return False
+
+
+    def _generate_pl_with_validation(pdf_generator, user_data, export_data, data_type, tag_filter):
+        """
+        Generate P&L PDF with integrity validation to prevent FC deduction for corrupted PDFs.
+        
+        Args:
+            pdf_generator: PDFGenerator instance
+            user_data: User information dict
+            export_data: Report data dict
+            data_type: Report data type ('all' for P&L)
+            tag_filter: Tag filter for report
             
-        # Reset buffer position for further use
-        pdf_buffer.seek(0)
-        
-        print(f"[OK] PDF Validation: Basic validation passed ({len(pdf_data)} bytes)")
-        return True
-        
-    except Exception as e:
-        print(f"[ERROR] PDF Validation: Exception during validation - {str(e)}")
-        return False
-
-
-def _generate_pl_with_validation(pdf_generator, user_data, export_data, data_type, tag_filter):
-    """
-    Generate P&L PDF with integrity validation to prevent FC deduction for corrupted PDFs.
-    
-    Args:
-        pdf_generator: PDFGenerator instance
-        user_data: User information dict
-        export_data: Report data dict
-        data_type: Report data type ('all' for P&L)
-        tag_filter: Tag filter for report
-        
-    Returns:
-        tuple: (pdf_buffer, is_valid)
-    """
-    try:
-        # Generate PDF
-        pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, data_type, tag_filter)
-        
-        # Validate PDF integrity
-        is_valid = _validate_pdf_integrity(pdf_buffer)
-        
-        if not is_valid:
-            print(f"[ERROR] P&L PDF Generation: Generated PDF failed validation")
-            return pdf_buffer, False
-            
-        print(f"[OK] P&L PDF Generation: PDF generated and validated successfully")
-        return pdf_buffer, True
-        
-    except Exception as e:
-        print(f"[ERROR] P&L PDF Generation: Exception during generation - {str(e)}")
-        return None, False
-
-
-def deduct_credits(current_user, credit_cost, report_type, job_id=None):
-    """
-    Deduct credits from user account and log transaction
-    CRITICAL: Also records FC consumption in business books (liability consumption)
-    """
-    user = mongo.db.users.find_one({'_id': current_user['_id']})
-    current_balance = user.get('ficoreCreditBalance', 0.0)
-    new_balance = current_balance - credit_cost
-    
-    # Update user balance
-    mongo.db.users.update_one(
-        {'_id': current_user['_id']},
-        {'$set': {'ficoreCreditBalance': new_balance}}
-    )
-    
-    # Log credit transaction
-    credit_transaction = {
-        'userId': current_user['_id'],
-        'type': 'deduction',
-        'amount': -credit_cost,
-        'description': f'Report Export - {report_type.upper()}',
-        'balanceBefore': current_balance,
-        'balanceAfter': new_balance,
-        'status': 'completed',
-        'metadata': {
-            'reportType': report_type,
-            'reportJobId': job_id,  # Track job ID for refund purposes
-            'exportFormat': 'pdf'
-        },
-        'createdAt': datetime.utcnow()
-    }
-    mongo.db.credit_transactions.insert_one(credit_transaction)
-    
-    # CRITICAL: Record FC consumption in business books (liability consumption)
-    # EXCLUDE test accounts (including business account) from consuming services
-    from utils.test_account_filter import is_test_account
-    
-    user_email = current_user.get('email', '')
-    if not is_test_account(user_email):
+        Returns:
+            tuple: (pdf_buffer, is_valid)
+        """
         try:
-            consumption_result = record_fc_consumption_revenue(
-                mongo=mongo,
-                user_id=current_user['_id'],
-                fc_amount=credit_cost,
-                description=f'Report Export - {report_type.upper()}',
-                service='report_export'
-            )
+            # Generate PDF
+            pdf_buffer = pdf_generator.generate_financial_report(user_data, export_data, data_type, tag_filter)
             
-            print(f'[OK] FC Consumption recorded: {credit_cost} FCs for {report_type} by {user_email}')
+            # Validate PDF integrity
+            is_valid = _validate_pdf_integrity(pdf_buffer)
+            
+            if not is_valid:
+                print(f"[ERROR] P&L PDF Generation: Generated PDF failed validation")
+                return pdf_buffer, False
+                
+            print(f"[OK] P&L PDF Generation: PDF generated and validated successfully")
+            return pdf_buffer, True
             
         except Exception as e:
-            # Don't fail the deduction if consumption recording fails
-            print(f'[WARNING] FC consumption recording failed (non-critical): {str(e)}')
-    else:
-        print(f'[INFO] Skipped FC consumption for test/business account: {user_email}')
-    
-    
-    # CRITICAL: Record subscription consumption in business books (liability consumption)
-    # This works alongside FC consumption for users with admin-granted subscriptions
-    if not is_test_account(user_email):
-        try:
-            # Calculate subscription consumption based on credit cost
-            # Convert FC credits to Naira: credit_cost FCs x N30/FC = Naira amount
-            subscription_consumption_amount = credit_cost * 30.0  # FC to Naira conversion
-            
-            subscription_result = record_subscription_consumption_revenue(
-                mongo=mongo,
-                user_id=current_user['_id'],
-                consumption_amount=subscription_consumption_amount,
-                description=f'Report Export - {report_type.upper()}',
-                service='report_export'
-            )
-            
-            if subscription_result and subscription_result.get('consumed_amount', 0) > 0:
-                print(f'[OK] Subscription consumption recorded: N{subscription_result["consumed_amount"]:,.2f} for {report_type} by {user_email}')
-            else:
-                print(f'[INFO] No subscription liability to consume for {report_type} by {user_email}')
-            
-        except Exception as e:
-            # Don't fail the deduction if consumption recording fails
-            print(f'[WARNING] Subscription consumption recording failed (non-critical): {str(e)}')
-    else:
-        print(f'[INFO] Skipped subscription consumption for test/business account: {user_email}')
-    
-    return new_balance
+            print(f"[ERROR] P&L PDF Generation: Exception during generation - {str(e)}")
+            return None, False
 
 
-def log_export_event(current_user, report_type, export_format, success=True, error=None):
-    """
-    Log export event for analytics and auditing
-    """
-    try:
-        export_log = {
-            'userId': current_user['_id'],
-            'userEmail': current_user.get('email'),
-            'reportType': report_type,
-            'exportFormat': export_format,
-            'success': success,
-            'error': error,
-            'timestamp': datetime.utcnow(),
-            'ipAddress': request.remote_addr,
-            'userAgent': request.headers.get('User-Agent')
-        }
-        mongo.db.export_logs.insert_one(export_log)
-    except Exception as e:
-        # DISABLED FOR LIQUID WALLET FOCUS
-        # print(f"Error logging export event: {str(e)}")
-        pass
-
-
-def parse_date_range(request_data):
-    """
-    Parse start and end dates from request data
-    Returns: (start_date, end_date)
-    """
-    start_date = None
-    end_date = None
-    
-    if request_data.get('startDate'):
-        try:
-            start_date = datetime.fromisoformat(request_data['startDate'].replace('Z', ''))
-        except:
-            pass
-    
-    if request_data.get('endDate'):
-        try:
-            end_date = datetime.fromisoformat(request_data['endDate'].replace('Z', ''))
-        except:
-            pass
-    
-    return start_date, end_date
-
-
-def calculate_cash_bank_balance(user_id, end_date=None):
-    """
-    Calculate cash/bank balance as of a specific date
-    Formula: Opening Balance + Total Income - Total Expenses - Total Drawings + Total Capital - Total Asset Purchases
-    
-    This integrates with the Cash/Bank Management System to provide accurate
-    balance for Balance Sheet and other financial reports.
-    
-    Args:
-        user_id: User ID
-        end_date: Calculate balance as of this date (None = current/all time)
-    
-    Returns: float - Cash/bank balance
-    """
-    try:
-        # Get user's opening balance
-        user = mongo.db.users.find_one({'_id': user_id})
-        opening_balance = user.get('openingCashBalance', 0.0) if user else 0.0
+    print("DEBUG: About to define deduct_credits function")
+    def deduct_credits(current_user, credit_cost, report_type, job_id=None):
+        """
+        Deduct credits from user account and log transaction
+        CRITICAL: Also records FC consumption in business books (liability consumption)
+        """
+        user = mongo.db.users.find_one({'_id': current_user['_id']})
+        current_balance = user.get('ficoreCreditBalance', 0.0)
+        new_balance = current_balance - credit_cost
         
-        # Build queries with optional date filter
-        income_query = {
-            'userId': user_id,
-            'status': 'active',
-            'isDeleted': False
-        }
-        expense_query = {
-            'userId': user_id,
-            'status': 'active',
-            'isDeleted': False
-        }
-        adjustment_query = {
-            'userId': user_id,
-            'status': 'active',
-            'isDeleted': False
-        }
-        
-        # Apply date filter if provided
-        if end_date:
-            income_query['date'] = {'$lte': end_date}
-            expense_query['date'] = {'$lte': end_date}
-            adjustment_query['date'] = {'$lte': end_date}
-        
-        # Get total income (active entries only)
-        income_amounts = []
-        income_cursor = mongo.db.incomes.find(income_query)
-        for income in income_cursor:
-            income_amounts.append(income.get('amount', 0.0))
-        total_income = safe_sum(income_amounts)
-        
-        # Get total expenses (active entries only)
-        expense_amounts = []
-        expense_cursor = mongo.db.expenses.find(expense_query)
-        for expense in expense_cursor:
-            expense_amounts.append(expense.get('amount', 0.0))
-        total_expenses = safe_sum(expense_amounts)
-        
-        # Get total drawings, capital deposits, and asset purchases (active entries only)
-        drawing_amounts = []
-        capital_amounts = []
-        asset_amounts = []
-        adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
-        for adjustment in adjustment_cursor:
-            adj_type = adjustment.get('type')
-            amount = adjustment.get('amount', 0.0)
-            
-            if adj_type == 'drawing':
-                drawing_amounts.append(amount)
-            elif adj_type == 'capital':
-                capital_amounts.append(amount)
-            elif adj_type == 'asset_purchase':
-                asset_amounts.append(amount)
-        
-        total_drawings = safe_sum(drawing_amounts)
-        total_capital = safe_sum(capital_amounts)
-        total_asset_purchases = safe_sum(asset_amounts)
-        
-        # Calculate balance
-        current_balance = (
-            opening_balance 
-            + total_income 
-            - total_expenses 
-            - total_drawings 
-            + total_capital
-            - total_asset_purchases
+        # Update user balance
+        mongo.db.users.update_one(
+            {'_id': current_user['_id']},
+            {'$set': {'ficoreCreditBalance': new_balance}}
         )
         
-        return current_balance
+        # Log credit transaction
+        credit_transaction = {
+            'userId': current_user['_id'],
+            'type': 'deduction',
+            'amount': -credit_cost,
+            'description': f'Report Export - {report_type.upper()}',
+            'balanceBefore': current_balance,
+            'balanceAfter': new_balance,
+            'status': 'completed',
+            'metadata': {
+                'reportType': report_type,
+                'reportJobId': job_id,  # Track job ID for refund purposes
+                'exportFormat': 'pdf'
+            },
+            'createdAt': datetime.utcnow()
+        }
+        mongo.db.credit_transactions.insert_one(credit_transaction)
         
-    except Exception as e:
-        print(f'Error calculating cash/bank balance: {str(e)}')
-        return 0.0
+        # CRITICAL: Record FC consumption in business books (liability consumption)
+        # EXCLUDE test accounts (including business account) from consuming services
+        from utils.test_account_filter import is_test_account
+        
+        user_email = current_user.get('email', '')
+        if not is_test_account(user_email):
+            try:
+                consumption_result = record_fc_consumption_revenue(
+                    mongo=mongo,
+                    user_id=current_user['_id'],
+                    fc_amount=credit_cost,
+                    description=f'Report Export - {report_type.upper()}',
+                    service='report_export'
+                )
+                
+                print(f'[OK] FC Consumption recorded: {credit_cost} FCs for {report_type} by {user_email}')
+                
+            except Exception as e:
+                # Don't fail the deduction if consumption recording fails
+                print(f'[WARNING] FC consumption recording failed (non-critical): {str(e)}')
+        else:
+            print(f'[INFO] Skipped FC consumption for test/business account: {user_email}')
+        
+        
+        # CRITICAL: Record subscription consumption in business books (liability consumption)
+        # This works alongside FC consumption for users with admin-granted subscriptions
+        if not is_test_account(user_email):
+            try:
+                # Calculate subscription consumption based on credit cost
+                # Convert FC credits to Naira: credit_cost FCs x N30/FC = Naira amount
+                subscription_consumption_amount = credit_cost * 30.0  # FC to Naira conversion
+                
+                subscription_result = record_subscription_consumption_revenue(
+                    mongo=mongo,
+                    user_id=current_user['_id'],
+                    consumption_amount=subscription_consumption_amount,
+                    description=f'Report Export - {report_type.upper()}',
+                    service='report_export'
+                )
+                
+                if subscription_result and subscription_result.get('consumed_amount', 0) > 0:
+                    print(f'[OK] Subscription consumption recorded: N{subscription_result["consumed_amount"]:,.2f} for {report_type} by {user_email}')
+                else:
+                    print(f'[INFO] No subscription liability to consume for {report_type} by {user_email}')
+                
+            except Exception as e:
+                # Don't fail the deduction if consumption recording fails
+                print(f'[WARNING] Subscription consumption recording failed (non-critical): {str(e)}')
+        else:
+            print(f'[INFO] Skipped subscription consumption for test/business account: {user_email}')
+        
+        return new_balance
 
-def get_last_transaction_timestamp(user_id):
-    """
-    Get the most recent transaction timestamp for cache invalidation.
-    
-    CACHE INVALIDATION: When a user adds/edits any transaction, this timestamp
-    changes, which invalidates all cached PDFs automatically.
-    
-    Returns: ISO timestamp string of most recent transaction, or None
-    """
-    try:
-        # Check all transaction collections for most recent updatedAt
-        collections_and_fields = [
-            ('incomes', 'updatedAt'),
-            ('expenses', 'updatedAt'),
-            ('assets', 'updatedAt'),
-            ('debtors', 'updatedAt'),
-            ('creditors', 'updatedAt'),
-        ]
+    def log_export_event(current_user, report_type, export_format, success=True, error=None):
+        """
+        Log export event for analytics and auditing
+        """
+        try:
+            export_log = {
+                'userId': current_user['_id'],
+                'userEmail': current_user.get('email'),
+                'reportType': report_type,
+                'exportFormat': export_format,
+                'success': success,
+                'error': error,
+                'timestamp': datetime.utcnow(),
+                'ipAddress': request.remote_addr,
+                'userAgent': request.headers.get('User-Agent')
+            }
+            mongo.db.export_logs.insert_one(export_log)
+        except Exception as e:
+            # DISABLED FOR LIQUID WALLET FOCUS
+            # print(f"Error logging export event: {str(e)}")
+            pass
+
+
+    def parse_date_range(request_data):
+        """
+        Parse start and end dates from request data
+        Returns: (start_date, end_date)
+        """
+        start_date = None
+        end_date = None
         
+        if request_data.get('startDate'):
+            try:
+                start_date = datetime.fromisoformat(request_data['startDate'].replace('Z', ''))
+            except:
+                pass
         
-        for collection_name, field_name in collections_and_fields:
-            # Get most recent document from this collection
-            result = mongo.db[collection_name].find_one(
-                {'userId': user_id},
-                {field_name: 1},
-                sort=[(field_name, -1)]
+        if request_data.get('endDate'):
+            try:
+                end_date = datetime.fromisoformat(request_data['endDate'].replace('Z', ''))
+            except:
+                pass
+        
+        return start_date, end_date
+
+
+    def calculate_cash_bank_balance(user_id, end_date=None):
+        """
+        Calculate cash/bank balance as of a specific date
+        Formula: Opening Balance + Total Income - Total Expenses - Total Drawings + Total Capital - Total Asset Purchases
+        
+        This integrates with the Cash/Bank Management System to provide accurate
+        balance for Balance Sheet and other financial reports.
+        
+        Args:
+            user_id: User ID
+            end_date: Calculate balance as of this date (None = current/all time)
+        
+        Returns: float - Cash/bank balance
+        """
+        try:
+            # Get user's opening balance
+            user = mongo.db.users.find_one({'_id': user_id})
+            opening_balance = user.get('openingCashBalance', 0.0) if user else 0.0
+            
+            # Build queries with optional date filter
+            income_query = {
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            }
+            expense_query = {
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            }
+            adjustment_query = {
+                'userId': user_id,
+                'status': 'active',
+                'isDeleted': False
+            }
+            
+            # Apply date filter if provided
+            if end_date:
+                income_query['date'] = {'$lte': end_date}
+                expense_query['date'] = {'$lte': end_date}
+                adjustment_query['date'] = {'$lte': end_date}
+            
+            # Get total income (active entries only)
+            income_amounts = []
+            income_cursor = mongo.db.incomes.find(income_query)
+            for income in income_cursor:
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
+            
+            # Get total expenses (active entries only)
+            expense_amounts = []
+            expense_cursor = mongo.db.expenses.find(expense_query)
+            for expense in expense_cursor:
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
+            
+            # Get total drawings, capital deposits, and asset purchases (active entries only)
+            drawing_amounts = []
+            capital_amounts = []
+            asset_amounts = []
+            adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
+            for adjustment in adjustment_cursor:
+                adj_type = adjustment.get('type')
+                amount = adjustment.get('amount', 0.0)
+                
+                if adj_type == 'drawing':
+                    drawing_amounts.append(amount)
+                elif adj_type == 'capital':
+                    capital_amounts.append(amount)
+                elif adj_type == 'asset_purchase':
+                    asset_amounts.append(amount)
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital = safe_sum(capital_amounts)
+            total_asset_purchases = safe_sum(asset_amounts)
+            
+            # Calculate balance
+            current_balance = (
+                opening_balance 
+                + total_income 
+                - total_expenses 
+                - total_drawings 
+                + total_capital
+                - total_asset_purchases
             )
             
-            if result and result.get(field_name):
-                timestamp = result[field_name]
-                if latest_timestamp is None or timestamp > latest_timestamp:
-                    latest_timestamp = timestamp
+            return current_balance
+        except Exception as e:
+            print(f'Error calculating cash/bank balance: {str(e)}')
+            return 0.0
+
+    def get_last_transaction_timestamp(user_id):
+        """
+        Get the most recent transaction timestamp for cache invalidation.
         
-        # Return as ISO string for cache key
-        return latest_timestamp.isoformat() if latest_timestamp else None
+        CACHE INVALIDATION: When a user adds/edits any transaction, this timestamp
+        changes, which invalidates all cached PDFs automatically.
         
-    except Exception as e:
-        # If we can't get timestamp, return current time to be safe (no caching)
-        print(f"[WARNING] Error getting last transaction timestamp: {e}")
-        return datetime.utcnow().isoformat()
+        Returns: ISO timestamp string of most recent transaction, or None
+        """
+        try:
+            # Check all transaction collections for most recent updatedAt
+            collections_and_fields = [
+                ('incomes', 'updatedAt'),
+                ('expenses', 'updatedAt'),
+                ('assets', 'updatedAt'),
+                ('debtors', 'updatedAt'),
+                ('creditors', 'updatedAt'),
+            ]
+            
+            latest_timestamp = None
+            
+            for collection_name, field_name in collections_and_fields:
+                # Get most recent document from this collection
+                result = mongo.db[collection_name].find_one(
+                    {'userId': user_id},
+                    {field_name: 1},
+                    sort=[(field_name, -1)]
+                )
+                
+                if result and result.get(field_name):
+                    timestamp = result[field_name]
+                    if latest_timestamp is None or timestamp > latest_timestamp:
+                        latest_timestamp = timestamp
+            
+            # Return as ISO string for cache key
+            return latest_timestamp.isoformat() if latest_timestamp else None
+            
+        except Exception as e:
+            # If we can't get timestamp, return current time to be safe (no caching)
+            print(f"[WARNING] Error getting last transaction timestamp: {e}")
+            return datetime.utcnow().isoformat()
 
 
-def filter_by_date_range(items, date_field, start_date, end_date):
-    """
-    Filter items by date range
-    """
-    if not start_date and not end_date:
-        return items
-    
-    for item in items:
-        item_date = item.get(date_field)
-        if not item_date:
-            continue
+    def filter_by_date_range(items, date_field, start_date, end_date):
+        """
+        Filter items by date range
+        """
+        if not start_date and not end_date:
+            return items
         
-        if isinstance(item_date, str):
-            try:
-                item_date = datetime.fromisoformat(item_date.replace('Z', ''))
-            except:
+        filtered = []
+        for item in items:
+            item_date = item.get(date_field)
+            if not item_date:
                 continue
+            
+            if isinstance(item_date, str):
+                try:
+                    item_date = datetime.fromisoformat(item_date.replace('Z', ''))
+                except:
+                    continue
+            
+            if start_date and item_date < start_date:
+                continue
+            if end_date and item_date > end_date:
+                continue
+            
+            filtered.append(item)
         
-        if start_date and item_date < start_date:
-            continue
-        if end_date and item_date > end_date:
-            continue
-        
-        filtered.append(item)
-    
-    return filtered
+        return filtered
     
     # ============================================================================
     # PDF INTEGRITY & REFUND ENDPOINTS
@@ -714,6 +720,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
     # INCOME REPORTS
     # ============================================================================
     
+    print("DEBUG: About to define first route")
     @reports_bp.route('/income-pdf', methods=['POST'])
     @token_required
     def export_income_pdf(current_user):
@@ -8712,6 +8719,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             }), 500
 
 
+    print("DEBUG: All routes defined successfully")
     print("DEBUG: About to return reports_bp")
     print(f"DEBUG: reports_bp = {reports_bp}")
     return reports_bp
