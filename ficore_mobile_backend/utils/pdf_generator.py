@@ -2935,6 +2935,11 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         creditors_display = format_currency(creditors_value) if creditors_count > 0 else "N0.00 (Not tracked)"
         loans_display = format_currency(loans_outstanding) if loans_outstanding > 0 else "N0.00 (Not tracked)"  # NEW (Feb 27, 2026)
         
+        # CRITICAL FIX (Mar 11, 2026): Define FC Credit and Subscription display variables here
+        # These are used in both Current Assets & Liabilities section AND Balance Sheet section
+        fc_credit_display = format_currency(fc_credit_liabilities) if fc_credit_liabilities > 0 else "N0.00 (Not tracked)"
+        subscription_display = format_currency(subscription_liabilities) if subscription_liabilities > 0 else "N0.00 (Not tracked)"
+        
         # CRITICAL FIX (Feb 19, 2026): Display helper for cash - show if tracked via Cash/Bank Management
         # If user has set opening balance OR has adjustments, consider it "tracked"
         # Otherwise show "Not tracked" to encourage setup
@@ -3102,9 +3107,7 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         # LIABILITIES & EQUITY Section
         story.append(Paragraph("LIABILITIES & EQUITY", self.styles['SectionHeader']))
         
-        # Format liability displays
-        fc_credit_display = format_currency(fc_credit_liabilities) if fc_credit_liabilities > 0 else "Not tracked"
-        subscription_display = format_currency(subscription_liabilities) if subscription_liabilities > 0 else "Not tracked"
+        # Note: fc_credit_display and subscription_display are already defined above
         
         liabilities_section = [
             ['Category', 'Amount (N)'],
