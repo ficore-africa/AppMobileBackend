@@ -99,8 +99,10 @@ PDF_PROJECTIONS = {
 # ============================================================================
 
 def init_reports_blueprint(mongo, token_required):
+    print("DEBUG: init_reports_blueprint called")
     """Initialize the reports blueprint with database and auth decorator"""
     reports_bp = Blueprint('reports', __name__, url_prefix='/api/reports')
+    print("DEBUG: Blueprint created successfully")
     
     # Credit costs for different report types
     REPORT_CREDIT_COSTS = {
@@ -158,7 +160,7 @@ def init_reports_blueprint(mongo, token_required):
         user = mongo.db.users.find_one({'_id': current_user['_id']})
         is_admin = user.get('role') == 'admin'
         
-        # ✅ CRITICAL FIX: Validate subscription end date, not just flag
+        # [OK] CRITICAL FIX: Validate subscription end date, not just flag
         is_subscribed = user.get('isSubscribed', False)
         subscription_end = user.get('subscriptionEndDate')
         is_premium = is_admin or (is_subscribed and subscription_end and subscription_end > datetime.utcnow())
@@ -191,17 +193,17 @@ def _validate_pdf_integrity(pdf_buffer):
         
         # Check minimum size (empty or tiny PDFs are likely corrupted)
         if len(pdf_data) < 1000:  # PDFs should be at least 1KB
-            print(f"❌ PDF Validation: File too small ({len(pdf_data)} bytes)")
+            print(f"[ERROR] PDF Validation: File too small ({len(pdf_data)} bytes)")
             return False
         
         # Check PDF header
         if not pdf_data.startswith(b'%PDF-'):
-            print(f"❌ PDF Validation: Invalid PDF header")
+            print(f"[ERROR] PDF Validation: Invalid PDF header")
             return False
         
         # Check PDF footer (should end with %%EOF)
         if not pdf_data.rstrip().endswith(b'%%EOF'):
-            print(f"❌ PDF Validation: Invalid PDF footer")
+            print(f"[ERROR] PDF Validation: Invalid PDF footer")
             return False
         
         # Try to parse with PyPDF2 (if available)
@@ -212,28 +214,28 @@ def _validate_pdf_integrity(pdf_buffer):
             
             # Check if we can read at least one page
             if len(reader.pages) == 0:
-                print(f"❌ PDF Validation: No pages found")
+                print(f"[ERROR] PDF Validation: No pages found")
                 return False
                 
             # Try to read first page content
             first_page = reader.pages[0]
             text = first_page.extract_text()
             
-            print(f"✅ PDF Validation: Valid PDF with {len(reader.pages)} pages")
+            print(f"[OK] PDF Validation: Valid PDF with {len(reader.pages)} pages")
             return True
             
         except ImportError:
             # PyPDF2 not available, use basic validation
-            print(f"⚠️ PDF Validation: PyPDF2 not available, using basic validation")
+            print(f"[WARNING] PDF Validation: PyPDF2 not available, using basic validation")
             
         # Reset buffer position for further use
         pdf_buffer.seek(0)
         
-        print(f"✅ PDF Validation: Basic validation passed ({len(pdf_data)} bytes)")
+        print(f"[OK] PDF Validation: Basic validation passed ({len(pdf_data)} bytes)")
         return True
         
     except Exception as e:
-        print(f"❌ PDF Validation: Exception during validation - {str(e)}")
+        print(f"[ERROR] PDF Validation: Exception during validation - {str(e)}")
         return False
 
 
@@ -259,14 +261,14 @@ def _generate_pl_with_validation(pdf_generator, user_data, export_data, data_typ
         is_valid = _validate_pdf_integrity(pdf_buffer)
         
         if not is_valid:
-            print(f"❌ P&L PDF Generation: Generated PDF failed validation")
+            print(f"[ERROR] P&L PDF Generation: Generated PDF failed validation")
             return pdf_buffer, False
             
-        print(f"✅ P&L PDF Generation: PDF generated and validated successfully")
+        print(f"[OK] P&L PDF Generation: PDF generated and validated successfully")
         return pdf_buffer, True
         
     except Exception as e:
-        print(f"❌ P&L PDF Generation: Exception during generation - {str(e)}")
+        print(f"[ERROR] P&L PDF Generation: Exception during generation - {str(e)}")
         return None, False
 
 
@@ -318,13 +320,13 @@ def deduct_credits(current_user, credit_cost, report_type, job_id=None):
                 service='report_export'
             )
             
-            print(f'✅ FC Consumption recorded: {credit_cost} FCs for {report_type} by {user_email}')
+            print(f'[OK] FC Consumption recorded: {credit_cost} FCs for {report_type} by {user_email}')
             
         except Exception as e:
             # Don't fail the deduction if consumption recording fails
-            print(f'⚠️ FC consumption recording failed (non-critical): {str(e)}')
+            print(f'[WARNING] FC consumption recording failed (non-critical): {str(e)}')
     else:
-        print(f'ℹ️ Skipped FC consumption for test/business account: {user_email}')
+        print(f'[INFO] Skipped FC consumption for test/business account: {user_email}')
     
     
     # CRITICAL: Record subscription consumption in business books (liability consumption)
@@ -332,7 +334,7 @@ def deduct_credits(current_user, credit_cost, report_type, job_id=None):
     if not is_test_account(user_email):
         try:
             # Calculate subscription consumption based on credit cost
-            # Convert FC credits to Naira: credit_cost FCs × ₦30/FC = Naira amount
+            # Convert FC credits to Naira: credit_cost FCs x N30/FC = Naira amount
             subscription_consumption_amount = credit_cost * 30.0  # FC to Naira conversion
             
             subscription_result = record_subscription_consumption_revenue(
@@ -344,15 +346,15 @@ def deduct_credits(current_user, credit_cost, report_type, job_id=None):
             )
             
             if subscription_result and subscription_result.get('consumed_amount', 0) > 0:
-                print(f'✅ Subscription consumption recorded: ₦{subscription_result["consumed_amount"]:,.2f} for {report_type} by {user_email}')
+                print(f'[OK] Subscription consumption recorded: N{subscription_result["consumed_amount"]:,.2f} for {report_type} by {user_email}')
             else:
-                print(f'ℹ️ No subscription liability to consume for {report_type} by {user_email}')
+                print(f'[INFO] No subscription liability to consume for {report_type} by {user_email}')
             
         except Exception as e:
             # Don't fail the deduction if consumption recording fails
-            print(f'⚠️ Subscription consumption recording failed (non-critical): {str(e)}')
+            print(f'[WARNING] Subscription consumption recording failed (non-critical): {str(e)}')
     else:
-        print(f'ℹ️ Skipped subscription consumption for test/business account: {user_email}')
+        print(f'[INFO] Skipped subscription consumption for test/business account: {user_email}')
     
     return new_balance
 
@@ -533,7 +535,7 @@ def get_last_transaction_timestamp(user_id):
         
     except Exception as e:
         # If we can't get timestamp, return current time to be safe (no caching)
-        print(f"⚠️ Error getting last transaction timestamp: {e}")
+        print(f"[WARNING] Error getting last transaction timestamp: {e}")
         return datetime.utcnow().isoformat()
 
 
@@ -611,7 +613,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             })
             
         except Exception as e:
-            print(f"❌ PDF Validation Error: {str(e)}")
+            print(f"[ERROR] PDF Validation Error: {str(e)}")
             return jsonify({
                 'success': False,
                 'message': 'Error validating PDF',
@@ -702,7 +704,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             })
             
         except Exception as e:
-            print(f"❌ Refund Error: {str(e)}")
+            print(f"[ERROR] Refund Error: {str(e)}")
             return jsonify({
                 'success': False,
                 'message': 'Error processing refund'
@@ -860,7 +862,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 )
             except Exception as e:
                 # Don't fail export if tracking fails
-                print(f"⚠️ Export tracking failed (non-critical): {e}")
+                print(f"[WARNING] Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -1006,7 +1008,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                         export_type='income_report'
                     )
                 except Exception as e:
-                    print(f"⚠️ Export tracking failed (non-critical): {e}")
+                    print(f"[WARNING] Export tracking failed (non-critical): {e}")
                 
                 return pdf_buffer
             
@@ -1018,9 +1020,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 INCOME PDF: Generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] INCOME PDF: Generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ INCOME PDF: Credits deducted after successful generation")
+                        print(f"[OK] INCOME PDF: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -1028,7 +1030,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ INCOME PDF: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] INCOME PDF: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -1121,7 +1123,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer = csv.writer(output)
             
             # Write header
-            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)', 'Description', 'Source Type', 'Entry Type', 'Verified'])
+            writer.writerow(['Date', 'Source', 'Category', 'Amount (N)', 'Description', 'Source Type', 'Entry Type', 'Verified'])
             
             # Write data
             total_amount = 0
@@ -1309,7 +1311,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 )
             except Exception as e:
                 # Don't fail export if tracking fails
-                print(f"⚠️ Export tracking failed (non-critical): {e}")
+                print(f"[WARNING] Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -1455,7 +1457,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                         export_type='expense_report'
                     )
                 except Exception as e:
-                    print(f"⚠️ Export tracking failed (non-critical): {e}")
+                    print(f"[WARNING] Export tracking failed (non-critical): {e}")
                 
                 return pdf_buffer
             
@@ -1467,9 +1469,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 EXPENSE PDF: Generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] EXPENSE PDF: Generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ EXPENSE PDF: Credits deducted after successful generation")
+                        print(f"[OK] EXPENSE PDF: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -1477,7 +1479,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ EXPENSE PDF: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] EXPENSE PDF: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -1570,7 +1572,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer = csv.writer(output)
             
             # Write header
-            writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Description', 'Source Type', 'Entry Type', 'Verified'])
+            writer.writerow(['Date', 'Title', 'Category', 'Amount (N)', 'Description', 'Source Type', 'Entry Type', 'Verified'])
             
             # Write data
             total_amount = 0
@@ -1660,12 +1662,12 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Fetch income and expense data with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses
-            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
+            # [OK] CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
-                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital contributions
+                'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital contributions
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},  # Exclude personal
                     {'entryType': {'$exists': False}},   # Include untagged (legacy)
@@ -1676,7 +1678,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
-                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital expenditures
+                'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital expenditures
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},  # Exclude personal
                     {'entryType': {'$exists': False}},   # Include untagged (legacy)
@@ -1818,7 +1820,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     )
             except Exception as e:
                 # Don't fail export if tracking fails
-                print(f"⚠️ Export tracking failed (non-critical): {e}")
+                print(f"[WARNING] Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -1895,12 +1897,12 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             # Define generation function
             def generate_profit_loss_pdf():
                 # Build queries
-                # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
+                # [OK] CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
                 income_query = {
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
-                    'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital contributions
+                    'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital contributions
                     '$or': [
                         {'entryType': {'$ne': 'personal'}},
                         {'entryType': {'$exists': False}},
@@ -1911,7 +1913,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     'userId': current_user['_id'],
                     'status': 'active',
                     'isDeleted': False,
-                    'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital expenditures
+                    'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital expenditures
                     '$or': [
                         {'entryType': {'$ne': 'personal'}},
                         {'entryType': {'$exists': False}},
@@ -2016,7 +2018,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     if expense_ids:
                         track_export(mongo.db, 'expenses', expense_ids, report_id, report_name, 'profit_loss_report')
                 except Exception as e:
-                    print(f"⚠️ Export tracking failed (non-critical): {e}")
+                    print(f"[WARNING] Export tracking failed (non-critical): {e}")
                 
                 return pdf_buffer
             
@@ -2032,9 +2034,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded AND PDF is valid
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 P&L PDF: Generated and validated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] P&L PDF: Generated and validated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type, job_id)
-                        print(f"✅ P&L PDF: Credits deducted after successful generation and validation")
+                        print(f"[OK] P&L PDF: Credits deducted after successful generation and validation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -2042,7 +2044,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure OR invalid PDF
-                    print(f"❌ P&L PDF: Generation failed or PDF invalid, credits NOT deducted - Error: {str(e)}")
+                    print(f"[ERROR] P&L PDF: Generation failed or PDF invalid, credits NOT deducted - Error: {str(e)}")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -2202,7 +2204,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     )
             except Exception as e:
                 # Don't fail export if tracking fails
-                print(f"⚠️ Export tracking failed (non-critical): {e}")
+                print(f"[WARNING] Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -2332,7 +2334,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     if expense_ids:
                         track_export(mongo.db, 'expenses', expense_ids, report_id, report_name, 'cash_flow_report')
                 except Exception as e:
-                    print(f"⚠️ Export tracking failed (non-critical): {e}")
+                    print(f"[WARNING] Export tracking failed (non-critical): {e}")
                 
                 return pdf_buffer
             
@@ -2344,9 +2346,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 CASH FLOW PDF: Generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] CASH FLOW PDF: Generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ CASH FLOW PDF: Credits deducted after successful generation")
+                        print(f"[OK] CASH FLOW PDF: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -2354,7 +2356,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ CASH FLOW PDF: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] CASH FLOW PDF: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -2568,7 +2570,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 tax_data['annual_turnover'] = total_income
                 
                 # CRITICAL: Get FIXED ASSETS NET BOOK VALUE for CIT exemption check
-                # CIT Exemption Criteria: Turnover < ₦100M AND Fixed Assets NBV < ₦250M
+                # CIT Exemption Criteria: Turnover < N100M AND Fixed Assets NBV < N250M
                 # Fixed Assets NBV = Original Cost - Accumulated Depreciation
                 
                 assets_query = {'userId': current_user['_id']}
@@ -2615,7 +2617,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     fixed_assets_nbv += net_book_value
                 
                 # Store BOTH values: NBV for exemption, original cost for display
-                tax_data['fixed_assets_nbv'] = fixed_assets_nbv  # For exemption check (< ₦250M)
+                tax_data['fixed_assets_nbv'] = fixed_assets_nbv  # For exemption check (< N250M)
                 tax_data['fixed_assets_original_cost'] = fixed_assets_original_cost  # For display
                 tax_data['assets_count'] = len(assets)
                 
@@ -2655,7 +2657,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 # or have nuanced conditions. This implementation should be reviewed and updated
                 # if future tax law changes introduce caps or specific conditions for these deductions.
                 
-                # 1. Rent Relief (20% of annual rent, capped at ₦500,000)
+                # 1. Rent Relief (20% of annual rent, capped at N500,000)
                 # Category dependency: "rent", "housing", "accommodation"
                 # PHASE 5: Flexible keyword matching for frontend category compatibility
                 rent_keywords = ['rent', 'housing', 'accommodation']
@@ -2663,7 +2665,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                                 if any(keyword in exp.get('category', '').lower() 
                                        for keyword in rent_keywords)]
                 annual_rent = sum(exp.get('amount', 0) for exp in rent_expenses)
-                rent_relief = min(annual_rent * 0.20, 500000)  # 20% capped at ₦500k
+                rent_relief = min(annual_rent * 0.20, 500000)  # 20% capped at N500k
                 
                 # 2. Pension Contributions (currently fully deductible)
                 # Category dependency: "pension", "retirement"
@@ -2715,7 +2717,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     'rent_relief': {
                         'annual_rent': annual_rent,
                         'relief_amount': rent_relief,
-                        'calculation': f"20% of ₦{annual_rent:,.2f}, capped at ₦500,000"
+                        'calculation': f"20% of N{annual_rent:,.2f}, capped at N500,000"
                     },
                     'pension_contributions': pension_contributions,
                     'life_insurance': life_insurance,
@@ -2765,7 +2767,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     )
             except Exception as e:
                 # Don't fail export if tracking fails
-                print(f"⚠️ Export tracking failed (non-critical): {e}")
+                print(f"[WARNING] Export tracking failed (non-critical): {e}")
             
             # Deduct credits if not premium
             if not is_premium and credit_cost > 0:
@@ -3044,7 +3046,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                         'rent_relief': {
                             'annual_rent': annual_rent,
                             'relief_amount': rent_relief,
-                            'calculation': f"20% of ₦{annual_rent:,.2f}, capped at ₦500,000"
+                            'calculation': f"20% of N{annual_rent:,.2f}, capped at N500,000"
                         },
                         'pension_contributions': pension_contributions,
                         'life_insurance': life_insurance,
@@ -3073,7 +3075,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     if expense_ids:
                         track_export(mongo.db, 'expenses', expense_ids, report_id, report_name, 'tax_report')
                 except Exception as e:
-                    print(f"⚠️ Export tracking failed (non-critical): {e}")
+                    print(f"[WARNING] Export tracking failed (non-critical): {e}")
                 
                 return pdf_buffer
             
@@ -3085,9 +3087,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 TAX SUMMARY PDF: Generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] TAX SUMMARY PDF: Generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ TAX SUMMARY PDF: Credits deducted after successful generation")
+                        print(f"[OK] TAX SUMMARY PDF: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -3095,7 +3097,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ TAX SUMMARY PDF: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] TAX SUMMARY PDF: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -3444,9 +3446,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 ASSETS PDF: Generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] ASSETS PDF: Generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ ASSETS PDF: Credits deducted after successful generation")
+                        print(f"[OK] ASSETS PDF: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -3454,7 +3456,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ ASSETS PDF: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] ASSETS PDF: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -3642,9 +3644,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 ASSET DEPRECIATION PDF: Generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] ASSET DEPRECIATION PDF: Generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ ASSET DEPRECIATION PDF: Credits deducted after successful generation")
+                        print(f"[OK] ASSET DEPRECIATION PDF: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
@@ -3652,7 +3654,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ ASSET DEPRECIATION PDF: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] ASSET DEPRECIATION PDF: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
@@ -3780,7 +3782,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer = csv.writer(output)
             
             # Write header
-            writer.writerow(['Item Name', 'SKU', 'Category', 'Quantity', 'Unit Cost (₦)', 'Total Value (₦)', 'Min Stock Level', 'Status'])
+            writer.writerow(['Item Name', 'SKU', 'Category', 'Quantity', 'Unit Cost (N)', 'Total Value (N)', 'Min Stock Level', 'Status'])
             
             # Write data
             total_quantity = 0
@@ -3946,7 +3948,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # REVENUE SECTION
             writer.writerow(['REVENUE'])
-            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)', 'Source Type'])
+            writer.writerow(['Date', 'Source', 'Category', 'Amount (N)', 'Source Type'])
             
             # Sales Revenue
             if sales_revenue_items:
@@ -3984,7 +3986,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             # COGS SECTION
             if cogs_items:
                 writer.writerow(['COST OF GOODS SOLD (COGS)'])
-                writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Source Type'])
+                writer.writerow(['Date', 'Title', 'Category', 'Amount (N)', 'Source Type'])
                 for expense in cogs_items:
                     date_str = expense.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
                     writer.writerow([
@@ -4008,7 +4010,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             # OPERATING EXPENSES SECTION
             if operating_items:
                 writer.writerow(['OPERATING EXPENSES'])
-                writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)', 'Source Type'])
+                writer.writerow(['Date', 'Title', 'Category', 'Amount (N)', 'Source Type'])
                 for expense in operating_items:
                     date_str = expense.get('date', datetime.utcnow()).strftime('%Y-%m-%d')
                     writer.writerow([
@@ -4130,7 +4132,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Cash Flow from Operating Activities
             writer.writerow(['CASH FLOW FROM OPERATING ACTIVITIES'])
-            writer.writerow(['Description', 'Amount (₦)'])
+            writer.writerow(['Description', 'Amount (N)'])
             writer.writerow(['Cash Inflows (Income)', f'{total_inflows:,.2f}'])
             writer.writerow(['Cash Outflows (Expenses)', f'{-total_outflows:,.2f}'])
             writer.writerow(['Net Cash from Operations', f'{net_cash_flow:,.2f}'])
@@ -4250,7 +4252,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Income Summary
             writer.writerow(['INCOME SUMMARY'])
-            writer.writerow(['Description', 'Amount (₦)'])
+            writer.writerow(['Description', 'Amount (N)'])
             writer.writerow(['Gross Income', f'{total_income:,.2f}'])
             writer.writerow(['Less: Deductible Expenses', f'{total_expenses:,.2f}'])
             
@@ -4261,7 +4263,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             # Tax Calculation
             if tax_type == 'CIT':
                 writer.writerow(['CORPORATE INCOME TAX CALCULATION'])
-                writer.writerow(['Description', 'Amount (₦)'])
+                writer.writerow(['Description', 'Amount (N)'])
                 cit_rate = 0.25
                 total_tax = net_income * cit_rate if net_income > 0 else 0
                 writer.writerow(['Taxable Profit', f'{net_income:,.2f}'])
@@ -4269,7 +4271,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 writer.writerow(['Calculated Tax', f'{total_tax:,.2f}'])
             else:
                 writer.writerow(['PERSONAL INCOME TAX CALCULATION'])
-                writer.writerow(['Income Band', 'Rate', 'Taxable Amount (₦)', 'Tax (₦)'])
+                writer.writerow(['Income Band', 'Rate', 'Taxable Amount (N)', 'Tax (N)'])
                 
                 # Nigerian PIT bands
                 tax_bands = [
@@ -4293,9 +4295,9 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     band_tax = taxable_in_band * rate
                     total_tax += band_tax
                     
-                    upper_display = f"₦{upper:,.0f}" if upper != float('inf') else "Above"
+                    upper_display = f"N{upper:,.0f}" if upper != float('inf') else "Above"
                     writer.writerow([
-                        f"₦{lower:,.0f} - {upper_display}",
+                        f"N{lower:,.0f} - {upper_display}",
                         f"{rate*100:.1f}%",
                         f'{taxable_in_band:,.2f}',
                         f'{band_tax:,.2f}'
@@ -4385,7 +4387,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer.writerow([])
             
             # Data
-            writer.writerow(['Debtor Name', 'Invoice Date', 'Due Date', 'Amount (₦)', 'Status'])
+            writer.writerow(['Debtor Name', 'Invoice Date', 'Due Date', 'Amount (N)', 'Status'])
             total_outstanding = 0
             overdue_amount = 0
             
@@ -4489,7 +4491,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer.writerow([])
             
             # Data
-            writer.writerow(['Creditor Name', 'Invoice Date', 'Due Date', 'Amount (₦)', 'Status'])
+            writer.writerow(['Creditor Name', 'Invoice Date', 'Due Date', 'Amount (N)', 'Status'])
             total_outstanding = 0
             overdue_amount = 0
             
@@ -4590,7 +4592,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer.writerow([])
             
             # Data
-            writer.writerow(['Asset Name', 'Category', 'Purchase Date', 'Cost (₦)', 'Current Value (₦)'])
+            writer.writerow(['Asset Name', 'Category', 'Purchase Date', 'Cost (N)', 'Current Value (N)'])
             total_cost = 0
             total_value = 0
             
@@ -4688,7 +4690,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             writer.writerow([])
             
             # Data
-            writer.writerow(['Asset', 'Cost (₦)', 'Useful Life', 'Annual Dep. (₦)', 'Accumulated (₦)', 'Book Value (₦)'])
+            writer.writerow(['Asset', 'Cost (N)', 'Useful Life', 'Annual Dep. (N)', 'Accumulated (N)', 'Book Value (N)'])
             total_cost = 0
             total_annual_dep = 0
             total_accumulated = 0
@@ -5262,12 +5264,12 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         data = []
         for expense in expenses:
             category_raw = expense.get('category', 'Other')
-            category = normalize_category(category_raw)  # ✅ Normalize here
+            category = normalize_category(category_raw)  # [OK] Normalize here
             data.append({
                 'id': str(expense['_id']),
                 'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'title': expense.get('title', ''),
-                'category': category,  # ✅ Always string now
+                'category': category,  # [OK] Always string now
                 'amount': expense.get('amount', 0),
                 'description': expense.get('description', '')
             })
@@ -5343,13 +5345,13 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         all_incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
         
         # Separate Sales Revenue from Other Income
-        # ✅ CRITICAL FIX: Normalize category before comparison
+        # [OK] CRITICAL FIX: Normalize category before comparison
         sales_revenue = 0
         other_income = 0
         for inc in all_incomes:
             amount = inc.get('amount', 0)
             category_raw = inc.get('category', '')
-            category = normalize_category(category_raw)  # ✅ Normalize here
+            category = normalize_category(category_raw)  # [OK] Normalize here
             if category == 'salesRevenue':
                 sales_revenue += amount
             else:
@@ -5361,12 +5363,12 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         # Note: MongoDB query still uses raw format, normalization happens in Python
         all_expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
         
-        # ✅ CRITICAL FIX: Normalize category before filtering
+        # [OK] CRITICAL FIX: Normalize category before filtering
         cogs_expenses = []
         operating_expenses = []
         for exp in all_expenses:
             category_raw = exp.get('category', '')
-            category = normalize_category(category_raw)  # ✅ Normalize here
+            category = normalize_category(category_raw)  # [OK] Normalize here
             if category == 'Cost of Goods Sold':
                 cogs_expenses.append(exp)
             else:
@@ -5401,11 +5403,11 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         
         for income in incomes:
             category_raw = income.get('category', '')
-            category = normalize_category(category_raw)  # ✅ Normalize for display
+            category = normalize_category(category_raw)  # [OK] Normalize for display
             data['incomes'].append({
                 'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'source': income.get('source', ''),
-                'category': category,  # ✅ Always string now
+                'category': category,  # [OK] Always string now
                 'amount': income.get('amount', 0),
                 'sourceType': income.get('sourceType', 'manual'),  # NEW: Show origin
                 'entryType': income.get('entryType')  # NEW: Show classification
@@ -5413,11 +5415,11 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         
         for expense in expenses_preview:
             category_raw = expense.get('category', '')
-            category = normalize_category(category_raw)  # ✅ Normalize for display
+            category = normalize_category(category_raw)  # [OK] Normalize for display
             data['expenses'].append({
                 'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
                 'title': expense.get('title', ''),
-                'category': category,  # ✅ Always string now
+                'category': category,  # [OK] Always string now
                 'amount': expense.get('amount', 0),
                 'sourceType': expense.get('sourceType', 'manual'),  # NEW: Show origin
                 'entryType': expense.get('entryType')  # NEW: Show classification
@@ -5458,8 +5460,8 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             'metadata': {
                 'calculation_method': '3_step_professional_pl',
                 'excludes_personal_expenses': True,
-                'gross_margin_note': 'Gross Margin % = (Gross Profit / Sales Revenue) × 100',
-                'category_normalization': 'Applied (Feb 19, 2026)'  # ✅ Track fix
+                'gross_margin_note': 'Gross Margin % = (Gross Profit / Sales Revenue) x 100',
+                'category_normalization': 'Applied (Feb 19, 2026)'  # [OK] Track fix
             }
         })
 
@@ -5687,13 +5689,13 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         }
         
         if tax_type == 'PIT':
-            # 1. Rent Relief (20% of annual rent, capped at ₦500,000)
+            # 1. Rent Relief (20% of annual rent, capped at N500,000)
             rent_keywords = ['rent', 'housing', 'accommodation']
             rent_expenses = [exp for exp in all_expenses 
                             if any(keyword in exp.get('category', '').lower() 
                                    for keyword in rent_keywords)]
             annual_rent = sum(exp.get('amount', 0) for exp in rent_expenses)
-            rent_relief = min(annual_rent * 0.20, 500000)  # 20% capped at ₦500k
+            rent_relief = min(annual_rent * 0.20, 500000)  # 20% capped at N500k
             statutory_deductions['rent_relief'] = rent_relief
             
             # 2. Pension Contributions (fully deductible)
@@ -5748,7 +5750,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
         if gross_taxable_income > 0:
             if tax_type == 'CIT':
                 # Corporate Income Tax: 30% flat rate
-                # Small company exemption: Revenue ≤₦100M AND Assets ≤₦250M
+                # Small company exemption: Revenue <=N100M AND Assets <=N250M
                 estimated_tax = taxable_income * 0.30
                 tax_without_deductions = estimated_tax  # CIT has no statutory deductions
                 tax_rate_display = '30% (CIT)'
@@ -6223,7 +6225,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     tax_due = 560000 + (taxable_profit - 3200000) * 0.24
             else:
                 # Corporate Income Tax (CIT)
-                # Check if exempt (Revenue < ₦100M AND Assets < ₦250M)
+                # Check if exempt (Revenue < N100M AND Assets < N250M)
                 is_exempt = taxable_income < 100000000 and total_assets < 250000000
                 tax_due = 0 if is_exempt else taxable_profit * 0.30
             
@@ -6246,7 +6248,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                             'source': inc.get('source', ''),
                             'amount': inc.get('amount', 0),
                             'date': inc.get('date', datetime.utcnow()).isoformat() + 'Z',
-                            'category': normalize_category(inc.get('category', 'Other'))  # ✅ Normalize here
+                            'category': normalize_category(inc.get('category', 'Other'))  # [OK] Normalize here
                         }
                         for inc in preview_incomes
                     ],
@@ -6256,7 +6258,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                             'title': exp.get('title', ''),
                             'amount': exp.get('amount', 0),
                             'date': exp.get('date', datetime.utcnow()).isoformat() + 'Z',
-                            'category': normalize_category(exp.get('category', 'Other'))  # ✅ Normalize here
+                            'category': normalize_category(exp.get('category', 'Other'))  # [OK] Normalize here
                         }
                         for exp in preview_expenses
                     ],
@@ -6264,7 +6266,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                         {
                             'id': str(asset['_id']),
                             'name': asset.get('name', '') or asset.get('assetName', ''),
-                            'category': normalize_category(asset.get('category', '')),  # ✅ Normalize here
+                            'category': normalize_category(asset.get('category', '')),  # [OK] Normalize here
                             'currentValue': asset.get('currentValue', 0) or asset.get('purchasePrice', 0) or asset.get('purchaseCost', 0)
                         }
                         for asset in preview_assets
@@ -6534,11 +6536,11 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             if not description:
                 if txn_type == 'WALLET_FUNDING':
-                    description = f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
+                    description = f"Wallet Funding - N{txn.get('amount', 0):,.2f}"
                 elif txn_type == 'BILL_PAYMENT':
-                    description = f"Bill Payment - ₦{txn.get('amount', 0):,.2f}"
+                    description = f"Bill Payment - N{txn.get('amount', 0):,.2f}"
                 else:
-                    description = f"{txn_type} - ₦{txn.get('amount', 0):,.2f}"
+                    description = f"{txn_type} - N{txn.get('amount', 0):,.2f}"
             
             data.append({
                 'id': str(txn['_id']),
@@ -6627,7 +6629,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     'amount': txn.get('amount', 0),
                     'fee': txn.get('depositFee', 0),
                     'status': txn.get('status', 'UNKNOWN'),
-                    'description': f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
+                    'description': f"Wallet Funding - N{txn.get('amount', 0):,.2f}"
                 })
             
             pdf_generator = PDFGenerator()
@@ -6700,7 +6702,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
             writer.writerow([])
             
-            writer.writerow(['Date', 'Reference', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            writer.writerow(['Date', 'Reference', 'Amount (N)', 'Fee (N)', 'Status'])
             total_amount = 0
             total_fees = 0
             
@@ -6932,7 +6934,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
             writer.writerow([])
             
-            writer.writerow(['Date', 'Reference', 'Category', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            writer.writerow(['Date', 'Reference', 'Category', 'Amount (N)', 'Fee (N)', 'Status'])
             total_amount = 0
             total_fees = 0
             
@@ -7154,7 +7156,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
             writer.writerow([])
             
-            writer.writerow(['Date', 'Reference', 'Phone Number', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            writer.writerow(['Date', 'Reference', 'Phone Number', 'Amount (N)', 'Fee (N)', 'Status'])
             total_amount = 0
             total_fees = 0
             
@@ -7262,7 +7264,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 
                 if not description:
                     if txn_type == 'WALLET_FUNDING':
-                        description = f"Wallet Funding - ₦{txn.get('amount', 0):,.2f}"
+                        description = f"Wallet Funding - N{txn.get('amount', 0):,.2f}"
                     elif txn_type == 'BILL_PAYMENT':
                         description = f"Bill Payment - {txn.get('category', 'N/A')}"
                     elif txn_type == 'AIRTIME_PURCHASE':
@@ -7349,7 +7351,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 writer.writerow(['Period:', f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
             writer.writerow([])
             
-            writer.writerow(['Date', 'Reference', 'Type', 'Description', 'Amount (₦)', 'Fee (₦)', 'Status'])
+            writer.writerow(['Date', 'Reference', 'Type', 'Description', 'Amount (N)', 'Fee (N)', 'Status'])
             total_amount = 0
             total_fees = 0
             
@@ -7363,7 +7365,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 
                 if not description:
                     if txn_type == 'WALLET_FUNDING':
-                        description = f"Wallet Funding - ₦{amount:,.2f}"
+                        description = f"Wallet Funding - N{amount:,.2f}"
                     elif txn_type == 'BILL_PAYMENT':
                         description = f"Bill Payment - {txn.get('category', 'N/A')}"
                     elif txn_type == 'AIRTIME_PURCHASE':
@@ -7596,12 +7598,12 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Build queries with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses (Default Business Assumption)
-            # ✅ CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
+            # [OK] CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
             income_query = {
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
-                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital contributions
+                'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital contributions
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},
                     {'entryType': {'$exists': False}},
@@ -7612,7 +7614,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 'userId': current_user['_id'],
                 'status': 'active',
                 'isDeleted': False,
-                'excludeFromProfitLoss': {'$ne': True},  # ✅ Exclude capital expenditures
+                'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital expenditures
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},
                     {'entryType': {'$exists': False}},
@@ -7676,11 +7678,11 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 if start_date:
                     income_query['date'] = {'$gte': start_date}
                     expense_query['date'] = {'$gte': start_date}
-                    # ❌ REMOVED: asset_query['purchaseDate'] = {'$gte': start_date}
+                    # [ERROR] REMOVED: asset_query['purchaseDate'] = {'$gte': start_date}
                 if end_date:
                     income_query.setdefault('date', {})['$lte'] = end_date
                     expense_query.setdefault('date', {})['$lte'] = end_date
-                    # ❌ REMOVED: asset_query.setdefault('purchaseDate', {})['$lte'] = end_date
+                    # [ERROR] REMOVED: asset_query.setdefault('purchaseDate', {})['$lte'] = end_date
             
             # NOTE: Assets, Debtors, Creditors, Inventory are NOT date-filtered
             # They are cumulative (all entries from beginning of time)
@@ -7988,36 +7990,36 @@ def filter_by_date_range(items, date_field, start_date, end_date):
     def export_statement_of_affairs_pdf_async(current_user):
         """Generate Statement of Affairs PDF in background (PRIORITY ENDPOINT)"""
         try:
-            print(f"🔵 SOA ASYNC: Starting for user {current_user['_id']}")
+            print(f"[INFO] SOA ASYNC: Starting for user {current_user['_id']}")
             request_data = request.get_json() or {}
             report_type = 'statement_of_affairs_pdf'
             
             # Get tax type and tag filter
             tax_type = request_data.get('taxType', 'PIT').upper()
-            print(f"🔵 SOA ASYNC: Tax type = {tax_type}")
+            print(f"[INFO] SOA ASYNC: Tax type = {tax_type}")
             if tax_type not in ['PIT', 'CIT']:
-                print(f"❌ SOA ASYNC: Invalid tax type {tax_type}")
+                print(f"[ERROR] SOA ASYNC: Invalid tax type {tax_type}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid tax type. Must be either PIT or CIT'
                 }), 400
             
             tag_filter = request_data.get('tagFilter', 'business').lower()
-            print(f"🔵 SOA ASYNC: Tag filter = {tag_filter}")
+            print(f"[INFO] SOA ASYNC: Tag filter = {tag_filter}")
             if tag_filter not in ['business', 'personal', 'all', 'untagged']:
-                print(f"❌ SOA ASYNC: Invalid tag filter {tag_filter}")
+                print(f"[ERROR] SOA ASYNC: Invalid tag filter {tag_filter}")
                 return jsonify({
                     'success': False,
                     'message': 'Invalid tag filter'
                 }), 400
             
             # Check credits (fast)
-            print(f"🔵 SOA ASYNC: Checking credits...")
+            print(f"[INFO] SOA ASYNC: Checking credits...")
             has_access, is_premium, current_balance, credit_cost = check_user_access(current_user, report_type)
-            print(f"🔵 SOA ASYNC: Credits check - has_access={has_access}, is_premium={is_premium}, balance={current_balance}, cost={credit_cost}")
+            print(f"[INFO] SOA ASYNC: Credits check - has_access={has_access}, is_premium={is_premium}, balance={current_balance}, cost={credit_cost}")
             
             if not has_access:
-                print(f"❌ SOA ASYNC: Insufficient credits")
+                print(f"[ERROR] SOA ASYNC: Insufficient credits")
                 return jsonify({
                     'success': False,
                     'message': f'Insufficient credits. You need {credit_cost} FC to export this report.',
@@ -8029,12 +8031,12 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 }), 402
             
             # Parse parameters
-            print(f"🔵 SOA ASYNC: Parsing date range...")
+            print(f"[INFO] SOA ASYNC: Parsing date range...")
             start_date, end_date = parse_date_range(request_data)
-            print(f"🔵 SOA ASYNC: Date range = {start_date} to {end_date}")
+            print(f"[INFO] SOA ASYNC: Date range = {start_date} to {end_date}")
             
             # Create background job
-            print(f"🔵 SOA ASYNC: Creating background job...")
+            print(f"[INFO] SOA ASYNC: Creating background job...")
             bg_generator = get_background_generator(mongo.db)
             job_id = bg_generator.create_job(
                 user_id=current_user['_id'],
@@ -8047,15 +8049,15 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     'tax_type': tax_type
                 }
             )
-            print(f"✅ SOA ASYNC: Job created with ID = {job_id}")
+            print(f"[OK] SOA ASYNC: Job created with ID = {job_id}")
             
             # Define generation function
             def generate_statement_of_affairs_pdf():
                 try:
-                    print(f"🟢 SOA GENERATION: Starting for job {job_id}")
+                    print(f"[SUCCESS] SOA GENERATION: Starting for job {job_id}")
                     
                     # Build queries
-                    print(f"🟢 SOA GENERATION: Building queries...")
+                    print(f"[SUCCESS] SOA GENERATION: Building queries...")
                     # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
                     income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
                     expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
@@ -8065,7 +8067,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     inventory_query = {'userId': current_user['_id']}
                     
                     # Apply tag filtering
-                    print(f"🟢 SOA GENERATION: Applying tag filter = {tag_filter}")
+                    print(f"[SUCCESS] SOA GENERATION: Applying tag filter = {tag_filter}")
                     if tag_filter == 'business':
                         income_query['entryType'] = 'business'
                         expense_query['entryType'] = 'business'
@@ -8075,7 +8077,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # Apply date filtering (only for P&L items)
                     if start_date or end_date:
-                        print(f"🟢 SOA GENERATION: Applying date filter...")
+                        print(f"[SUCCESS] SOA GENERATION: Applying date filter...")
                         if start_date:
                             income_query['date'] = {'$gte': start_date}
                             expense_query['date'] = {'$gte': start_date}
@@ -8084,7 +8086,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                             expense_query.setdefault('date', {})['$lte'] = end_date
                     
                     # Fetch all data in parallel
-                    print(f"🟢 SOA GENERATION: Fetching data from 6 collections...")
+                    print(f"[SUCCESS] SOA GENERATION: Fetching data from 6 collections...")
                     results = fetch_collections_parallel({
                         'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
                         'expenses': lambda: list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses'])),
@@ -8101,10 +8103,10 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     creditors = results['creditors']
                     inventory = results['inventory']
                     
-                    print(f"✅ SOA GENERATION: Data fetched - {len(incomes)} incomes, {len(expenses)} expenses, {len(assets)} assets, {len(debtors)} debtors, {len(creditors)} creditors, {len(inventory)} inventory")
+                    print(f"[OK] SOA GENERATION: Data fetched - {len(incomes)} incomes, {len(expenses)} expenses, {len(assets)} assets, {len(debtors)} debtors, {len(creditors)} creditors, {len(inventory)} inventory")
                     
                     # Prepare user data
-                    print(f"🟢 SOA GENERATION: Preparing user data...")
+                    print(f"[SUCCESS] SOA GENERATION: Preparing user data...")
                     user = mongo.db.users.find_one({'_id': current_user['_id']})
                     user_data = {
                         'firstName': current_user.get('firstName', ''),
@@ -8113,25 +8115,25 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                         'businessName': user.get('businessName', '') if user else '',
                         'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
                     }
-                    print(f"✅ SOA GENERATION: User data prepared for {user_data.get('firstName')} {user_data.get('lastName')}")
+                    print(f"[OK] SOA GENERATION: User data prepared for {user_data.get('firstName')} {user_data.get('lastName')}")
                     
                     # Calculate financial metrics
-                    print(f"🟢 SOA GENERATION: Calculating financial metrics...")
+                    print(f"[SUCCESS] SOA GENERATION: Calculating financial metrics...")
                     total_income = sum(inc.get('amount', 0) for inc in incomes)
                     total_expenses = sum(exp.get('amount', 0) for exp in expenses)
                     debtors_value = sum(d.get('amount', 0) for d in debtors)
                     creditors_value = sum(c.get('amount', 0) for c in creditors)
                     inventory_value = sum(i.get('quantity', 0) * i.get('unitCost', 0) for i in inventory)
                     
-                    print(f"✅ SOA GENERATION: Metrics - Income: ₦{total_income:,.2f}, Expenses: ₦{total_expenses:,.2f}, Debtors: ₦{debtors_value:,.2f}, Creditors: ₦{creditors_value:,.2f}, Inventory: ₦{inventory_value:,.2f}")
+                    print(f"[OK] SOA GENERATION: Metrics - Income: N{total_income:,.2f}, Expenses: N{total_expenses:,.2f}, Debtors: N{debtors_value:,.2f}, Creditors: N{creditors_value:,.2f}, Inventory: N{inventory_value:,.2f}")
                     
                     # Calculate cash balance
-                    print(f"🟢 SOA GENERATION: Calculating cash balance...")
+                    print(f"[SUCCESS] SOA GENERATION: Calculating cash balance...")
                     cash_balance = calculate_cash_bank_balance(current_user['_id'], end_date=end_date)
-                    print(f"✅ SOA GENERATION: Cash balance = ₦{cash_balance:,.2f}")
+                    print(f"[OK] SOA GENERATION: Cash balance = N{cash_balance:,.2f}")
                     
                     # Calculate 3-Step P&L (align with SOA sync endpoint)
-                    print(f"🟢 SOA GENERATION: Calculating 3-Step P&L...")
+                    print(f"[SUCCESS] SOA GENERATION: Calculating 3-Step P&L...")
                     sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
                     other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
                     
@@ -8146,10 +8148,10 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     operating_profit = gross_profit - total_operating
                     net_income = operating_profit
                     
-                    print(f"✅ SOA GENERATION: 3-Step P&L - Sales: ₦{sales_revenue:,.2f}, Other: ₦{other_income:,.2f}, COGS: ₦{total_cogs:,.2f}, Gross: ₦{gross_profit:,.2f}, Operating: ₦{total_operating:,.2f}, Net: ₦{net_income:,.2f}")
+                    print(f"[OK] SOA GENERATION: 3-Step P&L - Sales: N{sales_revenue:,.2f}, Other: N{other_income:,.2f}, COGS: N{total_cogs:,.2f}, Gross: N{gross_profit:,.2f}, Operating: N{total_operating:,.2f}, Net: N{net_income:,.2f}")
                     
                     # Prepare comprehensive data structure
-                    print(f"🟢 SOA GENERATION: Preparing comprehensive data structure...")
+                    print(f"[SUCCESS] SOA GENERATION: Preparing comprehensive data structure...")
                     comprehensive_data = {
                         'incomes': incomes,
                         'expenses': expenses,
@@ -8176,7 +8178,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     }
                     
                     # Generate PDF
-                    print(f"🟢 SOA GENERATION: Calling PDF generator...")
+                    print(f"[SUCCESS] SOA GENERATION: Calling PDF generator...")
                     pdf_generator = PDFGenerator()
                     
                     # Prepare data in the format expected by generate_statement_of_affairs
@@ -8245,14 +8247,14 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                         tag_filter=tag_filter
                     )
                     
-                    print(f"✅ SOA GENERATION: PDF generated successfully! Size = {len(pdf_buffer.getvalue())} bytes")
+                    print(f"[OK] SOA GENERATION: PDF generated successfully! Size = {len(pdf_buffer.getvalue())} bytes")
                     return pdf_buffer
                     
                 except Exception as gen_error:
-                    print(f"❌ SOA GENERATION ERROR: {str(gen_error)}")
-                    print(f"❌ SOA GENERATION ERROR TYPE: {type(gen_error).__name__}")
+                    print(f"[ERROR] SOA GENERATION ERROR: {str(gen_error)}")
+                    print(f"[ERROR] SOA GENERATION ERROR TYPE: {type(gen_error).__name__}")
                     import traceback
-                    print(f"❌ SOA GENERATION TRACEBACK:\n{traceback.format_exc()}")
+                    print(f"[ERROR] SOA GENERATION TRACEBACK:\n{traceback.format_exc()}")
                     raise
             
             # Define wrapper function that deducts credits ONLY on success
@@ -8263,28 +8265,28 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                     
                     # ONLY deduct credits if generation succeeded
                     if not is_premium and credit_cost > 0:
-                        print(f"🔵 SOA ASYNC: PDF generated successfully, deducting {credit_cost} credits...")
+                        print(f"[INFO] SOA ASYNC: PDF generated successfully, deducting {credit_cost} credits...")
                         deduct_credits(current_user, credit_cost, report_type)
-                        print(f"✅ SOA ASYNC: Credits deducted after successful generation")
+                        print(f"[OK] SOA ASYNC: Credits deducted after successful generation")
                     
                     # Log export event
                     log_export_event(current_user, report_type, 'pdf', success=True)
-                    print(f"✅ SOA ASYNC: Export event logged")
+                    print(f"[OK] SOA ASYNC: Export event logged")
                     
                     return pdf_buffer
                 except Exception as e:
                     # DO NOT deduct credits on failure
-                    print(f"❌ SOA ASYNC: Generation failed, credits NOT deducted")
+                    print(f"[ERROR] SOA ASYNC: Generation failed, credits NOT deducted")
                     log_export_event(current_user, report_type, 'pdf', success=False)
                     raise
             
             # Start background generation with wrapper
-            print(f"🔵 SOA ASYNC: Starting background generation...")
+            print(f"[INFO] SOA ASYNC: Starting background generation...")
             bg_generator.start_generation(job_id, generate_and_deduct_on_success)
-            print(f"✅ SOA ASYNC: Background generation started")
+            print(f"[OK] SOA ASYNC: Background generation started")
             
             # Return job_id immediately
-            print(f"✅ SOA ASYNC: Returning job_id to client")
+            print(f"[OK] SOA ASYNC: Returning job_id to client")
             return jsonify({
                 'success': True,
                 'message': 'Your comprehensive report is being prepared. This may take 3-5 minutes due to the detailed calculations.',
@@ -8294,10 +8296,10 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             }), 202
             
         except Exception as e:
-            print(f"❌ SOA ASYNC ERROR: {str(e)}")
-            print(f"❌ SOA ASYNC ERROR TYPE: {type(e).__name__}")
+            print(f"[ERROR] SOA ASYNC ERROR: {str(e)}")
+            print(f"[ERROR] SOA ASYNC ERROR TYPE: {type(e).__name__}")
             import traceback
-            print(f"❌ SOA ASYNC TRACEBACK:\n{traceback.format_exc()}")
+            print(f"[ERROR] SOA ASYNC TRACEBACK:\n{traceback.format_exc()}")
             return jsonify({
                 'success': False,
                 'message': f'Unable to start preparing your report: {str(e)}'
@@ -8395,7 +8397,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Income section
             writer.writerow(['INCOME'])
-            writer.writerow(['Date', 'Source', 'Category', 'Amount (₦)'])
+            writer.writerow(['Date', 'Source', 'Category', 'Amount (N)'])
             for inc in results['incomes']:
                 writer.writerow([
                     inc.get('date', '').strftime('%Y-%m-%d') if isinstance(inc.get('date'), datetime) else str(inc.get('date', '')),
@@ -8408,7 +8410,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Expenses section
             writer.writerow(['EXPENSES'])
-            writer.writerow(['Date', 'Title', 'Category', 'Amount (₦)'])
+            writer.writerow(['Date', 'Title', 'Category', 'Amount (N)'])
             for exp in results['expenses']:
                 writer.writerow([
                     exp.get('date', '').strftime('%Y-%m-%d') if isinstance(exp.get('date'), datetime) else str(exp.get('date', '')),
@@ -8421,7 +8423,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Assets section
             writer.writerow(['ASSETS'])
-            writer.writerow(['Name', 'Purchase Date', 'Purchase Cost (₦)', 'Current Value (₦)'])
+            writer.writerow(['Name', 'Purchase Date', 'Purchase Cost (N)', 'Current Value (N)'])
             for asset in results['assets']:
                 writer.writerow([
                     asset.get('name', ''),
@@ -8433,7 +8435,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Debtors section
             writer.writerow(['DEBTORS (Accounts Receivable)'])
-            writer.writerow(['Customer', 'Amount (₦)', 'Due Date', 'Status'])
+            writer.writerow(['Customer', 'Amount (N)', 'Due Date', 'Status'])
             for debtor in results['debtors']:
                 writer.writerow([
                     debtor.get('customerName', ''),
@@ -8446,7 +8448,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Creditors section
             writer.writerow(['CREDITORS (Accounts Payable)'])
-            writer.writerow(['Supplier', 'Amount (₦)', 'Due Date', 'Status'])
+            writer.writerow(['Supplier', 'Amount (N)', 'Due Date', 'Status'])
             for creditor in results['creditors']:
                 writer.writerow([
                     creditor.get('supplierName', ''),
@@ -8459,7 +8461,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             
             # Inventory section
             writer.writerow(['INVENTORY'])
-            writer.writerow(['Item', 'Quantity', 'Unit Cost (₦)', 'Total Value (₦)'])
+            writer.writerow(['Item', 'Quantity', 'Unit Cost (N)', 'Total Value (N)'])
             for item in results['inventory']:
                 qty = item.get('quantity', 0)
                 cost = item.get('unitCost', 0)
@@ -8619,7 +8621,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
                 }
             )
             
-            print(f"✅ REFUND: User {current_user['_id']} refunded {credit_cost} FCs for corrupted report {job_id}")
+            print(f"[OK] REFUND: User {current_user['_id']} refunded {credit_cost} FCs for corrupted report {job_id}")
             
             return jsonify({
                 'success': True,
@@ -8632,7 +8634,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             })
             
         except Exception as e:
-            print(f"❌ REFUND ERROR: {str(e)}")
+            print(f"[ERROR] REFUND ERROR: {str(e)}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to process refund',
@@ -8702,7 +8704,7 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             })
             
         except Exception as e:
-            print(f"❌ PDF VALIDATION ERROR: {str(e)}")
+            print(f"[ERROR] PDF VALIDATION ERROR: {str(e)}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to validate PDF',
@@ -8710,4 +8712,6 @@ def filter_by_date_range(items, date_field, start_date, end_date):
             }), 500
 
 
+    print("DEBUG: About to return reports_bp")
+    print(f"DEBUG: reports_bp = {reports_bp}")
     return reports_bp

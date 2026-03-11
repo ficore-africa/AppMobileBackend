@@ -10,15 +10,33 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Blueprint, jsonify, request
 from bson import ObjectId
 from datetime import datetime
-from utils.financial_automation_integration import (
-    run_complete_financial_integration,
-    ensure_all_fc_credits_have_liabilities,
-    ensure_all_subscriptions_have_liabilities,
-    calculate_total_liabilities,
-    ensure_monthly_depreciation_recorded,
-    get_balance_sheet_data,
-    get_liability_breakdown_for_reports
-)
+try:
+    from utils.financial_automation_integration import (
+        run_complete_financial_integration,
+        ensure_all_fc_credits_have_liabilities,
+        ensure_all_subscriptions_have_liabilities,
+        calculate_total_liabilities,
+        ensure_monthly_depreciation_recorded,
+        get_balance_sheet_data,
+        get_liability_breakdown_for_reports
+    )
+except ImportError:
+    # Fallback for missing module
+    def run_complete_financial_integration(*args, **kwargs):
+        return {'success': False, 'message': 'Financial automation integration not available'}
+    def ensure_all_fc_credits_have_liabilities(*args, **kwargs):
+        return {'success': False, 'message': 'Financial automation integration not available'}
+    def ensure_all_subscriptions_have_liabilities(*args, **kwargs):
+        return {'success': False, 'message': 'Financial automation integration not available'}
+    def calculate_total_liabilities(*args, **kwargs):
+        return 0.0
+    def ensure_monthly_depreciation_recorded(*args, **kwargs):
+        return {'success': False, 'message': 'Financial automation integration not available'}
+    def get_balance_sheet_data(*args, **kwargs):
+        return {}
+    def get_liability_breakdown_for_reports(*args, **kwargs):
+        return {}
+
 from utils.decimal_helpers import safe_float
 
 def init_financial_integration_blueprint(mongo, token_required):
