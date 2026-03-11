@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Processing</title>
+    <title>{% if status == 'success' %}Payment Successful{% else %}Payment Processing{% endif %}</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -24,6 +24,7 @@
         }
         .success { color: #10b981; }
         .error { color: #ef4444; }
+        .warning { color: #f59e0b; }
         .spinner {
             border: 3px solid #f3f3f3;
             border-top: 3px solid #667eea;
@@ -63,53 +64,132 @@
         .btn:hover {
             background: #5568d3;
         }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: #fef3c7;
+            color: #92400e;
+            margin-top: 0.5rem;
+        }
+        .details {
+            background: #f9fafb;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            font-size: 0.875rem;
+        }
+        .details-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+        .details-label {
+            color: #6b7280;
+        }
+        .details-value {
+            font-weight: 600;
+            color: #111827;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div id="content">
-            <div class="spinner"></div>
-            <h1>Processing Payment...</h1>
-            <p>Please wait while we verify your payment.</p>
+            {% if status == 'success' %}
+                <div class="icon success">✓</div>
+                <h1 class="success">Payment Successful!</h1>
+                {% if test_mode %}
+                    <span class="badge">TEST MODE</span>
+                {% endif %}
+                <p>{{ message or 'Your transaction has been completed successfully.' }}</p>
+                {% if amount %}
+                    <div class="details">
+                        <div class="details-row">
+                            <span class="details-label">Amount:</span>
+                            <span class="details-value">{{ amount }}</span>
+                        </div>
+                        {% if reference %}
+                        <div class="details-row">
+                            <span class="details-label">Reference:</span>
+                            <span class="details-value" style="font-size: 0.75rem;">{{ reference }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+                <p style="font-size: 0.875rem; color: #9ca3af; margin-top: 1.5rem;">
+                    Redirecting to the app...<br>
+                    If the app doesn't open automatically, please open it manually.
+                </p>
+            {% elif status == 'failed' %}
+                <div class="icon error">✗</div>
+                <h1 class="error">Payment Failed</h1>
+                <p>{{ message or 'We couldn\'t process your payment.' }}</p>
+                {% if error %}
+                    <div class="details">
+                        <div class="details-row">
+                            <span class="details-label">Error:</span>
+                            <span class="details-value">{{ error.replace('_', ' ').title() }}</span>
+                        </div>
+                        {% if reference %}
+                        <div class="details-row">
+                            <span class="details-label">Reference:</span>
+                            <span class="details-value" style="font-size: 0.75rem;">{{ reference }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+                <p style="font-size: 0.875rem; color: #9ca3af; margin-top: 1.5rem;">
+                    Please try again or contact support if the issue persists.
+                </p>
+            {% elif status == 'completed' %}
+                <div class="icon warning">⚠</div>
+                <h1 class="warning">Already Processed</h1>
+                <p>{{ message or 'This transaction has already been completed.' }}</p>
+                {% if reference %}
+                    <div class="details">
+                        <div class="details-row">
+                            <span class="details-label">Reference:</span>
+                            <span class="details-value" style="font-size: 0.75rem;">{{ reference }}</span>
+                        </div>
+                    </div>
+                {% endif %}
+                <p style="font-size: 0.875rem; color: #9ca3af; margin-top: 1.5rem;">
+                    Redirecting to the app...
+                </p>
+            {% else %}
+                <div class="spinner"></div>
+                <h1>Processing Payment...</h1>
+                <p>Please wait while we verify your payment.</p>
+            {% endif %}
         </div>
     </div>
 
     <script>
-        // Get URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const status = urlParams.get('status');
-        const reference = urlParams.get('reference');
-        const plan = urlParams.get('plan');
-        const error = urlParams.get('error');
-
-        // Try to open the app via deep link
-        const deepLink = window.location.href.replace(/^https?:\/\/[^\/]+/, 'ficoreafrica:');
-        
-        setTimeout(() => {
-            window.location.href = deepLink;
-        }, 500);
-
-        // Update UI based on status
-        setTimeout(() => {
-            const content = document.getElementById('content');
-            
-            if (status === 'success') {
-                content.innerHTML = `
-                    <div class="icon success">✓</div>
-                    <h1 class="success">Payment Successful!</h1>
-                    <p>Your subscription has been activated. Redirecting to the app...</p>
-                    <p style="font-size: 0.875rem; color: #9ca3af;">If the app doesn't open automatically, please open it manually.</p>
-                `;
-            } else if (status === 'failed') {
-                const errorMsg = error ? error.replace(/_/g, ' ') : 'Unknown error';
-                content.innerHTML = `
-                    <div class="icon error">✗</div>
-                    <h1 class="error">Payment Failed</h1>
-                    <p>We couldn't process your payment: ${errorMsg}</p>
-                    <p style="font-size: 0.875rem; color: #9ca3af;">Please try again or contact support if the issue persists.</p>
-                `;
-            }
-        }, 2000);
+        // Auto-redirect to app after showing success/error message
+        {% if status in ['success', 'completed'] %}
+            // Try deep link first
+            setTimeout(() => {
+                // Try to open the app via deep link
+                window.location.href = 'ficoreafrica://payment-callback?status={{ status }}&reference={{ reference or "" }}';
+                
+                // Fallback: Show manual instruction after 3 seconds
+                setTimeout(() => {
+                    const content = document.getElementById('content');
+                    const instruction = document.createElement('p');
+                    instruction.style.cssText = 'font-size: 0.875rem; color: #ef4444; margin-top: 1rem; font-weight: 600;';
+                    instruction.textContent = 'Please open the FiCore app manually to see your updated balance.';
+                    content.appendChild(instruction);
+                }, 3000);
+            }, 2000);
+        {% elif status == 'failed' %}
+            // For failed payments, try to return to app after 5 seconds
+            setTimeout(() => {
+                window.location.href = 'ficoreafrica://payment-callback?status=failed&error={{ error or "unknown" }}';
+            }, 5000);
+        {% endif %}
     </script>
 </body>
 </html>

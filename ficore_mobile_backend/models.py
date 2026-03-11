@@ -30,6 +30,7 @@ class DatabaseSchema:
             'bvn': Optional[str],  # Bank Verification Number (11 digits)
             'nin': Optional[str],  # National Identification Number (11 digits)
             'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
+            'kycRejectionReason': Optional[str],  # Reason for KYC rejection (set by admin)
             'kycVerifiedAt': Optional[datetime],  # KYC verification timestamp
             'role': str,  # 'personal' or 'admin', default: 'personal'
             'ficoreCreditBalance': float,  # FiCore Credits balance, default: 1000.0
@@ -107,6 +108,24 @@ class DatabaseSchema:
             'referralCodeGeneratedAt': Optional[datetime],  # When code was generated
             'referredAt': Optional[datetime],  # When they were referred
             
+            # Equity Tracking Fields (NEW - Feb 18, 2026 - for Statement of Affairs)
+            'openingEquity': Optional[float],  # Owner's capital at start of period, default: 0.0
+            'drawings': Optional[float],  # Owner withdrawals during period, default: 0.0
+            'capital': Optional[float],  # NEW (Feb 27, 2026): Owner capital contributions during period, default: 0.0
+            'taxPaid': Optional[float],  # Tax payments made during period, default: 0.0
+            'lastEquityUpdate': Optional[datetime],  # Last time equity fields were updated
+            
+            # Opening Balances (Phase 3C - Feb 18, 2026, Updated Feb 25, 2026)
+            'openingCashBalance': Optional[float],  # Cash/bank at start, default: 0.0
+            'openingLiability': Optional[float],  # NEW (Feb 25, 2026): Total liabilities at start, default: 0.0
+            'openingBalancesLocked': Optional[bool],  # NEW (Feb 25, 2026): Lock after first set, default: False
+            'openingBalancesSetAt': Optional[datetime],  # When opening balances were first set
+            'openingCashBalanceSetAt': Optional[datetime],  # When cash balance was set
+            'openingEquitySetAt': Optional[datetime],  # When equity was set
+            'openingLiabilitySetAt': Optional[datetime],  # NEW (Feb 25, 2026): When liability was set
+            'openingBalancesUnlockedAt': Optional[datetime],  # NEW (Feb 25, 2026): When unlocked (if ever)
+            'openingBalancesUnlockedBy': Optional[ObjectId],  # NEW (Feb 25, 2026): Who unlocked it
+            
             'settings': {  # User preferences and settings
                 'notifications': {
                     'push': bool,  # Push notifications enabled
@@ -153,6 +172,20 @@ class DatabaseSchema:
         """
         Schema for incomes collection.
         Stores user income records with sources (simplified - no recurring).
+        
+        TAGGING SYSTEM (Phase 3B - Feb 6, 2026):
+        - entryType: 'business' | 'personal' | None (for tax classification)
+        - taggedAt: When entry was tagged
+        - taggedBy: Who tagged it ('user', 'system_migration', 'admin')
+        
+        IMMUTABILITY SYSTEM (Jan 14, 2026):
+        - status: 'active' | 'voided' | 'superseded' (for soft delete)
+        - isDeleted: Boolean flag for deleted entries
+        - version: Version number for edit tracking
+        - versionLog: Array of previous versions
+        
+        SOURCE TYPE TRACKING (Financial Protocol):
+        - sourceType: Origin of entry ('manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale', etc.)
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -163,20 +196,40 @@ class DatabaseSchema:
             'category': str,  # Required, income category
             'frequency': str,  # Required: 'one_time', 'daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'
             'salesType': Optional[str],  # Optional: 'cash' or 'credit' for sales incomes
-            'dateReceived': datetime,  # Required, date income was received
+            'date': datetime,  # Required, date income was received
             'isRecurring': bool,  # Legacy field - always False now (simplified)
             'nextRecurringDate': Optional[datetime],  # Legacy field - always None now (simplified)
             'metadata': Optional[Dict[str, Any]],  # Additional metadata
             'createdAt': datetime,  # Record creation timestamp
             'updatedAt': datetime,  # Last update timestamp
+            
+            # TAGGING SYSTEM (Phase 3B - Feb 6, 2026)
+            'entryType': Optional[str],  # 'business' | 'personal' | None (untagged)
+            'taggedAt': Optional[datetime],  # When entry was tagged
+            'taggedBy': Optional[str],  # 'user' | 'system_migration' | 'admin'
+            
+            # IMMUTABILITY SYSTEM (Jan 14, 2026)
+            'status': Optional[str],  # 'active' | 'voided' | 'superseded', default: 'active'
+            'isDeleted': Optional[bool],  # Soft delete flag, default: False
+            'version': Optional[int],  # Version number, default: 1
+            'versionLog': Optional[List[Dict[str, Any]]],  # Previous versions
+            'exportHistory': Optional[List[Dict[str, Any]]],  # Export tracking
+            'reversalEntryId': Optional[str],  # Link to reversal entry if deleted
+            'originalEntryId': Optional[str],  # Link to original if this is a reversal
+            
+            # SOURCE TYPE TRACKING (Financial Protocol)
+            'sourceType': Optional[str],  # 'manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale', etc.
+            
+            # OPENING BALANCE TRACKING (Phase 3C - Feb 18, 2026)
+            'isOpeningBalance': Optional[bool],  # True if this is an opening balance entry
+            'openingBalanceDate': Optional[datetime],  # Date of opening balance
         }
     
-    @staticmethod
     @staticmethod
     def get_income_indexes() -> List[Dict[str, Any]]:
         """Define indexes for incomes collection."""
         return [
-            {'keys': [('userId', 1), ('dateReceived', -1)], 'name': 'user_date_desc'},
+            {'keys': [('userId', 1), ('date', -1)], 'name': 'user_date_desc'},
             {'keys': [('userId', 1), ('category', 1)], 'name': 'user_category'},
             {'keys': [('userId', 1), ('frequency', 1)], 'name': 'user_frequency'},
             {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
@@ -184,6 +237,12 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
             # CRITICAL FIX: Add index for immutable ledger queries
             {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
+            # TAGGING SYSTEM: Add index for tagging queries (Phase 3B)
+            {'keys': [('userId', 1), ('entryType', 1)], 'name': 'user_entry_type'},
+            # SOURCE TYPE: Add index for source type filtering
+            {'keys': [('userId', 1), ('sourceType', 1)], 'name': 'user_source_type'},
+            # OPENING BALANCE: Add index for opening balance queries
+            {'keys': [('userId', 1), ('isOpeningBalance', 1)], 'name': 'user_opening_balance'},
         ]
     
     # ==================== EXPENSES COLLECTION ====================
@@ -193,6 +252,20 @@ class DatabaseSchema:
         """
         Schema for expenses collection.
         Stores user expense records with categories and budget linkage.
+        
+        TAGGING SYSTEM (Phase 3B - Feb 6, 2026):
+        - entryType: 'business' | 'personal' | None (for tax classification)
+        - taggedAt: When entry was tagged
+        - taggedBy: Who tagged it ('user', 'system_migration', 'admin')
+        
+        IMMUTABILITY SYSTEM (Jan 14, 2026):
+        - status: 'active' | 'voided' | 'superseded' (for soft delete)
+        - isDeleted: Boolean flag for deleted entries
+        - version: Version number for edit tracking
+        - versionLog: Array of previous versions
+        
+        SOURCE TYPE TRACKING (Financial Protocol):
+        - sourceType: Origin of entry ('manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale_cogs', etc.)
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -208,6 +281,30 @@ class DatabaseSchema:
             'notes': Optional[str],  # Additional notes
             'createdAt': datetime,  # Record creation timestamp
             'updatedAt': datetime,  # Last update timestamp
+            
+            # TAGGING SYSTEM (Phase 3B - Feb 6, 2026)
+            'entryType': Optional[str],  # 'business' | 'personal' | None (untagged)
+            'taggedAt': Optional[datetime],  # When entry was tagged
+            'taggedBy': Optional[str],  # 'user' | 'system_migration' | 'admin'
+            
+            # IMMUTABILITY SYSTEM (Jan 14, 2026)
+            'status': Optional[str],  # 'active' | 'voided' | 'superseded', default: 'active'
+            'isDeleted': Optional[bool],  # Soft delete flag, default: False
+            'version': Optional[int],  # Version number, default: 1
+            'versionLog': Optional[List[Dict[str, Any]]],  # Previous versions
+            'exportHistory': Optional[List[Dict[str, Any]]],  # Export tracking
+            'reversalEntryId': Optional[str],  # Link to reversal entry if deleted
+            'originalEntryId': Optional[str],  # Link to original if this is a reversal
+            
+            # SOURCE TYPE TRACKING (Financial Protocol)
+            'sourceType': Optional[str],  # 'manual', 'voice', 'wallet_auto', 'vas_*', 'inventory_sale_cogs', etc.
+            
+            # VAS TRANSACTION LINKING (for auto-generated expenses)
+            'vasTransactionId': Optional[str],  # Link to VAS transaction if auto-generated
+            
+            # OPENING BALANCE TRACKING (Phase 3C - Feb 18, 2026)
+            'isOpeningBalance': Optional[bool],  # True if this is an opening balance entry
+            'openingBalanceDate': Optional[datetime],  # Date of opening balance
         }
     
     @staticmethod
@@ -221,6 +318,14 @@ class DatabaseSchema:
             {'keys': [('userId', 1), ('amount', 1)], 'name': 'user_amount_agg'},
             # CRITICAL FIX: Add index for immutable ledger queries
             {'keys': [('userId', 1), ('status', 1), ('isDeleted', 1)], 'name': 'user_status_deleted'},
+            # TAGGING SYSTEM: Add index for tagging queries (Phase 3B)
+            {'keys': [('userId', 1), ('entryType', 1)], 'name': 'user_entry_type'},
+            # SOURCE TYPE: Add index for source type filtering
+            {'keys': [('userId', 1), ('sourceType', 1)], 'name': 'user_source_type'},
+            # VAS LINKING: Add index for VAS transaction queries
+            {'keys': [('userId', 1), ('vasTransactionId', 1)], 'sparse': True, 'name': 'user_vas_transaction'},
+            # OPENING BALANCE: Add index for opening balance queries
+            {'keys': [('userId', 1), ('isOpeningBalance', 1)], 'name': 'user_opening_balance'},
         ]
     
     # ==================== CREDIT_TRANSACTIONS COLLECTION ====================
@@ -815,6 +920,9 @@ class DatabaseSchema:
         """
         Schema for vas_wallets collection.
         Stores VAS wallet information including balance, account details, and KYC status.
+        
+        NEW (Feb 2026): Added Monnify metadata fields to track account creation details
+        and prevent duplicate BVN/NIN submissions (each submission costs money).
         """
         return {
             '_id': ObjectId,  # Auto-generated MongoDB ID
@@ -828,11 +936,32 @@ class DatabaseSchema:
             'bankCode': Optional[str],  # Primary bank code
             'accounts': List[Dict[str, Any]],  # List of all available bank accounts
             'status': str,  # 'active', 'inactive', 'suspended', default: 'active'
-            'tier': str,  # 'TIER_0', 'TIER_1', 'TIER_2', default: 'TIER_1'
+            'tier': str,  # 'TIER_1' (default), 'TIER_2' (KYC verified)
             'kycVerified': bool,  # KYC verification status, default: False
             'kycStatus': str,  # 'pending', 'verified', 'rejected', default: 'pending'
             'bvn': Optional[str],  # Bank Verification Number (11 digits)
             'nin': Optional[str],  # National Identification Number (11 digits)
+            
+            # NEW: Monnify Customer Info (for audit trail)
+            'customerEmail': Optional[str],  # Email sent to Monnify during account creation
+            'customerName': Optional[str],  # Name sent to Monnify during account creation
+            
+            # NEW: Monnify Account Metadata (from Monnify response)
+            'reservationReference': Optional[str],  # Monnify's unique ID (e.g., "96ZPXECUD84UQTB00931")
+            'reservedAccountType': Optional[str],  # Always "GENERAL" for us (ignore INVOICE)
+            'collectionChannel': Optional[str],  # Always "RESERVED_ACCOUNT"
+            'monnifyStatus': Optional[str],  # "ACTIVE" or "INACTIVE" from Monnify
+            'monnifyCreatedOn': Optional[str],  # Monnify's creation timestamp
+            
+            # NEW: BVN/NIN Submission Tracking (CRITICAL - prevents duplicate submissions)
+            'bvnSubmittedToMonnify': Optional[bool],  # True if BVN was sent to Monnify
+            'ninSubmittedToMonnify': Optional[bool],  # True if NIN was sent to Monnify
+            'kycSubmittedAt': Optional[datetime],  # When BVN/NIN was first submitted to Monnify
+            
+            # NEW: Payment Restrictions (optional, usually false for us)
+            'restrictPaymentSource': Optional[bool],  # Default: False (accept from anyone)
+            'allowedPaymentSources': Optional[Dict[str, Any]],  # BVNs, accounts, names allowed to pay
+            
             'transactionHistory': List[Dict[str, Any]],  # Transaction history for quick access
             'createdAt': datetime,  # Wallet creation timestamp
             'updatedAt': datetime,  # Last update timestamp
@@ -1201,6 +1330,156 @@ class DatabaseSchema:
             {'keys': [('referralId', 1)], 'name': 'referral_id_index'},
         ]
 
+    # ==================== LOANS COLLECTION ====================
+    
+    @staticmethod
+    def get_loan_schema() -> Dict[str, Any]:
+        """
+        Schema for loans collection.
+        Stores long-term debt tracking (separate from creditors which are short-term trade payables).
+        
+        NEW (Feb 25, 2026): Part of Opening Balances redesign for complete liability tracking.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'lenderName': str,  # Required, name of lender (bank, person, institution)
+            'loanAmount': float,  # Required, total loan amount (must be > 0)
+            'interestRate': float,  # Annual interest rate percentage, default: 0.0
+            'startDate': datetime,  # Required, when loan was received
+            'maturityDate': Optional[datetime],  # When loan is due (optional)
+            'purpose': Optional[str],  # Purpose of loan (equipment, working capital, etc.)
+            'collateral': Optional[str],  # Collateral description (if any)
+            'status': str,  # 'active', 'paid_off', 'defaulted', default: 'active'
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_loan_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for loans collection."""
+        return [
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('userId', 1), ('startDate', -1)], 'name': 'user_start_date_desc'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+            {'keys': [('startDate', -1)], 'name': 'start_date_desc'},
+            {'keys': [('maturityDate', 1)], 'name': 'maturity_date', 'sparse': True},
+        ]
+
+    # ==================== LOAN_PAYMENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_loan_payment_schema() -> Dict[str, Any]:
+        """
+        Schema for loan_payments collection.
+        Tracks individual loan repayment transactions (principal + interest split).
+        
+        NEW (Feb 25, 2026): Part of loans management system.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'loanId': ObjectId,  # Required, reference to loans._id
+            'paymentAmount': float,  # Required, total payment amount (must be > 0)
+            'principalAmount': float,  # Required, portion applied to principal
+            'interestAmount': float,  # Required, portion applied to interest
+            'paymentDate': datetime,  # Required, when payment was made
+            'paymentMethod': Optional[str],  # How paid: 'cash', 'bank_transfer', 'wallet'
+            'notes': Optional[str],  # Optional payment notes
+            'status': str,  # 'completed', 'pending', 'failed', default: 'completed'
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_loan_payment_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for loan_payments collection."""
+        return [
+            {'keys': [('userId', 1), ('loanId', 1)], 'name': 'user_loan'},
+            {'keys': [('loanId', 1), ('paymentDate', -1)], 'name': 'loan_payment_date_desc'},
+            {'keys': [('userId', 1), ('paymentDate', -1)], 'name': 'user_payment_date_desc'},
+            {'keys': [('status', 1)], 'name': 'status_index'},
+        ]
+
+    # ==================== CASH_ADJUSTMENTS COLLECTION ====================
+    
+    @staticmethod
+    def get_cash_adjustment_schema() -> Dict[str, Any]:
+        """
+        Schema for cash_adjustments collection.
+        Tracks drawings (owner withdrawals) and capital contributions.
+        
+        NEW (Feb 25, 2026): Part of Opening Balances redesign for equity tracking.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'type': str,  # Required: 'drawing' or 'capital'
+            'amount': float,  # Required, adjustment amount (must be > 0)
+            'description': str,  # Required, description of adjustment
+            'date': datetime,  # Required, when adjustment occurred
+            'status': str,  # 'active', 'voided', default: 'active'
+            'isDeleted': bool,  # Soft delete flag, default: False
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+            'deletedAt': Optional[datetime],  # When soft deleted (if applicable)
+        }
+    
+    @staticmethod
+    def get_cash_adjustment_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for cash_adjustments collection."""
+        return [
+            {'keys': [('userId', 1), ('type', 1)], 'name': 'user_type'},
+            {'keys': [('userId', 1), ('date', -1)], 'name': 'user_date_desc'},
+            {'keys': [('userId', 1), ('status', 1)], 'name': 'user_status'},
+            {'keys': [('type', 1), ('status', 1)], 'name': 'type_status'},
+        ]
+
+    # ==================== FAILED_KYC_VERIFICATIONS COLLECTION ====================
+    
+    @staticmethod
+    def get_failed_kyc_verification_schema() -> Dict[str, Any]:
+        """
+        Schema for failed_kyc_verifications collection.
+        Tracks KYC verification failures from Monnify for admin review.
+        
+        NEW (Mar 1, 2026): Part of wallet auto-recovery enhancement.
+        Created when Monnify rejects BVN/NIN during account creation.
+        """
+        return {
+            '_id': ObjectId,  # Auto-generated MongoDB ID
+            'userId': ObjectId,  # Required, reference to users._id
+            'userEmail': str,  # User's email for admin reference
+            'userName': str,  # User's full name
+            'bvnMasked': str,  # Masked BVN (e.g., "2214****016")
+            'ninMasked': str,  # Masked NIN (e.g., "2512****111")
+            'monnifyError': str,  # Error message from Monnify
+            'monnifyErrorCode': str,  # Error code from Monnify (e.g., "99")
+            'failedAt': datetime,  # When verification failed
+            'source': str,  # 'auto_recovery', 'manual_creation', 'wallet_creation'
+            'status': str,  # 'pending_review', 'notified', 'resolved', 'ignored'
+            'notified': bool,  # Whether user was notified, default: False
+            'notifiedAt': Optional[datetime],  # When user was notified
+            'resolvedAt': Optional[datetime],  # When issue was resolved
+            'resolvedBy': Optional[ObjectId],  # Admin who resolved it
+            'resolutionNotes': Optional[str],  # Admin notes on resolution
+            'createdAt': datetime,  # Record creation timestamp
+            'updatedAt': datetime,  # Last update timestamp
+        }
+    
+    @staticmethod
+    def get_failed_kyc_verification_indexes() -> List[Dict[str, Any]]:
+        """Define indexes for failed_kyc_verifications collection."""
+        return [
+            {'keys': [('userId', 1), ('failedAt', -1)], 'name': 'user_failed_at_desc'},
+            {'keys': [('status', 1), ('failedAt', -1)], 'name': 'status_failed_at_desc'},
+            {'keys': [('notified', 1)], 'name': 'notified_index'},
+            {'keys': [('source', 1)], 'name': 'source_index'},
+            {'keys': [('createdAt', -1)], 'name': 'created_at_desc'},
+        ]
+
 
 class DatabaseInitializer:
     """
@@ -1252,6 +1531,12 @@ class DatabaseInitializer:
             'referrals': self.schema.get_referral_indexes(),
             'referral_payouts': self.schema.get_referral_payout_indexes(),
             'idempotency_keys': self.schema.get_idempotency_key_indexes(),
+            # Opening Balances & Financial Setup Hub collections (NEW - Feb 25-26, 2026)
+            'loans': self.schema.get_loan_indexes(),
+            'loan_payments': self.schema.get_loan_payment_indexes(),
+            'cash_adjustments': self.schema.get_cash_adjustment_indexes(),
+            # KYC Management collections (NEW - Mar 1, 2026)
+            'failed_kyc_verifications': self.schema.get_failed_kyc_verification_indexes(),
         }
         
         results = {
