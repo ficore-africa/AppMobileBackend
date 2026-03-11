@@ -1,6 +1,6 @@
 import sys
 import os
-from utils.decimal_helpers import safe_sum
+from utils.decimal_helpers import *
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Blueprint, request, jsonify
@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from utils.payment_utils import normalize_payment_method, validate_payment_method
 from utils.monthly_entry_tracker import MonthlyEntryTracker
-from utils.decimal_helpers import safe_float, safe_sum
+from utils.decimal_helpers import *
+from utils.notification_utils import create_user_notification, get_notification_context
 
 expenses_bp = Blueprint('expenses', __name__, url_prefix='/expenses')
 

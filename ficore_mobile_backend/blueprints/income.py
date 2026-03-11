@@ -1,5 +1,5 @@
 """
-from utils.decimal_helpers import safe_sum
+from utils.decimal_helpers import *
 Income Blueprint
 Handles income tracking with monthly entry limits and credit deductions
 """
@@ -12,10 +12,11 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import csv
 import io
-from utils.decimal_helpers import safe_float, safe_sum
+from utils.decimal_helpers import *
 from collections import defaultdict
 from utils.payment_utils import normalize_sales_type, validate_sales_type
 from utils.monthly_entry_tracker import MonthlyEntryTracker
+from utils.notification_utils import create_user_notification, get_notification_context
 
 
 def init_income_blueprint(mongo, token_required, serialize_doc):

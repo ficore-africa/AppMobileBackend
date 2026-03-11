@@ -16,7 +16,7 @@ from utils.business_bookkeeping import (
     award_and_consume_fc_credits_atomic,
     record_fc_consumption_revenue
 )
-from utils.test_account_filter import is_test_account, get_paystack_keys, get_test_account_user_ids
+from utils.test_account_utils import is_test_account
 
 def init_credits_blueprint(mongo, token_required, serialize_doc):
     

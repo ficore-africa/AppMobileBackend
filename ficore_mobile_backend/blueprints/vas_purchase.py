@@ -21,7 +21,6 @@ import time
 import sys
 from utils.dynamic_pricing_engine import get_pricing_engine, calculate_vas_price
 from utils.emergency_pricing_recovery import tag_emergency_transaction
-from blueprints.notifications import create_user_notification
 from utils.atomic_transactions import check_recent_duplicate_transaction
 from utils.transaction_task_queue import process_vas_transaction_with_reservation, get_user_available_balance
 from utils.test_account_filter import is_test_account
@@ -47,6 +46,9 @@ def vas_log(message):
 # REMOVED: SSE push_balance_update import - replaced with simple polling
 # from blueprints.vas_wallet import push_balance_update
 from utils.monnify_utils import call_monnify_auth, call_monnify_bills_api
+from utils.reconciliation_marker import mark_plan_mismatch_for_reconciliation
+from utils.notification_utils import create_user_notification
+from utils.test_account_utils import is_test_account
 
 def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
     vas_purchase_bp = Blueprint('vas_purchase', __name__, url_prefix='/api/vas/purchase')
@@ -4139,15 +4141,8 @@ def log_plan_mismatch(mongo_db, user_id, provider, mismatch_details):
         mismatch_details: Dictionary with mismatch details
     """
     try:
-        from datetime import datetime
-        from bson import ObjectId
-        
-        # Import standardized reconciliation marker
-        from utils.reconciliation_marker import mark_plan_mismatch_for_reconciliation
-        
         # Optional notification import - don't fail if not available
         try:
-            from utils.notification_utils import create_user_notification
             notification_available = True
         except ImportError:
             print('INFO: notification_utils not available - skipping notification')

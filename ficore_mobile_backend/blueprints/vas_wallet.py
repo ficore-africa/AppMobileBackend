@@ -45,6 +45,7 @@ import queue
 import threading
 from utils.email_service import get_email_service
 from blueprints.notifications import create_user_notification
+from utils.wallet_balance_utils import get_liquid_wallet_balance, update_liquid_wallet_balance
 
 import threading
 import queue

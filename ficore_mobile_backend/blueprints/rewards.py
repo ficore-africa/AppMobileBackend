@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from bson import ObjectId
 import traceback
+from utils.business_bookkeeping import *
+from utils.fc_expiration_manager import FCExpirationManager
 
 def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
     rewards_bp = Blueprint('rewards', __name__, url_prefix='/rewards')
@@ -229,8 +231,6 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
             
             # Get FC breakdown (earned vs purchased) with detailed sources
             try:
-                from utils.business_bookkeeping import *
-                from utils.fc_expiration_manager import FCExpirationManager
                 fc_manager = FCExpirationManager(mongo)
                 fc_breakdown_data = fc_manager.get_user_fc_breakdown(current_user['_id'])
                 earned_fc = fc_breakdown_data.get('earned_fc', 0.0)
@@ -478,7 +478,6 @@ def init_rewards_blueprint(mongo, token_required, serialize_doc, limiter=None):
                 }), 400
 
             # Deduct credits using existing credits system
-            from datetime import datetime
             new_balance = current_balance - cost
             mongo.db.users.update_one(
                 {'_id': current_user['_id']},
