@@ -8,7 +8,7 @@ import os
 import resend
 from datetime import datetime
 from bson import ObjectId
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 
 
 class EmailService:

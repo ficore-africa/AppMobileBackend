@@ -10,7 +10,7 @@ from flask import current_app
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 
 # Business account ID (ficoreafrica@gmail.com)
 BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')

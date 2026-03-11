@@ -168,7 +168,7 @@ def check_report_discrepancy(mongo, user_id, start_date, end_date):
         dict: Discrepancy report
     """
     try:
-        from .decimal_helpers import safe_float, safe_sum
+        from decimal_helpers import safe_float, safe_sum
         
         # Get active transactions
         query = get_active_transactions_query(user_id, start_date, end_date)

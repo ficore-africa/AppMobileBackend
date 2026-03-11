@@ -4,7 +4,7 @@ Auto Population Utilities
 Utilities for auto-populating form fields based on user history and patterns.
 """
 
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 from datetime import datetime, timedelta
 import logging
 

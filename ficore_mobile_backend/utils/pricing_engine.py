@@ -4,7 +4,7 @@ VAS Pricing Engine
 Handles VAS pricing calculations and emergency pricing logic.
 """
 
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 import logging
 
 logger = logging.getLogger(__name__)

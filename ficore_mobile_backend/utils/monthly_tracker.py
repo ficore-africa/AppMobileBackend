@@ -5,7 +5,7 @@ Tracks monthly financial entries and provides analytics.
 """
 
 from datetime import datetime, timedelta
-from .decimal_helpers import safe_float, safe_sum
+from decimal_helpers import safe_float, safe_sum
 import logging
 
 logger = logging.getLogger(__name__)

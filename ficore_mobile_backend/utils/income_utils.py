@@ -2,7 +2,7 @@
 """
 Income utility functions for auto-generating titles and descriptions
 """
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 
 def generate_income_title(category, amount=None):
     """Generate smart title from income category and amount"""

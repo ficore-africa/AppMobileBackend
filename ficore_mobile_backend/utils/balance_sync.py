@@ -12,7 +12,7 @@ CRITICAL: This ensures Single Source of Truth (SSOT) for wallet balances.
 from datetime import datetime
 from bson import ObjectId
 import logging
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ Generates notification messages based on user context and entry type
 
 Phase 4: Smart Notifications System
 """
-from .decimal_helpers import safe_float
+from decimal_helpers import safe_float
 
 # Tax-deductible expense categories (high priority)
 # These match the exact category names used in the app
