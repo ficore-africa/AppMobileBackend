@@ -1,125 +1,92 @@
 """
 Subscription Scheduler
-Handles scheduled tasks for subscription management using APScheduler
+
+Handles scheduled subscription tasks and automation.
 """
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
 
-
 class SubscriptionScheduler:
     """
-    Manages scheduled tasks for subscription lifecycle management.
+    Handles scheduled subscription operations
     """
     
-    def __init__(self, mongo_db):
-        self.db = mongo_db
-        self.scheduler = BackgroundScheduler()
-        self.is_running = False
+    def __init__(self, mongo):
+        self.mongo = mongo
+    
+    def run_daily_tasks(self):
+        """
+        Run daily subscription maintenance tasks
         
-    def start(self):
-        """Start the scheduler with all subscription-related jobs"""
-        if self.is_running:
-            logger.warning("Scheduler already running")
-            return
-        
+        Returns:
+            dict: Summary of tasks performed
+        """
         try:
-            # Import here to avoid circular dependencies
-            from utils.subscription_expiration_manager import SubscriptionExpirationManager
-            from utils.subscription_notification_manager import SubscriptionNotificationManager
+            from .subscription_expiration_manager import SubscriptionExpirationManager
+            from .subscription_notification_manager import SubscriptionNotificationManager
             
-            expiration_manager = SubscriptionExpirationManager(self.db)
-            notification_manager = SubscriptionNotificationManager(self.db)
+            expiration_manager = SubscriptionExpirationManager(self.mongo)
+            notification_manager = SubscriptionNotificationManager(self.mongo)
             
-            # Job 1: Process expired subscriptions (Daily at 2 AM UTC)
-            self.scheduler.add_job(
-                func=expiration_manager.process_expired_subscriptions,
-                trigger=CronTrigger(hour=2, minute=0),
-                id='process_expired_subscriptions',
-                name='Process Expired Subscriptions',
-                replace_existing=True
-            )
+            # Check for expired subscriptions
+            expired_ids = expiration_manager.check_expired_subscriptions()
+            expired_count = 0
             
-            # Job 2: Send expiry warnings (Daily at 10 AM UTC)
-            self.scheduler.add_job(
-                func=notification_manager.send_expiry_warnings,
-                trigger=CronTrigger(hour=10, minute=0),
-                id='send_expiry_warnings',
-                name='Send Expiry Warnings',
-                replace_existing=True
-            )
+            for subscription_id in expired_ids:
+                if expiration_manager.expire_subscription(subscription_id):
+                    expired_count += 1
+                    
+                    # Get user ID for notification
+                    subscription = self.mongo.db.subscriptions.find_one({'_id': subscription_id})
+                    if subscription:
+                        notification_manager.send_expiration_notice(
+                            subscription['userId'], 
+                            subscription_id
+                        )
             
-            # Job 3: Send renewal reminders (Daily at 9 AM UTC)
-            self.scheduler.add_job(
-                func=notification_manager.send_renewal_reminders,
-                trigger=CronTrigger(hour=9, minute=0),
-                id='send_renewal_reminders',
-                name='Send Renewal Reminders',
-                replace_existing=True
-            )
+            # Send expiration warnings (7 days ahead)
+            expiring_soon = expiration_manager.get_expiring_soon(days_ahead=7)
+            warnings_sent = 0
             
-            # Job 4: Send re-engagement messages (Daily at 11 AM UTC)
-            self.scheduler.add_job(
-                func=notification_manager.send_reengagement_messages,
-                trigger=CronTrigger(hour=11, minute=0),
-                id='send_reengagement_messages',
-                name='Send Re-engagement Messages',
-                replace_existing=True
-            )
+            for subscription in expiring_soon:
+                days_remaining = (subscription['expiresAt'] - datetime.utcnow()).days
+                if notification_manager.send_expiration_warning(
+                    subscription['userId'], 
+                    subscription['_id'], 
+                    days_remaining
+                ):
+                    warnings_sent += 1
             
-            # Job 5: Process auto-renewals (Daily at 1 AM UTC)
-            self.scheduler.add_job(
-                func=self._process_auto_renewals,
-                trigger=CronTrigger(hour=1, minute=0),
-                id='process_auto_renewals',
-                name='Process Auto-Renewals',
-                replace_existing=True
-            )
-            
-            self.scheduler.start()
-            self.is_running = True
-            logger.info("Subscription scheduler started successfully")
+            return {
+                'expired_subscriptions': expired_count,
+                'expiration_warnings_sent': warnings_sent,
+                'task_completed_at': datetime.utcnow()
+            }
             
         except Exception as e:
-            logger.error(f"Failed to start subscription scheduler: {str(e)}")
-            raise
+            logger.error(f"Error running daily subscription tasks: {str(e)}")
+            return {'error': str(e)}
     
-    def stop(self):
-        """Stop the scheduler"""
-        if not self.is_running:
-            return
+    def schedule_renewal_reminder(self, subscription_id, reminder_date):
+        """
+        Schedule a renewal reminder
         
+        Args:
+            subscription_id: Subscription ObjectId
+            reminder_date: Date to send reminder
+            
+        Returns:
+            bool: True if scheduled successfully
+        """
         try:
-            self.scheduler.shutdown()
-            self.is_running = False
-            logger.info("Subscription scheduler stopped")
+            # This would integrate with a task queue in production
+            # For now, just log the scheduling
+            logger.info(f"Renewal reminder scheduled for subscription {subscription_id} on {reminder_date}")
+            return True
+            
         except Exception as e:
-            logger.error(f"Error stopping scheduler: {str(e)}")
-    
-    def _process_auto_renewals(self):
-        """Process subscriptions set for auto-renewal"""
-        logger.info("Processing auto-renewals...")
-        # Implementation will depend on payment gateway integration
-        # For now, just log
-        logger.info("Auto-renewal processing complete")
-    
-    def get_scheduler_status(self):
-        """Get current scheduler status"""
-        jobs = []
-        if self.is_running:
-            for job in self.scheduler.get_jobs():
-                jobs.append({
-                    'id': job.id,
-                    'name': job.name,
-                    'next_run': job.next_run_time.isoformat() if job.next_run_time else None
-                })
-        
-        return {
-            'is_running': self.is_running,
-            'jobs': jobs,
-            'timestamp': datetime.utcnow().isoformat()
-        }
+            logger.error(f"Error scheduling renewal reminder: {str(e)}")
+            return False
