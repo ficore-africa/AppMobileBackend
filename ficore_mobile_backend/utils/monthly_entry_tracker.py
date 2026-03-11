@@ -25,6 +25,10 @@ class MonthlyEntryTracker:
     def get_user_monthly_count(self, user_id: ObjectId) -> Dict[str, Any]:
         """
         Get user's current monthly Income & Expense entry count
+        
+        ✅ CRITICAL FIX: Only count entries made while user was on FREE tier
+        Entries made during premium subscription should NOT count against free limit
+        
         Returns: {
             'count': int,
             'month_key': str,
@@ -54,14 +58,23 @@ class MonthlyEntryTracker:
         month_start = self._get_month_start()
         month_end = self._get_month_end()
         
+        # ✅ CRITICAL FIX: Only count entries that were made while user was FREE
+        # Entries with wasPremiumEntry=True should NOT count against free limit
+        # This prevents premium entries from consuming free tier quota after subscription expires
+        
         # CRITICAL FIX: Use correct date fields with comprehensive fallback
-        # Strategy 1: Try primary date field (dateReceived for income, date for expense)
+        # Strategy 1: Try primary date field (date for both income and expense)
         income_count = self.mongo.db.incomes.count_documents({
             'userId': user_id,
-            'dateReceived': {
+            'date': {
                 '$gte': month_start,
                 '$lt': month_end
-            }
+            },
+            # ✅ Only count entries that were NOT made during premium period
+            '$or': [
+                {'wasPremiumEntry': {'$exists': False}},  # Old entries without flag
+                {'wasPremiumEntry': False}  # Explicitly marked as free tier entry
+            ]
         })
         
         expense_count = self.mongo.db.expenses.count_documents({
@@ -69,7 +82,12 @@ class MonthlyEntryTracker:
             'date': {
                 '$gte': month_start,
                 '$lt': month_end
-            }
+            },
+            # ✅ Only count entries that were NOT made during premium period
+            '$or': [
+                {'wasPremiumEntry': {'$exists': False}},  # Old entries without flag
+                {'wasPremiumEntry': False}  # Explicitly marked as free tier entry
+            ]
         })
         
         # Strategy 2: If count is 0, try with createdAt as fallback
@@ -79,7 +97,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         if expense_count == 0:
@@ -88,17 +110,25 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         # Strategy 3: If still 0, try with string userId and primary date field
         if income_count == 0:
             income_count = self.mongo.db.incomes.count_documents({
                 'userId': str(user_id),
-                'dateReceived': {
+                'date': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         if expense_count == 0:
@@ -107,7 +137,11 @@ class MonthlyEntryTracker:
                 'date': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         # Strategy 4: If still 0, try with string userId and createdAt
@@ -117,7 +151,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         if expense_count == 0:
@@ -126,7 +164,11 @@ class MonthlyEntryTracker:
                 'createdAt': {
                     '$gte': month_start,
                     '$lt': month_end
-                }
+                },
+                '$or': [
+                    {'wasPremiumEntry': {'$exists': False}},
+                    {'wasPremiumEntry': False}
+                ]
             })
         
         # Strategy 3: If still 0, check if entries exist at all for this user
@@ -356,13 +398,13 @@ class MonthlyEntryTracker:
                 
                 try:
                     # Strategy 1: Try primary date fields first (dateReceived for income, date for expense)
-                    # For income: try 'dateReceived' field
-                    if 'dateReceived' in entry and entry['dateReceived']:
-                        if isinstance(entry['dateReceived'], datetime):
-                            entry_time = entry['dateReceived']
-                        elif isinstance(entry['dateReceived'], str):
+                    # For income: try 'date' field
+                    if 'date' in entry and entry['date']:
+                        if isinstance(entry['date'], datetime):
+                            entry_time = entry['date']
+                        elif isinstance(entry['date'], str):
                             try:
-                                entry_time = datetime.fromisoformat(entry['dateReceived'].replace('Z', ''))
+                                entry_time = datetime.fromisoformat(entry['date'].replace('Z', ''))
                             except:
                                 pass
                     
@@ -428,6 +470,7 @@ class MonthlyEntryTracker:
     def get_monthly_stats(self, user_id: ObjectId) -> Dict[str, Any]:
         """
         Get comprehensive monthly statistics for user
+        CRITICAL FIX: Properly validate subscription status against end date
         """
         monthly_data = self.get_user_monthly_count(user_id)
         
@@ -441,13 +484,35 @@ class MonthlyEntryTracker:
             # Check admin status
             is_admin = user.get('isAdmin', False)
             
-            # Check subscription status
-            is_subscribed = user.get('isSubscribed', False)
+            # CRITICAL FIX: Check subscription status by validating BOTH flag AND end date
+            # Don't trust isSubscribed flag alone - it may be stale
             subscription_end = user.get('subscriptionEndDate')
-            if is_subscribed and subscription_end and subscription_end > datetime.utcnow():
+            
+            # User is ONLY considered subscribed if:
+            # 1. isSubscribed flag is True AND
+            # 2. subscriptionEndDate exists AND
+            # 3. subscriptionEndDate is in the future
+            if user.get('isSubscribed', False) and subscription_end and subscription_end > datetime.utcnow():
+                is_subscribed = True
                 subscription_type = user.get('subscriptionType')
             else:
+                # Subscription expired or invalid - treat as free user
                 is_subscribed = False
+                subscription_type = None
+                
+                # ✅ CRITICAL FIX (Feb 19, 2026): Clean up stale subscription data in database
+                # This prevents frontend from showing "MONTHLY" status for expired subscriptions
+                if user.get('isSubscribed', False) or user.get('subscriptionType'):
+                    self.mongo.db.users.update_one(
+                        {'_id': user_id},
+                        {
+                            '$set': {
+                                'isSubscribed': False,
+                                'subscriptionType': None
+                            }
+                        }
+                    )
+                    print(f"✅ Cleaned up stale subscription data for user {user_id}")
         
         # Determine tier (Admin > Premium > Free)
         if is_admin:

@@ -159,42 +159,137 @@ class FCExpirationManager:
     
     def get_user_fc_breakdown(self, user_id: ObjectId) -> Dict[str, Any]:
         """
-        Get breakdown of user's FC balance by source (earned vs purchased)
+        Get breakdown of user's FC balance by source
+        Mirrors the detailed breakdown used in credits report
+        
+        Categories:
+        1. Purchased - Bought FCs (never expire)
+        2. Signup Bonus - 1000 FC welcome bonus (earned, expires)
+        3. Rewards - From rewards screen (earned, expires)
+        4. Tax Education - From tax modules (earned, expires)
+        5. Other - Everything else (earned, expires)
         """
-        # Get all active (non-expired) earned credits
-        earned_credits = list(self.mongo.db.credit_transactions.find({
-            'userId': user_id,
-            'type': 'credit',
-            'isEarned': True,
-            'status': 'completed',
-            'expired': {'$ne': True},
-            'expiresAt': {'$gte': datetime.utcnow()}
-        }))
-        
-        # Get all purchased credits (no expiration)
-        purchased_credits = list(self.mongo.db.credit_transactions.find({
-            'userId': user_id,
-            'type': 'credit',
-            'isEarned': {'$ne': True},
-            'status': 'completed'
-        }))
-        
-        # Calculate totals
-        total_earned = sum(t['amount'] for t in earned_credits)
-        total_purchased = sum(t['amount'] for t in purchased_credits)
-        
-        # Get user's current balance
-        user = self.mongo.db.users.find_one({'_id': user_id})
-        current_balance = user.get('ficoreCreditBalance', 0.0) if user else 0.0
-        
-        return {
-            'current_balance': current_balance,
-            'earned_fc': total_earned,
-            'purchased_fc': total_purchased,
-            'earned_credits_count': len(earned_credits),
-            'purchased_credits_count': len(purchased_credits),
-            'has_expiring_credits': len(earned_credits) > 0
-        }
+        try:
+            # 1. PURCHASED CREDITS (never expire)
+            purchased_credits = list(self.mongo.db.credit_transactions.aggregate([
+                {
+                    '$match': {
+                        'userId': user_id,
+                        'type': 'credit',
+                        'operation': 'purchase'
+                    }
+                },
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]))
+            purchased_amount = purchased_credits[0]['total'] if purchased_credits else 0.0
+            
+            # 2. SIGNUP BONUS (earned, expires)
+            signup_bonus = list(self.mongo.db.credit_transactions.aggregate([
+                {
+                    '$match': {
+                        'userId': user_id,
+                        'type': 'credit',
+                        'operation': 'signup_bonus'
+                    }
+                },
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]))
+            signup_bonus_amount = signup_bonus[0]['total'] if signup_bonus else 0.0
+            
+            # 3. REWARDS SCREEN (engagement, streaks, exploration) (earned, expires)
+            rewards_credits = list(self.mongo.db.credit_transactions.aggregate([
+                {
+                    '$match': {
+                        'userId': user_id,
+                        'type': 'credit',
+                        '$or': [
+                            {'operation': 'engagement_reward'},
+                            {'operation': 'streak_milestone'},
+                            {'operation': 'exploration_bonus'},
+                            {'operation': 'profile_completion'},
+                            {'description': {'$regex': 'reward|streak|exploration|milestone', '$options': 'i'}}
+                        ]
+                    }
+                },
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]))
+            rewards_amount = rewards_credits[0]['total'] if rewards_credits else 0.0
+            
+            # 4. TAX EDUCATION MODULES (earned, expires)
+            tax_education_credits = list(self.mongo.db.credit_transactions.aggregate([
+                {
+                    '$match': {
+                        'userId': user_id,
+                        'type': 'credit',
+                        '$or': [
+                            {'operation': 'tax_education_progress'},
+                            {'description': {'$regex': 'tax education|tax module', '$options': 'i'}}
+                        ]
+                    }
+                },
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]))
+            tax_education_amount = tax_education_credits[0]['total'] if tax_education_credits else 0.0
+            
+            # Get total credits to calculate "other"
+            total_credits = list(self.mongo.db.credit_transactions.aggregate([
+                {
+                    '$match': {
+                        'userId': user_id,
+                        'type': 'credit'
+                    }
+                },
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]))
+            total_credits_amount = total_credits[0]['total'] if total_credits else 0.0
+            
+            # 5. OTHER (referral bonuses, admin awards, etc.) (earned, expires)
+            other_amount = total_credits_amount - (purchased_amount + signup_bonus_amount + rewards_amount + tax_education_amount)
+            if other_amount < 0:
+                other_amount = 0.0
+            
+            # Calculate earned vs purchased totals
+            total_earned = signup_bonus_amount + rewards_amount + tax_education_amount + other_amount
+            total_purchased = purchased_amount
+            
+            # Get user's current balance
+            user = self.mongo.db.users.find_one({'_id': user_id})
+            current_balance = user.get('ficoreCreditBalance', 0.0) if user else 0.0
+            
+            return {
+                'current_balance': current_balance,
+                'earned_fc': total_earned,
+                'purchased_fc': total_purchased,
+                # Detailed breakdown
+                'breakdown': {
+                    'purchased': purchased_amount,
+                    'signup_bonus': signup_bonus_amount,
+                    'rewards': rewards_amount,
+                    'tax_education': tax_education_amount,
+                    'other': other_amount
+                },
+                'has_expiring_credits': total_earned > 0
+            }
+            
+        except Exception as e:
+            print(f"Error in get_user_fc_breakdown: {str(e)}")
+            # Fallback to simple calculation
+            user = self.mongo.db.users.find_one({'_id': user_id})
+            current_balance = user.get('ficoreCreditBalance', 0.0) if user else 0.0
+            
+            return {
+                'current_balance': current_balance,
+                'earned_fc': current_balance,  # Assume all earned if error
+                'purchased_fc': 0.0,
+                'breakdown': {
+                    'purchased': 0.0,
+                    'signup_bonus': 0.0,
+                    'rewards': 0.0,
+                    'tax_education': 0.0,
+                    'other': current_balance
+                },
+                'has_expiring_credits': True
+            }
 
 
 def run_fc_expiration_job(mongo):

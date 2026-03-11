@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from bson import ObjectId
 from utils.email_service import get_email_service
+from .decimal_helpers import safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ class EngagementReminderService:
             stats_section += f"""
                 <div style="background: #F4F1EC; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #16A34A;">
                     <p style="margin: 0; color: #16A34A; font-weight: bold;">
-                        💳 Your Liquid Wallet has ₦{stats['wallet_balance']:,.2f} ready for utilities!
+                        💳 Your Liquid Wallet has ₦{safe_float(stats['wallet_balance']):,.2f} ready for utilities!
                     </p>
                 </div>"""
         

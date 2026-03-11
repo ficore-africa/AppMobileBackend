@@ -2,6 +2,7 @@
 """
 Income utility functions for auto-generating titles and descriptions
 """
+from .decimal_helpers import safe_float
 
 def generate_income_title(category, amount=None):
     """Generate smart title from income category and amount"""
@@ -108,7 +109,7 @@ def generate_income_description(category, amount, user_description=None):
     base_description = description_templates.get(category, f"{category} income")
     
     # Add amount context
-    return f"N{amount:,.2f} received from {base_description.lower()}"
+    return f"N{safe_float(amount):,.2f} received from {base_description.lower()}"
 
 def auto_populate_income_fields(income_data):
     """Auto-populate title and description if missing"""
@@ -136,7 +137,7 @@ def format_income_for_activity(income_data):
     description = income_data.get('description', '')
     
     # Create activity description
-    activity_description = f"Received N{amount:,.2f} from {description.lower()}"
+    activity_description = f"Received N{safe_float(amount):,.2f} from {description.lower()}"
     
     return {
         'title': title,

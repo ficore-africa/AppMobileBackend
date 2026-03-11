@@ -4,6 +4,7 @@ Generates notification messages based on user context and entry type
 
 Phase 4: Smart Notifications System
 """
+from .decimal_helpers import safe_float
 
 # Tax-deductible expense categories (high priority)
 # These match the exact category names used in the app
@@ -61,14 +62,14 @@ def get_notification_context(user, entry_data, entry_type='income'):
         if business_structure == 'llc':
             return {
                 'title': "Tag this entry for tax compliance",
-                'body': f"Tag {entry_title} (₦{entry_amount:,.2f}) as Business or Personal for accurate tax records",
+                'body': f"Tag {entry_title} (₦{safe_float(entry_amount):,.2f}) as Business or Personal for accurate tax records",
                 'priority': 'high',
                 'category': 'missing_receipt'
             }
         else:  # personal_income
             return {
                 'title': "Tag this entry",
-                'body': f"Tag {entry_title} (₦{entry_amount:,.2f}) as Business or Personal to track your income properly",
+                'body': f"Tag {entry_title} (₦{safe_float(entry_amount):,.2f}) as Business or Personal to track your income properly",
                 'priority': 'normal',  # Changed from 'medium' to match frontend enum
                 'category': 'missing_receipt'
             }
@@ -79,7 +80,7 @@ def get_notification_context(user, entry_data, entry_type='income'):
             # Tax-deductible business expense - HIGHEST priority
             return {
                 'title': "Important: Attach receipt for tax deduction",
-                'body': f"Attach receipt for {entry_title} (₦{entry_amount:,.2f}) - This is tax-deductible and reduces your tax bill",
+                'body': f"Attach receipt for {entry_title} (₦{safe_float(entry_amount):,.2f}) - This is tax-deductible and reduces your tax bill",
                 'priority': 'high',
                 'category': 'missing_receipt'
             }
@@ -87,7 +88,7 @@ def get_notification_context(user, entry_data, entry_type='income'):
             # Regular business entry
             return {
                 'title': "Attach receipt for business records",
-                'body': f"Attach receipt for {entry_title} (₦{entry_amount:,.2f}) to support your business tax records",
+                'body': f"Attach receipt for {entry_title} (₦{safe_float(entry_amount):,.2f}) to support your business tax records",
                 'priority': 'high',
                 'category': 'missing_receipt'
             }
@@ -96,7 +97,7 @@ def get_notification_context(user, entry_data, entry_type='income'):
     if entry_tag == 'personal':
         return {
             'title': "Optional: Attach receipt",
-            'body': f"Attach receipt for {entry_title} (₦{entry_amount:,.2f}) for your personal records (not tax-related)",
+            'body': f"Attach receipt for {entry_title} (₦{safe_float(entry_amount):,.2f}) for your personal records (not tax-related)",
             'priority': 'low',
             'category': 'missing_receipt'
         }
@@ -104,7 +105,7 @@ def get_notification_context(user, entry_data, entry_type='income'):
     # FALLBACK: Generic message (shouldn't reach here)
     return {
         'title': "Don't forget to attach documents",
-        'body': f"Attach receipt for {entry_title} (₦{entry_amount:,.2f}) to support your records",
+        'body': f"Attach receipt for {entry_title} (₦{safe_float(entry_amount):,.2f}) to support your records",
         'priority': 'normal',
         'category': 'missing_receipt'
     }

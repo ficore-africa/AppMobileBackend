@@ -345,6 +345,53 @@ class TransactionTaskQueue:
             # Release the reservation (move from reserved to confirmed debit)
             self.release_reservation(user_id, amount, task_data['description'])
             
+
+            # ==================== BUSINESS BOOKKEEPING: VAS COMMISSION ====================
+            # Record VAS commission revenue (CORRECTED - NO gateway fees on VAS)
+            try:
+                from utils.gateway_fee_accounting import record_vas_transaction_with_fees
+                
+                # Extract commission data from provider response
+                provider_response = task_data.get('provider_response', {})
+                commission = provider_response.get('commission', 0)
+                
+                # If no commission in provider response, calculate default based on provider
+                if commission == 0:
+                    if task_data['provider'].lower() == 'monnify':
+                        commission = amount * 0.03  # 3% Monnify commission
+                    elif task_data['provider'].lower() == 'peyflex':
+                        commission = amount * 0.025  # 2.5% Peyflex commission
+                    else:
+                        commission = amount * 0.01  # 1% default commission
+                
+                # Get transaction type
+                transaction = self.mongo.vas_transactions.find_one({'_id': transaction_id})
+                transaction_type = transaction.get('type', 'UNKNOWN') if transaction else 'UNKNOWN'
+                
+                # Record commission revenue (NO gateway fees on VAS transactions)
+                transaction_ids = record_vas_transaction_with_fees(
+                    mongo=self.mongo,
+                    transaction_id=transaction_id,
+                    user_id=ObjectId(user_id),
+                    provider=task_data['provider'],
+                    transaction_type=transaction_type,
+                    amount=amount,
+                    commission=commission,
+                    gateway_fee=None  # CRITICAL: No gateway fees on VAS transactions
+                )
+                
+                logger.info(f"✅ Recorded VAS commission: ₦{commission:,.2f} (NO gateway fees on VAS) for transaction {transaction_id}")
+                
+            except Exception as commission_error:
+                # Don't fail the transaction if commission tracking fails
+                logger.error(f"⚠️ Failed to record VAS commission: {str(commission_error)}")
+                logger.error(f"   Transaction {transaction_id} succeeded but commission not recorded")
+            # ==================== END BUSINESS BOOKKEEPING ====================
+
+            
+            
+
+
             logger.info(f"✅ Successfully processed transaction update: {transaction_id}")
             return True
                     
