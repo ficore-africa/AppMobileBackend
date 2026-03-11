@@ -10,9 +10,15 @@ import requests
 import hmac
 import hashlib
 
+# Import business bookkeeping functions at module level
+from utils.business_bookkeeping import (
+    BUSINESS_USER_ID,
+    award_and_consume_fc_credits_atomic,
+    record_fc_consumption_revenue
+)
+from utils.test_account_filter import is_test_account, get_paystack_keys, get_test_account_user_ids
+
 def init_credits_blueprint(mongo, token_required, serialize_doc):
-    from utils.business_bookkeeping import *
-    from utils.test_account_filter import is_test_account, get_paystack_keys, get_test_account_user_ids
     
     credits_bp = Blueprint('credits', __name__, url_prefix='/credits')
     
