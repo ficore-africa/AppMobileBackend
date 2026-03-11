@@ -122,7 +122,7 @@ class EmailService:
                     <li>📱 <strong>Record your first transaction</strong> (voice entry in 10 seconds)</li>
                     <li>💰 <strong>Add cash to your wallet</strong> (buy airtime, data, pay bills)</li>
                     <li>📊 <strong>View your dashboard</strong> (see your profit/loss instantly)</li>
-                    <li>🎁 <strong>Your welcome bonus</strong> (10 FC Credits already added!)</li>
+                    <li>🎁 <strong>Your welcome bonus</strong> (10 FC Credits (+fee refund if referred) added!)</li>
                 </ul>
                 
                 <!-- CTA Button with Play Store Link -->
@@ -131,7 +131,7 @@ class EmailService:
                     <a href="https://business.ficoreafrica.com/general/landing" style="display: inline-block; background: #1E3A8A; color: #FFFFFF; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.3);">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" alt="Get it on Google Play" style="height: 40px; vertical-align: middle;">
                     </a>
-                    <p style="color: #6B7280; font-size: 12px; margin-top: 10px;">App launching soon on Google Play</p>
+                    <p style="color: #6B7280; font-size: 12px; margin-top: 10px;">App is Live Google Play!</p>
                 </div>
                 
                 <!-- Support Info -->
@@ -705,3 +705,4 @@ def get_email_service(mongo_db=None):
         EmailService instance
     """
     return EmailService(mongo_db=mongo_db)
+
