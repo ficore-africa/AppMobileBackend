@@ -70,6 +70,12 @@ def award_fc_credits_with_accounting(
         
         mongo.db.credit_transactions.insert_one(credit_transaction)
         
+        # 1.5. Update user's stored FC balance (CRITICAL FIX - CORRECTED FIELD NAME)
+        mongo.db.users.update_one(
+            {'_id': user_id},
+            {'$inc': {'ficoreCreditBalance': fc_amount}}
+        )
+        
         # 2. Record marketing expense + liability (business books)
         accounting_result = record_fc_marketing_expense(
             mongo=mongo,
@@ -1386,6 +1392,12 @@ def award_and_consume_fc_credits_atomic(
             credit_transaction['transactionId'] = transaction_id
         
         mongo.db.credit_transactions.insert_one(credit_transaction)
+        
+        # 1.5. Update user's stored FC balance (CRITICAL FIX - CORRECTED FIELD NAME)
+        mongo.db.users.update_one(
+            {'_id': user_id},
+            {'$inc': {'ficoreCreditBalance': fc_amount}}
+        )
         
         # Step 2: Create liability (expense + liability)
         accounting_result = record_fc_marketing_expense(
