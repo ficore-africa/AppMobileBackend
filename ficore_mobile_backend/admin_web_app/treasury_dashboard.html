@@ -436,6 +436,152 @@
                 font-size: 2rem;
             }
         }
+
+        /* Leaderboard Styles */
+        .leaderboard-section {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+
+        .leaderboard-tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 15px 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab-btn:hover {
+            background: #e8e8e8;
+            color: #2c3e50;
+        }
+
+        .tab-btn.active {
+            color: #27ae60;
+            border-bottom-color: #27ae60;
+            background: white;
+        }
+
+        .tab-btn i {
+            margin-right: 8px;
+        }
+
+        .leaderboard-tab-content {
+            display: none;
+            padding: 30px;
+        }
+
+        .leaderboard-tab-content.active {
+            display: block;
+        }
+
+        .leaderboard-grid {
+            display: grid;
+            gap: 15px;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .leaderboard-item:hover {
+            background: #e8f5e9;
+            border-left-color: #27ae60;
+            transform: translateX(5px);
+        }
+
+        .leaderboard-rank {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #27ae60;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .leaderboard-rank.gold {
+            color: #f39c12;
+        }
+
+        .leaderboard-rank.silver {
+            color: #95a5a6;
+        }
+
+        .leaderboard-rank.bronze {
+            color: #cd7f32;
+        }
+
+        .leaderboard-info {
+            flex: 1;
+            margin-left: 20px;
+        }
+
+        .leaderboard-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .leaderboard-email {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .leaderboard-stats {
+            display: flex;
+            gap: 20px;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .leaderboard-stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .leaderboard-stat-value {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #27ae60;
+        }
+
+        .leaderboard-stat-label {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .empty-leaderboard {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-leaderboard i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -448,27 +594,57 @@
         <div class="stats-grid">
             <div class="stat-card revenue">
                 <div class="icon"><i class="fas fa-chart-line"></i></div>
-                <div class="number" id="totalRevenue">₦0</div>
+                <div class="number" id="totalVasVolume">₦0</div>
                 <div class="label">Total VAS Sales</div>
                 <div class="sublabel">All-time user spending</div>
             </div>
-            <div class="stat-card commission">
+            <div class="stat-card commission" style="--card-color: #27ae60;">
                 <div class="icon"><i class="fas fa-percentage"></i></div>
                 <div class="number" id="monnifyCommission">₦0</div>
-                <div class="label">Monnify 3% Commission</div>
-                <div class="sublabel">Your earnings from Monnify</div>
+                <div class="label">Monnify Commission (3%)</div>
+                <div class="sublabel">Earnings from Monnify</div>
             </div>
-            <div class="stat-card margin">
+            <div class="stat-card commission" style="--card-color: #f39c12;">
                 <div class="icon"><i class="fas fa-coins"></i></div>
-                <div class="number" id="totalMargin">₦0</div>
-                <div class="label">Total Profit Margin</div>
-                <div class="sublabel">Revenue minus costs</div>
+                <div class="number" id="peyflexCommission">₦0</div>
+                <div class="label">Peyflex Commission (1-5%)</div>
+                <div class="sublabel">Earnings from Peyflex</div>
+            </div>
+            <div class="stat-card commission" style="--card-color: #e74c3c;">
+                <div class="icon"><i class="fas fa-bolt"></i></div>
+                <div class="number" id="electricityCommission">₦0</div>
+                <div class="label">Electricity Commission (0.2%)</div>
+                <div class="sublabel">Earnings from electricity bills</div>
+            </div>
+            <div class="stat-card" style="--card-color: #2ecc71;">
+                <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
+                <div class="number" id="corporateRevenue">₦0</div>
+                <div class="label">Corporate Revenue</div>
+                <div class="sublabel">Total earnings (commissions + fees)</div>
+            </div>
+            <div class="stat-card" style="--card-color: #e67e22;">
+                <div class="icon"><i class="fas fa-hand-holding-usd"></i></div>
+                <div class="number" id="depositFees">₦0</div>
+                <div class="label">Deposit Fees</div>
+                <div class="sublabel">₦30 from free users</div>
             </div>
             <div class="stat-card transactions">
                 <div class="icon"><i class="fas fa-exchange-alt"></i></div>
                 <div class="number" id="totalTransactions">0</div>
                 <div class="label">Successful Transactions</div>
                 <div class="sublabel">All VAS purchases</div>
+            </div>
+            <div class="stat-card" style="--card-color: #9b59b6;">
+                <div class="icon"><i class="fas fa-coins"></i></div>
+                <div class="number" id="totalFcCredits">0 FCs</div>
+                <div class="label">Total FC Credits Outstanding</div>
+                <div class="sublabel" id="fcCreditsValue">≈ ₦0 value</div>
+            </div>
+            <div class="stat-card" style="--card-color: #3498db;">
+                <div class="icon"><i class="fas fa-wallet"></i></div>
+                <div class="number" id="totalWalletFloat">₦0</div>
+                <div class="label">Total Wallet Float</div>
+                <div class="sublabel">Total liability in real time</div>
             </div>
         </div>
 
@@ -504,6 +680,48 @@
             </div>
         </div>
 
+        <!-- Top Users Section -->
+        <div class="charts-section" style="padding: 30px; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);">
+            <div style="text-align: center; color: white; margin-bottom: 25px;">
+                <h2 style="margin: 0; font-size: 1.8rem;"><i class="fas fa-trophy"></i> Top Balance Holders</h2>
+                <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 1.1rem;">Highest wallet and FC credit balances for incentives & rewards</p>
+            </div>
+            
+            <div class="charts-grid">
+                <!-- Top 3 Wallet Balances -->
+                <div class="chart-card" style="background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="color: #2c3e50; margin: 0;"><i class="fas fa-wallet"></i> Top 3 Wallet Balances</h3>
+                        <button class="btn btn-export" style="padding: 8px 16px; font-size: 0.9rem;" onclick="exportWalletBalances()">
+                            <i class="fas fa-download"></i> Export All
+                        </button>
+                    </div>
+                    <div id="topWalletUsers" class="provider-breakdown">
+                        <div class="loading" style="padding: 30px;">
+                            <i class="fas fa-spinner"></i>
+                            <p style="margin-top: 10px;">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top 3 FC Credit Balances -->
+                <div class="chart-card" style="background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="color: #2c3e50; margin: 0;"><i class="fas fa-coins"></i> Top 3 FC Credit Balances</h3>
+                        <button class="btn btn-export" style="padding: 8px 16px; font-size: 0.9rem;" onclick="exportFcBalances()">
+                            <i class="fas fa-download"></i> Export All
+                        </button>
+                    </div>
+                    <div id="topFcUsers" class="provider-breakdown">
+                        <div class="loading" style="padding: 30px;">
+                            <i class="fas fa-spinner"></i>
+                            <p style="margin-top: 10px;">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="controls">
             <div class="controls-grid">
                 <div class="date-filter">
@@ -515,6 +733,9 @@
                         <option value="1">Today</option>
                     </select>
                 </div>
+                <a href="provider_health_dashboard.html" class="btn" style="background: #e74c3c; color: white;">
+                    <i class="fas fa-heartbeat"></i> Provider Health
+                </a>
                 <button class="btn btn-export" onclick="exportTreasuryData()">
                     <i class="fas fa-download"></i> Export CSV
                 </button>
@@ -539,6 +760,84 @@
                     <h3><i class="fas fa-mobile-alt"></i> Transaction Types</h3>
                     <div class="provider-breakdown" id="transactionTypes">
                         <!-- Transaction type data will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Internal Economy Section -->
+            <div class="charts-grid" id="internalEconomySection" style="display: none; margin-top: 30px;">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-coins"></i> Internal Economy (FiCore Credits & Wallet Float)</h3>
+                    <div class="provider-breakdown" id="internalEconomy" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+                        <!-- Internal economy will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Freemium Engagement Section -->
+            <div class="charts-grid" id="freemiumSection" style="display: none; margin-top: 30px;">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-users"></i>User Engagement</h3>
+                    <div class="charts-grid" id="freemiumEngagement" style="margin-top: 20px;">
+                        <!-- Freemium engagement will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Profitability Search Section -->
+            <div class="chart-card" style="margin-top: 30px;">
+                <h3><i class="fas fa-search-dollar"></i> User Profitability Search</h3>
+                <div style="display: flex; gap: 15px; margin-top: 20px;">
+                    <input 
+                        type="text" 
+                        id="userIdInput" 
+                        placeholder="Enter User ID (e.g., 68e11e3bd594fe6a85546181)"
+                        style="flex: 1; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem;"
+                    >
+                    <button class="btn btn-primary" onclick="searchUserProfitability()">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+                <div id="userResult" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- User Leaderboard Section -->
+            <div class="leaderboard-section">
+                <div class="table-header">
+                    <h3><i class="fas fa-trophy"></i> User Leaderboard</h3>
+                </div>
+                
+                <!-- Leaderboard Tabs -->
+                <div class="leaderboard-tabs">
+                    <button class="tab-btn active" onclick="switchLeaderboardTab('spending')">
+                        <i class="fas fa-shopping-cart"></i> Top Spenders
+                    </button>
+                    <button class="tab-btn" onclick="switchLeaderboardTab('subscribers')">
+                        <i class="fas fa-crown"></i> Recurring Subs
+                    </button>
+                    <button class="tab-btn" onclick="switchLeaderboardTab('active')">
+                        <i class="fas fa-fire"></i> Most Active
+                    </button>
+                </div>
+
+                <!-- Tab 1: Top Spenders -->
+                <div id="spendingTab" class="leaderboard-tab-content active">
+                    <div class="leaderboard-grid">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Tab 2: Recurring Subscribers -->
+                <div id="subscribersTab" class="leaderboard-tab-content">
+                    <div class="leaderboard-grid">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Tab 3: Most Active Users -->
+                <div id="activeTab" class="leaderboard-tab-content">
+                    <div class="leaderboard-grid">
+                        <!-- Will be populated by JavaScript -->
                     </div>
                 </div>
             </div>
@@ -668,6 +967,9 @@
                     // Load referral metrics
                     await loadReferralMetrics(token, timePeriod);
                     
+                    // Load leaderboard
+                    await loadLeaderboard();
+                    
                     showTable();
                 } else {
                     throw new Error(data.message || 'Failed to load treasury data');
@@ -708,39 +1010,56 @@
         function updateReferralMetrics(data) {
             const { overview } = data;
             
-            document.getElementById('totalReferrals').textContent = overview.totalReferrals.toLocaleString();
-            document.getElementById('activeReferrals').textContent = overview.activeReferrals.toLocaleString();
-            document.getElementById('totalReferralPayouts').textContent = `₦${overview.totalPayouts.toLocaleString()}`;
-            document.getElementById('pendingReferralPayouts').textContent = `₦${overview.pendingPayouts.toLocaleString()}`;
+            document.getElementById('totalReferrals').textContent = (overview?.totalReferrals || 0).toLocaleString();
+            document.getElementById('activeReferrals').textContent = (overview?.activeReferrals || 0).toLocaleString();
+            document.getElementById('totalReferralPayouts').textContent = `₦${(overview?.totalPayouts || 0).toLocaleString()}`;
+            document.getElementById('pendingReferralPayouts').textContent = `₦${(overview?.pendingPayouts || 0).toLocaleString()}`;
         }
 
         // Update dashboard with data
         function updateDashboard() {
-            const { overview, providers, transactionTypes, recentTransactions } = treasuryData;
+            const { overview, revenueBreakdown, providerStats, transactionTypeStats, recentTransactions, revenueWeighting } = treasuryData;
             
-            // Update stats cards
-            document.getElementById('totalRevenue').textContent = `₦${overview.totalRevenue.toLocaleString()}`;
-            document.getElementById('monnifyCommission').textContent = `₦${overview.monnifyCommission.toLocaleString()}`;
-            document.getElementById('totalMargin').textContent = `₦${overview.totalMargin.toLocaleString()}`;
-            document.getElementById('totalTransactions').textContent = overview.totalTransactions.toLocaleString();
+            // Update stats cards with correct backend properties
+            // CRITICAL FIX (Feb 21, 2026): Display VAS Volume (what customers paid), NOT Corporate Revenue
+            document.getElementById('totalVasVolume').textContent = `₦${(overview.totalVasVolume || 0).toLocaleString()}`;
+            // Show BOTH Monnify and Peyflex commissions
+            document.getElementById('monnifyCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.monnify || 0).toLocaleString()}`;
+            document.getElementById('peyflexCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.peyflex || 0).toLocaleString()}`;
+            // Show Electricity Commission (NEW - Feb 24, 2026)
+            document.getElementById('electricityCommission').textContent = `₦${(revenueBreakdown?.vasCommissions?.electricity || 0).toLocaleString()}`;
+            // Show Corporate Revenue (total earnings)
+            document.getElementById('corporateRevenue').textContent = `₦${(overview.totalRevenue || 0).toLocaleString()}`;
+            // Show Deposit Fees (₦30 from free users)
+            document.getElementById('depositFees').textContent = `₦${(revenueBreakdown?.depositFees?.net || 0).toLocaleString()}`;
+            document.getElementById('totalTransactions').textContent = (overview?.totalTransactions || 0).toLocaleString();
             
-            // Update provider breakdown
-            updateProviderBreakdown(providers);
+            // Update provider breakdown (use providerStats from backend)
+            updateProviderBreakdown(providerStats || []);
             
-            // Update transaction types
-            updateTransactionTypes(transactionTypes);
+            // Update transaction types (use transactionTypeStats from backend)
+            updateTransactionTypes(transactionTypeStats || []);
             
             // Update transactions table
-            updateTransactionsTable(recentTransactions);
+            updateTransactionsTable(recentTransactions || []);
+            
+            // Load additional metrics
+            const timePeriod = document.getElementById('timePeriod').value;
+            loadInternalEconomy(timePeriod);
+            loadFreemiumEngagement(timePeriod);
+            loadLeaderboard(timePeriod);
         }
 
         // Update provider breakdown
         function updateProviderBreakdown(providers) {
             const container = document.getElementById('providerBreakdown');
             
+            if (!providers || providers.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No provider data available</div>';
+                return;
+            }
+            
             container.innerHTML = providers.map(provider => {
-                const commission = provider.name === 'monnify' ? provider.amount * 0.03 : 0;
-                
                 return `
                     <div class="provider-item">
                         <div class="provider-info">
@@ -753,8 +1072,8 @@
                             </div>
                         </div>
                         <div class="provider-stats">
-                            <div class="provider-amount">₦${provider.amount.toLocaleString()}</div>
-                            ${commission > 0 ? `<div class="provider-commission">+₦${commission.toLocaleString()} commission</div>` : ''}
+                            <div class="provider-amount">₦${(provider?.volume || 0).toLocaleString()}</div>
+                            ${(provider?.commission || 0) > 0 ? `<div class="provider-commission">+₦${(provider?.commission || 0).toLocaleString()} commission (${provider?.commissionRate || ''})</div>` : ''}
                         </div>
                     </div>
                 `;
@@ -764,6 +1083,11 @@
         // Update transaction types
         function updateTransactionTypes(transactionTypes) {
             const container = document.getElementById('transactionTypes');
+            
+            if (!transactionTypes || transactionTypes.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No transaction type data available</div>';
+                return;
+            }
             
             container.innerHTML = transactionTypes.map(type => `
                 <div class="provider-item">
@@ -777,7 +1101,8 @@
                         </div>
                     </div>
                     <div class="provider-stats">
-                        <div class="provider-amount">₦${type.amount.toLocaleString()}</div>
+                        <div class="provider-amount">₦${(type?.volume || 0).toLocaleString()}</div>
+                        ${(type?.commission || 0) > 0 ? `<div class="provider-commission">+₦${(type?.commission || 0).toLocaleString()} commission</div>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -800,7 +1125,8 @@
             const tbody = document.getElementById('transactionsTableBody');
             
             tbody.innerHTML = transactions.map(txn => {
-                const commission = txn.provider === 'monnify' ? txn.amount * 0.03 : 0;
+                // Use actual providerCommission from backend (supports both Monnify and Peyflex)
+                const commission = txn.providerCommission || 0;
                 const date = new Date(txn.createdAt).toLocaleDateString();
                 
                 return `
@@ -810,8 +1136,8 @@
                         <td>
                             <span class="provider-badge ${txn.provider}">${txn.provider}</span>
                         </td>
-                        <td class="amount">₦${txn.amount.toLocaleString()}</td>
-                        <td class="commission">${commission > 0 ? `₦${commission.toLocaleString()}` : '-'}</td>
+                        <td class="amount">₦${(txn?.amount || 0).toLocaleString()}</td>
+                        <td class="commission">${commission > 0 ? `₦${(commission || 0).toLocaleString()}` : '-'}</td>
                         <td>${txn.userEmail || 'N/A'}</td>
                     </tr>
                 `;
@@ -828,15 +1154,16 @@
             const headers = ['Date', 'Type', 'Provider', 'Amount', 'Commission', 'User Email', 'Transaction ID'];
             
             const csvData = treasuryData.recentTransactions.map(txn => {
-                const commission = txn.provider === 'monnify' ? txn.amount * 0.03 : 0;
+                // Use actual providerCommission from backend (supports both Monnify and Peyflex)
+                const commission = txn.providerCommission || 0;
                 const date = new Date(txn.createdAt).toLocaleDateString();
                 
                 return [
                     `"${date}"`,
                     `"${txn.type}"`,
                     `"${txn.provider}"`,
-                    `"₦${txn.amount.toLocaleString()}"`,
-                    `"₦${commission.toLocaleString()}"`,
+                    `"₦${(txn?.amount || 0).toLocaleString()}"`,
+                    `"₦${(commission || 0).toLocaleString()}"`,
                     `"${txn.userEmail || 'N/A'}"`,
                     `"${txn._id}"`
                 ].join(',');
@@ -902,6 +1229,745 @@
         function showTable() {
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('tableContainer').style.display = 'block';
+        }
+
+        // ===== MERGED FUNCTIONS FROM ADMIN_TREASURY_DASHBOARD =====
+
+        // Load internal economy metrics
+        async function loadInternalEconomy(period) {
+            const token = getAdminToken();
+            if (!token) return;
+        
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/internal-economy?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/internal-economy`;
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayInternalEconomy(data.data);
+                        document.getElementById('internalEconomySection').style.display = 'grid';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load internal economy:', error);
+            }
+        }
+        
+        // Display internal economy
+        function displayInternalEconomy(data) {
+            // Update main stat cards
+            document.getElementById('totalFcCredits').textContent = `${(data?.fcCredits?.totalOutstanding || 0).toLocaleString()} FCs`;
+            document.getElementById('fcCreditsValue').textContent = `≈ ₦${((data?.fcCredits?.totalOutstanding || 0) * 30).toLocaleString()} value`;
+            document.getElementById('totalWalletFloat').textContent = `₦${(data?.walletFloat?.totalOutstanding || 0).toLocaleString()}`;
+            
+            // Display top balance holders (NEW - Feb 21, 2026)
+            if (data.topWalletBalances || data.topFcBalances) {
+                displayTopBalanceHolders({
+                    topWalletBalances: data.topWalletBalances || [],
+                    topFcBalances: data.topFcBalances || []
+                });
+            }
+            
+            const container = document.getElementById('internalEconomy');
+            
+            container.innerHTML = `
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total FC Credits Outstanding</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.fcCredits?.totalOutstanding || 0).toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${((data?.fcCredits?.totalOutstanding || 0) * 30).toLocaleString()} value</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Users with FC Balance</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.fcCredits?.usersWithBalance || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Avg FC Balance per User</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.fcCredits?.averageBalance || 0).toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${((data?.fcCredits?.averageBalance || 0) * 30).toLocaleString()} value</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">FC Purchased (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.fcCredits?.purchasedThisPeriod?.amount || 0).toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${((data?.fcCredits?.purchasedThisPeriod?.amount || 0) * 30).toLocaleString()} value</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">FC Consumed (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.fcCredits?.consumedThisPeriod?.amount || 0).toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${((data?.fcCredits?.consumedThisPeriod?.amount || 0) * 30).toLocaleString()} value</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Net FC Position</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.fcCredits?.netPosition || 0).toLocaleString()} FCs</div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${((data?.fcCredits?.netPosition || 0) * 30).toLocaleString()} value</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Total Wallet Float</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${(data?.walletFloat?.totalOutstanding || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Wallets with Balance</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">${(data?.walletFloat?.walletsWithBalance || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Avg Wallet Balance</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${(data?.walletFloat?.averageBalance || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Deposits (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${(data?.walletFloat?.depositsThisPeriod?.amount || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item">
+                    <div class="provider-info">
+                        <div style="font-weight: 600; color: #2c3e50;">Spend (Period)</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount">₦${(data?.walletFloat?.spendThisPeriod?.amount || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div class="provider-item" style="background: #f8f9fa; border: 2px solid #27ae60;">
+                    <div class="provider-info">
+                        <div style="font-weight: 700; color: #27ae60; font-size: 1.1rem;">Total Internal Economy</div>
+                    </div>
+                    <div class="provider-stats">
+                        <div class="provider-amount" style="color: #27ae60; font-size: 1.3rem;">₦${(data?.totalInternalEconomy || 0).toLocaleString()}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Load freemium engagement
+        async function loadFreemiumEngagement(period) {
+            const token = getAdminToken();
+            if (!token) return;
+        
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/freemium-engagement?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/freemium-engagement`;
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayFreemiumEngagement(data.data);
+                        document.getElementById('freemiumSection').style.display = 'grid';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load freemium engagement:', error);
+            }
+        }
+        
+        // Display freemium engagement
+        function displayFreemiumEngagement(data) {
+            const container = document.getElementById('freemiumEngagement');
+            
+            container.innerHTML = `
+                <div class="chart-card">
+                    <h4 style="color: #f39c12; margin-bottom: 15px;"><i class="fas fa-crown"></i> Premium Users</h4>
+                    <div class="provider-breakdown" style="gap: 10px;">
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Count</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${(data?.overview?.premiumUsers?.count || 0).toLocaleString()}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${(data?.overview?.premiumUsers?.percentage || 0)}% of total</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Transactions</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${(data?.premiumMetrics?.transactionCount || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Total Volume</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${(data?.premiumMetrics?.totalVolume || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Commission Earned</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${(data?.premiumMetrics?.totalCommission || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Avg Volume/User</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${(data?.premiumMetrics?.averageVolumePerUser || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h4 style="color: #3498db; margin-bottom: 15px;"><i class="fas fa-users"></i> Freemium Users</h4>
+                    <div class="provider-breakdown" style="gap: 10px;">
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Count</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${(data?.overview?.freemiumUsers?.count || 0).toLocaleString()}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${(data?.overview?.freemiumUsers?.percentage || 0)}% of total</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Transactions</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${(data?.freemiumMetrics?.transactionCount || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Total Volume</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${(data?.freemiumMetrics?.totalVolume || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Commission Earned</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${(data?.freemiumMetrics?.totalCommission || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Commission Share</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">${(data?.freemiumMetrics?.commissionPercentage || 0).toFixed(2)}%</div>
+                            </div>
+                        </div>
+                        <div class="provider-item">
+                            <div class="provider-info">
+                                <div style="font-weight: 600;">Avg Volume/User</div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount">₦${(data?.freemiumMetrics?.averageVolumePerUser || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card" style="grid-column: 1 / -1; background: linear-gradient(135deg, #f8f9fa 0%, #e8f5e9 100%); border: 2px solid #27ae60;">
+                    <h4 style="color: #27ae60; margin-bottom: 10px;"><i class="fas fa-lightbulb"></i> Key Insight</h4>
+                    <p style="color: #2c3e50; font-size: 1rem; margin: 0;">${data.insights.message}</p>
+                </div>
+            `;
+        }
+        
+        // Leaderboard Functions
+        function switchLeaderboardTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.tab-btn').classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.leaderboard-tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tab}Tab`).classList.add('active');
+        }
+
+        async function loadLeaderboard() {
+            try {
+                const token = getAdminToken();
+                const timePeriod = document.getElementById('timePeriod').value;
+                
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/leaderboard?period=${timePeriod}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) throw new Error('Failed to load leaderboard');
+
+                const result = await response.json();
+                if (result.success) {
+                    displayLeaderboard(result.data);
+                }
+            } catch (error) {
+                console.error('Error loading leaderboard:', error);
+            }
+        }
+
+        function displayLeaderboard(data) {
+            // Tab 1: Top Spenders
+            const spendingGrid = document.querySelector('#spendingTab .leaderboard-grid');
+            if (data.topSpenders && data.topSpenders.length > 0) {
+                spendingGrid.innerHTML = data.topSpenders.map((user, index) => {
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank ${rankClass}">
+                                ${medal || (index + 1)}
+                            </div>
+                            <div class="leaderboard-info">
+                                <div class="leaderboard-name">${user.displayName}</div>
+                                <div class="leaderboard-email">${user.email}</div>
+                            </div>
+                            <div class="leaderboard-stats">
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">₦${(user?.totalSpending || 0).toLocaleString()}</div>
+                                    <div class="leaderboard-stat-label">Total Spending</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.transactionCount}</div>
+                                    <div class="leaderboard-stat-label">Transactions</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">₦${(user?.avgTransactionSize || 0).toLocaleString()}</div>
+                                    <div class="leaderboard-stat-label">Avg Size</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                spendingGrid.innerHTML = `
+                    <div class="empty-leaderboard">
+                        <i class="fas fa-shopping-cart"></i>
+                        <p>No spending data available for this period</p>
+                    </div>
+                `;
+            }
+
+            // Tab 2: Recurring Subscribers
+            const subscribersGrid = document.querySelector('#subscribersTab .leaderboard-grid');
+            if (data.recurringSubscribers && data.recurringSubscribers.length > 0) {
+                subscribersGrid.innerHTML = data.recurringSubscribers.map((user, index) => {
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank ${rankClass}">
+                                ${medal || (index + 1)}
+                            </div>
+                            <div class="leaderboard-info">
+                                <div class="leaderboard-name">${user.displayName}</div>
+                                <div class="leaderboard-email">${user.email}</div>
+                            </div>
+                            <div class="leaderboard-stats">
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.subscriptionDays}</div>
+                                    <div class="leaderboard-stat-label">Days Subscribed</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${user.subscriptionPlan}</div>
+                                    <div class="leaderboard-stat-label">Plan</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">₦${(user?.totalRevenue || 0).toLocaleString()}</div>
+                                    <div class="leaderboard-stat-label">Total Revenue</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                subscribersGrid.innerHTML = `
+                    <div class="empty-leaderboard">
+                        <i class="fas fa-crown"></i>
+                        <p>No active subscribers</p>
+                    </div>
+                `;
+            }
+
+            // Tab 3: Most Active Users
+            const activeGrid = document.querySelector('#activeTab .leaderboard-grid');
+            if (data.mostActiveUsers && data.mostActiveUsers.length > 0) {
+                activeGrid.innerHTML = data.mostActiveUsers.map((user, index) => {
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : '';
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+                    
+                    // Handle both loginCount (from users collection) and eventCount (from analytics_events)
+                    const activityCount = user.loginCount || user.eventCount || 0;
+                    const avgActivity = user.avgLoginsPerDay || user.avgEventsPerDay || 0;
+                    const lastActivity = user.hoursSinceLogin || user.hoursSinceActivity || 'N/A';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank ${rankClass}">
+                                ${medal || (index + 1)}
+                            </div>
+                            <div class="leaderboard-info">
+                                <div class="leaderboard-name">${user.displayName}</div>
+                                <div class="leaderboard-email">${user.email}</div>
+                            </div>
+                            <div class="leaderboard-stats">
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${activityCount}</div>
+                                    <div class="leaderboard-stat-label">Total Activity</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${(avgActivity || 0).toFixed(1)}</div>
+                                    <div class="leaderboard-stat-label">Activity/Day</div>
+                                </div>
+                                <div class="leaderboard-stat">
+                                    <div class="leaderboard-stat-value">${typeof lastActivity === 'number' ? lastActivity.toFixed(1) + 'h' : lastActivity}</div>
+                                    <div class="leaderboard-stat-label">Last Activity</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                activeGrid.innerHTML = `
+                    <div class="empty-leaderboard">
+                        <i class="fas fa-fire"></i>
+                        <p>No active users in this period</p>
+                        <p style="font-size: 0.9rem; color: #999; margin-top: 10px;">Try selecting "All Time" or a longer period</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Search user profitability
+        async function searchUserProfitability() {
+            const userId = document.getElementById('userIdInput').value.trim();
+            if (!userId) {
+                showNotification('Please enter a User ID', 'error');
+                return;
+            }
+        
+            const token = getAdminToken();
+            if (!token) {
+                showNotification('Admin token required', 'error');
+                return;
+            }
+        
+            const period = document.getElementById('timePeriod').value;
+            const url = period 
+                ? `${API_BASE_URL}/admin/treasury/user-profitability/${userId}?period=${period}`
+                : `${API_BASE_URL}/admin/treasury/user-profitability/${userId}`;
+        
+            const resultContainer = document.getElementById('userResult');
+            resultContainer.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i><p style="margin-top: 15px;">Loading user data...</p></div>';
+        
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+        
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    showNotification('Authentication failed. Please refresh and login again.', 'error');
+                    return;
+                }
+        
+                if (response.status === 404) {
+                    resultContainer.innerHTML = '<div style="padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; color: #856404;">User not found</div>';
+                    return;
+                }
+        
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+        
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayUserProfitability(data.data);
+                } else {
+                    resultContainer.innerHTML = `<div style="padding: 20px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; color: #721c24;">${data.message || 'Failed to load user data'}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to load user profitability:', error);
+                resultContainer.innerHTML = `<div style="padding: 20px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; color: #721c24;">Failed to load user data: ${error.message}</div>`;
+            }
+        }
+        
+        // Display user profitability
+        function displayUserProfitability(user) {
+            const container = document.getElementById('userResult');
+            
+            const assessmentBadge = {
+                'profitable': 'monnify',
+                'at_risk': 'peyflex',
+                'low_vas_usage': 'peyflex',
+                'unprofitable': ''
+            }[user.profitability.assessment] || '';
+        
+            const profitClass = user.profitability.isProfitable ? 'positive' : 'negative';
+            const profitColor = user.profitability.isProfitable ? '#27ae60' : '#e74c3c';
+        
+            container.innerHTML = `
+                <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <h3 style="color: #2c3e50; margin-bottom: 5px;">${user.userName || 'Unknown User'}</h3>
+                            <p style="color: #666; margin-bottom: 5px;">${user.userEmail}</p>
+                            <p style="color: #999; font-size: 0.9rem;">User ID: ${user.userId}</p>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <span class="provider-badge ${user.isPremium ? 'monnify' : 'peyflex'}">
+                                ${user.isPremium ? 'Premium' : 'Free'}
+                            </span>
+                            <span class="provider-badge ${assessmentBadge}">
+                                ${user.profitability.assessment.replace('_', ' ').toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+        
+                    ${user.profitability.warning ? `
+                        <div style="padding: 15px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; color: #856404; margin-bottom: 20px;">
+                            ⚠️ ${user.profitability.warning}
+                        </div>
+                    ` : ''}
+        
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Revenue</div>
+                            <div style="color: #2c3e50; font-size: 1.5rem; font-weight: bold;">₦${(user?.revenue?.total || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Costs</div>
+                            <div style="color: #2c3e50; font-size: 1.5rem; font-weight: bold;">₦${(user?.costs?.total || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Net Profit</div>
+                            <div style="color: ${profitColor}; font-size: 1.5rem; font-weight: bold;">₦${(user?.profitability?.netProfit || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Profit Margin</div>
+                            <div style="color: ${profitColor}; font-size: 1.5rem; font-weight: bold;">${(user?.profitability?.profitMargin || 0).toFixed(2)}%</div>
+                        </div>
+                    </div>
+        
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Subscription Revenue</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${(user?.revenue?.subscription?.net || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">VAS Commissions</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${(user?.revenue?.vasCommissions || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Deposit Fees</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${(user?.revenue?.depositFees?.net || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Deposits</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">${(user?.usage?.totalDeposits || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Total Deposited</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${(user?.usage?.totalDeposited || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">VAS Transactions</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">${(user?.usage?.totalVasTransactions || 0).toLocaleString()}</div>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">VAS Volume</div>
+                            <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">₦${(user?.usage?.totalVasVolume || 0).toLocaleString()}</div>
+                        </div>
+                        ${user.subscriptionType ? `
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                                <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">Subscription Type</div>
+                                <div style="color: #2c3e50; font-size: 1.2rem; font-weight: 600;">${user.subscriptionType}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+
+        // ===== END MERGED FUNCTIONS =====
+
+        // Display top balance holders (called from displayInternalEconomy)
+        function displayTopBalanceHolders(data) {
+            // Display top wallet users
+            const walletContainer = document.getElementById('topWalletUsers');
+            if (data.topWalletBalances && data.topWalletBalances.length > 0) {
+                walletContainer.innerHTML = data.topWalletBalances.map((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : 'bronze';
+                    
+                    return `
+                        <div class="provider-item" style="border-left: 4px solid ${index === 0 ? '#f39c12' : index === 1 ? '#95a5a6' : '#cd7f32'};">
+                            <div class="provider-info">
+                                <div style="font-size: 2rem; margin-right: 15px;">${medal}</div>
+                                <div>
+                                    <div style="font-weight: 600; color: #2c3e50;">${user.displayName || 'Unknown User'}</div>
+                                    <div style="font-size: 0.9rem; color: #666;">${user.email}</div>
+                                    <div style="font-size: 0.85rem; color: #999; margin-top: 3px;">ID: ${user.userId}</div>
+                                </div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount" style="color: #27ae60;">₦${(user?.balance || 0).toLocaleString()}</div>
+                                <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">Wallet Balance</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                walletContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No wallet balances found</div>';
+            }
+
+            // Display top FC credit users
+            const fcContainer = document.getElementById('topFcUsers');
+            if (data.topFcBalances && data.topFcBalances.length > 0) {
+                fcContainer.innerHTML = data.topFcBalances.map((user, index) => {
+                    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                    const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : 'bronze';
+                    
+                    return `
+                        <div class="provider-item" style="border-left: 4px solid ${index === 0 ? '#f39c12' : index === 1 ? '#95a5a6' : '#cd7f32'};">
+                            <div class="provider-info">
+                                <div style="font-size: 2rem; margin-right: 15px;">${medal}</div>
+                                <div>
+                                    <div style="font-weight: 600; color: #2c3e50;">${user.displayName || 'Unknown User'}</div>
+                                    <div style="font-size: 0.9rem; color: #666;">${user.email}</div>
+                                    <div style="font-size: 0.85rem; color: #999; margin-top: 3px;">ID: ${user.userId}</div>
+                                </div>
+                            </div>
+                            <div class="provider-stats">
+                                <div class="provider-amount" style="color: #9b59b6;">${(user?.balance || 0).toLocaleString()} FCs</div>
+                                <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">≈ ₦${((user?.balance || 0) * 30).toLocaleString()} value</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                fcContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No FC credit balances found</div>';
+            }
+        }
+
+        // Export wallet balances
+        async function exportWalletBalances() {
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/export-wallet-balances`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `wallet_balances_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showNotification('Wallet balances exported successfully!');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                showNotification('Failed to export wallet balances: ' + error.message, 'error');
+            }
+        }
+
+        // Export FC balances
+        async function exportFcBalances() {
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/export-fc-balances`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `fc_balances_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showNotification('FC balances exported successfully!');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                showNotification('Failed to export FC balances: ' + error.message, 'error');
+            }
         }
     </script>
 </body>
