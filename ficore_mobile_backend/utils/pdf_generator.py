@@ -97,22 +97,46 @@ def create_table(data, col_widths, use_long_table_threshold=50):
     Returns:
         Table or LongTable instance with timeout protection
     """
-    if not data or len(data) == 0:
-        # Return empty table with headers if no data
-        data = [['No Data', 'Available']]
-        col_widths = [3*inch, 3*inch]
-    
-    row_count = len(data)
-    
-    # Use LongTable for large datasets to prevent timeouts
-    if row_count > use_long_table_threshold:
-        from reportlab.platypus import LongTable
-        table = LongTable(data, colWidths=col_widths, splitByRow=True)
-    else:
-        from reportlab.platypus import Table
-        table = Table(data, colWidths=col_widths)
-    
-    return table
+    try:
+        if not data or len(data) == 0:
+            # Return empty table with headers if no data
+            data = [['No Data', 'Available']]
+            col_widths = [3*inch, 3*inch]
+        
+        row_count = len(data)
+        
+        # Use LongTable for large datasets to prevent timeouts
+        if row_count > use_long_table_threshold:
+            from reportlab.platypus import LongTable
+            table = LongTable(data, colWidths=col_widths, splitByRow=True)
+        else:
+            from reportlab.platypus import Table
+            table = Table(data, colWidths=col_widths)
+        
+        # Ensure we always return a valid table object
+        if table is None:
+            print(f"[ERROR] create_table: Table creation returned None for data: {data[:2]}...")
+            # Fallback: create a simple table with error message
+            from reportlab.platypus import Table
+            fallback_data = [['Error', 'Table creation failed']]
+            table = Table(fallback_data, colWidths=[3*inch, 3*inch])
+        
+        return table
+        
+    except Exception as e:
+        print(f"[ERROR] create_table: Exception occurred: {str(e)}")
+        print(f"[ERROR] create_table: Data type: {type(data)}, Length: {len(data) if data else 'None'}")
+        print(f"[ERROR] create_table: Col widths: {col_widths}")
+        
+        # Fallback: create a simple error table
+        try:
+            from reportlab.platypus import Table
+            fallback_data = [['Error', 'Table creation failed'], ['Exception', str(e)[:50]]]
+            table = Table(fallback_data, colWidths=[3*inch, 3*inch])
+            return table
+        except Exception as fallback_error:
+            print(f"[ERROR] create_table: Even fallback failed: {str(fallback_error)}")
+            return None
 
 
 def truncate_text_for_pdf(text, max_length=45):
@@ -2934,22 +2958,42 @@ Your registered tax profile remains <b>{profile_name}</b>.
         operating_profit_summary = gross_profit - total_operating_excl_depreciation
         net_profit_summary = operating_profit_summary - total_depreciation_summary
         
+        # CRITICAL FIX (Mar 12, 2026): Safety checks for all variables used in summary_data
+        # Ensure no None values that could cause table creation to fail
+        safe_total_income = safe_float(total_income)
+        safe_total_cogs = safe_float(total_cogs)
+        safe_gross_profit = safe_float(gross_profit)
+        safe_gross_margin = safe_float(gross_margin)
+        safe_total_operating_excl_depreciation = safe_float(total_operating_excl_depreciation)
+        safe_operating_profit_summary = safe_float(operating_profit_summary)
+        safe_total_depreciation_summary = safe_float(total_depreciation_summary)
+        safe_net_profit_summary = safe_float(net_profit_summary)
+        safe_total_assets_nbv = safe_float(total_assets_nbv)
+        safe_total_current_assets = safe_float(total_current_assets)
+        safe_asset_count = int(asset_count) if asset_count is not None else 0
+        safe_period_text = str(period_text) if period_text is not None else 'Unknown Period'
+        safe_tax_type = str(tax_type) if tax_type is not None else 'Unknown'
+        
         summary_data = [
             ['Metric', 'Value'],
-            ['Financial Period', period_text],
-            ['Total Revenue', format_currency(total_income)],
-            ['Cost of Goods Sold', format_currency(total_cogs)],
-            ['Gross Profit', format_currency(gross_profit)],
-            ['Gross Margin %', f'{gross_margin:.1f}%'],
-            ['Operating Expenses', format_currency(total_operating_excl_depreciation)],
-            ['Operating Profit', format_currency(operating_profit_summary)],
-            ['Depreciation', format_currency(total_depreciation_summary)],
-            ['Net Profit/(Loss)', format_currency(net_profit_summary)],
-            ['Total Assets (NBV)', format_currency(total_assets_nbv)],
-            ['Current Assets', format_currency(total_current_assets)],
-            ['Asset Count', f'{asset_count} assets'],
-            ['Tax Type', tax_type],
+            ['Financial Period', safe_period_text],
+            ['Total Revenue', format_currency(safe_total_income)],
+            ['Cost of Goods Sold', format_currency(safe_total_cogs)],
+            ['Gross Profit', format_currency(safe_gross_profit)],
+            ['Gross Margin %', f'{safe_gross_margin:.1f}%'],
+            ['Operating Expenses', format_currency(safe_total_operating_excl_depreciation)],
+            ['Operating Profit', format_currency(safe_operating_profit_summary)],
+            ['Depreciation', format_currency(safe_total_depreciation_summary)],
+            ['Net Profit/(Loss)', format_currency(safe_net_profit_summary)],
+            ['Total Assets (NBV)', format_currency(safe_total_assets_nbv)],
+            ['Current Assets', format_currency(safe_total_current_assets)],
+            ['Asset Count', f'{safe_asset_count} assets'],
+            ['Tax Type', safe_tax_type],
         ]
+        
+        # CRITICAL DEBUG (Mar 12, 2026): Log summary_data before table creation
+        print(f"[DEBUG] SOA Generation: Creating summary table with {len(summary_data)} rows")
+        print(f"[DEBUG] SOA Generation: First few rows: {summary_data[:3]}")
         
         summary_table = create_table(summary_data, col_widths=[3*inch, 3*inch])
         summary_table_style = TableStyle([
@@ -2971,9 +3015,24 @@ Your registered tax profile remains <b>{profile_name}</b>.
         ])
         # Apply text wrapping to prevent overflow
         apply_text_wrapping_style(summary_table_style)
-        summary_table.setStyle(summary_table_style)
         
-        story.append(summary_table)
+        # CRITICAL FIX (Mar 12, 2026): Safety check for summary_table
+        if summary_table is None:
+            print("[ERROR] SOA Generation: summary_table is None, creating fallback table")
+            # Create a fallback table with error message
+            fallback_data = [['Error', 'Summary table creation failed']]
+            summary_table = create_table(fallback_data, col_widths=[3*inch, 3*inch])
+            if summary_table is None:
+                print("[ERROR] SOA Generation: Even fallback table creation failed")
+                # Skip this section entirely if we can't create any table
+                story.append(Paragraph("Error: Unable to generate summary table", self.styles['Normal']))
+            else:
+                summary_table.setStyle(summary_table_style)
+                story.append(summary_table)
+        else:
+            summary_table.setStyle(summary_table_style)
+            story.append(summary_table)
+        
         story.append(PageBreak())
         
         # === EXECUTIVE SUMMARY ===
