@@ -2881,7 +2881,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
             qualifies_for_exemption = (total_income <= 100000000) and (total_assets_nbv <= 250000000)
             if qualifies_for_exemption:
                 estimated_tax = 0
-                tax_rate_display = "0% (Exempt - Revenue ≤₦100M AND Assets ≤₦250M)"
+                tax_rate_display = "0% Exempt"
             else:
                 estimated_tax = net_profit * 0.30 if net_profit > 0 else 0
                 tax_rate_display = "30% (CIT)"
@@ -3077,10 +3077,10 @@ Your registered tax profile remains <b>{profile_name}</b>.
             ['Less: Cost of Goods Sold (COGS)', format_currency(total_cogs), 'Direct product costs'],
             ['GROSS PROFIT', format_currency(gross_profit), f'{gross_margin:.1f}% margin'],
             ['', '', ''],
-            ['Less: Operating Expenses', format_currency(total_non_depreciation_operating), 'Rent, salaries, utilities (excl. depreciation)'],
+            ['Less: Operating Expenses', format_currency(total_non_depreciation_operating), 'Rent, Salaries, Utilities, etc'],
             ['OPERATING PROFIT', format_currency(operating_profit_before_depreciation), 'Before depreciation'],
             ['', '', ''],
-            ['Less: Depreciation', format_currency(total_depreciation_expenses), 'Asset depreciation expense'],
+            ['Less: Depreciation', format_currency(total_depreciation_expenses), 'Asset depr. expense'],
             ['NET PROFIT/(LOSS)', format_currency(net_profit_after_depreciation), f'{profit_margin:.1f}% margin'],
         ]
         
@@ -3182,11 +3182,11 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ['', '', ''],
             ['CURRENT LIABILITIES', '', ''],
             ['Accounts Payable (Creditors)', creditors_display, f'{creditors_count} vendors' if creditors_count > 0 else ''],
-            ['FC Credit Liabilities', fc_credit_display, 'Outstanding FC Credit obligations'],  # NEW (Mar 10, 2026)
-            ['Subscription Liabilities', subscription_display, 'Outstanding subscription obligations'],  # NEW (Mar 10, 2026)
-            ['Fee Waiver Liabilities', fee_waiver_display, 'Outstanding fee waiver obligations'],  # NEW (Mar 11, 2026)
-            ['Loans Payable', loans_display, 'Outstanding loan balances'],  # NEW (Feb 27, 2026)
-            ['Estimated Tax Payable', format_currency(unpaid_tax), 'Unpaid tax obligation'],
+            ['FC Credit Liabilities', fc_credit_display, 'Obligations'],  # NEW (Mar 10, 2026)
+            ['Subscription Liabilities', subscription_display, 'Obligations'],  # NEW (Mar 10, 2026)
+            ['Fee Waiver Liabilities', fee_waiver_display, 'Obligations'],  # NEW (Mar 11, 2026)
+            ['Loans Payable', loans_display, 'Obligations'],  # NEW (Feb 27, 2026)
+            ['Estimated Tax Payable', format_currency(unpaid_tax), 'Obligations'],
             ['Total Current Liabilities', format_currency(total_current_liabilities), ''],
             ['', '', ''],
             ['NET CURRENT ASSETS', format_currency(total_current_assets - total_current_liabilities), 'Working Capital'],
