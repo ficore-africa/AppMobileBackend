@@ -1256,9 +1256,19 @@ def tag_expense_entry(entry_id):
                 print(f"❌ Invalid ObjectId format: {clean_id}")
                 print(f"   Expected: 24-character hex string (MongoDB ObjectId)")
                 print(f"   Received: {len(clean_id)}-character string")
+                print(f"   Original entry_id: {entry_id}")
+                
+                # Provide more specific error message based on ID format
+                if len(clean_id) == 0:
+                    error_msg = 'Entry ID is empty. Please refresh the screen and try again.'
+                elif len(clean_id) < 24:
+                    error_msg = f'Entry ID too short ({len(clean_id)} chars). This appears to be a local ID that hasn\'t synced to the server yet. Please wait for sync to complete and try again.'
+                else:
+                    error_msg = 'Invalid entry ID format. Please refresh the screen and try again.'
+                
                 return jsonify({
                     'success': False,
-                    'message': 'Invalid entry ID format. Please refresh and try again.'
+                    'message': error_msg
                 }), 400
             
             # Check if expense exists first
