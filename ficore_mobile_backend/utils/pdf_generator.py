@@ -97,7 +97,22 @@ def create_table(data, col_widths, use_long_table_threshold=50):
     Returns:
         Table or LongTable instance with timeout protection
     """
+    if not data or len(data) == 0:
+        # Return empty table with headers if no data
+        data = [['No Data', 'Available']]
+        col_widths = [3*inch, 3*inch]
+    
     row_count = len(data)
+    
+    # Use LongTable for large datasets to prevent timeouts
+    if row_count > use_long_table_threshold:
+        from reportlab.platypus import LongTable
+        table = LongTable(data, colWidths=col_widths, splitByRow=True)
+    else:
+        from reportlab.platypus import Table
+        table = Table(data, colWidths=col_widths)
+    
+    return table
 
 
 def truncate_text_for_pdf(text, max_length=45):
