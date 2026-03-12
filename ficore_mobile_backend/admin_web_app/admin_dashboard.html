@@ -79,6 +79,7 @@
 
         .admin-card.reconciliation { --card-color: #f39c12; }
         .admin-card.revenue { --card-color: #27ae60; }
+        .admin-card.health { --card-color: #e74c3c; }
         .admin-card.users { --card-color: #3498db; }
         .admin-card.analytics { --card-color: #27ae60; }
         .admin-card.emergency { --card-color: #e74c3c; }
@@ -238,6 +239,15 @@
                 <span class="card-badge new">Revenue</span>
             </a>
 
+            <a href="provider_health_dashboard.html" class="admin-card health">
+                <div class="card-icon"><i class="fas fa-heartbeat"></i></div>
+                <div class="card-title">Provider Health Monitor</div>
+                <div class="card-description">
+                    Real-time monitoring of VAS provider liquidity and performance. Track Peyflex balance, failed transactions, and success rates.
+                </div>
+                <span class="card-badge new">CRITICAL</span>
+            </a>
+
             <a href="reconciliation_management.html" class="admin-card reconciliation">
                 <div class="card-icon"><i class="fas fa-balance-scale"></i></div>
                 <div class="card-title">Reconciliation Management</div>
@@ -283,6 +293,15 @@
                 <span class="card-badge">Compliance</span>
             </a>
 
+            <a href="admin_version_control.html" class="admin-card ledger">
+                <div class="card-icon"><i class="fas fa-history"></i></div>
+                <div class="card-title">Version Control & Audit</div>
+                <div class="card-description">
+                    View version history, rollback financial entries, track discrepancies, and export comprehensive audit trails.
+                </div>
+                <span class="card-badge new">Audit</span>
+            </a>
+
             <a href="notification_analytics.html" class="admin-card notifications">
                 <div class="card-icon"><i class="fas fa-bell"></i></div>
                 <div class="card-title">Notification Analytics</div>
@@ -310,7 +329,7 @@
                 <span class="card-badge">Premium</span>
             </a>
 
-            <a href="../admin_kyc_dashboard.html" class="admin-card kyc">
+            <a href="admin_kyc_dashboard.html" class="admin-card kyc">
                 <div class="card-icon"><i class="fas fa-id-card"></i></div>
                 <div class="card-title">KYC Management</div>
                 <div class="card-description">
@@ -335,6 +354,15 @@
                     Review and approve referral earnings withdrawals to Wallet Balance. Manage payouts and prevent fraud.
                 </div>
                 <span class="card-badge new">Payouts</span>
+            </a>
+
+            <a href="announcements_manager.html" class="admin-card notifications">
+                <div class="card-icon"><i class="fas fa-bullhorn"></i></div>
+                <div class="card-title">Announcements Manager</div>
+                <div class="card-description">
+                    Send announcements to all FiCore users. Test mode and live broadcast with mobile preview.
+                </div>
+                <span class="card-badge new">Communications</span>
             </a>
         </div>
     </div>
@@ -373,7 +401,7 @@
                 }
 
                 // Load KYC stats
-                const kycResponse = await fetch('/api/admin/kyc/pending', {
+                const kycResponse = await fetch('/admin/kyc/pending', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }

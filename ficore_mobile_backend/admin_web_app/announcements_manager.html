@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Announcements Manager - FiCore Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2rem;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .back-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-btn:hover {
+            background: #2980b9;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #2c3e50;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .form-group small {
+            display: block;
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.85rem;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
+        }
+
+        .btn {
+            padding: 14px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+            transform: translateY(-2px);
+        }
+
+        .btn-warning {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #e67e22;
+            transform: translateY(-2px);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .preview-phone {
+            background: #2c3e50;
+            border-radius: 30px;
+            padding: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .phone-screen {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            height: 600px;
+            overflow-y: auto;
+        }
+
+        .phone-header {
+            background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%);
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        .phone-header h2 {
+            color: white;
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+        }
+
+        .phone-header p {
+            color: #FFF8F0;
+            font-size: 0.8rem;
+        }
+
+        .phone-content {
+            padding: 30px 20px;
+        }
+
+        .phone-title {
+            color: #1E3A8A;
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .phone-body {
+            color: #2E2E2E;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .phone-cta {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .phone-cta-btn {
+            display: inline-block;
+            background: #B88A44;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .phone-support {
+            background: #FFF8F0;
+            border-left: 4px solid #B88A44;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: #2E2E2E;
+        }
+
+        .phone-footer {
+            background: #F4F1EC;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #6B7280;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .history-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            border-bottom: 1px solid #e0e0e0;
+            padding: 15px 0;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .history-subject {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .history-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .history-badge.sent {
+            background: #27ae60;
+            color: white;
+        }
+
+        .history-badge.test {
+            background: #f39c12;
+            color: white;
+        }
+
+        .history-badge.failed {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .history-meta {
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .btn-group {
+                flex-direction: column;
+            }
+        }
+
+        /* Recipient Manager Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow: auto;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 50px auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            padding: 25px 30px;
+            border-bottom: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1.5rem;
+        }
+
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .modal-body {
+            padding: 30px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-box {
+            margin-bottom: 20px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .recipient-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .recipient-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+
+        .recipient-item:hover {
+            border-color: #3498db;
+            background: #f8f9fa;
+        }
+
+        .recipient-item.excluded {
+            opacity: 0.5;
+            border-color: #e74c3c;
+            background: #fee;
+        }
+
+        .recipient-info {
+            flex: 1;
+        }
+
+        .recipient-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .recipient-email {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .recipient-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-exclude {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+
+        .btn-exclude:hover {
+            background: #c0392b;
+        }
+
+        .btn-include {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+
+        .btn-include:hover {
+            background: #229954;
+        }
+
+        .excluded-count {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-content">
+                <div>
+                    <h1><i class="fas fa-bullhorn"></i> Announcements Manager</h1>
+                    <p>Send announcements to all FiCore users via email</p>
+                </div>
+                <a href="admin_dashboard.html" class="back-btn">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="totalAnnouncements">-</div>
+                <div class="stat-label">Total Sent</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalRecipients">-</div>
+                <div class="stat-label">Total Recipients</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="syncedUsers">-</div>
+                <div class="stat-label">Synced Users</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="unsyncedUsers">-</div>
+                <div class="stat-label">Need Sync</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 30px;">
+            <div class="card-title">
+                <i class="fas fa-sync"></i> User Sync Management
+            </div>
+            <p style="color: #666; margin-bottom: 20px;">
+                Sync existing users to Resend Audience. New users are synced automatically after signup.
+            </p>
+            <div class="alert info" style="display: block; margin-bottom: 20px;">
+                <i class="fas fa-info-circle"></i> <strong>Free Tier Limit:</strong> Resend allows 100 emails/day on free tier. 
+                Current synced users: <span id="syncedUsersCount">-</span>. 
+                Announcements will be sent in batches if needed.
+            </div>
+            <button class="btn btn-primary" onclick="syncAllUsers()" id="syncBtn">
+                <i class="fas fa-sync-alt"></i> Sync All Existing Users
+            </button>
+            <div id="syncProgress" style="display: none; margin-top: 20px;">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; color: #666;">Syncing users... This may take a few minutes.</p>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="main-grid">
+            <div>
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-edit"></i> Create Announcement
+                    </div>
+
+                    <form id="announcementForm">
+                        <div class="form-group">
+                            <label for="subject">Email Subject *</label>
+                            <input type="text" id="subject" required placeholder="e.g., New Feature: Voice Entry for Expenses">
+                            <small>This appears in the email inbox</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="title">Announcement Title *</label>
+                            <input type="text" id="title" required placeholder="e.g., Introducing Voice Entry">
+                            <small>Main headline in the email body</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="body">Message Body *</label>
+                            <textarea id="body" required placeholder="Write your announcement message here..."></textarea>
+                            <small>Supports HTML formatting</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="announcementType">Announcement Type *</label>
+                            <select id="announcementType" required>
+                                <option value="general">General</option>
+                                <option value="feature">New Feature</option>
+                                <option value="update">System Update</option>
+                                <option value="promotional">Promotional</option>
+                                <option value="educational">Educational</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ctaText">Call-to-Action Button Text (Optional)</label>
+                            <input type="text" id="ctaText" placeholder="e.g., Try It Now">
+                            <small>Leave empty if no button needed</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ctaLink">Call-to-Action Button Link (Optional)</label>
+                            <input type="url" id="ctaLink" placeholder="https://business.ficoreafrica.com/...">
+                            <small>Full URL including https://</small>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="testMode">
+                                <label for="testMode">Test Mode (Send to test email only)</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="testEmailGroup" style="display: none;">
+                            <label for="testEmail">Test Email Address *</label>
+                            <input type="email" id="testEmail" placeholder="your-email@example.com">
+                            <small>Announcement will only be sent to this email</small>
+                        </div>
+
+                        <div class="form-group">
+                            <button type="button" class="btn btn-primary" onclick="showRecipientManager()" style="width: 100%;">
+                                <i class="fas fa-users"></i> Manage Recipients (<span id="recipientCount">-</span> users)
+                            </button>
+                            <small>Click to view and exclude specific users from this announcement</small>
+                        </div>
+
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-warning" onclick="previewAnnouncement()">
+                                <i class="fas fa-eye"></i> Preview
+                            </button>
+                            <button type="submit" class="btn btn-primary" id="sendTestBtn" style="display: none;">
+                                <i class="fas fa-paper-plane"></i> Send Test
+                            </button>
+                            <button type="submit" class="btn btn-success" id="sendLiveBtn">
+                                <i class="fas fa-broadcast-tower"></i> Send to All Users
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="loading" id="loadingIndicator">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 15px; color: #666;">Sending announcement...</p>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 30px;">
+                    <div class="card-title">
+                        <i class="fas fa-history"></i> Recent Announcements
+                    </div>
+                    <div class="history-list" id="historyList">
+                        <p style="text-align: center; color: #666;">Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-mobile-alt"></i> Mobile Preview
+                    </div>
+                    <div class="preview-phone">
+                        <div class="phone-screen" id="phonePreview">
+                            <div class="phone-header">
+                                <h2>📢 FiCore News</h2>
+                                <p>Your Digital CFO for Business Success</p>
+                            </div>
+                            <div class="phone-content">
+                                <div class="phone-title" id="previewTitle">Your Announcement Title</div>
+                                <div class="phone-body" id="previewBody">
+                                    <p>Your announcement message will appear here...</p>
+                                </div>
+                                <div class="phone-cta" id="previewCta" style="display: none;">
+                                    <a href="#" class="phone-cta-btn" id="previewCtaBtn">Button Text</a>
+                                </div>
+                                <div class="phone-support">
+                                    <p><strong>Need help?</strong> Reply to this email or WhatsApp us at <a href="https://wa.me/2348130549754" style="color: #25D366; text-decoration: none; font-weight: 600;">+234 813 054 9754</a></p>
+                                </div>
+                                <p style="color: #6B7280; font-size: 0.85rem; margin-top: 20px;">Best regards,<br><strong style="color: #1E3A8A;">The FiCore Team</strong></p>
+                            </div>
+                            <div class="phone-footer">
+                                <p><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
+                                <p>RC 8799482 | Nigeria</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recipient Manager Modal -->
+    <div id="recipientModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-users"></i> Manage Recipients</h2>
+                <span class="close" onclick="closeRecipientManager()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="search-box">
+                    <input type="text" id="recipientSearch" placeholder="Search by name or email..." onkeyup="filterRecipients()">
+                </div>
+                <div class="alert info" style="display: block; margin-bottom: 20px;">
+                    <i class="fas fa-info-circle"></i> Click "Exclude" to remove specific users from this announcement. Test accounts are automatically excluded.
+                </div>
+                <div id="recipientListContainer" class="recipient-list">
+                    <p style="text-align: center; color: #666;">Loading recipients...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div>
+                    <span id="totalRecipients">0</span> total recipients
+                    <span class="excluded-count">(<span id="excludedCount">0</span> excluded)</span>
+                </div>
+                <button class="btn btn-primary" onclick="closeRecipientManager()">
+                    <i class="fas fa-check"></i> Done
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables for recipient management
+        let allRecipients = [];
+        let excludedUserIds = new Set();
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadHistory();
+            setupFormListeners();
+            loadRecipientCount();  // Load initial recipient count
+        });
+
+        function getAdminToken() {
+            return localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken');
+        }
+
+        function setupFormListeners() {
+            // Test mode toggle
+            document.getElementById('testMode').addEventListener('change', function() {
+                const testEmailGroup = document.getElementById('testEmailGroup');
+                const sendTestBtn = document.getElementById('sendTestBtn');
+                const sendLiveBtn = document.getElementById('sendLiveBtn');
+                
+                if (this.checked) {
+                    testEmailGroup.style.display = 'block';
+                    sendTestBtn.style.display = 'inline-flex';
+                    sendLiveBtn.style.display = 'none';
+                    document.getElementById('testEmail').required = true;
+                } else {
+                    testEmailGroup.style.display = 'none';
+                    sendTestBtn.style.display = 'none';
+                    sendLiveBtn.style.display = 'inline-flex';
+                    document.getElementById('testEmail').required = false;
+                }
+            });
+
+            // Form submission
+            document.getElementById('announcementForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                sendAnnouncement();
+            });
+
+            // Real-time preview updates
+            document.getElementById('title').addEventListener('input', updatePreview);
+            document.getElementById('body').addEventListener('input', updatePreview);
+            document.getElementById('ctaText').addEventListener('input', updatePreview);
+            document.getElementById('ctaLink').addEventListener('input', updatePreview);
+        }
+
+        function updatePreview() {
+            const title = document.getElementById('title').value || 'Your Announcement Title';
+            const bodyRaw = document.getElementById('body').value || 'Your announcement message will appear here...';
+            const ctaText = document.getElementById('ctaText').value;
+            const ctaLink = document.getElementById('ctaLink').value;
+
+            // Format body text with proper paragraph breaks
+            // Split by double line breaks (paragraphs) and single line breaks
+            let bodyFormatted = bodyRaw.replace(/\r\n/g, '\n');  // Normalize line endings
+            
+            // Split into paragraphs (double line breaks)
+            const paragraphs = bodyFormatted.split('\n\n');
+            
+            // Process each paragraph
+            const formattedParagraphs = paragraphs.map(para => {
+                if (para.trim()) {
+                    // Replace single line breaks with <br> tags
+                    const paraWithBreaks = para.replace(/\n/g, '<br>');
+                    // Wrap in paragraph tag
+                    return `<p style="margin: 0 0 15px 0;">${paraWithBreaks}</p>`;
+                }
+                return '';
+            }).filter(p => p);  // Remove empty paragraphs
+            
+            // Join all paragraphs
+            const bodyHtml = formattedParagraphs.join('\n');
+
+            document.getElementById('previewTitle').textContent = title;
+            document.getElementById('previewBody').innerHTML = bodyHtml;
+
+            const previewCta = document.getElementById('previewCta');
+            const previewCtaBtn = document.getElementById('previewCtaBtn');
+            
+            if (ctaText && ctaLink) {
+                previewCta.style.display = 'block';
+                previewCtaBtn.textContent = ctaText;
+                previewCtaBtn.href = ctaLink;
+            } else {
+                previewCta.style.display = 'none';
+            }
+        }
+
+        function previewAnnouncement() {
+            updatePreview();
+            showAlert('Preview updated! Check the mobile preview on the right.', 'info');
+        }
+
+        async function sendAnnouncement() {
+            const token = getAdminToken();
+            if (!token) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+
+            const subject = document.getElementById('subject').value;
+            const title = document.getElementById('title').value;
+            const body = document.getElementById('body').value;
+            const announcementType = document.getElementById('announcementType').value;
+            const ctaText = document.getElementById('ctaText').value;
+            const ctaLink = document.getElementById('ctaLink').value;
+            const testMode = document.getElementById('testMode').checked;
+            const testEmail = document.getElementById('testEmail').value;
+
+            // Validation
+            if (!subject || !title || !body) {
+                showAlert('Please fill in all required fields', 'error');
+                return;
+            }
+
+            if (testMode && !testEmail) {
+                showAlert('Please enter a test email address', 'error');
+                return;
+            }
+
+            if (!testMode) {
+                const confirmed = confirm('⚠️ WARNING: This will send an announcement to ALL FiCore users. Are you sure?');
+                if (!confirmed) return;
+            }
+
+            // Show loading
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('announcementForm').style.display = 'none';
+
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        subject,
+                        title,
+                        body,
+                        announcementType,
+                        ctaText: ctaText || null,
+                        ctaLink: ctaLink || null,
+                        imageUrl: null,  // Removed to avoid broken images
+                        testMode,
+                        testEmail: testMode ? testEmail : null,
+                        excludedUserIds: Array.from(excludedUserIds)  // Send excluded user IDs
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert(data.message, 'success');
+                    document.getElementById('announcementForm').reset();
+                    updatePreview();
+                    loadStats();
+                    loadHistory();
+                } else {
+                    showAlert(data.message || 'Failed to send announcement', 'error');
+                }
+            } catch (error) {
+                console.error('Error sending announcement:', error);
+                showAlert('Network error. Please try again.', 'error');
+            } finally {
+                document.getElementById('loadingIndicator').style.display = 'none';
+                document.getElementById('announcementForm').style.display = 'block';
+            }
+        }
+
+        async function loadStats() {
+            const token = getAdminToken();
+            if (!token) return;
+
+            try {
+                // Load announcement stats
+                const statsResponse = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/stats?days=30', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const statsData = await statsResponse.json();
+
+                if (statsData.success) {
+                    const stats = statsData.data;
+                    document.getElementById('totalAnnouncements').textContent = stats.total_announcements || 0;
+                    document.getElementById('totalRecipients').textContent = (stats.total_recipients || 0).toLocaleString();
+                }
+
+                // Load audience count
+                const audienceResponse = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/audience-count', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const audienceData = await audienceResponse.json();
+
+                if (audienceData.success) {
+                    const data = audienceData.data;
+                    document.getElementById('syncedUsers').textContent = data.syncedUsers.toLocaleString();
+                    document.getElementById('unsyncedUsers').textContent = data.unsyncedUsers.toLocaleString();
+                    document.getElementById('syncedUsersCount').textContent = data.syncedUsers.toLocaleString();
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function syncAllUsers() {
+            const token = getAdminToken();
+            if (!token) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+
+            const confirmed = confirm('⚠️ This will sync all existing users to Resend Audience. This may take a few minutes. Continue?');
+            if (!confirmed) return;
+
+            // Show progress
+            document.getElementById('syncBtn').style.display = 'none';
+            document.getElementById('syncProgress').style.display = 'block';
+
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/sync-all-users', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert(`✅ Successfully synced ${data.data.successCount} users! ${data.data.errorCount > 0 ? `(${data.data.errorCount} failed)` : ''}`, 'success');
+                    loadStats();  // Refresh stats
+                } else {
+                    showAlert(data.message || 'Failed to sync users', 'error');
+                }
+            } catch (error) {
+                console.error('Error syncing users:', error);
+                showAlert('Network error. Please try again.', 'error');
+            } finally {
+                document.getElementById('syncBtn').style.display = 'inline-flex';
+                document.getElementById('syncProgress').style.display = 'none';
+            }
+        }
+
+        async function loadHistory() {
+            const token = getAdminToken();
+            if (!token) return;
+
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/stats?days=30', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.data.recent_announcements && data.data.recent_announcements.length > 0) {
+                    const historyHtml = data.data.recent_announcements.map(item => `
+                        <div class="history-item">
+                            <div class="history-header">
+                                <div class="history-subject">${item.subject}</div>
+                                <span class="history-badge ${item.status}">${item.status}</span>
+                            </div>
+                            <div class="history-meta">
+                                <i class="fas fa-calendar"></i> ${new Date(item.sentAt).toLocaleString()}
+                                ${item.recipientCount ? `<span style="margin-left: 15px;"><i class="fas fa-users"></i> ${item.recipientCount.toLocaleString()} recipients</span>` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    document.getElementById('historyList').innerHTML = historyHtml;
+                } else {
+                    document.getElementById('historyList').innerHTML = '<p style="text-align: center; color: #666;">No announcements sent yet</p>';
+                }
+            } catch (error) {
+                console.error('Error loading history:', error);
+                document.getElementById('historyList').innerHTML = '<p style="text-align: center; color: #e74c3c;">Failed to load history</p>';
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert ${type}`;
+            alert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${message}`;
+            alert.style.display = 'block';
+            
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alert);
+
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        // ===== RECIPIENT MANAGEMENT FUNCTIONS =====
+
+        async function loadRecipientCount() {
+            const token = getAdminToken();
+            if (!token) return;
+
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/recipient-list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('recipientCount').textContent = data.data.totalCount;
+                }
+            } catch (error) {
+                console.error('Error loading recipient count:', error);
+            }
+        }
+
+        async function showRecipientManager() {
+            const token = getAdminToken();
+            if (!token) {
+                window.location.href = 'admin_login.html';
+                return;
+            }
+
+            // Show modal
+            document.getElementById('recipientModal').style.display = 'block';
+
+            // Load recipients
+            try {
+                const response = await fetch('https://mobilebackend.ficoreafrica.com/admin/announcements/recipient-list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    allRecipients = data.data.recipients;
+                    renderRecipientList();
+                    updateRecipientCounts();
+                } else {
+                    document.getElementById('recipientListContainer').innerHTML = 
+                        '<p style="text-align: center; color: #e74c3c;">Failed to load recipients</p>';
+                }
+            } catch (error) {
+                console.error('Error loading recipients:', error);
+                document.getElementById('recipientListContainer').innerHTML = 
+                    '<p style="text-align: center; color: #e74c3c;">Network error. Please try again.</p>';
+            }
+        }
+
+        function closeRecipientManager() {
+            document.getElementById('recipientModal').style.display = 'none';
+        }
+
+        function renderRecipientList(searchTerm = '') {
+            const container = document.getElementById('recipientListContainer');
+            
+            // Filter recipients by search term
+            let filteredRecipients = allRecipients;
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase();
+                filteredRecipients = allRecipients.filter(r => 
+                    r.email.toLowerCase().includes(term) ||
+                    r.displayName.toLowerCase().includes(term) ||
+                    r.firstName.toLowerCase().includes(term) ||
+                    r.lastName.toLowerCase().includes(term)
+                );
+            }
+
+            if (filteredRecipients.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666;">No recipients found</p>';
+                return;
+            }
+
+            // Render recipient items
+            container.innerHTML = filteredRecipients.map(recipient => {
+                const isExcluded = excludedUserIds.has(recipient.id);
+                const displayName = recipient.displayName || `${recipient.firstName} ${recipient.lastName}`.trim() || 'Unknown User';
+                
+                return `
+                    <div class="recipient-item ${isExcluded ? 'excluded' : ''}" data-id="${recipient.id}">
+                        <div class="recipient-info">
+                            <div class="recipient-name">${displayName}</div>
+                            <div class="recipient-email">${recipient.email}</div>
+                        </div>
+                        <div class="recipient-actions">
+                            ${isExcluded ? 
+                                `<button class="btn-include" onclick="includeRecipient('${recipient.id}')">
+                                    <i class="fas fa-check"></i> Include
+                                </button>` :
+                                `<button class="btn-exclude" onclick="excludeRecipient('${recipient.id}')">
+                                    <i class="fas fa-times"></i> Exclude
+                                </button>`
+                            }
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function excludeRecipient(userId) {
+            excludedUserIds.add(userId);
+            renderRecipientList(document.getElementById('recipientSearch').value);
+            updateRecipientCounts();
+        }
+
+        function includeRecipient(userId) {
+            excludedUserIds.delete(userId);
+            renderRecipientList(document.getElementById('recipientSearch').value);
+            updateRecipientCounts();
+        }
+
+        function filterRecipients() {
+            const searchTerm = document.getElementById('recipientSearch').value;
+            renderRecipientList(searchTerm);
+        }
+
+        function updateRecipientCounts() {
+            const totalCount = allRecipients.length;
+            const excludedCount = excludedUserIds.size;
+            const finalCount = totalCount - excludedCount;
+            
+            document.getElementById('totalRecipients').textContent = finalCount;
+            document.getElementById('excludedCount').textContent = excludedCount;
+            document.getElementById('recipientCount').textContent = finalCount;
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('recipientModal');
+            if (event.target == modal) {
+                closeRecipientManager();
+            }
+        }
+    </script>
+</body>
+</html>
