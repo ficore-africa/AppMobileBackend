@@ -1921,7 +1921,11 @@ def init_reports_blueprint(mongo, token_required):
                 
                 # If PDF is corrupted, mark job as failed
                 if not is_valid:
-                    bg_generator.update_job(job_id, 'failed', error='PDF generation failed - corrupted output')
+                    bg_generator._update_job(job_id, {
+                        'status': ReportJobStatus.FAILED,
+                        'error': 'PDF generation failed - corrupted output',
+                        'progress': 0
+                    })
                     return
                 
                 # Track export
