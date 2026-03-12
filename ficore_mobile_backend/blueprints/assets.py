@@ -293,7 +293,6 @@ def init_assets_blueprint(mongo, token_required, serialize_doc):
                 'description': data.get('description').strip() if data.get('description') else None,
                 'category': data['category'],
                 'purchasePrice': purchase_price,
-                'originalCost': purchase_price,  # CRITICAL FIX (Feb 28, 2026): Always set originalCost = purchasePrice
                 'currentValue': float(data['currentValue']),
                 'purchaseDate': purchase_date,
                 'supplier': data.get('supplier').strip() if data.get('supplier') else None,
