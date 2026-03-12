@@ -8269,10 +8269,11 @@ def init_reports_blueprint(mongo, token_required):
                     
                     print(f"[OK] SOA GENERATION: Metrics - Income: N{total_income:,.2f}, Expenses: N{total_expenses:,.2f}, Debtors: N{debtors_value:,.2f}, Creditors: N{creditors_value:,.2f}, Inventory: N{inventory_value:,.2f}")
                     
-                    # Calculate cash balance
-                    print(f"[SUCCESS] SOA GENERATION: Calculating cash balance...")
-                    cash_balance = calculate_cash_bank_balance(current_user['_id'], end_date=end_date)
-                    print(f"[OK] SOA GENERATION: Cash balance = N{cash_balance:,.2f}")
+                    # Get opening cash balance (not current calculated balance)
+                    print(f"[SUCCESS] SOA GENERATION: Getting opening cash balance...")
+                    user = mongo.db.users.find_one({'_id': current_user['_id']})
+                    cash_balance = user.get('openingCashBalance', 0.0) if user else 0.0
+                    print(f"[OK] SOA GENERATION: Opening cash balance = N{cash_balance:,.2f}")
                     
                     # Calculate 3-Step P&L (align with SOA sync endpoint)
                     print(f"[SUCCESS] SOA GENERATION: Calculating 3-Step P&L...")
