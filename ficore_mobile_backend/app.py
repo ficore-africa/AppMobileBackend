@@ -410,7 +410,21 @@ admin_subscription_management_blueprint = init_admin_subscription_management_blu
 atomic_entries_blueprint = init_atomic_entries_blueprint(mongo, token_required, serialize_doc)
 
 # Initialize reports blueprint for centralized export functionality
-reports_blueprint = init_reports_blueprint(mongo, token_required)
+print("DEBUG: About to initialize reports_blueprint...")
+try:
+    reports_blueprint = init_reports_blueprint(mongo, token_required)
+    print(f"DEBUG: reports_blueprint initialized: {reports_blueprint}")
+    print(f"DEBUG: reports_blueprint type: {type(reports_blueprint)}")
+    if reports_blueprint:
+        print(f"DEBUG: Blueprint name: {reports_blueprint.name}")
+        print(f"DEBUG: Blueprint url_prefix: {reports_blueprint.url_prefix}")
+    else:
+        print("DEBUG: reports_blueprint is None!")
+except Exception as e:
+    print(f"DEBUG: Exception during reports_blueprint initialization: {e}")
+    import traceback
+    traceback.print_exc()
+    reports_blueprint = None
 voice_reporting_blueprint = init_voice_reporting_blueprint(mongo, token_required, serialize_doc)
 
 # Initialize VAS modules - broken down from monolithic blueprint
@@ -481,8 +495,13 @@ app.register_blueprint(atomic_entries_blueprint)
 print("✓ Atomic entries blueprint registered at /atomic")
 
 # Register reports blueprint for centralized export functionality
-app.register_blueprint(reports_blueprint)
-print("✓ Reports blueprint registered at /api/reports")
+print(f"DEBUG: About to register reports_blueprint: {reports_blueprint}")
+if reports_blueprint is not None:
+    app.register_blueprint(reports_blueprint)
+    print("✓ Reports blueprint registered at /api/reports")
+else:
+    print("❌ CRITICAL: reports_blueprint is None, skipping registration")
+    print("   This will cause the application to fail!")
 app.register_blueprint(voice_reporting_blueprint)
 print("✓ Voice reporting blueprint registered at /api/voice")
 

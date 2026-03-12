@@ -3475,3 +3475,25 @@ def generate_balance_breakdown_pdf(user_data, balance_data):
     buffer.close()
     
     return pdf_bytes
+
+
+class PDFGenerator:
+    """PDF generation utility"""
+    
+    def __init__(self):
+        self.title = ""
+        self.content = []
+    
+    def set_title(self, title):
+        self.title = title
+    
+    def add_content(self, content):
+        self.content.append(content)
+    
+    def generate(self, filename=None):
+        """Generate PDF (placeholder implementation)"""
+        print(f"Generating PDF: {self.title}")
+        for item in self.content:
+            print(f"  - {item}")
+        return f"pdf_output_{self.title.replace(' ', '_')}.pdf"
+

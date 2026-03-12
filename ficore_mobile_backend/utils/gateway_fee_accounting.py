@@ -9,7 +9,7 @@ as business expenses, giving accurate net revenue calculations.
 from datetime import datetime, timedelta
 from bson import ObjectId
 from typing import Dict, Any, Optional
-from .gateway_fee_calculator import GatewayFeeCalculator
+from utils.gateway_fee_calculator import GatewayFeeCalculator
 
 
 # Business User ID (from business_bookkeeping.py)
@@ -592,7 +592,7 @@ def record_vas_transaction_with_fees(
     """
     try:
         # Record VAS commission revenue (existing logic - this is correct)
-        from .business_bookkeeping import record_vas_commission_revenue
+        from utils.business_bookkeeping import record_vas_commission_revenue
         commission_id = record_vas_commission_revenue(
             mongo=mongo,
             transaction_id=transaction_id,

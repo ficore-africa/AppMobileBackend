@@ -25,8 +25,8 @@ class SubscriptionScheduler:
             dict: Summary of tasks performed
         """
         try:
-            from .subscription_expiration_manager import SubscriptionExpirationManager
-            from .subscription_notification_manager import SubscriptionNotificationManager
+            from utils.subscription_expiration_manager import SubscriptionExpirationManager
+            from utils.subscription_notification_manager import SubscriptionNotificationManager
             
             expiration_manager = SubscriptionExpirationManager(self.mongo)
             notification_manager = SubscriptionNotificationManager(self.mongo)

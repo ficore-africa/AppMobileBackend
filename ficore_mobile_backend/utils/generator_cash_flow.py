@@ -6,7 +6,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, TableStyle
 from datetime import datetime
 import io
 
-from .generator_core import (
+from utils.generator_core import (
     BaseReportGenerator, ReportColors, format_currency, get_nigerian_time,
     create_table, parse_date_safe, safe_float, format_tin_display, wrap_text_for_table
 )

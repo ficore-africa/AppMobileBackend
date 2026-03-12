@@ -6,7 +6,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import TableStyle
 
-from .generator_core import (
+from utils.generator_core import (
     BaseReportGenerator, format_currency, get_nigerian_time, format_tin_display,
     create_table, parse_date_safe, ReportColors, safe_float, wrap_text_for_table
 )

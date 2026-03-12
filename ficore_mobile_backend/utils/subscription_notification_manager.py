@@ -30,7 +30,7 @@ class SubscriptionNotificationManager:
             bool: True if notification sent successfully
         """
         try:
-            from .messaging_service import create_user_notification
+            from utils.messaging_service import create_user_notification
             
             message = f"Your subscription expires in {days_remaining} days. Renew now to continue enjoying premium features."
             
@@ -58,7 +58,7 @@ class SubscriptionNotificationManager:
             bool: True if notification sent successfully
         """
         try:
-            from .messaging_service import create_user_notification
+            from utils.messaging_service import create_user_notification
             
             message = "Your subscription has expired. Renew now to restore premium features."
             
@@ -87,7 +87,7 @@ class SubscriptionNotificationManager:
             bool: True if notification sent successfully
         """
         try:
-            from .messaging_service import create_user_notification
+            from utils.messaging_service import create_user_notification
             
             message = f"Your subscription has been renewed until {new_expiry_date.strftime('%B %d, %Y')}. Thank you!"
             

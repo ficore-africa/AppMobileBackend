@@ -5,7 +5,7 @@ Critical wallet balance functions.
 """
 
 from bson import ObjectId
-from .decimal_helpers import *
+from utils.decimal_helpers import *
 from datetime import datetime
 import logging
 
