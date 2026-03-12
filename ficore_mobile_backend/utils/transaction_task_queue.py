@@ -388,9 +388,35 @@ class TransactionTaskQueue:
                 logger.error(f"   Transaction {transaction_id} succeeded but commission not recorded")
             # ==================== END BUSINESS BOOKKEEPING ====================
 
-            
-            
-
+            # ==================== PROVIDER BALANCE UPDATE ====================
+            # Update provider balance to reflect the transaction
+            try:
+                provider_name = task_data['provider'].lower()
+                
+                # Update provider balance (reduce by transaction amount)
+                balance_result = self.mongo.provider_balances.update_one(
+                    {'provider': provider_name},
+                    {
+                        '$inc': {'balance': -amount},  # Reduce balance by transaction amount
+                        '$set': {
+                            'lastUpdated': datetime.utcnow(),
+                            'updatedBy': 'transaction_task_queue (automated)',
+                            'lastTransactionId': str(transaction_id),
+                            'lastTransactionAmount': amount
+                        }
+                    }
+                )
+                
+                if balance_result.modified_count > 0:
+                    logger.info(f"✅ Updated {provider_name} balance: reduced by ₦{amount:,.2f} for transaction {transaction_id}")
+                else:
+                    logger.warning(f"⚠️ Could not update {provider_name} balance - provider not found in provider_balances collection")
+                    
+            except Exception as balance_error:
+                # Don't fail the transaction if balance update fails
+                logger.error(f"⚠️ Failed to update provider balance: {str(balance_error)}")
+                logger.error(f"   Transaction {transaction_id} succeeded but provider balance not updated")
+            # ==================== END PROVIDER BALANCE UPDATE ====================
 
             logger.info(f"✅ Successfully processed transaction update: {transaction_id}")
             return True

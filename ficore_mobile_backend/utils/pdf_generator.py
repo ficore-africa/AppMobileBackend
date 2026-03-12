@@ -98,6 +98,55 @@ def create_table(data, col_widths, use_long_table_threshold=50):
         Table or LongTable instance with timeout protection
     """
     row_count = len(data)
+
+
+def truncate_text_for_pdf(text, max_length=45):
+    """
+    Truncate text for PDF table cells to prevent overflow
+    
+    CRITICAL FIX (Mar 12, 2026): Prevent text overflow in PDF tables
+    by properly truncating long descriptions with ellipsis.
+    
+    Args:
+        text: Text to truncate (may be None)
+        max_length: Maximum length before truncation (default: 45)
+    
+    Returns:
+        Truncated text with ellipsis if needed
+    """
+    if not text:
+        return 'No description'
+    
+    text = str(text).strip()
+    if len(text) <= max_length:
+        return text
+    
+    return text[:max_length-3] + '...'
+
+
+def apply_text_wrapping_style(table_style):
+    """
+    Apply standard text wrapping styles to prevent PDF table overflow
+    
+    CRITICAL FIX (Mar 12, 2026): Standard text wrapping configuration
+    to prevent text from overflowing table cell boundaries.
+    
+    Args:
+        table_style: TableStyle object to modify
+    
+    Returns:
+        Modified TableStyle with text wrapping enabled
+    """
+    # Add text wrapping styles
+    table_style.add('VALIGN', (0, 0), (-1, -1), 'TOP')
+    table_style.add('WORDWRAP', (0, 0), (-1, -1), True)
+    # Add padding to prevent text from touching cell borders
+    table_style.add('LEFTPADDING', (0, 0), (-1, -1), 3)
+    table_style.add('RIGHTPADDING', (0, 0), (-1, -1), 3)
+    table_style.add('TOPPADDING', (0, 0), (-1, -1), 2)
+    table_style.add('BOTTOMPADDING', (0, 0), (-1, -1), 2)
+    
+    return table_style
     
     # Use LongTable for large datasets (better memory management and performance)
     if row_count > use_long_table_threshold:
@@ -464,22 +513,30 @@ Your registered tax profile remains <b>{profile_name}</b>.
             if 'incomes' in export_data and export_data['incomes']:
                 total_income = sum(income.get('amount', 0) for income in export_data['incomes'])
             
-            # COGS SEPARATION (Phase 2.1): Separate COGS from Operating Expenses
+            # EXPENSE CATEGORIZATION (Phase 2.1): Separate COGS, Operating Expenses, and Depreciation
             cogs_expenses = []
             operating_expenses = []
+            depreciation_expenses = []
             if 'expenses' in export_data and export_data['expenses']:
                 for expense in export_data['expenses']:
-                    if expense.get('category') == 'Cost of Goods Sold':
+                    category = expense.get('category', '')
+                    # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+                    # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+                    if category in ['Cost of Goods Sold', 'Payment Processing Fees']:
                         cogs_expenses.append(expense)
+                    elif 'Depreciation' in category or category == 'Depreciation Expense':
+                        depreciation_expenses.append(expense)
                     else:
                         operating_expenses.append(expense)
             
             total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
             total_operating_expenses = sum(exp.get('amount', 0) for exp in operating_expenses)
-            total_expenses = total_cogs + total_operating_expenses
+            total_depreciation = sum(exp.get('amount', 0) for exp in depreciation_expenses)
+            total_expenses = total_cogs + total_operating_expenses + total_depreciation
             
             gross_profit = total_income - total_cogs
-            net_profit_loss = gross_profit - total_operating_expenses
+            operating_profit = gross_profit - total_operating_expenses
+            net_profit_loss = operating_profit - total_depreciation
             
             # DEBUG: Log that we're adding the summary
             # DISABLED FOR VAS FOCUS
@@ -495,6 +552,8 @@ Your registered tax profile remains <b>{profile_name}</b>.
                 ['Less: Cost of Goods Sold', format_currency(total_cogs)],
                 ['Gross Profit', format_currency(gross_profit)],
                 ['Less: Operating Expenses', format_currency(total_operating_expenses)],
+                ['Operating Profit', format_currency(operating_profit)],
+                ['Less: Depreciation', format_currency(total_depreciation)],
                 ['Net Profit / (Loss)', format_currency(net_profit_loss)]
             ]
             
@@ -516,12 +575,16 @@ Your registered tax profile remains <b>{profile_name}</b>.
                 ('BACKGROUND', (0, 3), (0, 3), colors.HexColor('#e8f5e9')),  # Gross Profit row
                 ('FONTNAME', (0, 3), (-1, 3), 'Helvetica-Bold'),  # Gross Profit bold
                 ('BACKGROUND', (0, 4), (-1, 4), colors.beige),
+                ('BACKGROUND', (0, 5), (0, 5), colors.HexColor('#e3f2fd')),  # Operating Profit row
+                ('FONTNAME', (0, 5), (-1, 5), 'Helvetica-Bold'),  # Operating Profit bold
+                ('BACKGROUND', (0, 6), (-1, 6), colors.beige),
                 ('BACKGROUND', (0, -1), (-1, -1), result_bg_color),
                 ('TEXTCOLOR', (0, -1), (-1, -1), result_text_color),
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, -1), (-1, -1), 14),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('LINEABOVE', (0, 3), (-1, 3), 1.5, colors.black),  # Line above Gross Profit
+                ('LINEABOVE', (0, 5), (-1, 5), 1.5, colors.black),  # Line above Operating Profit
                 ('LINEABOVE', (0, -1), (-1, -1), 2, colors.black),
             ]))
             
@@ -2833,6 +2896,29 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Business Summary Dashboard
         story.append(Paragraph("Business Summary", self.styles['SectionHeader']))
         
+        # CRITICAL FIX (Mar 12, 2026): Separate depreciation in summary table to match Financial Overview
+        # Get depreciation expenses separately for consistent reporting
+        depreciation_expenses_summary = []
+        non_depreciation_expenses_summary = []
+        
+        # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+        # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+        cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+        
+        for expense in expenses:
+            category = expense.get('category', '')
+            if 'Depreciation' in category or category == 'Depreciation Expense':
+                depreciation_expenses_summary.append(expense)
+            elif category not in cogs_categories:  # Exclude COGS
+                non_depreciation_expenses_summary.append(expense)
+        
+        total_depreciation_summary = sum(safe_float(exp.get('amount', 0)) for exp in depreciation_expenses_summary)
+        total_operating_excl_depreciation = sum(safe_float(exp.get('amount', 0)) for exp in non_depreciation_expenses_summary)
+        
+        # Recalculate for summary consistency
+        operating_profit_summary = gross_profit - total_operating_excl_depreciation
+        net_profit_summary = operating_profit_summary - total_depreciation_summary
+        
         summary_data = [
             ['Metric', 'Value'],
             ['Financial Period', period_text],
@@ -2840,8 +2926,10 @@ Your registered tax profile remains <b>{profile_name}</b>.
             ['Cost of Goods Sold', format_currency(total_cogs)],
             ['Gross Profit', format_currency(gross_profit)],
             ['Gross Margin %', f'{gross_margin:.1f}%'],
-            ['Operating Expenses', format_currency(total_operating_expenses)],
-            ['Net Profit/(Loss)', format_currency(net_profit)],
+            ['Operating Expenses', format_currency(total_operating_excl_depreciation)],
+            ['Operating Profit', format_currency(operating_profit_summary)],
+            ['Depreciation', format_currency(total_depreciation_summary)],
+            ['Net Profit/(Loss)', format_currency(net_profit_summary)],
             ['Total Assets (NBV)', format_currency(total_assets_nbv)],
             ['Current Assets', format_currency(total_current_assets)],
             ['Asset Count', f'{asset_count} assets'],
@@ -2849,15 +2937,26 @@ Your registered tax profile remains <b>{profile_name}</b>.
         ]
         
         summary_table = create_table(summary_data, col_widths=[3*inch, 3*inch])
-        summary_table.setStyle(TableStyle([
+        summary_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            # Highlight key financial metrics
+            ('FONTNAME', (0, 5), (-1, 5), 'Helvetica-Bold'),  # Gross Profit
+            ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#FFF9C4')),  # Light yellow
+            ('FONTNAME', (0, 8), (-1, 8), 'Helvetica-Bold'),  # Operating Profit
+            ('BACKGROUND', (0, 8), (-1, 8), colors.HexColor('#FFE082')),  # Medium yellow
+            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # Net Profit/(Loss)
+            ('BACKGROUND', (0, 10), (-1, 10), ReportColors.FINANCIAL_GOLDEN),  # Golden
+            ('TEXTCOLOR', (0, 10), (-1, 10), colors.whitesmoke),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('BACKGROUND', (0, 1), (-1, -1), colors.beige)
-        ]))
+        ])
+        # Apply text wrapping to prevent overflow
+        apply_text_wrapping_style(summary_table_style)
+        summary_table.setStyle(summary_table_style)
         
         story.append(summary_table)
         story.append(PageBreak())
@@ -2869,6 +2968,31 @@ Your registered tax profile remains <b>{profile_name}</b>.
         # Financial Overview
         story.append(Paragraph("Financial Overview", self.styles['SectionHeader']))
         
+        # CRITICAL FIX (Mar 12, 2026): Separate depreciation from operating expenses
+        # Get depreciation expenses separately
+        depreciation_expenses = []
+        non_depreciation_expenses = []
+        
+        # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+        # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+        cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+        
+        for expense in expenses:
+            category = expense.get('category', '')
+            if 'Depreciation' in category or category == 'Depreciation Expense':
+                depreciation_expenses.append(expense)
+            elif category not in cogs_categories:  # Exclude COGS
+                non_depreciation_expenses.append(expense)
+        
+        total_depreciation_expenses = sum(safe_float(exp.get('amount', 0)) for exp in depreciation_expenses)
+        total_non_depreciation_operating = sum(safe_float(exp.get('amount', 0)) for exp in non_depreciation_expenses)
+        
+        # Recalculate operating profit (before depreciation)
+        operating_profit_before_depreciation = gross_profit - total_non_depreciation_operating
+        
+        # Net profit after depreciation
+        net_profit_after_depreciation = operating_profit_before_depreciation - total_depreciation_expenses
+        
         financial_overview = [
             ['Metric', 'Amount (N)', 'Notes'],
             ['REVENUE', '', ''],
@@ -2879,14 +3003,17 @@ Your registered tax profile remains <b>{profile_name}</b>.
             ['Less: Cost of Goods Sold (COGS)', format_currency(total_cogs), 'Direct product costs'],
             ['GROSS PROFIT', format_currency(gross_profit), f'{gross_margin:.1f}% margin'],
             ['', '', ''],
-            ['Less: Operating Expenses', format_currency(total_operating_expenses), 'Rent, salaries, utilities'],
-            ['OPERATING PROFIT', format_currency(operating_profit), 'Before tax'],
+            ['Less: Operating Expenses', format_currency(total_non_depreciation_operating), 'Rent, salaries, utilities (excl. depreciation)'],
+            ['OPERATING PROFIT', format_currency(operating_profit_before_depreciation), 'Before depreciation'],
             ['', '', ''],
-            ['NET PROFIT/(LOSS)', format_currency(net_profit), f'{profit_margin:.1f}% margin'],
+            ['Less: Depreciation', format_currency(total_depreciation_expenses), 'Asset depreciation expense'],
+            ['NET PROFIT/(LOSS)', format_currency(net_profit_after_depreciation), f'{profit_margin:.1f}% margin'],
         ]
         
         financial_table = create_table(financial_overview, col_widths=[2*inch, 2*inch, 2*inch])
-        financial_table.setStyle(TableStyle([
+        
+        # Apply text wrapping to prevent overflow in Notes column
+        financial_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -2897,11 +3024,13 @@ Your registered tax profile remains <b>{profile_name}</b>.
             ('BACKGROUND', (0, 7), (-1, 7), colors.HexColor('#FFF9C4')),  # Light yellow
             ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),  # OPERATING PROFIT
             ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#FFE082')),  # Medium yellow
-            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),  # NET PROFIT
-            ('BACKGROUND', (0, 12), (-1, 12), ReportColors.FINANCIAL_GOLDEN),  # Golden
-            ('TEXTCOLOR', (0, 12), (-1, 12), colors.whitesmoke),
+            ('FONTNAME', (0, 13), (-1, 13), 'Helvetica-Bold'),  # NET PROFIT (moved from row 12 to 13)
+            ('BACKGROUND', (0, 13), (-1, 13), ReportColors.FINANCIAL_GOLDEN),  # Golden
+            ('TEXTCOLOR', (0, 13), (-1, 13), colors.whitesmoke),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
+        ])
+        apply_text_wrapping_style(financial_table_style)
+        financial_table.setStyle(financial_table_style)
         
         story.append(financial_table)
         story.append(Spacer(1, 12))
@@ -2933,14 +3062,18 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         ]
         
         asset_table = create_table(asset_overview, col_widths=[2*inch, 2*inch, 2*inch])
-        asset_table.setStyle(TableStyle([
+        
+        # Apply text wrapping to prevent overflow in Notes column
+        asset_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
+        ])
+        apply_text_wrapping_style(asset_table_style)
+        asset_table.setStyle(asset_table_style)
         
         story.append(asset_table)
         story.append(Spacer(1, 20))
@@ -2986,7 +3119,9 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         ]
         
         current_table = create_table(current_assets_liabilities, col_widths=[2.5*inch, 2*inch, 1.5*inch])
-        current_table.setStyle(TableStyle([
+        
+        # Apply text wrapping to prevent overflow in Notes column
+        current_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INVENTORY_GREEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -2997,7 +3132,9 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ('FONTNAME', (0, 13), (-1, 13), 'Helvetica-Bold'),  # NET CURRENT ASSETS (was 12, now 13 due to fee waiver row)
             ('BACKGROUND', (0, 13), (-1, 13), colors.HexColor('#E8F5E9')),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
+        ])
+        apply_text_wrapping_style(current_table_style)
+        current_table.setStyle(current_table_style)
         
         story.append(current_table)
         story.append(Spacer(1, 20))
@@ -3031,7 +3168,9 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             vas_data.append(['Total VAS Expenses', format_currency(vas_breakdown['total']), 'All digital services'])
             
             vas_table = create_table(vas_data, col_widths=[2*inch, 2*inch, 2*inch])
-            vas_table.setStyle(TableStyle([
+            
+            # Apply text wrapping to prevent overflow in Notes column
+            vas_table_style = TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9C27B0')),  # Purple for VAS
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -3040,7 +3179,9 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
                 ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Total row
                 ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E1BEE7')),  # Light purple
                 ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
+            ])
+            apply_text_wrapping_style(vas_table_style)
+            vas_table.setStyle(vas_table_style)
             
             story.append(vas_table)
             story.append(Spacer(1, 20))
@@ -3075,14 +3216,17 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             tax_overview.append(['Assets NBV Status', format_currency(total_assets_nbv), '≤N250M for exemption'])
         
         tax_table = create_table(tax_overview, col_widths=[2*inch, 2*inch, 2*inch])
-        tax_table.setStyle(TableStyle([
+        tax_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.TAX_BROWN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
+        ])
+        # Apply text wrapping to prevent overflow in Notes column
+        tax_table_style = apply_text_wrapping_style(tax_table_style)
+        tax_table.setStyle(tax_table_style)
         
         story.append(tax_table)
         story.append(PageBreak())
@@ -3205,7 +3349,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
             category = income.get('category', 'Uncategorized')
             source_type = income.get('sourceType', 'manual')
             amount = safe_float(income.get('amount', 0))
-            description = income.get('description', 'No description')[:50]
+            description = truncate_text_for_pdf(income.get('description', 'No description'))
             date = income.get('date', 'No date')
             
             if category not in income_breakdown:
@@ -3274,7 +3418,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
             category = expense.get('category', 'Uncategorized')
             source_type = expense.get('sourceType', 'manual')
             amount = safe_float(expense.get('amount', 0))
-            description = expense.get('description', 'No description')[:50]
+            description = truncate_text_for_pdf(expense.get('description', 'No description'))
             date = expense.get('date', 'No date')
             
             if category not in expense_breakdown:
@@ -3346,9 +3490,9 @@ Asset depreciation and all values reflect the position at that specific date.</i
             ''
         ])
         
-        # Create the detailed P&L table
+        # Create the detailed P&L table with proper text wrapping
         pnl_detail_table = create_table(income_detail_data, col_widths=[1.5*inch, 1.2*inch, 1*inch, 1.8*inch, 0.8*inch])
-        pnl_detail_table.setStyle(TableStyle([
+        pnl_detail_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.FINANCIAL_GOLDEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -3361,7 +3505,10 @@ Asset depreciation and all values reflect the position at that specific date.</i
             # Highlight totals
             ('BACKGROUND', (0, -3), (-1, -1), colors.HexColor('#FFF9C4')),
             ('FONTNAME', (0, -3), (-1, -1), 'Helvetica-Bold'),
-        ]))
+        ])
+        # Apply text wrapping to prevent overflow
+        pnl_detail_style = apply_text_wrapping_style(pnl_detail_style)
+        pnl_detail_table.setStyle(pnl_detail_style)
         
         story.append(pnl_detail_table)
         story.append(Spacer(1, 20))
@@ -3448,7 +3595,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
         ])
         
         cash_detail_table = create_table(cash_detail_data, col_widths=[2*inch, 1.2*inch, 1.5*inch, 1.8*inch])
-        cash_detail_table.setStyle(TableStyle([
+        cash_detail_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a73e8')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -3459,7 +3606,10 @@ Asset depreciation and all values reflect the position at that specific date.</i
             # Highlight calculated balance
             ('BACKGROUND', (0, -3), (-1, -1), colors.HexColor('#E3F2FD')),
             ('FONTNAME', (0, -3), (-1, -1), 'Helvetica-Bold'),
-        ]))
+        ])
+        # Apply text wrapping to prevent overflow in Notes column
+        cash_detail_style = apply_text_wrapping_style(cash_detail_style)
+        cash_detail_table.setStyle(cash_detail_style)
         
         story.append(cash_detail_table)
         story.append(Spacer(1, 20))
@@ -3529,7 +3679,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
         ])
         
         equity_detail_table = create_table(equity_detail_data, col_widths=[2*inch, 1.2*inch, 1.5*inch, 1.8*inch])
-        equity_detail_table.setStyle(TableStyle([
+        equity_detail_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INVENTORY_GREEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -3540,7 +3690,10 @@ Asset depreciation and all values reflect the position at that specific date.</i
             # Highlight calculated equity
             ('BACKGROUND', (0, -3), (-1, -1), colors.HexColor('#E8F5E9')),
             ('FONTNAME', (0, -3), (-1, -1), 'Helvetica-Bold'),
-        ]))
+        ])
+        # Apply text wrapping to prevent overflow in Notes column
+        equity_detail_style = apply_text_wrapping_style(equity_detail_style)
+        equity_detail_table.setStyle(equity_detail_style)
         
         story.append(equity_detail_table)
         story.append(Spacer(1, 20))
@@ -3617,7 +3770,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
         ])
         
         liability_detail_table = create_table(liability_detail_data, col_widths=[2*inch, 1*inch, 1*inch, 1*inch, 1.5*inch])
-        liability_detail_table.setStyle(TableStyle([
+        liability_detail_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.EXPENSE_RED),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -3628,7 +3781,10 @@ Asset depreciation and all values reflect the position at that specific date.</i
             # Highlight total
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FFEBEE')),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ]))
+        ])
+        # Apply text wrapping to prevent overflow in Notes column
+        liability_detail_style = apply_text_wrapping_style(liability_detail_style)
+        liability_detail_table.setStyle(liability_detail_style)
         
         story.append(liability_detail_table)
         story.append(Spacer(1, 20))
@@ -3692,7 +3848,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
         ])
         
         verification_table = create_table(verification_data, col_widths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch, 0.8*inch])
-        verification_table.setStyle(TableStyle([
+        verification_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9C27B0')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -3703,7 +3859,10 @@ Asset depreciation and all values reflect the position at that specific date.</i
             # Highlight equation balance
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E1BEE7')),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ]))
+        ])
+        # CRITICAL FIX (Mar 12, 2026): Apply text wrapping to prevent overflow
+        verification_table_style = apply_text_wrapping_style(verification_table_style)
+        verification_table.setStyle(verification_table_style)
         
         story.append(verification_table)
         story.append(Spacer(1, 20))

@@ -2017,45 +2017,170 @@ def record_paid_fc_purchase_revenue(
         }
 
 
-def record_paid_subscription_revenue(
+def record_capital_contribution_atomic(
     mongo,
     user_id: ObjectId,
-    subscription_amount: float,
-    plan_type: str,
-    plan_name: str,
-    duration_days: int,
-    payment_reference: str,
-    paystack_transaction_id: str = None,
-    payment_method: str = 'paystack'
+    amount: float,
+    description: str,
+    notes: str = '',
+    reference: str = ''
 ) -> Dict[str, Any]:
     """
-    Record revenue for PAID subscription purchase through Paystack
+    ATOMIC CAPITAL CONTRIBUTION: Record capital injection with proper double-entry bookkeeping
     
-    This is NOT a promotional expense - this is actual revenue from customer payment.
-    Uses 3-transaction pattern:
-    1. Cash/Bank Increase (Asset increase from payment received)
-    2. Subscription Liability Creation (Obligation to provide subscription service)
-    3. Revenue Recognition (Service revenue earned - for subscriptions, recognized over time)
+    This function ensures capital contributions are recorded with complete double-entry:
+    1. Cash/Bank Increase (Asset increase - Debit)
+    2. Owner's Equity Increase (Equity increase - Credit)
+    
+    Unlike promotional expenses, this is actual cash injection by the owner.
     
     Args:
         mongo: MongoDB connection
-        user_id: Customer user ID
-        subscription_amount: Amount paid in Naira
-        plan_type: Plan type (monthly, annual)
-        plan_name: Plan name (e.g., "Premium Monthly")
-        duration_days: Subscription duration in days
-        payment_reference: Paystack payment reference
-        paystack_transaction_id: Paystack transaction ID
-        payment_method: Payment method (default: paystack)
+        user_id: Owner user ID
+        amount: Capital amount injected
+        description: Description of capital injection
+        notes: Additional notes
+        reference: Reference number/code
     
     Returns:
         Dict with transaction IDs and success status
     """
     try:
-        print(f"💰 PAID SUBSCRIPTION: Recording revenue for {plan_name} (₦{subscription_amount}) from user {user_id}")
+        print(f"💰 ATOMIC CAPITAL CONTRIBUTION: Recording ₦{amount:,.2f} capital injection for user {user_id}")
         
         # Get user email for description
         user = mongo.users.find_one({'_id': user_id})
+        user_email = user.get('email', 'Unknown') if user else 'Unknown'
+        
+        # Transaction 1: Cash/Bank Increase (Asset increase - Debit)
+        cash_increase_entry = {
+            '_id': ObjectId(),
+            'userId': user_id,  # Owner's account (not business account)
+            'amount': amount,
+            'category': 'Cash and Bank',
+            'description': f'Capital Contribution - {description}',
+            'date': datetime.utcnow(),
+            'sourceType': 'capital_contribution_cash_increase',
+            'status': 'active',
+            'isDeleted': False,
+            'metadata': {
+                'contributorUserId': str(user_id),
+                'contributorEmail': user_email,
+                'contributionAmount': amount,
+                'notes': notes,
+                'reference': reference,
+                'automated': True,
+                'doubleEntry': True,
+                'accountingModel': 'capital_contribution',
+                'transactionType': 'cash_increase'
+            },
+            'createdAt': datetime.utcnow(),
+            'updatedAt': datetime.utcnow()
+        }
+        
+        mongo.incomes.insert_one(cash_increase_entry)
+        print(f"✅ Cash increase recorded: ₦{amount:,.2f} (ID: {cash_increase_entry['_id']})")
+        
+        # Transaction 2: Owner's Equity Increase (Equity increase - Credit)
+        equity_increase_entry = {
+            '_id': ObjectId(),
+            'userId': user_id,  # Owner's account (not business account)
+            'amount': amount,
+            'category': "Owner's Equity",
+            'description': f"Owner's Capital Contribution - {description}",
+            'date': datetime.utcnow(),
+            'sourceType': 'capital_contribution_equity_increase',
+            'status': 'active',
+            'isDeleted': False,
+            'metadata': {
+                'contributorUserId': str(user_id),
+                'contributorEmail': user_email,
+                'contributionAmount': amount,
+                'notes': notes,
+                'reference': reference,
+                'automated': True,
+                'doubleEntry': True,
+                'accountingModel': 'capital_contribution',
+                'transactionType': 'equity_increase',
+                'linkedCashIncreaseId': str(cash_increase_entry['_id'])
+            },
+            'createdAt': datetime.utcnow(),
+            'updatedAt': datetime.utcnow()
+        }
+        
+        mongo.incomes.insert_one(equity_increase_entry)
+        print(f"✅ Owner's equity increased: ₦{amount:,.2f} (ID: {equity_increase_entry['_id']})")
+        
+        # Transaction 3: Create cash adjustment record (for compatibility with existing system)
+        adjustment_entry = {
+            '_id': ObjectId(),
+            'userId': user_id,
+            'type': 'capital',
+            'amount': amount,
+            'description': description,
+            'notes': notes,
+            'reference': reference,
+            'date': datetime.utcnow(),
+            'status': 'active',
+            'isDeleted': False,
+            'metadata': {
+                'linkedCashIncreaseId': str(cash_increase_entry['_id']),
+                'linkedEquityIncreaseId': str(equity_increase_entry['_id']),
+                'automated': True,
+                'doubleEntry': True
+            },
+            'createdAt': datetime.utcnow(),
+            'updatedAt': datetime.utcnow()
+        }
+        
+        mongo.db.cash_adjustments.insert_one(adjustment_entry)
+        print(f"✅ Cash adjustment record created: ₦{amount:,.2f} (ID: {adjustment_entry['_id']})")
+        
+        # Also save to capital_contributions collection for compatibility
+        capital_entry = adjustment_entry.copy()
+        mongo.db.capital_contributions.insert_one(capital_entry)
+        
+        # Update user.capital field for compatibility
+        capital_amounts = []
+        all_capital = mongo.db.cash_adjustments.find({
+            'userId': user_id,
+            'type': 'capital',
+            'status': 'active',
+            'isDeleted': False
+        })
+        for capital in all_capital:
+            capital_amounts.append(capital.get('amount', 0.0))
+        total_capital = safe_sum(capital_amounts)
+        
+        mongo.users.update_one(
+            {'_id': user_id},
+            {'$set': {'capital': total_capital}}
+        )
+        
+        print(f"✅ Capital contribution completed: ₦{amount:,.2f} for {user_email}")
+        
+        return {
+            'success': True,
+            'amount': amount,
+            'adjustment_id': adjustment_entry['_id'],
+            'transactions': {
+                'cash_increase_id': cash_increase_entry['_id'],
+                'equity_increase_id': equity_increase_entry['_id'],
+                'adjustment_id': adjustment_entry['_id']
+            },
+            'metadata': {
+                'contributorUserId': str(user_id),
+                'contributorEmail': user_email,
+                'accountingModel': 'capital_contribution'
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error recording atomic capital contribution: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
         user_email = user.get('email', 'unknown@example.com') if user else 'unknown@example.com'
         
         # Calculate gateway fee (1.6% for Paystack)
