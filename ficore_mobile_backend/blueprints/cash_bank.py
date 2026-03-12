@@ -35,8 +35,11 @@ def init_cash_bank_blueprint(mongo, token_required):
         
         MODERNIZATION (Feb 22, 2026): Renamed from "Cash/Bank Management" to "Opening Balances"
         Now handles cash/bank, equity, AND liability (Feb 25, 2026)
+        OPTIMIZATION (Mar 12, 2026): Added current cash balance calculation for capital adjustment context
         """
         try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             user = mongo.db.users.find_one({'_id': current_user['_id']})
             
             if not user:
@@ -53,6 +56,66 @@ def init_cash_bank_blueprint(mongo, token_required):
             is_locked = user.get('openingBalancesLocked', False)  # NEW (Feb 25, 2026)
             set_at = user.get('openingBalancesSetAt')  # NEW (Feb 25, 2026)
             
+            # OPTIMIZATION (Mar 12, 2026): Calculate current cash balance for capital adjustment context
+            # Use same formula as SOA: Opening + Income - Expenses - Drawings + Capital - Asset Purchases
+            
+            # Get total income (active entries only, exclude liability adjustments)
+            income_query = get_active_transactions_query(current_user['_id'])
+            income_query['sourceType'] = {'$not': {'$regex': '^liability_adjustment_'}}  # Exclude liability adjustments
+            income_amounts = []
+            income_cursor = mongo.db.incomes.find(income_query)
+            for income in income_cursor:
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
+            
+            # Get total expenses (active entries only)
+            expense_query = get_active_transactions_query(current_user['_id'])
+            expense_amounts = []
+            expense_cursor = mongo.db.expenses.find(expense_query)
+            for expense in expense_cursor:
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
+            
+            # Get total drawings, capital deposits, and asset purchases (active entries only)
+            adjustment_query = {
+                'userId': current_user['_id'],
+                '$or': [
+                    {'status': 'active'},
+                    {'status': {'$exists': False}},
+                    {'status': None},
+                ],
+                'isDeleted': {'$ne': True}
+            }
+            drawing_amounts = []
+            capital_amounts = []
+            asset_amounts = []
+            adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
+            for adjustment in adjustment_cursor:
+                adj_type = adjustment.get('type')
+                amount = adjustment.get('amount', 0.0)
+                
+                if adj_type == 'drawing':
+                    drawing_amounts.append(amount)
+                elif adj_type == 'capital':
+                    capital_amounts.append(amount)
+                elif adj_type == 'asset_purchase':
+                    asset_amounts.append(amount)
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital = safe_sum(capital_amounts)
+            total_asset_purchases = safe_sum(asset_amounts)
+            
+            # Calculate current cash balance using SOA formula
+            current_cash_balance = round(
+                opening_cash_balance 
+                + total_income 
+                - total_expenses 
+                - total_drawings 
+                + total_capital
+                - total_asset_purchases,
+                2
+            )
+            
             # Calculate accounting equation balance with proper rounding
             assets = round(opening_cash_balance, 2)
             liabilities_plus_equity = round(opening_liability + opening_equity, 2)
@@ -60,6 +123,7 @@ def init_cash_bank_blueprint(mongo, token_required):
             is_balanced = abs(imbalance) < 0.01
             
             print(f'✓ Opening balances fetched for user {current_user["_id"]}: Cash=₦{opening_cash_balance}, Equity=₦{opening_equity}, Liability=₦{opening_liability}')
+            print(f'  Current Cash Balance: ₦{current_cash_balance} (Opening: ₦{opening_cash_balance} + Income: ₦{total_income} - Expenses: ₦{total_expenses} - Drawings: ₦{total_drawings} + Capital: ₦{total_capital} - Assets: ₦{total_asset_purchases})')
             print(f'  Accounting Equation: ₦{assets} = ₦{opening_liability} + ₦{opening_equity} (Imbalance: ₦{imbalance})')
             
             # CRITICAL FIX: Wrap data in 'data' field for DioApiClient compatibility
@@ -71,6 +135,15 @@ def init_cash_bank_blueprint(mongo, token_required):
                     'openingLiability': opening_liability,  # NEW
                     'isLocked': is_locked,  # NEW
                     'setAt': set_at.isoformat() if set_at else None,  # NEW
+                    'currentCashBalance': current_cash_balance,  # OPTIMIZATION (Mar 12, 2026)
+                    'cashBreakdown': {  # OPTIMIZATION (Mar 12, 2026)
+                        'openingBalance': opening_cash_balance,
+                        'totalIncome': total_income,
+                        'totalExpenses': total_expenses,
+                        'totalDrawings': total_drawings,
+                        'totalCapital': total_capital,
+                        'totalAssetPurchases': total_asset_purchases
+                    },
                     'accountingEquation': {  # NEW
                         'assets': assets,
                         'liabilities': opening_liability,
@@ -285,6 +358,181 @@ def init_cash_bank_blueprint(mongo, token_required):
                 'message': 'Failed to unlock opening balances'
             }), 500
     
+    @cash_bank_bp.route('/adjustments/preview', methods=['POST'])
+    @token_required
+    def preview_adjustment_impact(current_user):
+        """
+        Preview the impact of a capital adjustment before creating it
+        Shows current cash balance, proposed adjustment, and resulting balance
+        
+        OPTIMIZATION (Mar 12, 2026): Added to help users understand implications of cash adjustments
+        """
+        try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
+            data = request.get_json()
+            
+            # Validate required fields
+            adjustment_type = data.get('type')  # 'drawing' or 'capital'
+            amount = float(data.get('amount', 0.0))
+            
+            if not adjustment_type or adjustment_type not in ['drawing', 'capital']:
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid adjustment type. Must be "drawing" or "capital"'
+                }), 400
+            
+            if amount <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Amount must be greater than zero'
+                }), 400
+            
+            # Get user's opening balance
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            opening_cash_balance = user.get('openingCashBalance', 0.0) if user else 0.0
+            
+            # Calculate current cash balance using SOA formula
+            # Get total income (active entries only, exclude liability adjustments)
+            income_query = get_active_transactions_query(current_user['_id'])
+            income_query['sourceType'] = {'$not': {'$regex': '^liability_adjustment_'}}  # Exclude liability adjustments
+            income_amounts = []
+            income_cursor = mongo.db.incomes.find(income_query)
+            for income in income_cursor:
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
+            
+            # Get total expenses (active entries only)
+            expense_query = get_active_transactions_query(current_user['_id'])
+            expense_amounts = []
+            expense_cursor = mongo.db.expenses.find(expense_query)
+            for expense in expense_cursor:
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
+            
+            # Get total drawings, capital deposits, and asset purchases (active entries only)
+            adjustment_query = {
+                'userId': current_user['_id'],
+                '$or': [
+                    {'status': 'active'},
+                    {'status': {'$exists': False}},
+                    {'status': None},
+                ],
+                'isDeleted': {'$ne': True}
+            }
+            drawing_amounts = []
+            capital_amounts = []
+            asset_amounts = []
+            adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
+            for adjustment in adjustment_cursor:
+                adj_type = adjustment.get('type')
+                adj_amount = adjustment.get('amount', 0.0)
+                
+                if adj_type == 'drawing':
+                    drawing_amounts.append(adj_amount)
+                elif adj_type == 'capital':
+                    capital_amounts.append(adj_amount)
+                elif adj_type == 'asset_purchase':
+                    asset_amounts.append(adj_amount)
+            
+            total_drawings = safe_sum(drawing_amounts)
+            total_capital = safe_sum(capital_amounts)
+            total_asset_purchases = safe_sum(asset_amounts)
+            
+            # Calculate current cash balance
+            current_cash_balance = round(
+                opening_cash_balance 
+                + total_income 
+                - total_expenses 
+                - total_drawings 
+                + total_capital
+                - total_asset_purchases,
+                2
+            )
+            
+            # Calculate impact of proposed adjustment
+            if adjustment_type == 'drawing':
+                # Drawing reduces cash balance and equity
+                new_cash_balance = round(current_cash_balance - amount, 2)
+                new_total_drawings = round(total_drawings + amount, 2)
+                new_total_capital = total_capital
+                equity_impact = -amount  # Drawings reduce equity
+                cash_impact = -amount   # Drawings reduce cash
+                impact_explanation = f"Drawing ₦{amount:,.2f} will reduce both cash and owner's equity by ₦{amount:,.2f}"
+                
+            elif adjustment_type == 'capital':
+                # Capital deposit increases cash balance and equity
+                new_cash_balance = round(current_cash_balance + amount, 2)
+                new_total_drawings = total_drawings
+                new_total_capital = round(total_capital + amount, 2)
+                equity_impact = amount   # Capital increases equity
+                cash_impact = amount    # Capital increases cash
+                impact_explanation = f"Capital deposit of ₦{amount:,.2f} will increase both cash and owner's equity by ₦{amount:,.2f}"
+            
+            # Determine if adjustment is feasible
+            is_feasible = True
+            feasibility_warning = None
+            
+            if adjustment_type == 'drawing' and new_cash_balance < 0:
+                is_feasible = False
+                feasibility_warning = f"This drawing would result in negative cash balance (₦{new_cash_balance:,.2f}). Consider reducing the amount or adding capital first."
+            
+            print(f'💡 Capital adjustment preview for user {current_user["_id"]}:')
+            print(f'   Current Cash Balance: ₦{current_cash_balance:,.2f}')
+            print(f'   Proposed {adjustment_type}: ₦{amount:,.2f}')
+            print(f'   New Cash Balance: ₦{new_cash_balance:,.2f}')
+            print(f'   Equity Impact: ₦{equity_impact:,.2f}')
+            print(f'   Feasible: {is_feasible}')
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'currentState': {
+                        'cashBalance': current_cash_balance,
+                        'totalDrawings': total_drawings,
+                        'totalCapital': total_capital,
+                        'breakdown': {
+                            'openingBalance': opening_cash_balance,
+                            'totalIncome': total_income,
+                            'totalExpenses': total_expenses,
+                            'totalDrawings': total_drawings,
+                            'totalCapital': total_capital,
+                            'totalAssetPurchases': total_asset_purchases
+                        }
+                    },
+                    'proposedAdjustment': {
+                        'type': adjustment_type,
+                        'amount': amount,
+                        'cashImpact': cash_impact,
+                        'equityImpact': equity_impact
+                    },
+                    'projectedState': {
+                        'cashBalance': new_cash_balance,
+                        'totalDrawings': new_total_drawings,
+                        'totalCapital': new_total_capital
+                    },
+                    'feasibility': {
+                        'isFeasible': is_feasible,
+                        'warning': feasibility_warning
+                    },
+                    'explanation': impact_explanation
+                }
+            }), 200
+            
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid amount'
+            }), 400
+        except Exception as e:
+            print(f'❌ Error previewing adjustment impact: {str(e)}')
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to preview adjustment impact'
+            }), 500
+
     @cash_bank_bp.route('/adjustments', methods=['GET'])
     @token_required
     def get_adjustments(current_user):
@@ -341,8 +589,14 @@ def init_cash_bank_blueprint(mongo, token_required):
     @cash_bank_bp.route('/adjustments', methods=['POST'])
     @token_required
     def create_adjustment(current_user):
-        """Create a new cash/bank adjustment (drawing or capital deposit)"""
+        """
+        Create a new cash/bank adjustment (drawing or capital deposit)
+        
+        OPTIMIZATION (Mar 12, 2026): Enhanced to show current cash balance context and impact
+        """
         try:
+            from utils.immutable_ledger_helper import get_active_transactions_query
+            
             data = request.get_json()
             
             # Validate required fields
@@ -375,6 +629,68 @@ def init_cash_bank_blueprint(mongo, token_required):
             except:
                 adjustment_date = datetime.utcnow()
             
+            # OPTIMIZATION (Mar 12, 2026): Calculate current cash balance before adjustment
+            user = mongo.db.users.find_one({'_id': current_user['_id']})
+            opening_cash_balance = user.get('openingCashBalance', 0.0) if user else 0.0
+            
+            # Get current totals using SOA formula
+            # Get total income (active entries only, exclude liability adjustments)
+            income_query = get_active_transactions_query(current_user['_id'])
+            income_query['sourceType'] = {'$not': {'$regex': '^liability_adjustment_'}}
+            income_amounts = []
+            income_cursor = mongo.db.incomes.find(income_query)
+            for income in income_cursor:
+                income_amounts.append(income.get('amount', 0.0))
+            total_income = safe_sum(income_amounts)
+            
+            # Get total expenses (active entries only)
+            expense_query = get_active_transactions_query(current_user['_id'])
+            expense_amounts = []
+            expense_cursor = mongo.db.expenses.find(expense_query)
+            for expense in expense_cursor:
+                expense_amounts.append(expense.get('amount', 0.0))
+            total_expenses = safe_sum(expense_amounts)
+            
+            # Get current adjustments
+            adjustment_query = {
+                'userId': current_user['_id'],
+                '$or': [
+                    {'status': 'active'},
+                    {'status': {'$exists': False}},
+                    {'status': None},
+                ],
+                'isDeleted': {'$ne': True}
+            }
+            drawing_amounts = []
+            capital_amounts = []
+            asset_amounts = []
+            adjustment_cursor = mongo.db.cash_adjustments.find(adjustment_query)
+            for adjustment in adjustment_cursor:
+                adj_type = adjustment.get('type')
+                adj_amount = adjustment.get('amount', 0.0)
+                
+                if adj_type == 'drawing':
+                    drawing_amounts.append(adj_amount)
+                elif adj_type == 'capital':
+                    capital_amounts.append(adj_amount)
+                elif adj_type == 'asset_purchase':
+                    asset_amounts.append(adj_amount)
+            
+            current_total_drawings = safe_sum(drawing_amounts)
+            current_total_capital = safe_sum(capital_amounts)
+            total_asset_purchases = safe_sum(asset_amounts)
+            
+            # Calculate cash balance before adjustment
+            cash_balance_before = round(
+                opening_cash_balance 
+                + total_income 
+                - total_expenses 
+                - current_total_drawings 
+                + current_total_capital
+                - total_asset_purchases,
+                2
+            )
+            
             # Create adjustment entry
             adjustment = {
                 '_id': ObjectId(),
@@ -400,23 +716,18 @@ def init_cash_bank_blueprint(mongo, token_required):
                 print(f'✓ Drawing saved to both cash_adjustments and drawings collections')
                 
                 # Calculate total drawings from all active drawing adjustments
-                drawing_amounts = []
-                all_drawings = mongo.db.cash_adjustments.find({
-                    'userId': current_user['_id'],
-                    'type': 'drawing',
-                    'status': 'active',
-                    'isDeleted': False
-                })
-                for drawing in all_drawings:
-                    drawing_amounts.append(drawing.get('amount', 0.0))
-                total_drawings = safe_sum(drawing_amounts)
+                drawing_amounts.append(amount)  # Add new drawing
+                new_total_drawings = safe_sum(drawing_amounts)
                 
                 # Update user.drawings field
                 mongo.db.users.update_one(
                     {'_id': current_user['_id']},
-                    {'$set': {'drawings': total_drawings}}
+                    {'$set': {'drawings': new_total_drawings}}
                 )
-            
+                
+                # Calculate new cash balance
+                cash_balance_after = round(cash_balance_before - amount, 2)
+                
             elif adjustment_type == 'capital':
                 # Save to capital_contributions collection
                 capital_entry = adjustment.copy()
@@ -424,22 +735,25 @@ def init_cash_bank_blueprint(mongo, token_required):
                 print(f'✓ Capital contribution saved to both cash_adjustments and capital_contributions collections')
                 
                 # Calculate total capital from all active capital adjustments
-                capital_amounts = []
-                all_capital = mongo.db.cash_adjustments.find({
-                    'userId': current_user['_id'],
-                    'type': 'capital',
-                    'status': 'active',
-                    'isDeleted': False
-                })
-                for capital in all_capital:
-                    capital_amounts.append(capital.get('amount', 0.0))
-                total_capital = safe_sum(capital_amounts)
+                capital_amounts.append(amount)  # Add new capital
+                new_total_capital = safe_sum(capital_amounts)
                 
                 # Update user.capital field
                 mongo.db.users.update_one(
                     {'_id': current_user['_id']},
-                    {'$set': {'capital': total_capital}}
+                    {'$set': {'capital': new_total_capital}}
                 )
+                
+                # Calculate new cash balance
+                cash_balance_after = round(cash_balance_before + amount, 2)
+            
+            # OPTIMIZATION (Mar 12, 2026): Log the impact
+            impact = cash_balance_after - cash_balance_before
+            print(f'💰 Capital adjustment impact for user {current_user["_id"]}:')
+            print(f'   {adjustment_type.title()}: ₦{amount:,.2f}')
+            print(f'   Cash Balance Before: ₦{cash_balance_before:,.2f}')
+            print(f'   Cash Balance After: ₦{cash_balance_after:,.2f}')
+            print(f'   Impact: ₦{impact:,.2f}')
             
             # Convert ObjectId to string for response
             adjustment['_id'] = str(adjustment['_id'])
@@ -448,7 +762,14 @@ def init_cash_bank_blueprint(mongo, token_required):
             return jsonify({
                 'success': True,
                 'message': f'{"Drawing" if adjustment_type == "drawing" else "Capital deposit"} recorded successfully',
-                'adjustment': adjustment
+                'adjustment': adjustment,
+                'impact': {  # OPTIMIZATION (Mar 12, 2026): Show impact
+                    'cashBalanceBefore': cash_balance_before,
+                    'cashBalanceAfter': cash_balance_after,
+                    'cashImpact': impact,
+                    'equityImpact': impact,  # Same as cash impact for capital adjustments
+                    'explanation': f"{'Drawing' if adjustment_type == 'drawing' else 'Capital deposit'} of ₦{amount:,.2f} {'reduced' if adjustment_type == 'drawing' else 'increased'} cash balance by ₦{abs(impact):,.2f}"
+                }
             }), 201
             
         except ValueError:

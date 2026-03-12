@@ -1673,7 +1673,7 @@ def init_reports_blueprint(mongo, token_required):
                 'lastName': current_user.get('lastName', ''),
                 'email': current_user.get('email', ''),
                 'businessName': user.get('businessName', '') if user else '',
-            'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
+                'tin': user.get('taxIdentificationNumber', 'Not Provided') if user else 'Not Provided'
             }
             
             # Prepare export data
@@ -1880,12 +1880,13 @@ def init_reports_blueprint(mongo, token_required):
                         income_query.setdefault('date', {})['$lte'] = end_date
                         expense_query.setdefault('date', {})['$lte'] = end_date
                 
-                # Fetch data in parallel
+                # Fetch data in parallel (USER DATA ONLY - NO BUSINESS DATA)
                 results = fetch_collections_parallel({
                     'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
                     'expenses': lambda: list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
                 }, max_workers=2)
                 
+                # Use only user transactions (NO business data mixing)
                 incomes = results['incomes']
                 expenses = results['expenses']
                 
@@ -2460,13 +2461,47 @@ def init_reports_blueprint(mongo, token_required):
             total_expenses = sum(expense.get('amount', 0) for expense in expenses)
             
             # MODERNIZATION (Feb 25, 2026): Calculate 3-Step P&L (align with SOA)
-            # Separate Sales Revenue from Other Income
-            sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
-            other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+            # CORRECTED REVENUE CLASSIFICATION (Mar 12, 2026):
+            # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
+            # Other Income = Internal accounting (consumed promotional spends, grants, interest)
+            
+            # Define what constitutes "Sales Revenue" (actual business revenue)
+            sales_revenue_sources = [
+                'vas_commission',                    # VAS Commissions (what we actually earn) ✅
+                'inventory_sale',                    # Inventory sales ✅
+                'subscription_purchase_payment_received',  # Subscription payments ✅
+                'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
+                'fc_purchase_payment_received',      # FC purchase payments ✅
+                'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+            ]
+            
+            # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+            other_income_sources = [
+                'fc_consumption',                    # Consumed promotional FC spends (internal) ✅
+                'fee_waiver_consumption',           # Consumed promotional fee waivers (internal) ✅
+                'subscription_consumption',         # Consumed promotional subscriptions (internal) ✅
+                'manual',                          # Manual entries (could be grants, interest, etc.) ✅
+                'voice',                           # Voice entries (could be grants, interest, etc.) ✅
+            ]
+            
+            # Calculate Sales Revenue (what we actually sell/earn)
+            sales_revenue = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in sales_revenue_sources
+            )
+            
+            # Calculate Other Income (internal accounting, not real external revenue)
+            other_income = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in other_income_sources
+            )
             
             # Separate COGS from Operating Expenses
-            cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
-            operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+            # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+            # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+            cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+            cogs_expenses = [exp for exp in expenses if exp.get('category') in cogs_categories]
+            operating_expenses = [exp for exp in expenses if exp.get('category') not in cogs_categories]
             
             total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
             total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
@@ -2866,13 +2901,47 @@ def init_reports_blueprint(mongo, token_required):
                 total_expenses = sum(expense.get('amount', 0) for expense in expenses)
                 
                 # MODERNIZATION (Feb 25, 2026): Calculate 3-Step P&L (align with SOA)
-                # Separate Sales Revenue from Other Income
-                sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
-                other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+                # CORRECTED REVENUE CLASSIFICATION (Mar 12, 2026):
+                # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
+                # Other Income = Internal accounting (consumed promotional spends, grants, interest)
+                
+                # Define what constitutes "Sales Revenue" (actual business revenue)
+                sales_revenue_sources = [
+                    'vas_commission',                    # VAS Commissions (what we actually earn) ✅
+                    'inventory_sale',                    # Inventory sales ✅
+                    'subscription_purchase_payment_received',  # Subscription payments ✅
+                    'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
+                    'fc_purchase_payment_received',      # FC purchase payments ✅
+                    'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+                ]
+                
+                # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+                other_income_sources = [
+                    'fc_consumption',                    # Consumed promotional FC spends (internal) ✅
+                    'fee_waiver_consumption',           # Consumed promotional fee waivers (internal) ✅
+                    'subscription_consumption',         # Consumed promotional subscriptions (internal) ✅
+                    'manual',                          # Manual entries (could be grants, interest, etc.) ✅
+                    'voice',                           # Voice entries (could be grants, interest, etc.) ✅
+                ]
+                
+                # Calculate Sales Revenue (what we actually sell/earn)
+                sales_revenue = sum(
+                    inc.get('amount', 0) for inc in incomes 
+                    if inc.get('sourceType') in sales_revenue_sources
+                )
+                
+                # Calculate Other Income (internal accounting, not real external revenue)
+                other_income = sum(
+                    inc.get('amount', 0) for inc in incomes 
+                    if inc.get('sourceType') in other_income_sources
+                )
                 
                 # Separate COGS from Operating Expenses
-                cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
-                operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+                # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+                # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+                cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+                cogs_expenses = [exp for exp in expenses if exp.get('category') in cogs_categories]
+                operating_expenses = [exp for exp in expenses if exp.get('category') not in cogs_categories]
                 
                 total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
                 total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
@@ -3869,17 +3938,43 @@ def init_reports_blueprint(mongo, token_required):
             incomes = results['incomes']
             expenses = results['expenses']
             
+            # CORRECTED REVENUE CLASSIFICATION (Mar 12, 2026):
+            # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
+            # Other Income = Internal accounting (consumed promotional spends, grants, interest)
+            
+            # Define what constitutes "Sales Revenue" (actual business revenue)
+            sales_revenue_sources = [
+                'vas_commission',                    # VAS Commissions (what we actually earn) ✅
+                'inventory_sale',                    # Inventory sales ✅
+                'subscription_purchase_payment_received',  # Subscription payments ✅
+                'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
+                'fc_purchase_payment_received',      # FC purchase payments ✅
+                'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+            ]
+            
+            # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+            other_income_sources = [
+                'fc_consumption',                    # Consumed promotional FC spends (internal) ✅
+                'fee_waiver_consumption',           # Consumed promotional fee waivers (internal) ✅
+                'subscription_consumption',         # Consumed promotional subscriptions (internal) ✅
+                'manual',                          # Manual entries (could be grants, interest, etc.) ✅
+                'voice',                           # Voice entries (could be grants, interest, etc.) ✅
+            ]
+            
             # Separate Sales Revenue from Other Income
-            sales_revenue_items = [inc for inc in incomes if inc.get('category') == 'salesRevenue']
-            other_income_items = [inc for inc in incomes if inc.get('category') != 'salesRevenue']
+            sales_revenue_items = [inc for inc in incomes if inc.get('sourceType') in sales_revenue_sources]
+            other_income_items = [inc for inc in incomes if inc.get('sourceType') in other_income_sources]
             
             sales_revenue = sum(inc.get('amount', 0) for inc in sales_revenue_items)
             other_income = sum(inc.get('amount', 0) for inc in other_income_items)
             total_revenue = sales_revenue + other_income
             
             # Separate COGS from Operating Expenses
-            cogs_items = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
-            operating_items = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+            # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+            # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+            cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+            cogs_items = [exp for exp in expenses if exp.get('category') in cogs_categories]
+            operating_items = [exp for exp in expenses if exp.get('category') not in cogs_categories]
             
             total_cogs = sum(exp.get('amount', 0) for exp in cogs_items)
             total_operating = sum(exp.get('amount', 0) for exp in operating_items)
@@ -5300,17 +5395,41 @@ def init_reports_blueprint(mongo, token_required):
         # STEP 1: Get all business incomes
         all_incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
         
+        # CORRECTED REVENUE CLASSIFICATION (Mar 12, 2026):
+        # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
+        # Other Income = Internal accounting (consumed promotional spends, grants, interest)
+        
+        # Define what constitutes "Sales Revenue" (actual business revenue)
+        sales_revenue_sources = [
+            'vas_commission',                    # VAS Commissions (what we actually earn) ✅
+            'inventory_sale',                    # Inventory sales ✅
+            'subscription_purchase_payment_received',  # Subscription payments ✅
+            'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
+            'fc_purchase_payment_received',      # FC purchase payments ✅
+            'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+        ]
+        
+        # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+        other_income_sources = [
+            'fc_consumption',                    # Consumed promotional FC spends (internal) ✅
+            'fee_waiver_consumption',           # Consumed promotional fee waivers (internal) ✅
+            'subscription_consumption',         # Consumed promotional subscriptions (internal) ✅
+            'manual',                          # Manual entries (could be grants, interest, etc.) ✅
+            'voice',                           # Voice entries (could be grants, interest, etc.) ✅
+        ]
+        
         # Separate Sales Revenue from Other Income
-        # [OK] CRITICAL FIX: Normalize category before comparison
         sales_revenue = 0
         other_income = 0
         for inc in all_incomes:
             amount = inc.get('amount', 0)
-            category_raw = inc.get('category', '')
-            category = normalize_category(category_raw)  # [OK] Normalize here
-            if category == 'salesRevenue':
+            source_type = inc.get('sourceType', '')
+            if source_type in sales_revenue_sources:
                 sales_revenue += amount
+            elif source_type in other_income_sources:
+                other_income += amount
             else:
+                # Default to other income for unclassified entries
                 other_income += amount
         
         total_revenue = sales_revenue + other_income
@@ -5320,12 +5439,14 @@ def init_reports_blueprint(mongo, token_required):
         all_expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
         
         # [OK] CRITICAL FIX: Normalize category before filtering
+        # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+        # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
         cogs_expenses = []
         operating_expenses = []
         for exp in all_expenses:
             category_raw = exp.get('category', '')
             category = normalize_category(category_raw)  # [OK] Normalize here
-            if category == 'Cost of Goods Sold':
+            if category in ['Cost of Goods Sold', 'Payment Processing Fees']:
                 cogs_expenses.append(exp)
             else:
                 operating_expenses.append(exp)
@@ -5472,12 +5593,15 @@ def init_reports_blueprint(mongo, token_required):
         cash_from_sales = sum(inc.get('amount', 0) for inc in all_incomes)
         
         # Cash paid for COGS
-        cogs_expenses = [exp for exp in all_expenses if exp.get('category') == 'Cost of Goods Sold']
+        # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+        # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+        cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+        cogs_expenses = [exp for exp in all_expenses if exp.get('category') in cogs_categories]
         cash_paid_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
         
         # Cash paid for operating expenses (exclude COGS and asset purchases)
         operating_expenses = [exp for exp in all_expenses 
-                            if exp.get('category') not in ['Cost of Goods Sold', 'Asset Purchase']]
+                            if exp.get('category') not in cogs_categories + ['Asset Purchase']]
         cash_paid_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
         
         net_cash_operating = cash_from_sales - cash_paid_cogs - cash_paid_operating
@@ -7690,14 +7814,48 @@ def init_reports_blueprint(mongo, token_required):
             }
             
             # MODERNIZATION (Feb 18, 2026): Calculate 3-Step P&L
-            # Separate Sales Revenue from Other Income
-            sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
-            other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+            # CORRECTED REVENUE CLASSIFICATION (Mar 12, 2026):
+            # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
+            # Other Income = Internal accounting (consumed promotional spends, grants, interest)
+            
+            # Define what constitutes "Sales Revenue" (actual business revenue)
+            sales_revenue_sources = [
+                'vas_commission',                    # VAS Commissions (what we actually earn) ✅
+                'inventory_sale',                    # Inventory sales ✅
+                'subscription_purchase_payment_received',  # Subscription payments ✅
+                'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
+                'fc_purchase_payment_received',      # FC purchase payments ✅
+                'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+            ]
+            
+            # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+            other_income_sources = [
+                'fc_consumption',                    # Consumed promotional FC spends (internal) ✅
+                'fee_waiver_consumption',           # Consumed promotional fee waivers (internal) ✅
+                'subscription_consumption',         # Consumed promotional subscriptions (internal) ✅
+                'manual',                          # Manual entries (could be grants, interest, etc.) ✅
+                'voice',                           # Voice entries (could be grants, interest, etc.) ✅
+            ]
+            
+            # Calculate Sales Revenue (what we actually sell/earn)
+            sales_revenue = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in sales_revenue_sources
+            )
+            
+            # Calculate Other Income (internal accounting, not real external revenue)
+            other_income = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in other_income_sources
+            )
             total_income = sales_revenue + other_income
             
             # Separate COGS from Operating Expenses
-            cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
-            operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+            # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+            # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+            cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+            cogs_expenses = [exp for exp in expenses if exp.get('category') in cogs_categories]
+            operating_expenses = [exp for exp in expenses if exp.get('category') not in cogs_categories]
             
             total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
             total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
@@ -8039,7 +8197,7 @@ def init_reports_blueprint(mongo, token_required):
                 try:
                     print(f"[SUCCESS] SOA GENERATION: Starting for job {job_id}")
                     
-                    # Build queries
+                    # Build queries (USER DATA ONLY - NO BUSINESS DATA)
                     print(f"[SUCCESS] SOA GENERATION: Building queries...")
                     # CRITICAL FIX (Mar 9, 2026): Exclude capital contributions/expenditures from P&L
                     income_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False, 'excludeFromProfitLoss': {'$ne': True}}
@@ -8068,7 +8226,7 @@ def init_reports_blueprint(mongo, token_required):
                             income_query.setdefault('date', {})['$lte'] = end_date
                             expense_query.setdefault('date', {})['$lte'] = end_date
                     
-                    # Fetch all data in parallel
+                    # Fetch all data in parallel (USER DATA ONLY - NO BUSINESS DATA)
                     print(f"[SUCCESS] SOA GENERATION: Fetching data from 6 collections...")
                     results = fetch_collections_parallel({
                         'incomes': lambda: list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes'])),
@@ -8079,6 +8237,7 @@ def init_reports_blueprint(mongo, token_required):
                         'inventory': lambda: list(mongo.db.inventory.find(inventory_query, PDF_PROJECTIONS['inventory']))
                     }, max_workers=6)
                     
+                    # Use only user transactions (NO business data mixing)
                     incomes = results['incomes']
                     expenses = results['expenses']
                     assets = results['assets']
@@ -8086,7 +8245,7 @@ def init_reports_blueprint(mongo, token_required):
                     creditors = results['creditors']
                     inventory = results['inventory']
                     
-                    print(f"[OK] SOA GENERATION: Data fetched - {len(incomes)} incomes, {len(expenses)} expenses, {len(assets)} assets, {len(debtors)} debtors, {len(creditors)} creditors, {len(inventory)} inventory")
+                    print(f"[OK] SOA GENERATION: Data fetched - {len(incomes)} incomes, {len(expenses)} expenses, {len(assets)} assets, {len(debtors)} debtors, {len(creditors)} creditors, {len(inventory)} inventory (USER DATA ONLY)")
                     
                     # Prepare user data
                     print(f"[SUCCESS] SOA GENERATION: Preparing user data...")
@@ -8117,11 +8276,46 @@ def init_reports_blueprint(mongo, token_required):
                     
                     # Calculate 3-Step P&L (align with SOA sync endpoint)
                     print(f"[SUCCESS] SOA GENERATION: Calculating 3-Step P&L...")
-                    sales_revenue = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') == 'salesRevenue')
-                    other_income = sum(inc.get('amount', 0) for inc in incomes if inc.get('category') != 'salesRevenue')
+                    # CORRECTED REVENUE CLASSIFICATION (Mar 12, 2026):
+                    # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
+                    # Other Income = Internal accounting (consumed promotional spends, grants, interest)
                     
-                    cogs_expenses = [exp for exp in expenses if exp.get('category') == 'Cost of Goods Sold']
-                    operating_expenses = [exp for exp in expenses if exp.get('category') != 'Cost of Goods Sold']
+                    # Define what constitutes "Sales Revenue" (actual business revenue)
+                    sales_revenue_sources = [
+                        'vas_commission',                    # VAS Commissions (what we actually earn) ✅
+                        'inventory_sale',                    # Inventory sales ✅
+                        'subscription_purchase_payment_received',  # Subscription payments ✅
+                        'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
+                        'fc_purchase_payment_received',      # FC purchase payments ✅
+                        'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+                    ]
+                    
+                    # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+                    other_income_sources = [
+                        'fc_consumption',                    # Consumed promotional FC spends (internal) ✅
+                        'fee_waiver_consumption',           # Consumed promotional fee waivers (internal) ✅
+                        'subscription_consumption',         # Consumed promotional subscriptions (internal) ✅
+                        'manual',                          # Manual entries (could be grants, interest, etc.) ✅
+                        'voice',                           # Voice entries (could be grants, interest, etc.) ✅
+                    ]
+                    
+                    # Calculate Sales Revenue (what we actually sell/earn)
+                    sales_revenue = sum(
+                        inc.get('amount', 0) for inc in incomes 
+                        if inc.get('sourceType') in sales_revenue_sources
+                    )
+                    
+                    # Calculate Other Income (internal accounting, not real external revenue)
+                    other_income = sum(
+                        inc.get('amount', 0) for inc in incomes 
+                        if inc.get('sourceType') in other_income_sources
+                    )
+                    
+                    # CORRECTED COGS CLASSIFICATION (Mar 12, 2026):
+                    # COGS = Direct costs of providing services (inventory COGS + gateway fees for VAS services)
+                    cogs_categories = ['Cost of Goods Sold', 'Payment Processing Fees']
+                    cogs_expenses = [exp for exp in expenses if exp.get('category') in cogs_categories]
+                    operating_expenses = [exp for exp in expenses if exp.get('category') not in cogs_categories]
                     
                     total_cogs = sum(exp.get('amount', 0) for exp in cogs_expenses)
                     total_operating = sum(exp.get('amount', 0) for exp in operating_expenses)
