@@ -27,9 +27,13 @@ def safe_float(value):
         return 0.0
 
 
-def calculate_fc_credit_liabilities(mongo):
+def calculate_fc_credit_liabilities(mongo, user_id=None):
     """
     Calculate outstanding FC Credit liabilities
+    
+    Args:
+        mongo: MongoDB connection
+        user_id: ObjectId of specific user (None for business/admin view)
     
     Returns:
         dict: {
@@ -47,12 +51,19 @@ def calculate_fc_credit_liabilities(mongo):
         }
     """
     try:
-        # Find all FC Credit liability accruals that haven't been consumed
+        # CRITICAL FIX: Filter by user and exclude business account
+        BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
+        
         liability_query = {
             'sourceType': 'fc_liability_accrual',
             'status': 'active',
-            'isDeleted': False
+            'isDeleted': False,
+            'userId': {'$ne': BUSINESS_USER_ID}  # ✅ Exclude business account
         }
+        
+        # If specific user requested, filter to that user only
+        if user_id:
+            liability_query['userId'] = user_id
         
         fc_liabilities = list(mongo.db.incomes.find(liability_query))
         
@@ -60,8 +71,13 @@ def calculate_fc_credit_liabilities(mongo):
         consumption_query = {
             'sourceType': 'fc_consumption',
             'status': 'active',
-            'isDeleted': False
+            'isDeleted': False,
+            'userId': {'$ne': BUSINESS_USER_ID}  # ✅ Exclude business account
         }
+        
+        # If specific user requested, filter to that user only
+        if user_id:
+            consumption_query['userId'] = user_id
         
         fc_consumptions = list(mongo.db.incomes.find(consumption_query))
         
@@ -110,9 +126,13 @@ def calculate_fc_credit_liabilities(mongo):
         }
 
 
-def calculate_subscription_liabilities(mongo):
+def calculate_subscription_liabilities(mongo, user_id=None):
     """
     Calculate outstanding Subscription liabilities
+    
+    Args:
+        mongo: MongoDB connection
+        user_id: ObjectId of specific user (None for business/admin view)
     
     Returns:
         dict: {
@@ -129,12 +149,19 @@ def calculate_subscription_liabilities(mongo):
         }
     """
     try:
-        # Find all Subscription liability accruals that haven't been consumed
+        # CRITICAL FIX: Filter by user and exclude business account
+        BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
+        
         liability_query = {
             'sourceType': 'subscription_liability_accrual',
             'status': 'active',
-            'isDeleted': False
+            'isDeleted': False,
+            'userId': {'$ne': BUSINESS_USER_ID}  # ✅ Exclude business account
         }
+        
+        # If specific user requested, filter to that user only
+        if user_id:
+            liability_query['userId'] = user_id
         
         subscription_liabilities = list(mongo.db.incomes.find(liability_query))
         
@@ -142,8 +169,13 @@ def calculate_subscription_liabilities(mongo):
         consumption_query = {
             'sourceType': 'subscription_consumption',
             'status': 'active',
-            'isDeleted': False
+            'isDeleted': False,
+            'userId': {'$ne': BUSINESS_USER_ID}  # ✅ Exclude business account
         }
+        
+        # If specific user requested, filter to that user only
+        if user_id:
+            consumption_query['userId'] = user_id
         
         subscription_consumptions = list(mongo.db.incomes.find(consumption_query))
         
@@ -188,9 +220,13 @@ def calculate_subscription_liabilities(mongo):
         }
 
 
-def calculate_fee_waiver_liabilities(mongo):
+def calculate_fee_waiver_liabilities(mongo, user_id=None):
     """
     Calculate outstanding Fee Waiver liabilities
+    
+    Args:
+        mongo: MongoDB connection
+        user_id: ObjectId of specific user (None for business/admin view)
     
     Returns:
         dict: {
@@ -207,12 +243,19 @@ def calculate_fee_waiver_liabilities(mongo):
         }
     """
     try:
-        # Find all Fee Waiver liability accruals that haven't been consumed
+        # CRITICAL FIX: Filter by user and exclude business account
+        BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
+        
         liability_query = {
             'sourceType': 'fee_waiver_liability_accrual',
             'status': 'active',
-            'isDeleted': False
+            'isDeleted': False,
+            'userId': {'$ne': BUSINESS_USER_ID}  # ✅ Exclude business account
         }
+        
+        # If specific user requested, filter to that user only
+        if user_id:
+            liability_query['userId'] = user_id
         
         fee_waiver_liabilities = list(mongo.db.incomes.find(liability_query))
         
@@ -220,8 +263,13 @@ def calculate_fee_waiver_liabilities(mongo):
         consumption_query = {
             'sourceType': 'fee_waiver_consumption',
             'status': 'active',
-            'isDeleted': False
+            'isDeleted': False,
+            'userId': {'$ne': BUSINESS_USER_ID}  # ✅ Exclude business account
         }
+        
+        # If specific user requested, filter to that user only
+        if user_id:
+            consumption_query['userId'] = user_id
         
         fee_waiver_consumptions = list(mongo.db.incomes.find(consumption_query))
         
@@ -266,9 +314,13 @@ def calculate_fee_waiver_liabilities(mongo):
         }
 
 
-def calculate_total_liabilities(mongo):
+def calculate_total_liabilities(mongo, user_id=None):
     """
     Calculate all outstanding liabilities (FC Credits, Subscriptions, Fee Waivers)
+    
+    Args:
+        mongo: MongoDB connection
+        user_id: ObjectId of specific user (None for business/admin view)
     
     Returns:
         dict: {
@@ -280,10 +332,10 @@ def calculate_total_liabilities(mongo):
         }
     """
     try:
-        # Calculate each liability type
-        fc_result = calculate_fc_credit_liabilities(mongo)
-        subscription_result = calculate_subscription_liabilities(mongo)
-        fee_waiver_result = calculate_fee_waiver_liabilities(mongo)
+        # Calculate each liability type with user filtering
+        fc_result = calculate_fc_credit_liabilities(mongo, user_id)
+        subscription_result = calculate_subscription_liabilities(mongo, user_id)
+        fee_waiver_result = calculate_fee_waiver_liabilities(mongo, user_id)
         
         # Calculate total
         total_all = (
