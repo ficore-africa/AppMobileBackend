@@ -650,9 +650,14 @@
 
         <!-- Referral System Metrics -->
         <div class="stats-grid" style="background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%); padding: 20px 30px; margin-top: 0;">
-            <div style="grid-column: 1 / -1; text-align: center; color: white; margin-bottom: 10px;">
-                <h2 style="margin: 0; font-size: 1.5rem;"><i class="fas fa-users"></i> Referral System Metrics</h2>
-                <p style="margin: 5px 0 0 0; opacity: 0.9;">Track your referral program performance</p>
+            <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; color: white; margin-bottom: 10px;">
+                <div style="text-align: center; flex-grow: 1;">
+                    <h2 style="margin: 0; font-size: 1.5rem;"><i class="fas fa-users"></i> Referral System Metrics</h2>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9;">Track your referral program performance</p>
+                </div>
+                <button class="btn btn-export" style="padding: 8px 16px; font-size: 0.9rem; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;" onclick="exportReferralMetrics()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
             </div>
             <div class="stat-card" style="--card-color: #e67e22;">
                 <div class="icon"><i class="fas fa-user-plus"></i></div>
@@ -1967,6 +1972,36 @@
                 }
             } catch (error) {
                 showNotification('Failed to export FC balances: ' + error.message, 'error');
+            }
+        }
+
+        // Export referral metrics
+        async function exportReferralMetrics() {
+            try {
+                const token = getAdminToken();
+                const response = await fetch(`${API_BASE_URL}/admin/treasury/export-referral-metrics`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `referral_metrics_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showNotification('Referral metrics exported successfully!');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                showNotification('Failed to export referral metrics: ' + error.message, 'error');
             }
         }
     </script>
