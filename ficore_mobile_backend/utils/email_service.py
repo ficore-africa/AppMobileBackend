@@ -109,7 +109,8 @@ class EmailService:
             <!-- Header with FiCore Brand Colors -->
             <div style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%); padding: 40px 30px; text-align: center; border-radius: 0;">
                 <h1 style="color: #FFFFFF; margin: 0; font-size: 28px; font-weight: 700;">Welcome to FiCore! 🎉</h1>
-                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">Your Digital CFO for Business Success</p>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
+                <p style="color: #FFF8F0; margin: 8px 0 0 0; font-size: 13px; font-style: italic;">Helping you grow your business, one record at a time.</p>
             </div>
             
             <!-- Main Content -->
@@ -143,7 +144,7 @@ class EmailService:
                 </div>
                 
                 <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
+                    Your Finance. No Big Grammar.<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>
@@ -191,6 +192,8 @@ class EmailService:
             <!-- Header -->
             <div style="background: #1E3A8A; padding: 40px 30px; text-align: center;">
                 <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">Password Reset Request</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
+                <p style="color: #FFF8F0; margin: 8px 0 0 0; font-size: 13px; font-style: italic;">Helping you grow your business, one record at a time.</p>
             </div>
             
             <!-- Main Content -->
@@ -208,7 +211,6 @@ class EmailService:
                     <p style="margin: 10px 0 0 0; color: #6B7280; font-size: 12px;">Enter this code in the FiCore app</p>
                 </div>
                 
-                <!-- Security Warning -->
                 <div style="background: #FFF8F0; border-left: 4px solid #F97316; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
                     <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
                         ⚠️ <strong>Security Notice:</strong> This code expires in 1 hour. If you didn't request this reset, please ignore this email and your password will remain unchanged.
@@ -216,7 +218,7 @@ class EmailService:
                 </div>
                 
                 <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
+                    Your Finance. No Big Grammar.<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>
@@ -264,6 +266,8 @@ class EmailService:
             <!-- Header with Warning Orange -->
             <div style="background: #F97316; padding: 40px 30px; text-align: center;">
                 <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">⏰ Subscription Expiring Soon</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
+                <p style="color: #FFF8F0; margin: 8px 0 0 0; font-size: 13px; font-style: italic;">Helping you grow your business, one record at a time.</p>
             </div>
             
             <!-- Main Content -->
@@ -293,7 +297,7 @@ class EmailService:
                 </div>
                 
                 <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
+                    Your Finance. No Big Grammar.<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>
@@ -330,43 +334,58 @@ class EmailService:
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background: #e74c3c; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                <h1 style="color: white; margin: 0;">Subscription Expired</h1>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with Alert Red -->
+            <div style="background: #DC2626; padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">Subscription Expired</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
+                <p style="color: #FFF8F0; margin: 8px 0 0 0; font-size: 13px; font-style: italic;">Helping you grow your business, one record at a time.</p>
             </div>
             
-            <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
-                <p style="font-size: 16px;">Hi {user_name},</p>
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
                 
-                <p>Your FiCore Premium subscription has expired. You've been moved to the Free tier.</p>
+                <p style="color: #2E2E2E;">Your FiCore Premium subscription has expired. You've been moved to the Free tier.</p>
                 
-                <p><strong>What you still have:</strong></p>
-                <ul style="line-height: 2;">
+                <h3 style="color: #16A34A; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">What you still have:</h3>
+                <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
                     <li>✅ Your FC Credits (preserved)</li>
                     <li>✅ Your transaction history</li>
                     <li>✅ Basic features</li>
                 </ul>
                 
-                <p><strong>What you're missing:</strong></p>
-                <ul style="line-height: 2;">
+                <h3 style="color: #DC2626; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">What you're missing:</h3>
+                <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
                     <li>❌ Unlimited transactions</li>
                     <li>❌ Advanced reports</li>
                     <li>❌ Priority support</li>
                     <li>❌ E-invoicing features</li>
                 </ul>
                 
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://business.ficoreafrica.com/subscription" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Reactivate Premium</a>
+                <!-- CTA Button -->
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="https://business.ficoreafrica.com/subscription" style="background: #1E3A8A; color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.3);">Reactivate Premium</a>
                 </div>
                 
-                <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
-                    <strong>The FiCore Team</strong>
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Your Finance. No Big Grammar.<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>
             
-            <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
-                <p>FiCore Labs Limited | RC 8799482 | Lagos, Nigeria</p>
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 Need Help?</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong> | RC 8799482 | Nigeria</p>
             </div>
         </body>
         </html>
@@ -393,6 +412,8 @@ class EmailService:
             <!-- Header with Success Green -->
             <div style="background: #16A34A; padding: 40px 30px; text-align: center;">
                 <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">✅ Credit Approved!</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
+                <p style="color: #FFF8F0; margin: 8px 0 0 0; font-size: 13px; font-style: italic;">Helping you grow your business, one record at a time.</p>
             </div>
             
             <!-- Main Content -->
@@ -417,7 +438,7 @@ class EmailService:
                 </div>
                 
                 <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
+                    Your Finance. No Big Grammar.<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>
@@ -456,42 +477,60 @@ class EmailService:
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background: #667eea; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-                <h1 style="color: white; margin: 0;">We Miss You! 👋</h1>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #2E2E2E; max-width: 600px; margin: 0 auto; padding: 0; background-color: #FFF8F0;">
+            <!-- Header with FiCore Brand Colors -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 40px 30px; text-align: center;">
+                <h1 style="color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 700;">We Miss You! 👋</h1>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
             </div>
             
-            <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
-                <p style="font-size: 16px;">Hi {user_name},</p>
+            <!-- Main Content -->
+            <div style="background: #FFFFFF; padding: 40px 30px;">
+                <p style="font-size: 16px; color: #2E2E2E; margin-top: 0;">Hi {user_name},</p>
                 
-                <p>It's been {days_inactive} days since we last saw you in FiCore. We hope everything is going well!</p>
+                <p style="color: #2E2E2E;">It's been {days_inactive} days since we last saw you in FiCore. We hope everything is going well!</p>
                 
-                <p>Your business data is waiting for you:</p>
-                <ul style="line-height: 2;">
+                <h3 style="color: #1E3A8A; font-size: 18px; margin-top: 30px; margin-bottom: 15px;">Your business data is waiting for you:</h3>
+                <ul style="line-height: 2; color: #2E2E2E; padding-left: 20px;">
                     <li>📊 View your financial dashboard</li>
                     <li>💰 Check your wallet balance</li>
                     <li>📱 Buy airtime/data instantly</li>
                     <li>📈 Generate tax reports</li>
                 </ul>
                 
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://business.ficoreafrica.com" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Welcome Back</a>
+                <!-- CTA Button -->
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="https://business.ficoreafrica.com" style="background: #1E3A8A; color: #FFFFFF; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.3);">Welcome Back</a>
                 </div>
                 
-                <p style="color: #666; font-size: 14px;">
-                    Need help getting started again? Reply to this email and we'll assist you.
-                </p>
+                <!-- Support Info -->
+                <div style="background: #FFF8F0; border-left: 4px solid #B88A44; padding: 15px 20px; margin: 30px 0; border-radius: 4px;">
+                    <p style="color: #2E2E2E; margin: 0; font-size: 14px;">
+                        Need help getting started again? Reply to this email and we'll assist you.
+                    </p>
+                </div>
                 
-                <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
-                    <strong>The FiCore Team</strong>
+                <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+                    Your Finance. No Big Grammar.<br>
+                    <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>
             
-            <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
-                <p>FiCore Labs Limited | RC 8799482 | Lagos, Nigeria</p>
-                <p>
-                    <a href="https://business.ficoreafrica.com/unsubscribe?email={to_email}" style="color: #999; text-decoration: none;">Unsubscribe</a>
+            <!-- Knowledge Base CTA -->
+            <div style="background: linear-gradient(135deg, #1E3A8A 0%, #B88A44 100%); padding: 30px 20px; text-align: center;">
+                <p style="color: #FFFFFF; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📚 Need Help?</p>
+                <a href="https://business.ficoreafrica.com/general/knowledge-base" style="display: inline-block; background: #FFFFFF; color: #1E3A8A; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                    How to Use FiCore? →
+                </a>
+                <p style="color: #FFF8F0; margin: 15px 0 0 0; font-size: 13px;">Step-by-step guides, tutorials & FAQs</p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #F4F1EC; text-align: center; padding: 30px 20px; color: #6B7280; font-size: 12px;">
+                <p style="margin: 0 0 10px 0;"><strong style="color: #1E3A8A;">FiCore Labs Limited</strong></p>
+                <p style="margin: 0 0 15px 0;">RC 8799482 | Nigeria</p>
+                <p style="margin: 0;">
+                    <a href="https://business.ficoreafrica.com/unsubscribe?email={to_email}" style="color: #1E3A8A; text-decoration: none;">Unsubscribe</a>
                 </p>
             </div>
         </body>
