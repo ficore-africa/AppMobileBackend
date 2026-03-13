@@ -1987,7 +1987,8 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 try:
                     # Get user email and check if test account
                     user_email = user.get('email', '')
-                    is_test_user = is_test_account(user_email) or current_user['_id'] in get_test_account_user_ids(mongo)
+                    from utils.test_account_utils import get_test_account_user_ids
+                    is_test_user = is_test_account(user_email) or current_user['_id'] in get_test_account_user_ids()
                     
                     # Check if this user had early signup bonuses (1000 FCs) that were cleaned up
                     early_signup_bonus = mongo.db.credit_transactions.find_one({
