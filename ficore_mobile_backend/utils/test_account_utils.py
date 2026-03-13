@@ -15,19 +15,34 @@ TEST_ACCOUNT_USER_IDS = [
     ObjectId('507f1f77bcf86cd799439012'),  # Test user 2
 ]
 
-def is_test_account(user_id):
+def is_test_account(user_id_or_email):
     """
-    Check if user ID is a test account
+    Check if user ID or email is a test account
     
     Args:
-        user_id: User ObjectId or string
+        user_id_or_email: User ObjectId, string, or email
         
     Returns:
         bool: True if test account
     """
     try:
-        if isinstance(user_id, str):
-            user_id = ObjectId(user_id)
+        # If it's an email, check against test emails
+        if isinstance(user_id_or_email, str) and '@' in user_id_or_email:
+            test_emails = [
+                'test@example.com',
+                'demo@ficore.africa',
+                'admin@ficore.africa'
+            ]
+            return user_id_or_email.lower() in [email.lower() for email in test_emails]
+        
+        # If it's a user ID, check against test user IDs
+        if isinstance(user_id_or_email, str):
+            try:
+                user_id = ObjectId(user_id_or_email)
+            except:
+                return False
+        else:
+            user_id = user_id_or_email
         
         return user_id in TEST_ACCOUNT_USER_IDS
         
