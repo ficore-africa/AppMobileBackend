@@ -532,12 +532,12 @@ def forgot_password():
         
         user = auth_bp.mongo.db.users.find_one({'email': email})
         if not user:
-            # Don't reveal if email exists or not - but still return success
+            # Return error for non-existent email (better UX for legitimate users)
             return jsonify({
-                'success': True,
-                'message': 'If the email exists, a reset link has been sent',
-                'data': None
-            })
+                'success': False,
+                'message': 'No account found with this email address',
+                'errors': {'email': ['No account found with this email address']}
+            }), 404
         
         # Generate reset token
         reset_token = str(uuid.uuid4())
