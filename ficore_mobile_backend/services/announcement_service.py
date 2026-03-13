@@ -211,7 +211,8 @@ class AnnouncementService:
             <!-- Header with FiCore Brand Colors -->
             <div style="background: linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%); padding: 40px 30px; text-align: center; border-radius: 0;">
                 <h1 style="color: #FFFFFF; margin: 0; font-size: 28px; font-weight: 700;">📢 FiCore News</h1>
-                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">Your Digital CFO for Business Success</p>
+                <p style="color: #FFF8F0; margin: 10px 0 0 0; font-size: 14px;">No Big Grammar Digital Finance</p>
+                <p style="color: #FFF8F0; margin: 8px 0 0 0; font-size: 13px; font-style: italic;">Helping you grow your business, one record at a time.</p>
             </div>
             
             <!-- Main Content -->
@@ -238,7 +239,7 @@ class AnnouncementService:
                 </div>
                 
                 <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
-                    Best regards,<br>
+                    Your Finance. No Big Grammar.<br>
                     <strong style="color: #1E3A8A;">The FiCore Team</strong>
                 </p>
             </div>

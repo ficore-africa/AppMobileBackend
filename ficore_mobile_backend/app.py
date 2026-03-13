@@ -1108,7 +1108,7 @@ FiCore doesn't ask users to "do bookkeeping." Instead, bookkeeping happens autom
 
 ### Founder: Hassan Ahmad
 - Background: Software engineering, fintech
-- Vision: "Digital CFO for Africa's 40M SMEs"
+- Vision: "No Big Grammar Digital Finance for Africa's 40M SMEs"
 - Approach: Bootstrapped, customer-funded growth
 
 ### Company Details
