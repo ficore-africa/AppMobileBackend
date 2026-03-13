@@ -172,7 +172,8 @@ def init_financial_integration_blueprint(mongo, token_required):
         Get total liabilities for balance sheet reporting
         """
         try:
-            result = calculate_total_liabilities(mongo)
+            # PRIVACY FIX: Pass current user ID to filter liabilities to this user only
+            result = calculate_total_liabilities(mongo, current_user['_id'])
             
             if result['success']:
                 return jsonify({

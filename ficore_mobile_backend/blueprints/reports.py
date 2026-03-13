@@ -413,10 +413,13 @@ def init_reports_blueprint(mongo, token_required):
     def calculate_cash_bank_balance(user_id, end_date=None):
         """
         Calculate cash/bank balance as of a specific date
-        Formula: Opening Balance + Total Income - Total Expenses - Total Drawings + Total Capital - Total Asset Purchases
+        NEW FORMULA (Mar 13, 2026): Opening Balance + Cash Adjustments ONLY
         
-        This integrates with the Cash/Bank Management System to provide accurate
-        balance for Balance Sheet and other financial reports.
+        CRITICAL CHANGE: Net income NO LONGER affects cash balance automatically.
+        Cash only moves when real money comes in/out via manual adjustments.
+        
+        This prevents phantom cash from appearing in reports and maintains
+        proper separation between profit (equity) and cash flow.
         
         Args:
             user_id: User ID
@@ -429,19 +432,7 @@ def init_reports_blueprint(mongo, token_required):
             user = mongo.db.users.find_one({'_id': user_id})
             opening_balance = user.get('openingCashBalance', 0.0) if user else 0.0
             
-            # Build queries with optional date filter
-            # CRITICAL FIX (Mar 12, 2026): Exclude liability adjustments from income calculation
-            income_query = {
-                'userId': user_id,
-                'status': 'active',
-                'isDeleted': False,
-                'sourceType': {'$not': {'$regex': '^liability_adjustment_'}}  # [NEW] Exclude liability adjustments
-            }
-            expense_query = {
-                'userId': user_id,
-                'status': 'active',
-                'isDeleted': False
-            }
+            # Build query for cash adjustments only
             adjustment_query = {
                 'userId': user_id,
                 'status': 'active',
@@ -450,25 +441,9 @@ def init_reports_blueprint(mongo, token_required):
             
             # Apply date filter if provided
             if end_date:
-                income_query['date'] = {'$lte': end_date}
-                expense_query['date'] = {'$lte': end_date}
                 adjustment_query['date'] = {'$lte': end_date}
             
-            # Get total income (active entries only)
-            income_amounts = []
-            income_cursor = mongo.db.incomes.find(income_query)
-            for income in income_cursor:
-                income_amounts.append(income.get('amount', 0.0))
-            total_income = safe_sum(income_amounts)
-            
-            # Get total expenses (active entries only)
-            expense_amounts = []
-            expense_cursor = mongo.db.expenses.find(expense_query)
-            for expense in expense_cursor:
-                expense_amounts.append(expense.get('amount', 0.0))
-            total_expenses = safe_sum(expense_amounts)
-            
-            # Get total drawings, capital deposits, and asset purchases (active entries only)
+            # Get only cash-affecting adjustments (drawings, capital, asset purchases)
             drawing_amounts = []
             capital_amounts = []
             asset_amounts = []
@@ -488,11 +463,10 @@ def init_reports_blueprint(mongo, token_required):
             total_capital = safe_sum(capital_amounts)
             total_asset_purchases = safe_sum(asset_amounts)
             
-            # Calculate balance with proper rounding
+            # NEW FORMULA: Only cash movements affect cash balance
+            # Net income affects equity, not cash
             current_balance = round(
                 opening_balance 
-                + total_income 
-                - total_expenses 
                 - total_drawings 
                 + total_capital
                 - total_asset_purchases,
@@ -7977,7 +7951,8 @@ def init_reports_blueprint(mongo, token_required):
             # Import the liability calculation function
             from utils.liability_calculator import calculate_total_liabilities
             
-            liability_result = calculate_total_liabilities(mongo)
+            # PRIVACY FIX: Pass current user ID to filter liabilities to this user only
+            liability_result = calculate_total_liabilities(mongo, current_user['_id'])
             fc_credit_liabilities = 0
             subscription_liabilities = 0
             fee_waiver_liabilities = 0
@@ -8366,12 +8341,11 @@ def init_reports_blueprint(mongo, token_required):
                     }
                     
                     # CRITICAL FIX (Mar 10, 2026): Get FC Credit and Subscription liabilities
-                    import sys
-                    import os
-                    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    from utils.financial_automation_integration import calculate_total_liabilities
+                    # PRIVACY FIX (Mar 12, 2026): Import from correct module and filter by user
+                    from utils.liability_calculator import calculate_total_liabilities
                     
-                    liability_result = calculate_total_liabilities(mongo)
+                    # PRIVACY FIX: Pass current user ID to filter liabilities to this user only
+                    liability_result = calculate_total_liabilities(mongo, current_user['_id'])
                     fc_credit_liabilities = 0
                     subscription_liabilities = 0
                     fee_waiver_liabilities = 0

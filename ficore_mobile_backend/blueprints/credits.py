@@ -1784,6 +1784,22 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                     'message': 'Invalid user session'
                 }), 401
 
+            # ✅ CRITICAL FIX: Check if this is the business account
+            BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
+            if current_user['_id'] == BUSINESS_USER_ID:
+                # Business account should not have FC Credits
+                return jsonify({
+                    'success': True,
+                    'balance': 0,
+                    'totalCredits': 0,
+                    'totalDebits': 0,
+                    'totalPurchased': 0,
+                    'totalBonuses': 0,
+                    'totalSpent': 0,
+                    'pendingRequests': 0,
+                    'message': 'Business account - FC Credits not applicable'
+                }), 200
+
             # Get user's current balance with error handling
             try:
                 user = mongo.db.users.find_one({'_id': current_user['_id']})

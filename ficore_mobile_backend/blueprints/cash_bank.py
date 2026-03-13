@@ -1181,17 +1181,17 @@ def init_cash_bank_blueprint(mongo, token_required):
             total_drawings = safe_sum(drawing_amounts)
             total_capital = safe_sum(capital_amounts)
             
-            # Calculate current balance and round to 2 decimal places
-            current_balance = round(opening_balance + total_income - total_expenses - total_drawings + total_capital, 2)
+            # NEW FORMULA (Mar 13, 2026): Only cash movements affect cash balance
+            # Net income affects equity, not cash
+            current_balance = round(opening_balance - total_drawings + total_capital, 2)
             
             # Debug logging
-            print(f'💰 Balance Calculation for user {current_user["_id"]}:')
+            print(f'💰 Balance Calculation for user {current_user["_id"]} (NEW FORMULA):')
             print(f'   Opening Balance: ₦{opening_balance}')
-            print(f'   Total Income: ₦{total_income}')
-            print(f'   Total Expenses: ₦{total_expenses}')
             print(f'   Total Drawings: ₦{total_drawings}')
             print(f'   Total Capital: ₦{total_capital}')
             print(f'   Current Balance: ₦{current_balance}')
+            print(f'   NOTE: Income/expenses no longer affect cash balance')
             
             # CRITICAL FIX: Wrap data in 'data' field for DioApiClient compatibility
             return jsonify({
@@ -1287,14 +1287,15 @@ def init_cash_bank_blueprint(mongo, token_required):
             total_drawings = safe_sum(drawing_amounts)
             total_capital = safe_sum(capital_amounts)
             
-            # Calculate current balance with proper rounding
-            current_balance = round(opening_balance + total_income - total_expenses - total_drawings + total_capital, 2)
+            # NEW FORMULA (Mar 13, 2026): Only cash movements affect cash balance
+            # Net income affects equity, not cash
+            current_balance = round(opening_balance - total_drawings + total_capital, 2)
             
             # Prepare data for PDF generation
             balance_data = {
                 'openingBalance': opening_balance,
-                'totalIncome': total_income,
-                'totalExpenses': total_expenses,
+                'totalIncome': total_income,  # Keep for display purposes
+                'totalExpenses': total_expenses,  # Keep for display purposes
                 'totalDrawings': total_drawings,
                 'totalCapital': total_capital,
                 'currentBalance': current_balance
