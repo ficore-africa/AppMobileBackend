@@ -444,7 +444,6 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                     
                 except Exception as e:
                     print(f'⚠️  Failed to record subscription revenue: {str(e)}')
-                )
                 
                 if revenue_result.get('success'):
                     print(f'💰 PAID subscription revenue recorded (TEST MODE): {plan["name"]} (₦{plan["price"]}) - User {user_id}')
