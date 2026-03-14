@@ -19,6 +19,43 @@ from utils.parallel_query_helper import fetch_collections_parallel
 from utils.pdf_cache_helper import get_pdf_cache
 from utils.background_report_generator import get_background_generator, ReportJobStatus
 
+# CRITICAL SECURITY FIX: Business User ID to exclude from user reports
+# This prevents regular users from seeing FiCore's internal business data
+BUSINESS_USER_ID = ObjectId('69a18f7a4bf164fcbf7656be')
+
+def create_user_query(user_id, additional_filters=None):
+    """
+    SECURITY FIX: Create a secure query that excludes business data
+    
+    This function ensures that regular users NEVER see FiCore's internal
+    business transactions (FC liabilities, marketing expenses, etc.)
+    
+    Args:
+        user_id: The current user's ID
+        additional_filters: Additional query filters to apply
+    
+    Returns:
+        dict: MongoDB query that excludes business data
+    """
+    # Base query: user's data only, exclude business account
+    query = {
+        'userId': user_id,
+        'status': 'active',
+        'isDeleted': False
+    }
+    
+    # CRITICAL: Ensure we never include business account data
+    # Even if somehow user_id equals BUSINESS_USER_ID, this prevents it
+    if user_id == BUSINESS_USER_ID:
+        # If someone tries to query business data directly, return empty results
+        query['_id'] = ObjectId('000000000000000000000000')  # Non-existent ID
+    
+    # Apply additional filters if provided
+    if additional_filters:
+        query.update(additional_filters)
+    
+    return query
+
 # ============================================================================
 # QUERY PROJECTIONS FOR PDF EXPORT OPTIMIZATION
 # ============================================================================
@@ -95,6 +132,59 @@ PDF_PROJECTIONS = {
         '_id': 1
     }
 }
+
+# ============================================================================
+# VAS COMMISSION HELPER FUNCTION
+# ============================================================================
+
+def get_vas_commissions_from_transactions(mongo, user_id, start_date=None, end_date=None):
+    """
+    Fetch VAS commissions from vas_transactions.providerCommission field
+    This matches the treasury dashboard pattern and is the authoritative source
+    """
+    try:
+        # Build query for VAS transactions with commissions
+        query = {
+            'userId': ObjectId(user_id),
+            'status': 'SUCCESS',
+            'providerCommission': {'$gt': 0}  # Only transactions with actual commissions
+        }
+        
+        # Add date filtering if provided
+        if start_date or end_date:
+            date_filter = {}
+            if start_date:
+                date_filter['$gte'] = start_date
+            if end_date:
+                date_filter['$lte'] = end_date
+            query['createdAt'] = date_filter
+        
+        # Fetch VAS transactions with commissions
+        vas_transactions = list(mongo.db.vas_transactions.find(query, {
+            'providerCommission': 1,
+            'provider': 1,
+            'type': 1,
+            'createdAt': 1,
+            'amount': 1,
+            '_id': 1
+        }))
+        
+        # Calculate total VAS commission revenue
+        total_vas_commission = sum(t.get('providerCommission', 0) for t in vas_transactions)
+        
+        return {
+            'total_commission': total_vas_commission,
+            'transactions': vas_transactions,
+            'count': len(vas_transactions)
+        }
+        
+    except Exception as e:
+        print(f"Error fetching VAS commissions: {str(e)}")
+        return {
+            'total_commission': 0,
+            'transactions': [],
+            'count': 0
+        }
 
 # ============================================================================
 
@@ -668,30 +758,31 @@ def init_reports_blueprint(mongo, token_required):
                     download_name=f'ficore_{report_type}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
                 )
             
-# Fetch income data with tag filtering
-            query = {
-                'userId': current_user['_id'],
-                'status': 'active',
-                'isDeleted': False
-            }
+# SECURITY FIX: Use secure query that excludes business data
+            additional_filters = {}
             
             # Apply tag filtering
             if tag_filter == 'business':
-                query['tags'] = 'Business'
+                additional_filters['tags'] = 'Business'
             elif tag_filter == 'personal':
-                query['tags'] = 'Personal'
+                additional_filters['tags'] = 'Personal'
             elif tag_filter == 'untagged':
-                query['$or'] = [
+                additional_filters['$or'] = [
                     {'entryType': {'$exists': False}},
                     {'entryType': {'$size': 0}},
                     {'entryType': None}
                 ]
+            
+            # Apply date filtering
             if start_date or end_date:
-                query['date'] = {}
+                additional_filters['date'] = {}
                 if start_date:
-                    query['date']['$gte'] = start_date
+                    additional_filters['date']['$gte'] = start_date
                 if end_date:
-                    query['date']['$lte'] = end_date
+                    additional_filters['date']['$lte'] = end_date
+            
+            # Create secure query that excludes business data
+            query = create_user_query(current_user['_id'], additional_filters)
             
             incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1))
             
@@ -835,31 +926,31 @@ def init_reports_blueprint(mongo, token_required):
             
             # Define the generation function (this will run in background)
             def generate_income_pdf():
-                # Build query
-                query = {
-                    'userId': current_user['_id'],
-                    'status': 'active',
-                    'isDeleted': False
-                }
+                # SECURITY FIX: Use secure query that excludes business data
+                additional_filters = {}
                 
                 # Apply tag filtering
                 if tag_filter == 'business':
-                    query['tags'] = 'Business'
+                    additional_filters['tags'] = 'Business'
                 elif tag_filter == 'personal':
-                    query['tags'] = 'Personal'
+                    additional_filters['tags'] = 'Personal'
                 elif tag_filter == 'untagged':
-                    query['$or'] = [
+                    additional_filters['$or'] = [
                         {'entryType': {'$exists': False}},
                         {'entryType': {'$size': 0}},
                         {'entryType': None}
                     ]
                 
+                # Apply date filtering
                 if start_date or end_date:
-                    query['date'] = {}
+                    additional_filters['date'] = {}
                     if start_date:
-                        query['date']['$gte'] = start_date
+                        additional_filters['date']['$gte'] = start_date
                     if end_date:
-                        query['date']['$lte'] = end_date
+                        additional_filters['date']['$lte'] = end_date
+                
+                # Create secure query that excludes business data
+                query = create_user_query(current_user['_id'], additional_filters)
                 
                 # Fetch data
                 incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1))
@@ -979,30 +1070,31 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch income data with tag filtering
-            query = {
-                'userId': current_user['_id'],
-                'status': 'active',
-                'isDeleted': False
-            }
+            # SECURITY FIX: Use secure query that excludes business data
+            additional_filters = {}
             
             # Apply tag filtering
             if tag_filter == 'business':
-                query['tags'] = 'Business'
+                additional_filters['tags'] = 'Business'
             elif tag_filter == 'personal':
-                query['tags'] = 'Personal'
+                additional_filters['tags'] = 'Personal'
             elif tag_filter == 'untagged':
-                query['$or'] = [
+                additional_filters['$or'] = [
                     {'entryType': {'$exists': False}},
                     {'entryType': {'$size': 0}},
                     {'entryType': None}
                 ]
+            
+            # Apply date filtering
             if start_date or end_date:
-                query['date'] = {}
+                additional_filters['date'] = {}
                 if start_date:
-                    query['date']['$gte'] = start_date
+                    additional_filters['date']['$gte'] = start_date
                 if end_date:
-                    query['date']['$lte'] = end_date
+                    additional_filters['date']['$lte'] = end_date
+            
+            # Create secure query that excludes business data
+            query = create_user_query(current_user['_id'], additional_filters)
             
             incomes = list(mongo.db.incomes.find(query, PDF_PROJECTIONS['incomes']).sort('date', -1))
             
@@ -1125,30 +1217,31 @@ def init_reports_blueprint(mongo, token_required):
                     download_name=f'ficore_{report_type}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.pdf'
                 )
             
-# Fetch expense data with tag filtering
-            query = {
-                'userId': current_user['_id'],
-                'status': 'active',
-                'isDeleted': False
-            }
+# SECURITY FIX: Use secure query that excludes business data
+            additional_filters = {}
             
             # Apply tag filtering
             if tag_filter == 'business':
-                query['tags'] = 'Business'
+                additional_filters['tags'] = 'Business'
             elif tag_filter == 'personal':
-                query['tags'] = 'Personal'
+                additional_filters['tags'] = 'Personal'
             elif tag_filter == 'untagged':
-                query['$or'] = [
+                additional_filters['$or'] = [
                     {'entryType': {'$exists': False}},
                     {'entryType': {'$size': 0}},
                     {'entryType': None}
                 ]
+            
+            # Apply date filtering
             if start_date or end_date:
-                query['date'] = {}
+                additional_filters['date'] = {}
                 if start_date:
-                    query['date']['$gte'] = start_date
+                    additional_filters['date']['$gte'] = start_date
                 if end_date:
-                    query['date']['$lte'] = end_date
+                    additional_filters['date']['$lte'] = end_date
+            
+            # Create secure query that excludes business data
+            query = create_user_query(current_user['_id'], additional_filters)
             
             expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']).sort('date', -1))
             
@@ -1282,31 +1375,31 @@ def init_reports_blueprint(mongo, token_required):
             
             # Define generation function
             def generate_expense_pdf():
-                # Build query
-                query = {
-                    'userId': current_user['_id'],
-                    'status': 'active',
-                    'isDeleted': False
-                }
+                # SECURITY FIX: Use secure query that excludes business data
+                additional_filters = {}
                 
                 # Apply tag filtering
                 if tag_filter == 'business':
-                    query['tags'] = 'Business'
+                    additional_filters['tags'] = 'Business'
                 elif tag_filter == 'personal':
-                    query['tags'] = 'Personal'
+                    additional_filters['tags'] = 'Personal'
                 elif tag_filter == 'untagged':
-                    query['$or'] = [
+                    additional_filters['$or'] = [
                         {'entryType': {'$exists': False}},
                         {'entryType': {'$size': 0}},
                         {'entryType': None}
                     ]
                 
+                # Apply date filtering
                 if start_date or end_date:
-                    query['date'] = {}
+                    additional_filters['date'] = {}
                     if start_date:
-                        query['date']['$gte'] = start_date
+                        additional_filters['date']['$gte'] = start_date
                     if end_date:
-                        query['date']['$lte'] = end_date
+                        additional_filters['date']['$lte'] = end_date
+                
+                # Create secure query that excludes business data
+                query = create_user_query(current_user['_id'], additional_filters)
                 
                 # Fetch data
                 expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']).sort('date', -1))
@@ -1429,30 +1522,31 @@ def init_reports_blueprint(mongo, token_required):
             # Parse date range
             start_date, end_date = parse_date_range(request_data)
             
-            # Fetch expense data with tag filtering
-            query = {
-                'userId': current_user['_id'],
-                'status': 'active',
-                'isDeleted': False
-            }
+            # SECURITY FIX: Use secure query that excludes business data
+            additional_filters = {}
             
             # Apply tag filtering
             if tag_filter == 'business':
-                query['tags'] = 'Business'
+                additional_filters['tags'] = 'Business'
             elif tag_filter == 'personal':
-                query['tags'] = 'Personal'
+                additional_filters['tags'] = 'Personal'
             elif tag_filter == 'untagged':
-                query['$or'] = [
+                additional_filters['$or'] = [
                     {'entryType': {'$exists': False}},
                     {'entryType': {'$size': 0}},
                     {'entryType': None}
                 ]
+            
+            # Apply date filtering
             if start_date or end_date:
-                query['date'] = {}
+                additional_filters['date'] = {}
                 if start_date:
-                    query['date']['$gte'] = start_date
+                    additional_filters['date']['$gte'] = start_date
                 if end_date:
-                    query['date']['$lte'] = end_date
+                    additional_filters['date']['$lte'] = end_date
+            
+            # Create secure query that excludes business data
+            query = create_user_query(current_user['_id'], additional_filters)
             
             expenses = list(mongo.db.expenses.find(query, PDF_PROJECTIONS['expenses']).sort('date', -1))
             
@@ -1559,10 +1653,8 @@ def init_reports_blueprint(mongo, token_required):
             # Fetch income and expense data with tag filtering
             # MODERNIZATION (Feb 18, 2026): Exclude personal expenses
             # [OK] CRITICAL FIX (Mar 9, 2026): Exclude Capital Contributions and Capital Expenditures from P&L
-            income_query = {
-                'userId': current_user['_id'],
-                'status': 'active',
-                'isDeleted': False,
+            # SECURITY FIX: Use secure query that excludes business data
+            income_additional_filters = {
                 'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital contributions
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},  # Exclude personal
@@ -1570,10 +1662,7 @@ def init_reports_blueprint(mongo, token_required):
                     {'entryType': None}                   # Include null
                 ]
             }
-            expense_query = {
-                'userId': current_user['_id'],
-                'status': 'active',
-                'isDeleted': False,
+            expense_additional_filters = {
                 'excludeFromProfitLoss': {'$ne': True},  # [OK] Exclude capital expenditures
                 '$or': [
                     {'entryType': {'$ne': 'personal'}},  # Exclude personal
@@ -1584,24 +1673,18 @@ def init_reports_blueprint(mongo, token_required):
             
             # Apply legacy tag filtering (for backward compatibility)
             if tag_filter == 'business':
-                income_query['entryType'] = 'business'
-                expense_query['entryType'] = 'business'
+                income_additional_filters['entryType'] = 'business'
+                expense_additional_filters['entryType'] = 'business'
             elif tag_filter == 'personal':
                 # Override: If user explicitly requests personal, show personal
-                income_query = {
-                    'userId': current_user['_id'],
-                    'status': 'active',
-                    'isDeleted': False,
+                income_additional_filters = {
                     'entryType': 'personal'
                 }
-                expense_query = {
-                    'userId': current_user['_id'],
-                    'status': 'active',
-                    'isDeleted': False,
+                expense_additional_filters = {
                     'entryType': 'personal'
                 }
             elif tag_filter == 'untagged':
-                income_query['$or'] = [
+                income_additional_filters['$or'] = [
                     {'entryType': {'$exists': False}},
                     {'entryType': {'$size': 0}},
                     {'entryType': None}
@@ -2439,9 +2522,16 @@ def init_reports_blueprint(mongo, token_required):
             # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
             # Other Income = Internal accounting (consumed promotional spends, grants, interest)
             
+            # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
+            # This matches the treasury dashboard pattern and is the authoritative source
+            vas_commission_data = get_vas_commissions_from_transactions(
+                mongo, user_id, start_date, end_date
+            )
+            vas_commission_revenue = vas_commission_data['total_commission']
+            
             # Define what constitutes "Sales Revenue" (actual business revenue)
+            # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
             sales_revenue_sources = [
-                'vas_commission',                    # VAS Commissions (what we actually earn) ✅
                 'inventory_sale',                    # Inventory sales ✅
                 'subscription_purchase_payment_received',  # Subscription payments ✅
                 'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -2458,11 +2548,14 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue (what we actually sell/earn)
-            sales_revenue = sum(
+            # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+            sales_revenue_from_incomes = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
+            
+            # Total Sales Revenue = VAS Commissions + Other Sales Revenue
+            sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -2879,9 +2972,16 @@ def init_reports_blueprint(mongo, token_required):
                 # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
                 # Other Income = Internal accounting (consumed promotional spends, grants, interest)
                 
+                # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
+                # This matches the treasury dashboard pattern and is the authoritative source
+                vas_commission_data = get_vas_commissions_from_transactions(
+                    mongo, user_id, start_date, end_date
+                )
+                vas_commission_revenue = vas_commission_data['total_commission']
+                
                 # Define what constitutes "Sales Revenue" (actual business revenue)
+                # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
                 sales_revenue_sources = [
-                    'vas_commission',                    # VAS Commissions (what we actually earn) ✅
                     'inventory_sale',                    # Inventory sales ✅
                     'subscription_purchase_payment_received',  # Subscription payments ✅
                     'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -2898,11 +2998,14 @@ def init_reports_blueprint(mongo, token_required):
                     'voice',                           # Voice entries (could be grants, interest, etc.) ✅
                 ]
                 
-                # Calculate Sales Revenue (what we actually sell/earn)
-                sales_revenue = sum(
+                # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+                sales_revenue_from_incomes = sum(
                     inc.get('amount', 0) for inc in incomes 
                     if inc.get('sourceType') in sales_revenue_sources
                 )
+                
+                # Total Sales Revenue = VAS Commissions + Other Sales Revenue
+                sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
                 
                 # Calculate Other Income (internal accounting, not real external revenue)
                 other_income = sum(
@@ -3916,9 +4019,16 @@ def init_reports_blueprint(mongo, token_required):
             # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
             # Other Income = Internal accounting (consumed promotional spends, grants, interest)
             
+            # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
+            # This matches the treasury dashboard pattern and is the authoritative source
+            vas_commission_data = get_vas_commissions_from_transactions(
+                mongo, current_user['_id'], start_date, end_date
+            )
+            vas_commission_revenue = vas_commission_data['total_commission']
+            
             # Define what constitutes "Sales Revenue" (actual business revenue)
+            # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
             sales_revenue_sources = [
-                'vas_commission',                    # VAS Commissions (what we actually earn) ✅
                 'inventory_sale',                    # Inventory sales ✅
                 'subscription_purchase_payment_received',  # Subscription payments ✅
                 'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -3935,12 +4045,20 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Separate Sales Revenue from Other Income
-            sales_revenue_items = [inc for inc in incomes if inc.get('sourceType') in sales_revenue_sources]
-            other_income_items = [inc for inc in incomes if inc.get('sourceType') in other_income_sources]
+            # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+            sales_revenue_from_incomes = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in sales_revenue_sources
+            )
             
-            sales_revenue = sum(inc.get('amount', 0) for inc in sales_revenue_items)
-            other_income = sum(inc.get('amount', 0) for inc in other_income_items)
+            # Total Sales Revenue = VAS Commissions + Other Sales Revenue
+            sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+            
+            # Calculate Other Income (internal accounting, not real external revenue)
+            other_income = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in other_income_sources
+            )
             total_revenue = sales_revenue + other_income
             
             # Separate COGS from Operating Expenses
@@ -5373,9 +5491,16 @@ def init_reports_blueprint(mongo, token_required):
         # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
         # Other Income = Internal accounting (consumed promotional spends, grants, interest)
         
+        # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
+        # This matches the treasury dashboard pattern and is the authoritative source
+        vas_commission_data = get_vas_commissions_from_transactions(
+            mongo, user_id, start_date, end_date
+        )
+        vas_commission_revenue = vas_commission_data['total_commission']
+        
         # Define what constitutes "Sales Revenue" (actual business revenue)
+        # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
         sales_revenue_sources = [
-            'vas_commission',                    # VAS Commissions (what we actually earn) ✅
             'inventory_sale',                    # Inventory sales ✅
             'subscription_purchase_payment_received',  # Subscription payments ✅
             'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -5392,20 +5517,22 @@ def init_reports_blueprint(mongo, token_required):
             'voice',                           # Voice entries (could be grants, interest, etc.) ✅
         ]
         
-        # Separate Sales Revenue from Other Income
-        sales_revenue = 0
+        # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+        sales_revenue_from_incomes = 0
         other_income = 0
         for inc in all_incomes:
             amount = inc.get('amount', 0)
             source_type = inc.get('sourceType', '')
             if source_type in sales_revenue_sources:
-                sales_revenue += amount
+                sales_revenue_from_incomes += amount
             elif source_type in other_income_sources:
                 other_income += amount
             else:
                 # Default to other income for unclassified entries
                 other_income += amount
         
+        # Total Sales Revenue = VAS Commissions + Other Sales Revenue
+        sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
         total_revenue = sales_revenue + other_income
         
         # STEP 2: Get COGS (Cost of Goods Sold)
@@ -7792,9 +7919,16 @@ def init_reports_blueprint(mongo, token_required):
             # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
             # Other Income = Internal accounting (consumed promotional spends, grants, interest)
             
+            # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
+            # This matches the treasury dashboard pattern and is the authoritative source
+            vas_commission_data = get_vas_commissions_from_transactions(
+                mongo, current_user['_id'], start_date, end_date
+            )
+            vas_commission_revenue = vas_commission_data['total_commission']
+            
             # Define what constitutes "Sales Revenue" (actual business revenue)
+            # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
             sales_revenue_sources = [
-                'vas_commission',                    # VAS Commissions (what we actually earn) ✅
                 'inventory_sale',                    # Inventory sales ✅
                 'subscription_purchase_payment_received',  # Subscription payments ✅
                 'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -7811,11 +7945,14 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue (what we actually sell/earn)
-            sales_revenue = sum(
+            # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+            sales_revenue_from_incomes = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
+            
+            # Total Sales Revenue = VAS Commissions + Other Sales Revenue
+            sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -8256,9 +8393,16 @@ def init_reports_blueprint(mongo, token_required):
                     # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
                     # Other Income = Internal accounting (consumed promotional spends, grants, interest)
                     
+                    # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
+                    # This matches the treasury dashboard pattern and is the authoritative source
+                    vas_commission_data = get_vas_commissions_from_transactions(
+                        mongo, current_user['_id'], start_date, end_date
+                    )
+                    vas_commission_revenue = vas_commission_data['total_commission']
+                    
                     # Define what constitutes "Sales Revenue" (actual business revenue)
+                    # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
                     sales_revenue_sources = [
-                        'vas_commission',                    # VAS Commissions (what we actually earn) ✅
                         'inventory_sale',                    # Inventory sales ✅
                         'subscription_purchase_payment_received',  # Subscription payments ✅
                         'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -8275,11 +8419,14 @@ def init_reports_blueprint(mongo, token_required):
                         'voice',                           # Voice entries (could be grants, interest, etc.) ✅
                     ]
                     
-                    # Calculate Sales Revenue (what we actually sell/earn)
-                    sales_revenue = sum(
+                    # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+                    sales_revenue_from_incomes = sum(
                         inc.get('amount', 0) for inc in incomes 
                         if inc.get('sourceType') in sales_revenue_sources
                     )
+                    
+                    # Total Sales Revenue = VAS Commissions + Other Sales Revenue
+                    sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
                     
                     # Calculate Other Income (internal accounting, not real external revenue)
                     other_income = sum(

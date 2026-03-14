@@ -1240,30 +1240,35 @@ def init_vas_bills_blueprint(mongo, token_required, serialize_doc):
                         }}
                     )
                     
-                    # Record provider commission as corporate revenue
+                    # Record provider commission using unified corporate revenue system
                     if provider_commission > 0:
-                        corporate_revenue = {
-                            '_id': ObjectId(),
-                            'type': 'VAS_COMMISSION',
-                            'category': f'{provider_source.upper()}_ELECTRICITY',
-                            'amount': round(provider_commission, 2),
-                            'userId': ObjectId(current_user['_id']),
-                            'relatedTransaction': str(transaction_id),
-                            'description': f'{provider_source.capitalize()} {commission_rate*100}% commission on electricity bill',
-                            'status': 'RECORDED',
-                            'createdAt': datetime.utcnow(),
-                            'metadata': {
-                                'provider': provider_source,
-                                'commissionRate': commission_rate,
-                                'transactionAmount': amount,
-                                'providerCost': round(provider_cost, 2),
-                                'billProvider': provider,
-                                'accountNumber': account_number,
-                                'transactionType': 'ELECTRICITY'
-                            }
-                        }
-                        mongo.db.corporate_revenue.insert_one(corporate_revenue)
-                        print(f'💰 Corporate revenue recorded: ₦{provider_commission:.2f} commission from {provider_source} electricity bill - User {current_user["_id"]}')
+                        try:
+                            from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                            
+                            # Record in unified bookkeeping system
+                            unified_result = record_corporate_revenue_automatically(
+                                mongo=mongo.db,
+                                revenue_type='vas_commission',
+                                amount=round(provider_commission, 2),
+                                user_id=ObjectId(current_user['_id']),
+                                transaction_id=transaction_id,
+                                metadata={
+                                    'provider': provider_source,
+                                    'transaction_type': 'ELECTRICITY',
+                                    'transaction_amount': amount,
+                                    'commission_rate': commission_rate,
+                                    'bill_provider': provider,
+                                    'account_number': account_number
+                                }
+                            )
+                            
+                            if unified_result.get('success'):
+                                print(f'💰 VAS commission recorded: ₦{provider_commission:.2f} from {provider_source} electricity bill - User {current_user["_id"]}')
+                            else:
+                                print(f'⚠️  Failed to record VAS commission: {unified_result.get("error")}')
+                                
+                        except Exception as e:
+                            print(f'⚠️  Failed to record VAS commission: {str(e)}')
                 
                 # Auto-create expense entry (auto-bookkeeping) for bill payments
                 try:

@@ -2629,8 +2629,59 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                 
                 # ==================== END REFERRAL SYSTEM ====================
                 
-                # Record corporate revenue (₦ 30 fee) with gateway cost tracking
+                # Record corporate revenue (₦ 30 fee) with gateway cost tracking (UNIFIED SYSTEM)
                 if deposit_fee > 0:
+                    try:
+                        from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                        
+                        # Record deposit fee revenue in unified bookkeeping system
+                        unified_result = record_corporate_revenue_automatically(
+                            mongo=mongo.db,
+                            revenue_type='deposit_fee',
+                            amount=deposit_fee,
+                            user_id=ObjectId(user_id),
+                            transaction_id=None,  # No specific transaction ID for deposits
+                            metadata={
+                                'deposit_amount': amount_to_credit,
+                                'fee_rate': 3.0,  # 3% fee rate
+                                'gateway_fee': round(gateway_fee, 2),
+                                'gateway_provider': gateway_provider,
+                                'net_revenue': round(net_deposit_revenue, 2),
+                                'is_premium': is_premium,
+                                'transaction_reference': transaction_reference
+                            }
+                        )
+                        
+                        if unified_result.get('success'):
+                            print(f'✅ UNIFIED: Deposit fee recorded in bookkeeping: ₦{deposit_fee} from user {user_id}')
+                        else:
+                            print(f'⚠️  UNIFIED: Failed to record deposit fee in bookkeeping: {unified_result.get("error")}')
+                            
+                        # Record gateway fee as expense in unified bookkeeping system
+                        if gateway_fee > 0:
+                            gateway_result = record_corporate_revenue_automatically(
+                                mongo=mongo.db,
+                                revenue_type='gateway_fee',
+                                amount=gateway_fee,
+                                user_id=ObjectId(user_id),
+                                transaction_id=None,
+                                metadata={
+                                    'payment_amount': amount_paid,
+                                    'gateway_provider': gateway_provider,
+                                    'fee_rate': 1.6,  # 1.6% Paystack fee
+                                    'transaction_reference': transaction_reference
+                                }
+                            )
+                            
+                            if gateway_result.get('success'):
+                                print(f'✅ UNIFIED: Gateway fee recorded in bookkeeping: ₦{gateway_fee} expense from {gateway_provider}')
+                            else:
+                                print(f'⚠️  UNIFIED: Failed to record gateway fee in bookkeeping: {gateway_result.get("error")}')
+                                
+                    except Exception as e:
+                        print(f'⚠️  UNIFIED: Error recording deposit revenue/expenses in bookkeeping: {str(e)}')
+                    
+                    # Keep legacy corporate_revenue for treasury dashboard compatibility
                     corporate_revenue = {
                         '_id': ObjectId(),
                         'type': 'SERVICE_FEE',
@@ -2656,6 +2707,34 @@ def init_vas_wallet_blueprint(mongo, token_required, serialize_doc):
                     print(f'💰 Corporate revenue recorded: ₦{deposit_fee} deposit fee (net: ₦{net_deposit_revenue:.2f} after gateway) - User {user_id}')
                 elif is_premium:
                     # Track gateway cost for premium users (no deposit fee revenue)
+                    try:
+                        from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                        
+                        # Record gateway fee as expense for premium users
+                        if gateway_fee > 0:
+                            gateway_result = record_corporate_revenue_automatically(
+                                mongo=mongo.db,
+                                revenue_type='gateway_fee',
+                                amount=gateway_fee,
+                                user_id=ObjectId(user_id),
+                                transaction_id=None,
+                                metadata={
+                                    'payment_amount': amount_paid,
+                                    'gateway_provider': gateway_provider,
+                                    'fee_rate': 1.6,
+                                    'transaction_reference': transaction_reference,
+                                    'is_premium': True
+                                }
+                            )
+                            
+                            if gateway_result.get('success'):
+                                print(f'✅ UNIFIED: Premium gateway fee recorded in bookkeeping: ₦{gateway_fee} expense')
+                            else:
+                                print(f'⚠️  UNIFIED: Failed to record premium gateway fee: {gateway_result.get("error")}')
+                                
+                    except Exception as e:
+                        print(f'⚠️  UNIFIED: Error recording premium gateway fee: {str(e)}')
+                        
                     print(f'💸 Gateway cost for premium user: ₦{gateway_fee:.2f} (no deposit fee collected) - User {user_id}')
                 
                 # Send notification

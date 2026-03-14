@@ -396,18 +396,54 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
                 mongo.db.subscriptions.insert_one(subscription_record)
                 
                 # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
-                from utils.gateway_fee_accounting import record_subscription_purchase_with_gateway_fees
-                
-                revenue_result = record_subscription_purchase_with_gateway_fees(
-                    mongo=mongo,
-                    user_id=user_id,
-                    subscription_amount=plan['price'],
-                    plan_type=plan_type,
-                    plan_name=plan['name'],
-                    duration_days=plan['duration_days'],
-                    payment_reference=reference,
-                    paystack_transaction_id='TEST_MODE',
-                    payment_method='paystack_test'
+                # UPDATED: Use unified corporate revenue system for consistency
+                try:
+                    from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                    from utils.gateway_fee_calculator import GatewayFeeCalculator
+                    
+                    # Calculate gateway fee
+                    fee_calc = GatewayFeeCalculator.calculate_subscription_fees(plan['price'])
+                    gateway_fee = fee_calc['gateway_fee']
+                    
+                    # Record subscription sale revenue
+                    revenue_result = record_corporate_revenue_automatically(
+                        mongo=mongo.db,
+                        revenue_type='subscription_sale',
+                        amount=plan['price'],
+                        user_id=user_id,
+                        transaction_id=ObjectId(),  # Subscription transaction ID
+                        metadata={
+                            'plan_type': plan_type,
+                            'plan_name': plan['name'],
+                            'payment_reference': reference,
+                            'gateway_fee': gateway_fee,
+                            'subscription_id': subscription_record['_id']
+                        }
+                    )
+                    
+                    # Record gateway fee as expense
+                    if gateway_fee > 0:
+                        gateway_result = record_corporate_revenue_automatically(
+                            mongo=mongo.db,
+                            revenue_type='gateway_fee',
+                            amount=gateway_fee,
+                            user_id=user_id,
+                            transaction_id=ObjectId(),
+                            metadata={
+                                'payment_amount': plan['price'],
+                                'gateway_provider': 'paystack',
+                                'payment_reference': reference
+                            }
+                        )
+                        
+                        if gateway_result.get('success'):
+                            print(f'✅ Gateway fee recorded: ₦{gateway_fee:,.2f}')
+                    
+                    if revenue_result.get('success'):
+                        print(f'✅ Subscription revenue recorded: ₦{plan["price"]:,.2f} ({plan["name"]})')
+                    
+                except Exception as e:
+                    print(f'⚠️  Failed to record subscription revenue: {str(e)}')
                 )
                 
                 if revenue_result.get('success'):
@@ -525,23 +561,55 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             mongo.db.subscriptions.insert_one(subscription_record)
             
             # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
-            from utils.gateway_fee_accounting import record_subscription_purchase_with_gateway_fees
-            
-            revenue_result = record_subscription_purchase_with_gateway_fees(
-                mongo=mongo,
-                user_id=user_id,
-                subscription_amount=plan['price'],
-                plan_type=plan_type,
-                plan_name=plan['name'],
-                duration_days=plan['duration_days'],
-                payment_reference=reference,
-                paystack_transaction_id=transaction_data['id'],
-                payment_method='paystack'
-            )
-            
-            if revenue_result.get('success'):
-                print(f'💰 PAID subscription revenue recorded (CALLBACK): {plan["name"]} (₦{plan["price"]}) - User {user_id}')
-                print(f'   Net revenue: ₦{revenue_result["net_revenue"]:.2f} (after ₦{revenue_result["gateway_fee"]:.2f} gateway fee)')
+            # UPDATED: Use unified corporate revenue system for consistency
+            try:
+                from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                from utils.gateway_fee_calculator import GatewayFeeCalculator
+                
+                # Calculate gateway fee
+                fee_calc = GatewayFeeCalculator.calculate_subscription_fees(plan['price'])
+                gateway_fee = fee_calc['gateway_fee']
+                
+                # Record subscription sale revenue
+                revenue_result = record_corporate_revenue_automatically(
+                    mongo=mongo.db,
+                    revenue_type='subscription_sale',
+                    amount=plan['price'],
+                    user_id=user_id,
+                    transaction_id=ObjectId(),  # Subscription transaction ID
+                    metadata={
+                        'plan_type': plan_type,
+                        'plan_name': plan['name'],
+                        'payment_reference': reference,
+                        'gateway_fee': gateway_fee,
+                        'subscription_id': subscription_record['_id']
+                    }
+                )
+                
+                # Record gateway fee as expense
+                if gateway_fee > 0:
+                    gateway_result = record_corporate_revenue_automatically(
+                        mongo=mongo.db,
+                        revenue_type='gateway_fee',
+                        amount=gateway_fee,
+                        user_id=user_id,
+                        transaction_id=ObjectId(),
+                        metadata={
+                            'payment_amount': plan['price'],
+                            'gateway_provider': 'paystack',
+                            'payment_reference': reference
+                        }
+                    )
+                    
+                    if gateway_result.get('success'):
+                        print(f'✅ Gateway fee recorded: ₦{gateway_fee:,.2f}')
+                
+                if revenue_result.get('success'):
+                    print(f'💰 PAID subscription revenue recorded (CALLBACK): {plan["name"]} (₦{plan["price"]}) - User {user_id}')
+                    print(f'   Net revenue: ₦{plan["price"] - gateway_fee:.2f} (after ₦{gateway_fee:.2f} gateway fee)')
+                
+            except Exception as e:
+                print(f'⚠️  Failed to record subscription revenue: {str(e)}')
             else:
                 print(f'⚠️  Failed to record subscription revenue (CALLBACK): {revenue_result.get("error")}')
             
@@ -781,25 +849,57 @@ def init_subscription_blueprint(mongo, token_required, serialize_doc):
             mongo.db.subscriptions.insert_one(subscription_record)
             
             # Record proper revenue accounting with gateway fees (PAID purchase - not promotional)
-            from utils.gateway_fee_accounting import record_subscription_purchase_with_gateway_fees
-            
-            revenue_result = record_subscription_purchase_with_gateway_fees(
-                mongo=mongo,
-                user_id=current_user['_id'],
-                subscription_amount=plan['price'],
-                plan_type=plan_type,
-                plan_name=plan['name'],
-                duration_days=plan['duration_days'],
-                payment_reference=reference,
-                paystack_transaction_id=transaction_data['id'],
-                payment_method='paystack'
-            )
-            
-            if revenue_result.get('success'):
-                print(f'💰 Subscription revenue recorded: ₦{plan["price"]} (net: ₦{revenue_result["net_revenue"]:.2f}) - User {current_user["_id"]}')
-                print(f'   Transactions: {len(revenue_result["transactions"])} created (Cash + Liability + Revenue)')
-            else:
-                print(f'⚠️  Failed to record subscription revenue: {revenue_result.get("error")}')
+            # UPDATED: Use unified corporate revenue system for consistency
+            try:
+                from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                from utils.gateway_fee_calculator import GatewayFeeCalculator
+                
+                # Calculate gateway fee
+                fee_calc = GatewayFeeCalculator.calculate_subscription_fees(plan['price'])
+                gateway_fee = fee_calc['gateway_fee']
+                
+                # Record subscription sale revenue
+                revenue_result = record_corporate_revenue_automatically(
+                    mongo=mongo.db,
+                    revenue_type='subscription_sale',
+                    amount=plan['price'],
+                    user_id=current_user['_id'],
+                    transaction_id=ObjectId(),  # Subscription transaction ID
+                    metadata={
+                        'plan_type': plan_type,
+                        'plan_name': plan['name'],
+                        'payment_reference': reference,
+                        'gateway_fee': gateway_fee,
+                        'subscription_id': subscription_record['_id']
+                    }
+                )
+                
+                # Record gateway fee as expense
+                if gateway_fee > 0:
+                    gateway_result = record_corporate_revenue_automatically(
+                        mongo=mongo.db,
+                        revenue_type='gateway_fee',
+                        amount=gateway_fee,
+                        user_id=current_user['_id'],
+                        transaction_id=ObjectId(),
+                        metadata={
+                            'payment_amount': plan['price'],
+                            'gateway_provider': 'paystack',
+                            'payment_reference': reference
+                        }
+                    )
+                    
+                    if gateway_result.get('success'):
+                        print(f'✅ Gateway fee recorded: ₦{gateway_fee:,.2f}')
+                
+                if revenue_result.get('success'):
+                    print(f'💰 Subscription revenue recorded: ₦{plan["price"]} (net: ₦{plan["price"] - gateway_fee:.2f}) - User {current_user["_id"]}')
+                    print(f'   Unified system: Revenue + Gateway fee recorded')
+                else:
+                    print(f'⚠️  Failed to record subscription revenue: {revenue_result.get("error")}')
+                
+            except Exception as e:
+                print(f'⚠️  Failed to record subscription revenue: {str(e)}')
             
             # Update pending subscription status
             mongo.db.pending_subscriptions.update_one(

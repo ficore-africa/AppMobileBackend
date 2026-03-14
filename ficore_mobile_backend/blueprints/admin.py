@@ -4761,7 +4761,34 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             # ===== 5. DEPOSIT FEES =====
             deposit_fee_query = {'type': 'SERVICE_FEE', 'category': 'DEPOSIT_FEE'}
             deposit_fee_query.update(date_filter)
-            deposit_fees = list(mongo.db.corporate_revenue.find(deposit_fee_query))
+            # CRITICAL: Exclude test accounts from deposit fee calculations
+            deposit_fee_query = add_test_account_exclusion(deposit_fee_query, mongo)
+            
+            # Get deposit fees with user information
+            deposit_fees_pipeline = [
+                {'$match': deposit_fee_query},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'userId',
+                    'foreignField': '_id',
+                    'as': 'user_info'
+                }},
+                {'$unwind': {'path': '$user_info', 'preserveNullAndEmptyArrays': True}},
+                {'$project': {
+                    'amount': 1,
+                    'gatewayFee': 1,
+                    'netRevenue': 1,
+                    'createdAt': 1,
+                    'relatedTransaction': 1,
+                    'description': 1,
+                    'userId': 1,
+                    'userName': {'$ifNull': ['$user_info.name', 'Unknown User']},
+                    'userEmail': {'$ifNull': ['$user_info.email', 'unknown@example.com']},
+                    'userPhone': {'$ifNull': ['$user_info.phone', 'N/A']}
+                }}
+            ]
+            
+            deposit_fees = list(mongo.db.corporate_revenue.aggregate(deposit_fee_pipeline))
             
             total_deposit_fees = sum(d['amount'] for d in deposit_fees)
             deposit_fee_gateway_costs = sum(d.get('gatewayFee', 0) for d in deposit_fees)
@@ -4913,7 +4940,9 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                         'depositFees': {
                             'gross': round(total_deposit_fees, 2),
                             'gatewayFees': round(deposit_fee_gateway_costs, 2),
-                            'net': round(net_deposit_fees, 2)
+                            'net': round(net_deposit_fees, 2),
+                            'count': len(deposit_fees),
+                            'averageAmount': round(total_deposit_fees / len(deposit_fees), 2) if len(deposit_fees) > 0 else 0
                         }
                     },
                     'costBreakdown': {
@@ -4947,6 +4976,21 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                         for txn_type, stats in sorted(type_stats.items(), key=lambda x: x[1]['commission'], reverse=True)
                     ],
                     'recentTransactions': recent_transactions,
+                    'detailedDepositFees': [
+                        {
+                            'amount': round(fee['amount'], 2),
+                            'gatewayFee': round(fee.get('gatewayFee', 0), 2),
+                            'netRevenue': round(fee.get('netRevenue', fee['amount']), 2),
+                            'createdAt': fee['createdAt'].isoformat() if fee.get('createdAt') else None,
+                            'description': fee.get('description', 'Deposit Fee'),
+                            'userId': str(fee['userId']),
+                            'userName': fee.get('userName', 'Unknown User'),
+                            'userEmail': fee.get('userEmail', 'unknown@example.com'),
+                            'userPhone': fee.get('userPhone', 'N/A'),
+                            'relatedTransaction': fee.get('relatedTransaction')
+                        }
+                        for fee in deposit_fees
+                    ],
                     'period': period,
                     'dateRange': {
                         'start': start_date.isoformat() if start_date else None,
@@ -5203,50 +5247,232 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
     @token_required
     @admin_required
     def export_corporate_revenue(current_user):
-        """Export corporate revenue to CSV"""
+        """
+        📊 Enhanced Corporate Revenue CSV Export
+        Includes all granular details and user information
+        """
         try:
             from flask import make_response
             import csv
             import io
+            from utils.test_account_filter import add_test_account_exclusion
             
-            # Get corporate revenue records
-            corporate_revenue = list(mongo.db.corporate_revenue.find({}).sort('createdAt', -1))
+            # Get time period filter (optional)
+            period = request.args.get('period', 'all')
+            
+            # Calculate date filter
+            date_filter = {}
+            if period != 'all':
+                from datetime import datetime, timedelta
+                days = int(period)
+                start_date = datetime.utcnow() - timedelta(days=days)
+                date_filter = {'createdAt': {'$gte': start_date}}
+            
+            # Build query with test account exclusion
+            base_query = {}
+            base_query.update(date_filter)
+            base_query = add_test_account_exclusion(base_query, mongo)
+            
+            # Get corporate revenue records with user information using aggregation
+            revenue_pipeline = [
+                {'$match': base_query},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'userId',
+                    'foreignField': '_id',
+                    'as': 'user_info'
+                }},
+                {'$unwind': {'path': '$user_info', 'preserveNullAndEmptyArrays': True}},
+                {'$project': {
+                    # Basic fields
+                    'type': 1,
+                    'category': 1,
+                    'amount': 1,
+                    'description': 1,
+                    'createdAt': 1,
+                    'relatedTransaction': 1,
+                    'userId': 1,
+                    
+                    # Enhanced financial fields
+                    'gatewayFee': {'$ifNull': ['$gatewayFee', 0]},
+                    'netRevenue': {'$ifNull': ['$netRevenue', '$amount']},
+                    'paymentMethod': {'$ifNull': ['$paymentMethod', 'N/A']},
+                    'currency': {'$ifNull': ['$currency', 'NGN']},
+                    
+                    # User information
+                    'userName': {'$ifNull': ['$user_info.name', 'Unknown User']},
+                    'userEmail': {'$ifNull': ['$user_info.email', 'unknown@example.com']},
+                    'userPhone': {'$ifNull': ['$user_info.phone', 'N/A']},
+                    
+                    # Metadata fields
+                    'metadata': 1,
+                    'source': {'$ifNull': ['$source', 'N/A']},
+                    'status': {'$ifNull': ['$status', 'completed']},
+                    
+                    # VAS-specific fields (if applicable)
+                    'vasTransactionId': 1,
+                    'provider': 1,
+                    'transactionType': 1,
+                    
+                    # Subscription-specific fields (if applicable)
+                    'subscriptionId': 1,
+                    'planType': 1,
+                    'billingCycle': 1,
+                    
+                    # Credits-specific fields (if applicable)
+                    'creditsAmount': 1,
+                    'creditsType': 1,
+                    
+                    # Deposit fee-specific fields (if applicable)
+                    'depositAmount': 1,
+                    'feePercentage': 1
+                }},
+                {'$sort': {'createdAt': -1}}  # Sort by date descending (latest first)
+            ]
+            
+            corporate_revenue = list(mongo.db.corporate_revenue.aggregate(revenue_pipeline))
             
             # Create CSV content
             output = io.StringIO()
             writer = csv.writer(output)
             
-            # Write headers
+            # Write enhanced headers
             writer.writerow([
-                'Date', 'Type', 'Category', 'Amount', 'Description', 
-                'User ID', 'Related Transaction', 'Created At'
+                # Basic Information
+                'Date',
+                'Type',
+                'Category', 
+                'Amount (₦)',
+                'Gateway Fee (₦)',
+                'Net Revenue (₦)',
+                'Description',
+                'Status',
+                'Currency',
+                'Payment Method',
+                
+                # User Information
+                'User Name',
+                'User Email',
+                'User Phone',
+                'User ID',
+                
+                # Transaction References
+                'Related Transaction',
+                'VAS Transaction ID',
+                'Subscription ID',
+                
+                # Provider/Service Details
+                'Provider',
+                'Transaction Type',
+                'Plan Type',
+                'Billing Cycle',
+                'Source',
+                
+                # Credits Information
+                'Credits Amount',
+                'Credits Type',
+                
+                # Deposit Fee Information
+                'Deposit Amount (₦)',
+                'Fee Percentage (%)',
+                
+                # Metadata
+                'Additional Metadata',
+                
+                # Timestamps
+                'Created At (ISO)',
+                'Created At (Local)'
             ])
             
-            # Write data
+            # Write enhanced data
             for rev in corporate_revenue:
+                # Extract metadata as string
+                metadata = rev.get('metadata', {})
+                metadata_str = ''
+                if metadata and isinstance(metadata, dict):
+                    metadata_items = []
+                    for key, value in metadata.items():
+                        if key not in ['userName', 'userEmail', 'userPhone']:  # Skip user info already in columns
+                            metadata_items.append(f"{key}: {value}")
+                    metadata_str = '; '.join(metadata_items)
+                
+                # Calculate fee percentage for deposit fees
+                fee_percentage = ''
+                if rev.get('type') == 'SERVICE_FEE' and rev.get('category') == 'DEPOSIT_FEE':
+                    deposit_amount = rev.get('depositAmount') or metadata.get('depositAmount', 0)
+                    if deposit_amount > 0:
+                        fee_percentage = round((rev.get('amount', 0) / deposit_amount) * 100, 2)
+                
                 writer.writerow([
+                    # Basic Information
                     rev.get('createdAt', '').strftime('%Y-%m-%d') if rev.get('createdAt') else '',
                     rev.get('type', ''),
                     rev.get('category', ''),
-                    rev.get('amount', 0),
+                    round(rev.get('amount', 0), 2),
+                    round(rev.get('gatewayFee', 0), 2),
+                    round(rev.get('netRevenue', rev.get('amount', 0)), 2),
                     rev.get('description', ''),
+                    rev.get('status', 'completed'),
+                    rev.get('currency', 'NGN'),
+                    rev.get('paymentMethod', 'N/A'),
+                    
+                    # User Information
+                    rev.get('userName', 'Unknown User'),
+                    rev.get('userEmail', 'unknown@example.com'),
+                    rev.get('userPhone', 'N/A'),
                     str(rev.get('userId', '')),
+                    
+                    # Transaction References
                     str(rev.get('relatedTransaction', '')),
-                    rev.get('createdAt', '').isoformat() if rev.get('createdAt') else ''
+                    str(rev.get('vasTransactionId', '')),
+                    str(rev.get('subscriptionId', '')),
+                    
+                    # Provider/Service Details
+                    rev.get('provider', ''),
+                    rev.get('transactionType', ''),
+                    rev.get('planType', ''),
+                    rev.get('billingCycle', ''),
+                    rev.get('source', 'N/A'),
+                    
+                    # Credits Information
+                    rev.get('creditsAmount', ''),
+                    rev.get('creditsType', ''),
+                    
+                    # Deposit Fee Information
+                    rev.get('depositAmount', ''),
+                    fee_percentage,
+                    
+                    # Metadata
+                    metadata_str,
+                    
+                    # Timestamps
+                    rev.get('createdAt', '').isoformat() if rev.get('createdAt') else '',
+                    rev.get('createdAt', '').strftime('%Y-%m-%d %H:%M:%S') if rev.get('createdAt') else ''
                 ])
             
             # Create response
             csv_content = output.getvalue()
             output.close()
             
+            # Generate filename with period info
+            period_suffix = f"_{period}days" if period != 'all' else "_all"
+            filename = f"corporate_revenue_enhanced{period_suffix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+            
             response = make_response(csv_content)
             response.headers['Content-Type'] = 'text/csv'
-            response.headers['Content-Disposition'] = f'attachment; filename=corporate_revenue_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+            response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+            
+            print(f"✅ Corporate revenue CSV export completed: {len(corporate_revenue)} records")
+            print(f"📁 Filename: {filename}")
+            print(f"🔍 Period: {period}")
+            print(f"👥 Test accounts excluded: Yes")
             
             return response
             
         except Exception as e:
-            print(f"Error exporting corporate revenue: {str(e)}")
+            print(f"❌ Error exporting corporate revenue: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({
                 'success': False,
                 'message': 'Failed to export corporate revenue',
@@ -5963,6 +6189,177 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
             return jsonify({
                 'success': False,
                 'message': 'Failed to export FC balances',
+                'error': str(e)
+            }), 500
+
+    @admin_bp.route('/treasury/export-referral-metrics', methods=['GET'])
+    @token_required
+    @admin_required
+    def export_referral_metrics(current_user):
+        """
+        Export detailed referral metrics as CSV
+        Includes: referred users, referrer info, benefits received, last activity, timestamps
+        """
+        try:
+            from utils.test_account_filter import get_test_account_user_ids
+            import csv
+            from io import StringIO
+            from flask import make_response
+            
+            # Exclude test accounts
+            test_user_ids = get_test_account_user_ids(mongo)
+            
+            # Get all referrals with detailed information
+            referrals_pipeline = [
+                {'$match': {'referrerId': {'$nin': test_user_ids}, 'refereeId': {'$nin': test_user_ids}}},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'referrerId',
+                    'foreignField': '_id',
+                    'as': 'referrer'
+                }},
+                {'$lookup': {
+                    'from': 'users',
+                    'localField': 'refereeId',
+                    'foreignField': '_id',
+                    'as': 'referee'
+                }},
+                {'$unwind': '$referrer'},
+                {'$unwind': '$referee'},
+                {'$sort': {'createdAt': -1}}
+            ]
+            
+            referrals = list(mongo.db.referrals.aggregate(referrals_pipeline))
+            
+            # Get referral payouts for each referral
+            referral_data = []
+            for referral in referrals:
+                # Get payouts for this referral
+                payouts = list(mongo.db.referral_payouts.find({
+                    'referrerId': referral['referrerId'],
+                    'refereeId': referral['refereeId']
+                }))
+                
+                # Calculate total benefits
+                total_benefits = sum(p['amount'] for p in payouts)
+                benefit_types = list(set(p['type'] for p in payouts))
+                
+                # Get referee's last activity (last login or last transaction)
+                last_login = referral['referee'].get('lastLogin')
+                
+                # Get last VAS transaction for more recent activity
+                last_vas = mongo.db.vas_transactions.find_one(
+                    {'userId': referral['refereeId']},
+                    sort=[('createdAt', -1)]
+                )
+                
+                # Determine most recent activity
+                last_activity = None
+                activity_type = 'Never'
+                
+                if last_vas and last_login:
+                    if last_vas['createdAt'] > last_login:
+                        last_activity = last_vas['createdAt']
+                        activity_type = 'VAS Transaction'
+                    else:
+                        last_activity = last_login
+                        activity_type = 'Login'
+                elif last_vas:
+                    last_activity = last_vas['createdAt']
+                    activity_type = 'VAS Transaction'
+                elif last_login:
+                    last_activity = last_login
+                    activity_type = 'Login'
+                
+                referral_data.append({
+                    'referralId': str(referral['_id']),
+                    'referrerName': referral['referrer'].get('displayName', 'Unknown'),
+                    'referrerEmail': referral['referrer'].get('email', 'N/A'),
+                    'referrerCode': referral['referrer'].get('referralCode', 'N/A'),
+                    'refereeName': referral['referee'].get('displayName', 'Unknown'),
+                    'refereeEmail': referral['referee'].get('email', 'N/A'),
+                    'refereePhone': referral['referee'].get('phone', 'N/A'),
+                    'referralStatus': referral.get('status', 'unknown'),
+                    'totalBenefits': total_benefits,
+                    'benefitTypes': ', '.join(benefit_types) if benefit_types else 'None',
+                    'payoutCount': len(payouts),
+                    'lastActivity': last_activity.strftime('%Y-%m-%d %H:%M:%S') if last_activity else 'Never',
+                    'activityType': activity_type,
+                    'referralDate': referral.get('createdAt', '').strftime('%Y-%m-%d %H:%M:%S') if referral.get('createdAt') else 'N/A',
+                    'refereeJoinDate': referral['referee'].get('createdAt', '').strftime('%Y-%m-%d') if referral['referee'].get('createdAt') else 'N/A',
+                    'refereeWalletBalance': referral['referee'].get('liquidWalletBalance', 0),
+                    'refereeFcBalance': referral['referee'].get('ficoreCreditBalance', 0),
+                    'refereeIsActive': 'Yes' if referral['referee'].get('isActive', True) else 'No',
+                    'refereeIsPremium': 'Yes' if referral['referee'].get('isSubscribed', False) else 'No'
+                })
+            
+            # Create CSV
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Referral ID',
+                'Referrer Name',
+                'Referrer Email', 
+                'Referrer Code',
+                'Referred User Name',
+                'Referred User Email',
+                'Referred User Phone',
+                'Referral Status',
+                'Total Benefits (₦)',
+                'Benefit Types',
+                'Payout Count',
+                'Last Activity',
+                'Activity Type',
+                'Referral Date',
+                'User Join Date',
+                'Wallet Balance (₦)',
+                'FC Balance',
+                'Is Active',
+                'Is Premium'
+            ])
+            
+            # Write data
+            for data in referral_data:
+                writer.writerow([
+                    data['referralId'],
+                    data['referrerName'],
+                    data['referrerEmail'],
+                    data['referrerCode'],
+                    data['refereeName'],
+                    data['refereeEmail'],
+                    data['refereePhone'],
+                    data['referralStatus'],
+                    f"{data['totalBenefits']:.2f}",
+                    data['benefitTypes'],
+                    data['payoutCount'],
+                    data['lastActivity'],
+                    data['activityType'],
+                    data['referralDate'],
+                    data['refereeJoinDate'],
+                    f"{data['refereeWalletBalance']:.2f}",
+                    f"{data['refereeFcBalance']:.2f}",
+                    data['refereeIsActive'],
+                    data['refereeIsPremium']
+                ])
+            
+            # Create response
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=referral_metrics_{datetime.utcnow().strftime("%Y%m%d")}.csv'
+            
+            print(f"✅ Admin {current_user.get('email')} exported {len(referral_data)} referral records")
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting referral metrics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'message': 'Failed to export referral metrics',
                 'error': str(e)
             }), 500
 

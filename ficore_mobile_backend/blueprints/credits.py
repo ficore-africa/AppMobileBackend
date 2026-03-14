@@ -562,6 +562,56 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
             else:
                 print(f'⚠️  Failed to record FC purchase revenue: {revenue_result.get("error")}')
             
+            # ALSO record in unified system for bookkeeping alignment
+            try:
+                from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                
+                # Record FC credits sale revenue
+                unified_result = record_corporate_revenue_automatically(
+                    mongo=mongo.db,
+                    revenue_type='fc_credits_sale',
+                    amount=pending_transaction['nairaAmount'],
+                    user_id=current_user['_id'],
+                    transaction_id=transaction['_id'],
+                    metadata={
+                        'fc_amount': pending_transaction['creditAmount'],
+                        'payment_reference': reference,
+                        'gateway_fee': revenue_result.get('gateway_fee', 0),
+                        'net_revenue': revenue_result.get('net_revenue', 0),
+                        'paystack_transaction_id': payment_data.get('id')
+                    }
+                )
+                
+                if unified_result.get('success'):
+                    print(f'✅ UNIFIED: FC credits sale recorded in bookkeeping: ₦{pending_transaction["nairaAmount"]} from {current_user.get("email", "unknown")}')
+                else:
+                    print(f'⚠️  UNIFIED: Failed to record FC credits sale in bookkeeping: {unified_result.get("error")}')
+                
+                # Record gateway fee as expense
+                if revenue_result.get('gateway_fee', 0) > 0:
+                    gateway_result = record_corporate_revenue_automatically(
+                        mongo=mongo.db,
+                        revenue_type='gateway_fee',
+                        amount=revenue_result['gateway_fee'],
+                        user_id=current_user['_id'],
+                        transaction_id=transaction['_id'],
+                        metadata={
+                            'payment_amount': pending_transaction['nairaAmount'],
+                            'gateway_provider': 'paystack',
+                            'fee_rate': 1.6,
+                            'payment_reference': reference,
+                            'paystack_transaction_id': payment_data.get('id')
+                        }
+                    )
+                    
+                    if gateway_result.get('success'):
+                        print(f'✅ UNIFIED: Gateway fee recorded in bookkeeping: ₦{revenue_result["gateway_fee"]} expense from paystack')
+                    else:
+                        print(f'⚠️  UNIFIED: Failed to record gateway fee in bookkeeping: {gateway_result.get("error")}')
+                        
+            except Exception as e:
+                print(f'⚠️  UNIFIED: Error recording FC purchase in bookkeeping: {str(e)}')
+            
             # Mark pending transaction as completed
             mongo.db.pending_credit_purchases.update_one(
                 {'_id': pending_transaction['_id']},

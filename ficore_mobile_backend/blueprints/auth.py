@@ -519,19 +519,29 @@ def refresh_token():
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
+    request_id = str(uuid.uuid4())[:8]  # Short ID for tracking this request
+    print(f'🔄 [FORGOT-PASSWORD] [{request_id}] Starting password reset request')
+    
     try:
         data = request.get_json()
+        print(f'📥 [FORGOT-PASSWORD] [{request_id}] Request data received: {bool(data)}')
+        
         email = data.get('email', '').lower().strip()
+        print(f'📧 [FORGOT-PASSWORD] [{request_id}] Email extracted: {email[:3]}***@{email.split("@")[1] if "@" in email else "invalid"}')
         
         if not email:
+            print(f'❌ [FORGOT-PASSWORD] [{request_id}] FAILED: Email is required')
             return jsonify({
                 'success': False,
                 'message': 'Email is required',
                 'errors': {'email': ['Email is required']}
             }), 400
         
+        print(f'🔍 [FORGOT-PASSWORD] [{request_id}] Searching for user in database...')
         user = auth_bp.mongo.db.users.find_one({'email': email})
+        
         if not user:
+            print(f'❌ [FORGOT-PASSWORD] [{request_id}] FAILED: No account found for email {email[:3]}***@{email.split("@")[1]}')
             # Return error for non-existent email (better UX for legitimate users)
             return jsonify({
                 'success': False,
@@ -539,35 +549,47 @@ def forgot_password():
                 'errors': {'email': ['No account found with this email address']}
             }), 404
         
+        print(f'✅ [FORGOT-PASSWORD] [{request_id}] User found: ID={str(user["_id"])}, Name={user.get("displayName", "N/A")}')
+        
         # Generate reset token
+        print(f'🔑 [FORGOT-PASSWORD] [{request_id}] Generating reset token...')
         reset_token = str(uuid.uuid4())
-        auth_bp.mongo.db.users.update_one(
+        print(f'🔑 [FORGOT-PASSWORD] [{request_id}] Reset token generated: {reset_token[:8]}***')
+        
+        print(f'💾 [FORGOT-PASSWORD] [{request_id}] Updating user record with reset token...')
+        update_result = auth_bp.mongo.db.users.update_one(
             {'_id': user['_id']},
             {'$set': {
                 'resetToken': reset_token,
                 'resetTokenExpiry': datetime.utcnow() + timedelta(hours=1)
             }}
         )
+        print(f'💾 [FORGOT-PASSWORD] [{request_id}] User update result: matched={update_result.matched_count}, modified={update_result.modified_count}')
         
         # 🆕 SEND PASSWORD RESET EMAIL (Feb 27, 2026)
+        print(f'📧 [FORGOT-PASSWORD] [{request_id}] Initializing email service...')
         email_service = get_email_service(mongo_db=auth_bp.mongo.db)
         user_name = user.get('displayName') or f"{user.get('firstName', '')} {user.get('lastName', '')}".strip()
+        print(f'👤 [FORGOT-PASSWORD] [{request_id}] User name for email: {user_name or "User"}')
         
         try:
+            print(f'📤 [FORGOT-PASSWORD] [{request_id}] Attempting to send password reset email...')
             email_result = email_service.send_password_reset_email(
                 to_email=user['email'],
                 reset_token=reset_token,
                 user_name=user_name if user_name else 'User',
                 user_id=str(user['_id'])
             )
-            print(f'✅ Password reset email sent to {email}')
+            print(f'✅ [FORGOT-PASSWORD] [{request_id}] Password reset email sent successfully to {email[:3]}***@{email.split("@")[1]}')
+            print(f'📧 [FORGOT-PASSWORD] [{request_id}] Email result: {email_result}')
         except Exception as e:
             # Log but don't fail - admin fallback still works
-            print(f'⚠️ Password reset email failed: {e}')
+            print(f'⚠️ [FORGOT-PASSWORD] [{request_id}] Password reset email failed: {str(e)}')
             email_result = {'success': False, 'error': str(e)}
         
         # DUAL-TRACK APPROACH: Also create admin request for password reset
         # This allows admins to help users while email service is not ready
+        print(f'🔧 [FORGOT-PASSWORD] [{request_id}] Creating admin fallback request...')
         password_reset_request = {
             '_id': ObjectId(),
             'userId': user['_id'],
@@ -585,9 +607,11 @@ def forgot_password():
             'emailMethod': email_result.get('method', 'disabled')
         }
         
-        auth_bp.mongo.db.password_reset_requests.insert_one(password_reset_request)
+        admin_request_result = auth_bp.mongo.db.password_reset_requests.insert_one(password_reset_request)
+        print(f'🔧 [FORGOT-PASSWORD] [{request_id}] Admin request created: ID={str(admin_request_result.inserted_id)}')
         
         # Track analytics event
+        print(f'📊 [FORGOT-PASSWORD] [{request_id}] Tracking analytics event...')
         try:
             auth_bp.tracker.track_event(
                 user_id=user['_id'],
@@ -596,13 +620,17 @@ def forgot_password():
                     'request_source': 'mobile_app',
                     'email_sent': email_result.get('success', False),
                     'email_method': email_result.get('method', 'disabled'),
-                    'has_admin_fallback': True
+                    'has_admin_fallback': True,
+                    'request_id': request_id
                 }
             )
+            print(f'📊 [FORGOT-PASSWORD] [{request_id}] Analytics event tracked successfully')
         except Exception as e:
-            print(f"Analytics tracking failed: {e}")
+            print(f"⚠️ [FORGOT-PASSWORD] [{request_id}] Analytics tracking failed: {str(e)}")
         
         # Always return success to user (don't reveal if email exists)
+        print(f'✅ [FORGOT-PASSWORD] [{request_id}] Password reset request completed successfully')
+        print(f'📋 [FORGOT-PASSWORD] [{request_id}] Summary: User={str(user["_id"])}, Email={email_result.get("success", False)}, Admin={bool(admin_request_result.inserted_id)}')
         return jsonify({
             'success': True,
             'message': 'Password reset instructions sent to your email',
@@ -610,6 +638,10 @@ def forgot_password():
         })
         
     except Exception as e:
+        print(f'💥 [FORGOT-PASSWORD] [{request_id}] CRITICAL ERROR: {str(e)}')
+        print(f'💥 [FORGOT-PASSWORD] [{request_id}] Error type: {type(e).__name__}')
+        import traceback
+        print(f'💥 [FORGOT-PASSWORD] [{request_id}] Stack trace: {traceback.format_exc()}')
         return jsonify({
             'success': False,
             'message': 'Password reset failed',
@@ -618,12 +650,29 @@ def forgot_password():
 
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
+    request_id = str(uuid.uuid4())[:8]  # Short ID for tracking this request
+    print(f'🔄 [RESET-PASSWORD] [{request_id}] Starting password reset process')
+    
     try:
         data = request.get_json()
+        print(f'📥 [RESET-PASSWORD] [{request_id}] Request data received: {bool(data)}')
+        
         token = data.get('token')
         new_password = data.get('password')
         
+        print(f'🔑 [RESET-PASSWORD] [{request_id}] Token provided: {bool(token)} (length: {len(token) if token else 0})')
+        print(f'🔒 [RESET-PASSWORD] [{request_id}] Password provided: {bool(new_password)} (length: {len(new_password) if new_password else 0})')
+        
+        if token:
+            print(f'🔑 [RESET-PASSWORD] [{request_id}] Token preview: {token[:8]}***')
+        
         if not token or not new_password:
+            missing_fields = []
+            if not token:
+                missing_fields.append('token')
+            if not new_password:
+                missing_fields.append('password')
+            print(f'❌ [RESET-PASSWORD] [{request_id}] FAILED: Missing required fields: {missing_fields}')
             return jsonify({
                 'success': False,
                 'message': 'Token and new password are required',
@@ -633,35 +682,105 @@ def reset_password():
                 }
             }), 400
         
+        print(f'🔍 [RESET-PASSWORD] [{request_id}] Validating password strength...')
         if not validate_password(new_password):
+            print(f'❌ [RESET-PASSWORD] [{request_id}] FAILED: Password validation failed (too weak)')
             return jsonify({
                 'success': False,
                 'message': 'Invalid password',
                 'errors': {'password': ['Password must be at least 6 characters']}
             }), 400
         
+        print(f'✅ [RESET-PASSWORD] [{request_id}] Password validation passed')
+        
+        print(f'🔍 [RESET-PASSWORD] [{request_id}] Searching for user with valid reset token...')
+        current_time = datetime.utcnow()
+        print(f'⏰ [RESET-PASSWORD] [{request_id}] Current time: {current_time}')
+        
         user = auth_bp.mongo.db.users.find_one({
             'resetToken': token,
-            'resetTokenExpiry': {'$gt': datetime.utcnow()}
+            'resetTokenExpiry': {'$gt': current_time}
         })
         
         if not user:
+            print(f'❌ [RESET-PASSWORD] [{request_id}] FAILED: No user found with valid token')
+            
+            # Check if token exists but is expired
+            expired_user = auth_bp.mongo.db.users.find_one({'resetToken': token})
+            if expired_user:
+                token_expiry = expired_user.get('resetTokenExpiry')
+                print(f'⏰ [RESET-PASSWORD] [{request_id}] Token found but expired. Expiry: {token_expiry}, Current: {current_time}')
+                print(f'⏰ [RESET-PASSWORD] [{request_id}] Token expired {current_time - token_expiry} ago')
+            else:
+                print(f'🔍 [RESET-PASSWORD] [{request_id}] Token not found in database at all')
+            
             return jsonify({
                 'success': False,
                 'message': 'Invalid or expired reset token',
                 'errors': {'token': ['Invalid or expired reset token']}
             }), 400
         
+        print(f'✅ [RESET-PASSWORD] [{request_id}] User found: ID={str(user["_id"])}, Email={user.get("email", "N/A")}')
+        print(f'⏰ [RESET-PASSWORD] [{request_id}] Token expires at: {user.get("resetTokenExpiry")}')
+        
         # Update password and clear reset token
-        auth_bp.mongo.db.users.update_one(
+        print(f'🔒 [RESET-PASSWORD] [{request_id}] Hashing new password...')
+        hashed_password = generate_password_hash(new_password)
+        print(f'🔒 [RESET-PASSWORD] [{request_id}] Password hashed successfully')
+        
+        print(f'💾 [RESET-PASSWORD] [{request_id}] Updating user record with new password...')
+        update_result = auth_bp.mongo.db.users.update_one(
             {'_id': user['_id']},
             {'$set': {
-                'password': generate_password_hash(new_password)
+                'password': hashed_password
             }, '$unset': {
                 'resetToken': '',
                 'resetTokenExpiry': ''
             }}
         )
+        
+        print(f'💾 [RESET-PASSWORD] [{request_id}] User update result: matched={update_result.matched_count}, modified={update_result.modified_count}')
+        
+        if update_result.modified_count == 0:
+            print(f'⚠️ [RESET-PASSWORD] [{request_id}] WARNING: No documents were modified during password update')
+        
+        # Update admin request status if exists
+        print(f'🔧 [RESET-PASSWORD] [{request_id}] Updating admin request status...')
+        admin_update_result = auth_bp.mongo.db.password_reset_requests.update_many(
+            {
+                'userId': user['_id'],
+                'status': 'pending',
+                'resetToken': token
+            },
+            {
+                '$set': {
+                    'status': 'completed',
+                    'processedAt': current_time,
+                    'processedBy': 'user_self_service',
+                    'processedByName': 'User Self-Service'
+                }
+            }
+        )
+        print(f'🔧 [RESET-PASSWORD] [{request_id}] Admin requests updated: matched={admin_update_result.matched_count}, modified={admin_update_result.modified_count}')
+        
+        # Track analytics event
+        print(f'📊 [RESET-PASSWORD] [{request_id}] Tracking analytics event...')
+        try:
+            auth_bp.tracker.track_event(
+                user_id=user['_id'],
+                event_type='password_reset_completed',
+                event_details={
+                    'reset_method': 'self_service',
+                    'request_source': 'mobile_app',
+                    'request_id': request_id
+                }
+            )
+            print(f'📊 [RESET-PASSWORD] [{request_id}] Analytics event tracked successfully')
+        except Exception as e:
+            print(f"⚠️ [RESET-PASSWORD] [{request_id}] Analytics tracking failed: {str(e)}")
+        
+        print(f'✅ [RESET-PASSWORD] [{request_id}] Password reset completed successfully')
+        print(f'📋 [RESET-PASSWORD] [{request_id}] Summary: User={str(user["_id"])}, Email={user.get("email", "N/A")}, Method=self_service')
         
         return jsonify({
             'success': True,
@@ -669,11 +788,14 @@ def reset_password():
         })
         
     except Exception as e:
+        print(f'💥 [RESET-PASSWORD] [{request_id}] CRITICAL ERROR: {str(e)}')
+        print(f'💥 [RESET-PASSWORD] [{request_id}] Error type: {type(e).__name__}')
+        import traceback
+        print(f'💥 [RESET-PASSWORD] [{request_id}] Stack trace: {traceback.format_exc()}')
         return jsonify({
             'success': False,
             'message': 'Password reset failed',
             'errors': {'general': [str(e)]}
-
         }), 500
 
 

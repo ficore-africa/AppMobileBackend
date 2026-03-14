@@ -2757,8 +2757,37 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }}
             )
             
-            # Record provider commission as corporate revenue
+            # Record provider commission as corporate revenue (UNIFIED SYSTEM)
             if provider_commission > 0:
+                try:
+                    from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                    
+                    # Record in unified bookkeeping system
+                    unified_result = record_corporate_revenue_automatically(
+                        mongo=mongo.db,
+                        revenue_type='vas_commission',
+                        amount=round(provider_commission, 2),
+                        user_id=ObjectId(user_id),
+                        transaction_id=transaction_id,
+                        metadata={
+                            'provider': provider,
+                            'transaction_type': 'AIRTIME',
+                            'transaction_amount': amount,
+                            'commission_rate': commission_rate,
+                            'provider_cost': round(provider_cost, 2),
+                            'network': network
+                        }
+                    )
+                    
+                    if unified_result.get('success'):
+                        print(f'✅ UNIFIED: VAS commission recorded in bookkeeping: ₦{provider_commission:.2f} from {provider} airtime')
+                    else:
+                        print(f'⚠️  UNIFIED: Failed to record VAS commission in bookkeeping: {unified_result.get("error")}')
+                        
+                except Exception as e:
+                    print(f'⚠️  UNIFIED: Error recording VAS commission in bookkeeping: {str(e)}')
+                
+                # Keep legacy corporate_revenue for treasury dashboard compatibility
                 corporate_revenue = {
                     '_id': ObjectId(),
                     'type': 'VAS_COMMISSION',
@@ -3578,8 +3607,38 @@ def init_vas_purchase_blueprint(mongo, token_required, serialize_doc):
                 }}
             )
             
-            # Record provider commission as corporate revenue
+            # Record provider commission as corporate revenue (UNIFIED SYSTEM)
             if provider_commission > 0:
+                try:
+                    from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+                    
+                    # Record in unified bookkeeping system
+                    unified_result = record_corporate_revenue_automatically(
+                        mongo=mongo.db,
+                        revenue_type='vas_commission',
+                        amount=round(provider_commission, 2),
+                        user_id=ObjectId(user_id),
+                        transaction_id=transaction_id,
+                        metadata={
+                            'provider': provider,
+                            'transaction_type': 'DATA',
+                            'transaction_amount': amount,
+                            'commission_rate': commission_rate,
+                            'provider_cost': round(provider_cost, 2),
+                            'network': network,
+                            'data_plan': data_plan_name
+                        }
+                    )
+                    
+                    if unified_result.get('success'):
+                        print(f'✅ UNIFIED: VAS commission recorded in bookkeeping: ₦{provider_commission:.2f} from {provider} data')
+                    else:
+                        print(f'⚠️  UNIFIED: Failed to record VAS commission in bookkeeping: {unified_result.get("error")}')
+                        
+                except Exception as e:
+                    print(f'⚠️  UNIFIED: Error recording VAS commission in bookkeeping: {str(e)}')
+                
+                # Keep legacy corporate_revenue for treasury dashboard compatibility
                 corporate_revenue = {
                     '_id': ObjectId(),
                     'type': 'VAS_COMMISSION',
