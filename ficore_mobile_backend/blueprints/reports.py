@@ -2530,8 +2530,7 @@ def init_reports_blueprint(mongo, token_required):
             # CORRECTED (Mar 14, 2026): Only include REAL revenue sources
             sales_revenue_sources = [
                 'vas_commission',                    # VAS commission income (REAL revenue) ✅
-                 Deposit fees (MOST RELIABLE revenue) ✅
-                'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
+                'deposit_fee',                       # Deposit fees (single source of truth) ✅
                 'inventory_sale',                    # Inventory sales (when we have them) ✅
                 # REMOVED: fc_purchase_revenue_recognition (fake test revenue)
                 # REMOVED: subscription_purchase_revenue_recognition (fake test revenue)
@@ -2977,8 +2976,7 @@ def init_reports_blueprint(mongo, token_required):
                 # Define what constitutes "Sales Revenue" (actual business revenue)
                 # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
                 sales_revenue_sources = [
-                     Deposit fees (MOST RELIABLE revenue) ✅
-                    'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
+                    'deposit_fee',                       # Deposit fees (single source of truth) ✅
                     'inventory_sale',                    # Inventory sales ✅
                     'subscription_purchase_payment_received',  # Subscription payments ✅
                     'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -5495,9 +5493,8 @@ def init_reports_blueprint(mongo, token_required):
         # Define what constitutes "Sales Revenue" (actual business revenue)
         # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
         sales_revenue_sources = [
-'inventory_sale',                    # Inventory sales ✅
-                 Deposit fees (MOST RELIABLE revenue) ✅
-                'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
+            'inventory_sale',                    # Inventory sales ✅
+            'deposit_fee',                       # Deposit fees (single source of truth) ✅
             'subscription_purchase_payment_received',  # Subscription payments ✅
             'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
             'fc_purchase_payment_received',      # FC purchase payments ✅
@@ -8396,14 +8393,13 @@ def init_reports_blueprint(mongo, token_required):
                     # Define what constitutes "Sales Revenue" (actual business revenue)
                     # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
                     sales_revenue_sources = [
-'inventory_sale',                    # Inventory sales ✅
-                 Deposit fees (MOST RELIABLE revenue) ✅
-                'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
+                        'inventory_sale',                    # Inventory sales ✅
+                        'deposit_fee',                       # Deposit fees (single source of truth) ✅
                         'subscription_purchase_payment_received',  # Subscription payments ✅
                         'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
                         'fc_purchase_payment_received',      # FC purchase payments ✅
                         'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
-            ]
+                    ]
                     
                     # Define what constitutes "Other Income" (internal accounting, not real external revenue)
                     other_income_sources = [
