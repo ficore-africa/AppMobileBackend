@@ -3203,6 +3203,54 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         show_subscriptions = subscription_liabilities > 0
         show_fee_waivers = fee_waiver_liabilities > 0
         
+        # PRIVACY FIX (Mar 14, 2026): Check if user has business revenue/expense categories
+        # Only show business categories if user actually has transactions in them
+        # CORRECTED (Mar 14, 2026): Using actual category names from business_bookkeeping.py
+        business_income_categories = {
+            'Service Revenue',  # VAS commissions, subscription revenue, FC purchase revenue
+            'Subscription Revenue',  # Daily subscription accruals
+            'Deferred Revenue - FC Liability',  # FC Credits liability
+            'Deferred Revenue - Fee Waiver Liability',  # Fee waiver liability
+            'Deferred Revenue - Subscription Liability',  # Subscription liability
+            'Cash and Bank'  # Only when used for FC purchase payments (business account)
+        }
+        
+        business_expense_categories = {
+            'Marketing Ads and Promotion',  # All promotional expenses (FC bonuses, fee waivers, subscriptions)
+            'Liability Adjustment',  # Liability reductions (negative expenses)
+            'Depreciation',  # Monthly depreciation expense
+            'Accumulated Depreciation - Laptop'  # Accumulated depreciation (contra-asset)
+        }
+        
+        business_source_types = {
+            # Fee waiver pattern
+            'marketing_expense_fee_waiver', 'fee_waiver_liability_accrual', 'liability_adjustment_fee_waiver',
+            # FC Credits pattern  
+            'marketing_expense_signup', 'marketing_expense_tax_education', 'marketing_expense_exploration',
+            'marketing_expense_streak', 'marketing_expense_engagement', 'marketing_expense_admin', 
+            'marketing_expense_referral', 'marketing_expense_total', 'marketing_expense_other',
+            'fc_liability_accrual', 'liability_adjustment_fc_consumption', 'fc_purchase_liability_creation',
+            'fc_purchase_payment_received', 'fc_purchase_revenue_recognition',
+            # Subscription pattern
+            'marketing_expense_subscription', 'subscription_liability_accrual', 'liability_adjustment_subscription',
+            'subscription_consumption', 'subscription_accrual', 'subscription_purchase_payment_received',
+            'subscription_purchase_liability_creation', 'subscription_purchase_revenue_recognition',
+            # VAS and other business operations
+            'vas_commission', 'marketing_expense_fee_refund', 'depreciation', 'accumulated_depreciation',
+            'capital_contribution_cash_increase', 'capital_contribution_equity_increase', 'deposit_fee'
+        }
+        
+        # Check if user has any business transactions
+        user_has_business_income = any(income.get('category') in business_income_categories for income in incomes)
+        user_has_business_expenses = any(expense.get('category') in business_expense_categories for expense in expenses)
+        user_has_business_sources = any(
+            income.get('sourceType') in business_source_types for income in incomes
+        ) or any(
+            expense.get('sourceType') in business_source_types for expense in expenses
+        )
+        
+        show_business_categories = user_has_business_income or user_has_business_expenses or user_has_business_sources
+        
         fc_credit_display = format_currency(fc_credit_liabilities) if show_fc_credits else None
         subscription_display = format_currency(subscription_liabilities) if show_subscriptions else None
         fee_waiver_display = format_currency(fee_waiver_liabilities) if show_fee_waivers else None
@@ -3517,7 +3565,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
         # Schedule 1: Detailed Profit & Loss Breakdown
         story.append(Paragraph("Schedule 1: Detailed Profit & Loss Breakdown", self.styles['SectionHeader']))
         
-        # Group income by category and sourceType
+        # Group income by category and sourceType (with business category filtering)
         income_breakdown = {}
         for income in incomes:
             category = income.get('category', 'Uncategorized')
@@ -3525,6 +3573,11 @@ Asset depreciation and all values reflect the position at that specific date.</i
             amount = safe_float(income.get('amount', 0))
             description = truncate_text_for_pdf(income.get('description', 'No description'))
             date = income.get('date', 'No date')
+            
+            # PRIVACY FIX (Mar 14, 2026): Skip business categories for regular users
+            if not show_business_categories:
+                if category in business_income_categories or source_type in business_source_types:
+                    continue
             
             if category not in income_breakdown:
                 income_breakdown[category] = []
@@ -3586,7 +3639,7 @@ Asset depreciation and all values reflect the position at that specific date.</i
             ''
         ])
         
-        # Group expenses by category and sourceType
+        # Group expenses by category and sourceType (with business category filtering)
         expense_breakdown = {}
         for expense in expenses:
             category = expense.get('category', 'Uncategorized')
@@ -3594,6 +3647,11 @@ Asset depreciation and all values reflect the position at that specific date.</i
             amount = safe_float(expense.get('amount', 0))
             description = truncate_text_for_pdf(expense.get('description', 'No description'))
             date = expense.get('date', 'No date')
+            
+            # PRIVACY FIX (Mar 14, 2026): Skip business categories for regular users
+            if not show_business_categories:
+                if category in business_expense_categories or source_type in business_source_types:
+                    continue
             
             if category not in expense_breakdown:
                 expense_breakdown[category] = []
@@ -3889,32 +3947,35 @@ Asset depreciation and all values reflect the position at that specific date.</i
             'Money owed to suppliers'
         ])
         
-        # FC Credit Liabilities
-        liability_detail_data.append([
-            'FC Credit Liabilities',
-            format_currency(fc_credit_liabilities),
-            'System calculated',
-            'Outstanding' if fc_credit_liabilities > 0 else 'None',
-            'Outstanding FC Credit obligations'
-        ])
+        # FC Credit Liabilities (only show if user has them)
+        if show_fc_credits:
+            liability_detail_data.append([
+                'FC Credit Liabilities',
+                format_currency(fc_credit_liabilities),
+                'System calculated',
+                'Outstanding',
+                'Outstanding FC Credit obligations'
+            ])
         
-        # Subscription Liabilities
-        liability_detail_data.append([
-            'Subscription Liabilities',
-            format_currency(subscription_liabilities),
-            'System calculated',
-            'Outstanding' if subscription_liabilities > 0 else 'None',
-            'Outstanding subscription obligations'
-        ])
+        # Subscription Liabilities (only show if user has them)
+        if show_subscriptions:
+            liability_detail_data.append([
+                'Subscription Liabilities',
+                format_currency(subscription_liabilities),
+                'System calculated',
+                'Outstanding',
+                'Outstanding subscription obligations'
+            ])
         
-        # Fee Waiver Liabilities
-        liability_detail_data.append([
-            'Fee Waiver Liabilities',
-            format_currency(fee_waiver_liabilities),
-            'System calculated',
-            'Outstanding' if fee_waiver_liabilities > 0 else 'None',
-            'Outstanding fee waiver obligations'
-        ])
+        # Fee Waiver Liabilities (only show if user has them)
+        if show_fee_waivers:
+            liability_detail_data.append([
+                'Fee Waiver Liabilities',
+                format_currency(fee_waiver_liabilities),
+                'System calculated',
+                'Outstanding',
+                'Outstanding fee waiver obligations'
+            ])
         
         # Loans Payable
         liability_detail_data.append([
