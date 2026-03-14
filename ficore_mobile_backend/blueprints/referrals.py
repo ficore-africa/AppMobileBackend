@@ -41,6 +41,55 @@ def token_required(f):
     
     return decorated
 
+def _is_referral_active(mongo, referee_id, referral_status):
+    """
+    Check if a referral is active based on BOTH deposit-based AND spending-based activity
+    
+    DEPOSIT-based: User made first deposit (status 'active' or 'qualified')
+    SPENDING-based: User made purchases with external payment methods:
+    - VTU purchases (airtime/data via VAS)
+    - Premium subscriptions (paid via Paystack/external bank)
+    - FC Credit purchases (paid via Paystack/external bank)
+    """
+    try:
+        # 1. DEPOSIT-BASED: Check if referral status indicates deposit activity
+        if referral_status in ['active', 'qualified']:
+            return True
+        
+        # 2. SPENDING-BASED: Check for external payment activity
+        
+        # Check VAS purchases (SUCCESS status means completed purchase)
+        vas_count = mongo.db.vas_transactions.count_documents({
+            'userId': referee_id,
+            'status': 'SUCCESS'
+        })
+        if vas_count > 0:
+            return True
+        
+        # Check premium subscriptions (active status means paid subscription)
+        subscription_count = mongo.db.subscriptions.count_documents({
+            'userId': referee_id,
+            'status': 'active'
+        })
+        if subscription_count > 0:
+            return True
+        
+        # Check FC credit purchases (paid via Paystack, not free bonuses)
+        paid_fc_count = mongo.db.credit_transactions.count_documents({
+            'userId': referee_id,
+            'paymentMethod': 'paystack',
+            'status': 'completed'
+        })
+        if paid_fc_count > 0:
+            return True
+        
+        # If none of the above, referral is not active
+        return False
+        
+    except Exception as e:
+        print(f"Error checking referral activity for {referee_id}: {str(e)}")
+        return False
+
 @referrals_bp.route('/stats', methods=['GET'])
 @token_required
 def get_referral_stats(current_user):
@@ -142,8 +191,15 @@ def get_my_referral_stats(current_user):
         # Get all referrals made by this user
         referrals = list(referrals_bp.mongo.db.referrals.find({"referrerId": user_id}))
         
-        # Count active referrals (users who made first deposit)
-        active_referrals = len([r for r in referrals if r['status'] in ['active', 'qualified']])
+        # Count active referrals (BOTH deposit-based AND spending-based)
+        active_referrals = 0
+        for referral in referrals:
+            referee_id = referral['refereeId']
+            
+            # Check if referral is active (deposit-based OR spending-based)
+            is_active = _is_referral_active(referrals_bp.mongo, referee_id, referral['status'])
+            if is_active:
+                active_referrals += 1
         
         # Get earnings from user document
         total_earnings = user.get('referralEarnings', 0.0)
@@ -452,4 +508,196 @@ def get_withdrawal_history(current_user):
         return jsonify({
             'success': False,
             'message': 'Failed to get withdrawal history'
+        }), 500
+
+# ===== ENHANCED REFERRAL REWARDS =====
+
+@referrals_bp.route('/claim-enhanced-reward', methods=['POST'])
+@token_required
+def claim_enhanced_referral_reward(current_user):
+    """
+    Claim enhanced referral reward (50% subscription discount) when user has enough active referrals
+    User can choose between:
+    1. Keep current benefits (1% VAS commission for 90 days) - default
+    2. Claim 50% off subscription (annual ₦10,000 → ₦5,000 or monthly)
+    """
+    try:
+        data = request.get_json()
+        reward_choice = data.get('reward_choice')  # 'keep_current' or 'subscription_discount'
+        
+        if reward_choice not in ['keep_current', 'subscription_discount']:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid reward choice. Must be "keep_current" or "subscription_discount"'
+            }), 400
+        
+        user_id = current_user['_id']
+        
+        # Get user's referrals and count active ones
+        referrals = list(referrals_bp.mongo.db.referrals.find({"referrerId": user_id}))
+        active_referrals = 0
+        for referral in referrals:
+            referee_id = referral['refereeId']
+            is_active = _is_referral_active(referrals_bp.mongo, referee_id, referral['status'])
+            if is_active:
+                active_referrals += 1
+        
+        # Check if user qualifies for enhanced rewards (minimum 7 active referrals)
+        if active_referrals < 7:
+            return jsonify({
+                'success': False,
+                'message': f'You need at least 7 active referrals to claim enhanced rewards. You currently have {active_referrals}.'
+            }), 400
+        
+        # Check if user already claimed enhanced reward
+        user = referrals_bp.mongo.db.users.find_one({'_id': user_id})
+        if user.get('claimed_enhanced_referral_reward', False):
+            return jsonify({
+                'success': False,
+                'message': 'You have already claimed your enhanced referral reward.'
+            }), 400
+        
+        if reward_choice == 'keep_current':
+            # User chooses to keep current benefits - just mark as claimed
+            referrals_bp.mongo.db.users.update_one(
+                {'_id': user_id},
+                {'$set': {'claimed_enhanced_referral_reward': True, 'enhanced_reward_choice': 'keep_current'}}
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': 'You have chosen to keep your current referral benefits (1% VAS commission for 90 days).',
+                'data': {
+                    'reward_choice': 'keep_current',
+                    'active_referrals': active_referrals
+                }
+            })
+        
+        elif reward_choice == 'subscription_discount':
+            # User chooses 50% subscription discount
+            discount_percentage = 50
+            expiry_date = datetime.utcnow() + timedelta(days=365)  # 1 year to use
+            
+            # Create discount record
+            discount_record = {
+                '_id': ObjectId(),
+                'user_id': user_id,
+                'discount_type': 'subscription',
+                'discount_percentage': discount_percentage,
+                'created_at': datetime.utcnow(),
+                'expires_at': expiry_date,
+                'used': False,
+                'milestone_achievement': True,
+                'milestone_type': 'enhanced_referral',
+                'milestone_value': active_referrals,
+                'description': f'Enhanced referral reward - {active_referrals} active referrals'
+            }
+            referrals_bp.mongo.db.subscription_discounts.insert_one(discount_record)
+            
+            # Update user record
+            current_discounts = user.get('available_subscription_discounts', [])
+            current_discounts.append(str(discount_record['_id']))
+            
+            referrals_bp.mongo.db.users.update_one(
+                {'_id': user_id},
+                {
+                    '$set': {
+                        'claimed_enhanced_referral_reward': True,
+                        'enhanced_reward_choice': 'subscription_discount',
+                        'earned_enhanced_referral_subscription_discount': True,
+                        'available_subscription_discounts': current_discounts
+                    }
+                }
+            )
+            
+            print(f"Awarded 50% subscription discount for enhanced referral reward - {active_referrals} active referrals")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Congratulations! You have claimed 50% off any subscription (Annual ₦10,000 → ₦5,000 or Monthly). This discount is valid for 1 year.',
+                'data': {
+                    'reward_choice': 'subscription_discount',
+                    'discount_percentage': discount_percentage,
+                    'active_referrals': active_referrals,
+                    'discount_id': str(discount_record['_id']),
+                    'expires_at': expiry_date.isoformat() + 'Z'
+                }
+            })
+        
+    except Exception as e:
+        print(f"Error claiming enhanced referral reward: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to claim enhanced referral reward',
+            'errors': {'general': [str(e)]}
+        }), 500
+
+@referrals_bp.route('/enhanced-reward-eligibility', methods=['GET'])
+@token_required
+def check_enhanced_reward_eligibility(current_user):
+    """
+    Check if user is eligible for enhanced referral rewards and what they can claim
+    """
+    try:
+        user_id = current_user['_id']
+        
+        # Get user's referrals and count active ones
+        referrals = list(referrals_bp.mongo.db.referrals.find({"referrerId": user_id}))
+        active_referrals = 0
+        for referral in referrals:
+            referee_id = referral['refereeId']
+            is_active = _is_referral_active(referrals_bp.mongo, referee_id, referral['status'])
+            if is_active:
+                active_referrals += 1
+        
+        # Check if user already claimed enhanced reward
+        user = referrals_bp.mongo.db.users.find_one({'_id': user_id})
+        already_claimed = user.get('claimed_enhanced_referral_reward', False)
+        reward_choice = user.get('enhanced_reward_choice')
+        
+        # Determine eligibility and reward tier
+        eligible = active_referrals >= 7
+        reward_tier = None
+        if active_referrals >= 15:
+            reward_tier = 'platinum'  # 15+ active referrals
+        elif active_referrals >= 11:
+            reward_tier = 'gold'      # 11+ active referrals  
+        elif active_referrals >= 7:
+            reward_tier = 'silver'    # 7+ active referrals
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'eligible': eligible,
+                'active_referrals': active_referrals,
+                'reward_tier': reward_tier,
+                'already_claimed': already_claimed,
+                'current_choice': reward_choice,
+                'requirements': {
+                    'silver': 7,   # Minimum for enhanced rewards
+                    'gold': 11,    # Higher tier
+                    'platinum': 15 # Highest tier
+                },
+                'available_rewards': {
+                    'keep_current': {
+                        'title': 'Keep Current Benefits',
+                        'description': '1% VAS commission for 90 days from each active referral',
+                        'value': 'Variable based on referral activity'
+                    },
+                    'subscription_discount': {
+                        'title': '50% Off Subscription',
+                        'description': 'Annual ₦10,000 → ₦5,000 or Monthly discount',
+                        'value': '₦5,000 savings (fixed amount)'
+                    }
+                }
+            },
+            'message': f'You have {active_referrals} active referrals. {"You are eligible for enhanced rewards!" if eligible else f"You need {7 - active_referrals} more active referrals to qualify."}'
+        })
+        
+    except Exception as e:
+        print(f"Error checking enhanced reward eligibility: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to check eligibility',
+            'errors': {'general': [str(e)]}
         }), 500

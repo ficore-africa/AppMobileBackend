@@ -4788,7 +4788,7 @@ def init_admin_blueprint(mongo, token_required, admin_required, serialize_doc):
                 }}
             ]
             
-            deposit_fees = list(mongo.db.corporate_revenue.aggregate(deposit_fee_pipeline))
+            deposit_fees = list(mongo.db.corporate_revenue.aggregate(deposit_fees_pipeline))
             
             total_deposit_fees = sum(d['amount'] for d in deposit_fees)
             deposit_fee_gateway_costs = sum(d.get('gatewayFee', 0) for d in deposit_fees)

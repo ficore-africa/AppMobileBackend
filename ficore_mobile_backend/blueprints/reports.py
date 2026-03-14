@@ -2522,21 +2522,19 @@ def init_reports_blueprint(mongo, token_required):
             # Sales Revenue = What we actually sell/earn (VAS Commissions + Inventory Sales + Subscriptions + FC Purchases)
             # Other Income = Internal accounting (consumed promotional spends, grants, interest)
             
-            # CRITICAL FIX (Mar 13, 2026): Get VAS commissions from vas_transactions.providerCommission
-            # This matches the treasury dashboard pattern and is the authoritative source
-            vas_commission_data = get_vas_commissions_from_transactions(
-                mongo, user_id, start_date, end_date
-            )
-            vas_commission_revenue = vas_commission_data['total_commission']
+            # CRITICAL FIX (Mar 14, 2026): VAS commissions are in business books, not VAS transactions
+            # Business reports should read VAS commissions from incomes.vas_commission entries
+            # Treasury dashboard reads from vas_transactions, but business reports read from business books
             
             # Define what constitutes "Sales Revenue" (actual business revenue)
-            # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
+            # CORRECTED (Mar 14, 2026): Only include REAL revenue sources
             sales_revenue_sources = [
-                'inventory_sale',                    # Inventory sales ✅
-                'subscription_purchase_payment_received',  # Subscription payments ✅
-                'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
-                'fc_purchase_payment_received',      # FC purchase payments ✅
-                'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+                'vas_commission',                    # VAS commission income (REAL revenue) ✅
+                 Deposit fees (MOST RELIABLE revenue) ✅
+                'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
+                'inventory_sale',                    # Inventory sales (when we have them) ✅
+                # REMOVED: fc_purchase_revenue_recognition (fake test revenue)
+                # REMOVED: subscription_purchase_revenue_recognition (fake test revenue)
             ]
             
             # Define what constitutes "Other Income" (internal accounting, not real external revenue)
@@ -2548,14 +2546,11 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
-            sales_revenue_from_incomes = sum(
+            # Calculate Sales Revenue from incomes collection (including VAS commissions)
+            sales_revenue = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
-            
-            # Total Sales Revenue = VAS Commissions + Other Sales Revenue
-            sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -2982,6 +2977,8 @@ def init_reports_blueprint(mongo, token_required):
                 # Define what constitutes "Sales Revenue" (actual business revenue)
                 # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
                 sales_revenue_sources = [
+                     Deposit fees (MOST RELIABLE revenue) ✅
+                    'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
                     'inventory_sale',                    # Inventory sales ✅
                     'subscription_purchase_payment_received',  # Subscription payments ✅
                     'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
@@ -4029,11 +4026,11 @@ def init_reports_blueprint(mongo, token_required):
             # Define what constitutes "Sales Revenue" (actual business revenue)
             # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
             sales_revenue_sources = [
-                'inventory_sale',                    # Inventory sales ✅
-                'subscription_purchase_payment_received',  # Subscription payments ✅
-                'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
-                'fc_purchase_payment_received',      # FC purchase payments ✅
-                'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+                'vas_commission',                    # VAS commission income (REAL revenue) ✅
+                'deposit_fee',               # Deposit fees (MOST RELIABLE revenue) ✅
+                'inventory_sale',                    # Inventory sales (when we have them) ✅
+                # REMOVED: fc_purchase_revenue_recognition (fake test revenue)
+                # REMOVED: subscription_purchase_revenue_recognition (fake test revenue)
             ]
             
             # Define what constitutes "Other Income" (internal accounting, not real external revenue)
@@ -4045,14 +4042,11 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
-            sales_revenue_from_incomes = sum(
+            # Calculate Sales Revenue from incomes collection (including VAS commissions)
+            sales_revenue = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
-            
-            # Total Sales Revenue = VAS Commissions + Other Sales Revenue
-            sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -5501,12 +5495,14 @@ def init_reports_blueprint(mongo, token_required):
         # Define what constitutes "Sales Revenue" (actual business revenue)
         # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
         sales_revenue_sources = [
-            'inventory_sale',                    # Inventory sales ✅
+'inventory_sale',                    # Inventory sales ✅
+                 Deposit fees (MOST RELIABLE revenue) ✅
+                'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
             'subscription_purchase_payment_received',  # Subscription payments ✅
             'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
             'fc_purchase_payment_received',      # FC purchase payments ✅
             'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
-        ]
+            ]
         
         # Define what constitutes "Other Income" (internal accounting, not real external revenue)
         other_income_sources = [
@@ -7929,11 +7925,11 @@ def init_reports_blueprint(mongo, token_required):
             # Define what constitutes "Sales Revenue" (actual business revenue)
             # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
             sales_revenue_sources = [
-                'inventory_sale',                    # Inventory sales ✅
-                'subscription_purchase_payment_received',  # Subscription payments ✅
-                'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
-                'fc_purchase_payment_received',      # FC purchase payments ✅
-                'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
+                'vas_commission',                    # VAS commission income (REAL revenue) ✅
+                'deposit_fee',               # Deposit fees (MOST RELIABLE revenue) ✅
+                'inventory_sale',                    # Inventory sales (when we have them) ✅
+                # REMOVED: fc_purchase_revenue_recognition (fake test revenue)
+                # REMOVED: subscription_purchase_revenue_recognition (fake test revenue)
             ]
             
             # Define what constitutes "Other Income" (internal accounting, not real external revenue)
@@ -7945,14 +7941,11 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
-            sales_revenue_from_incomes = sum(
+            # Calculate Sales Revenue from incomes collection (including VAS commissions)
+            sales_revenue = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
-            
-            # Total Sales Revenue = VAS Commissions + Other Sales Revenue
-            sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -8403,12 +8396,14 @@ def init_reports_blueprint(mongo, token_required):
                     # Define what constitutes "Sales Revenue" (actual business revenue)
                     # UPDATED: Remove 'vas_commission' from incomes query since we get it from vas_transactions
                     sales_revenue_sources = [
-                        'inventory_sale',                    # Inventory sales ✅
+'inventory_sale',                    # Inventory sales ✅
+                 Deposit fees (MOST RELIABLE revenue) ✅
+                'deposit_fee',                       # Deposit fees (alternative sourceType) ✅
                         'subscription_purchase_payment_received',  # Subscription payments ✅
                         'subscription_purchase_revenue_recognition',  # Subscription revenue ✅
                         'fc_purchase_payment_received',      # FC purchase payments ✅
                         'fc_purchase_revenue_recognition',   # FC purchase revenue ✅
-                    ]
+            ]
                     
                     # Define what constitutes "Other Income" (internal accounting, not real external revenue)
                     other_income_sources = [

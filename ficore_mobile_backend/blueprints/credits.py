@@ -624,6 +624,96 @@ def init_credits_blueprint(mongo, token_required, serialize_doc):
                 }
             )
             
+            # ==================== REFERRAL COMMISSION FOR FC CREDITS ====================
+            try:
+                # Check if user was referred and referrer has active VAS sharing
+                referral = mongo.db.referrals.find_one({
+                    'refereeId': current_user['_id'],
+                    'referrerVasShareActive': True,
+                    'vasShareExpiryDate': {'$gte': datetime.utcnow()}
+                })
+                
+                if referral:
+                    # Calculate 1% share of FC credit purchase amount
+                    fc_share = pending_transaction['nairaAmount'] * 0.01
+                    days_remaining = (referral['vasShareExpiryDate'] - datetime.utcnow()).days
+                    
+                    print(f'💸 FC CREDIT SHARE: User {current_user["_id"]} purchased ₦{pending_transaction["nairaAmount"]} FC credits, referred by {referral["referrerId"]} ({days_remaining} days remaining)')
+                    
+                    # Create payout entry (WITHDRAWABLE immediately - no vesting for FC credits)
+                    payout_doc = {
+                        '_id': ObjectId(),
+                        'referrerId': referral['referrerId'],
+                        'refereeId': current_user['_id'],
+                        'referralId': referral['_id'],
+                        'type': 'FC_CREDIT_SHARE',
+                        'amount': fc_share,
+                        'status': 'WITHDRAWABLE',
+                        'vestingStartDate': datetime.utcnow(),
+                        'vestingEndDate': datetime.utcnow(),  # Immediate
+                        'vestedAt': datetime.utcnow(),
+                        'paidAt': None,
+                        'paymentMethod': None,
+                        'paymentReference': None,
+                        'processedBy': None,
+                        'sourceTransaction': str(transaction['_id']),
+                        'sourceType': 'FC_CREDIT_TRANSACTION',
+                        'metadata': {
+                            'fcAmount': pending_transaction['creditAmount'],
+                            'nairaAmount': pending_transaction['nairaAmount'],
+                            'shareRate': 0.01,
+                            'daysRemaining': days_remaining,
+                            'transactionType': 'FC_CREDIT_PURCHASE'
+                        },
+                        'createdAt': datetime.utcnow(),
+                        'updatedAt': datetime.utcnow()
+                    }
+                    mongo.db.referral_payouts.insert_one(payout_doc)
+                    print(f'✅ Created FC credit share payout: ₦{fc_share:.2f} (WITHDRAWABLE immediately)')
+                    
+                    # Update referrer's withdrawable balance
+                    mongo.db.users.update_one(
+                        {'_id': referral['referrerId']},
+                        {
+                            '$inc': {
+                                'withdrawableCommissionBalance': fc_share,
+                                'referralEarnings': fc_share
+                            }
+                        }
+                    )
+                    print(f'✅ Updated referrer withdrawable balance: +₦{fc_share:.2f}')
+                    
+                    # Log to corporate_revenue (as expense)
+                    corporate_revenue_doc = {
+                        '_id': ObjectId(),
+                        'type': 'REFERRAL_PAYOUT',
+                        'category': 'PARTNER_COMMISSION',
+                        'amount': -fc_share,  # Negative (expense for FiCore)
+                        'userId': referral['referrerId'],
+                        'relatedTransaction': str(transaction['_id']),
+                        'description': f'FC credit share (1%) for referrer {referral["referrerId"]}',
+                        'status': 'WITHDRAWABLE',
+                        'metadata': {
+                            'referrerId': str(referral['referrerId']),
+                            'refereeId': str(current_user['_id']),
+                            'payoutType': 'FC_CREDIT_SHARE',
+                            'shareRate': 0.01,
+                            'sourceAmount': pending_transaction['nairaAmount'],
+                            'fcAmount': pending_transaction['creditAmount'],
+                            'daysRemaining': days_remaining,
+                            'transactionType': 'FC_CREDIT_PURCHASE'
+                        },
+                        'createdAt': datetime.utcnow()
+                    }
+                    mongo.db.corporate_revenue.insert_one(corporate_revenue_doc)
+                    print(f'💰 Corporate revenue logged: -₦{fc_share:.2f} (FC credit share)')
+                    
+                    print(f'🎉 FC CREDIT SHARE COMPLETE: Referrer earned ₦{fc_share:.2f} (1% of ₦{pending_transaction["nairaAmount"]})')
+                
+            except Exception as e:
+                print(f'⚠️  Error processing FC credit referral commission: {str(e)}')
+            # ==================== END REFERRAL COMMISSION ====================
+            
             return jsonify({
                 'success': True,
                 'data': {
