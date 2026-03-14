@@ -343,6 +343,20 @@
     </style>
 </head>
 <body>
+    <!-- Debug Panel (only visible when toggled) -->
+    <div id="debugPanel" style="display: none; position: fixed; top: 10px; right: 10px; background: #f8f9fa; border: 1px solid #ddd; padding: 15px; border-radius: 8px; z-index: 9999; max-width: 300px; font-size: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <h4 style="margin: 0 0 10px 0; color: #333;">🔧 Debug Info</h4>
+        <div><strong>Backend:</strong> <span id="debugBackend"></span></div>
+        <div><strong>API URL:</strong> <span id="debugApiUrl"></span></div>
+        <div><strong>Token:</strong> <span id="debugToken"></span></div>
+        <div><strong>Last Error:</strong> <span id="debugError">None</span></div>
+        <button onclick="toggleDebug()" style="margin-top: 10px; padding: 5px 10px; font-size: 11px;">Hide Debug</button>
+        <button onclick="testEndpoint()" style="margin-top: 10px; padding: 5px 10px; font-size: 11px; margin-left: 5px;">Test API</button>
+    </div>
+
+    <!-- Debug Toggle Button -->
+    <button id="debugToggle" onclick="toggleDebug()" style="position: fixed; bottom: 20px; right: 20px; background: #6c757d; color: white; border: none; padding: 10px; border-radius: 50%; z-index: 9998; font-size: 12px; cursor: pointer;">🔧</button>
+
     <div class="container">
         <div class="header">
             <h1><i class="fas fa-money-bill-wave"></i> Withdrawal Requests</h1>
@@ -405,14 +419,73 @@
 
     <script src="utils.js"></script>
     <script>
-        // Configuration
-        const API_BASE_URL = 'https://mobilebackend.ficoreafrica.com';
+        // Configuration - Use dynamic backend from utils.js
+        const API_BASE_URL = getBackendURL();
         let currentWithdrawalId = null;
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
+            // Debug info
+            console.log('Current backend:', getCurrentBackend());
+            console.log('API Base URL:', API_BASE_URL);
+            console.log('Admin token exists:', !!getAdminToken());
+            
+            // Update debug panel
+            updateDebugInfo();
+            
             loadPendingRequests();
         });
+
+        // Update debug info
+        function updateDebugInfo() {
+            document.getElementById('debugBackend').textContent = getCurrentBackend();
+            document.getElementById('debugApiUrl').textContent = API_BASE_URL;
+            const token = getAdminToken();
+            document.getElementById('debugToken').textContent = token ? `${token.substring(0, 20)}...` : 'None';
+        }
+
+        // Toggle debug panel
+        function toggleDebug() {
+            const panel = document.getElementById('debugPanel');
+            const toggle = document.getElementById('debugToggle');
+            
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                toggle.textContent = '❌';
+                updateDebugInfo();
+            } else {
+                panel.style.display = 'none';
+                toggle.textContent = '🔧';
+            }
+        }
+
+        // Test endpoint directly
+        async function testEndpoint() {
+            try {
+                const token = getAdminToken();
+                if (!token) {
+                    document.getElementById('debugError').textContent = 'No admin token';
+                    return;
+                }
+
+                const response = await fetch(`${API_BASE_URL}/admin/withdrawals/pending`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    document.getElementById('debugError').textContent = `Success: ${data.data.pendingWithdrawals.length} requests`;
+                } else {
+                    document.getElementById('debugError').textContent = `Error: ${response.status} - ${data.message || 'Unknown error'}`;
+                }
+            } catch (error) {
+                document.getElementById('debugError').textContent = `Exception: ${error.message}`;
+            }
+        }
 
         // Load pending withdrawal requests
         async function loadPendingRequests() {
@@ -426,17 +499,26 @@
                     return;
                 }
 
+                console.log('Loading withdrawal requests from:', `${API_BASE_URL}/admin/withdrawals/pending`);
+                
                 const response = await fetch(`${API_BASE_URL}/admin/withdrawals/pending`, {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     }
                 });
 
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
                 }
 
                 const data = await response.json();
+                console.log('Response data:', data);
                 
                 if (data.success) {
                     displayRequests(data.data.pendingWithdrawals);
@@ -447,6 +529,7 @@
 
             } catch (error) {
                 console.error('Error loading requests:', error);
+                document.getElementById('debugError').textContent = error.message;
                 showNotification('Failed to load requests: ' + error.message, 'error');
                 showEmpty();
             }
@@ -484,8 +567,8 @@
                             <div class="value">₦${req.pendingBalance.toLocaleString()}</div>
                         </div>
                         <div class="detail-item">
-                            <div class="label">Current Credits</div>
-                            <div class="value">${req.creditBalance.toLocaleString()} FC</div>
+                            <div class="label">Wallet Balance</div>
+                            <div class="value">₦${req.walletBalance.toLocaleString()}</div>
                         </div>
                         <div class="detail-item">
                             <div class="label">Requested</div>
