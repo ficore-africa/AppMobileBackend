@@ -2545,11 +2545,40 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue from incomes collection (including VAS commissions)
-            sales_revenue = sum(
+            # Calculate Gross Sales Revenue from incomes collection
+            gross_sales_revenue = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
+            
+            # CRITICAL FIX (Mar 14, 2026): Subtract gateway fees from gross revenue to get net revenue
+            # Gateway fees are recorded in expenses collection with sourceType='gateway_fee'
+            # This fixes the ₦89.26 gap identified in the analysis
+            
+            # Get gateway fees from expenses collection (they're business expenses)
+            gateway_fees_query = create_user_query(BUSINESS_USER_ID, {
+                'sourceType': 'gateway_fee',
+                'status': 'active',
+                'isDeleted': False
+            })
+            
+            # Apply same date filtering to gateway fees
+            if start_date or end_date:
+                if start_date:
+                    gateway_fees_query['date'] = {'$gte': start_date}
+                if end_date:
+                    gateway_fees_query.setdefault('date', {})['$lte'] = end_date
+            
+            gateway_fees = list(mongo.db.expenses.find(gateway_fees_query, {'amount': 1}))
+            total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+            
+            # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+            sales_revenue = gross_sales_revenue - total_gateway_fees
+            
+            print(f"[DEBUG] Revenue Calculation:")
+            print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+            print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+            print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -2999,8 +3028,39 @@ def init_reports_blueprint(mongo, token_required):
                     if inc.get('sourceType') in sales_revenue_sources
                 )
                 
-                # Total Sales Revenue = VAS Commissions + Other Sales Revenue
-                sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+                # CRITICAL FIX (Mar 14, 2026): Subtract gateway fees from gross revenue to get net revenue
+                # Gateway fees are recorded in expenses collection with sourceType='gateway_fee'
+                # This fixes the ₦89.26 gap identified in the analysis
+                
+                # Get gateway fees from expenses collection (they're business expenses)
+                gateway_fees_query = create_user_query(BUSINESS_USER_ID, {
+                    'sourceType': 'gateway_fee',
+                    'status': 'active',
+                    'isDeleted': False
+                })
+                
+                # Apply date filtering to gateway fees if provided
+                if start_date or end_date:
+                    if start_date:
+                        gateway_fees_query['date'] = {'$gte': start_date}
+                    if end_date:
+                        gateway_fees_query.setdefault('date', {})['$lte'] = end_date
+                
+                gateway_fees = list(mongo.db.expenses.find(gateway_fees_query, {'amount': 1}))
+                total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+                
+                # Calculate Gross Sales Revenue first
+                gross_sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+                
+                # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+                sales_revenue = gross_sales_revenue - total_gateway_fees
+                
+                print(f"[DEBUG] Revenue Calculation (Section 2):")
+                print(f"  VAS Commission Revenue: ₦{vas_commission_revenue:,.2f}")
+                print(f"  Sales Revenue from Incomes: ₦{sales_revenue_from_incomes:,.2f}")
+                print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+                print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+                print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
                 
                 # Calculate Other Income (internal accounting, not real external revenue)
                 other_income = sum(
@@ -4040,11 +4100,29 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue from incomes collection (including VAS commissions)
-            sales_revenue = sum(
+            # Calculate Gross Sales Revenue from incomes collection (including VAS commissions)
+            gross_sales_revenue = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
+            
+            # Get gateway fees from expenses collection (business expenses)
+            gateway_fees = list(mongo.db.expenses.find({
+                'userId': BUSINESS_USER_ID,
+                'sourceType': 'gateway_fee',
+                'status': 'active',
+                'isDeleted': False
+            }))
+            
+            total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+            
+            # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+            sales_revenue = gross_sales_revenue - total_gateway_fees
+            
+            print(f"[DEBUG] Revenue Calculation (Section 3):")
+            print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+            print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+            print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -5510,7 +5588,7 @@ def init_reports_blueprint(mongo, token_required):
             'voice',                           # Voice entries (could be grants, interest, etc.) ✅
         ]
         
-        # Calculate Sales Revenue from incomes collection (excluding VAS commissions)
+        # Calculate Gross Sales Revenue from incomes collection (excluding VAS commissions)
         sales_revenue_from_incomes = 0
         other_income = 0
         for inc in all_incomes:
@@ -5524,8 +5602,29 @@ def init_reports_blueprint(mongo, token_required):
                 # Default to other income for unclassified entries
                 other_income += amount
         
-        # Total Sales Revenue = VAS Commissions + Other Sales Revenue
-        sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+        # Calculate Gross Sales Revenue first
+        gross_sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+        
+        # Get gateway fees from expenses collection (business expenses)
+        gateway_fees = list(mongo.db.expenses.find({
+            'userId': BUSINESS_USER_ID,
+            'sourceType': 'gateway_fee',
+            'status': 'active',
+            'isDeleted': False
+        }))
+        
+        total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+        
+        # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+        sales_revenue = gross_sales_revenue - total_gateway_fees
+        
+        print(f"[DEBUG] Revenue Calculation (Section 4):")
+        print(f"  VAS Commission Revenue: ₦{vas_commission_revenue:,.2f}")
+        print(f"  Sales Revenue from Incomes: ₦{sales_revenue_from_incomes:,.2f}")
+        print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+        print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+        print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
+        
         total_revenue = sales_revenue + other_income
         
         # STEP 2: Get COGS (Cost of Goods Sold)
@@ -6353,14 +6452,14 @@ def init_reports_blueprint(mongo, token_required):
             total_creditors = sum(creditor.get('amount', 0) for creditor in creditors)
             
             # 2. P&L Summary
-            # CRITICAL FIX (Mar 12, 2026): Exclude liability adjustments from income calculation
-            income_query = {
-                'userId': current_user['_id'], 
-                'status': 'active', 
-                'isDeleted': False,
-                'sourceType': {'$not': {'$regex': '^liability_adjustment_'}}  # [NEW] Exclude liability adjustments
-            }
-            expense_query = {'userId': current_user['_id'], 'status': 'active', 'isDeleted': False}
+            # CRITICAL FIX (Mar 14, 2026): Use same revenue separation logic as PDF function
+            # This fixes Executive Summary showing ₦0 Sales Revenue and mysterious ₦9,200 Other Income
+            
+            # SECURITY FIX: Use secure query that excludes business data
+            income_query = create_user_query(current_user['_id'], {
+                'sourceType': {'$not': {'$regex': '^liability_adjustment_'}}  # Exclude liability adjustments
+            })
+            expense_query = create_user_query(current_user['_id'])
             
             if start_date or end_date:
                 income_query['date'] = {}
@@ -6375,7 +6474,54 @@ def init_reports_blueprint(mongo, token_required):
             incomes = list(mongo.db.incomes.find(income_query, PDF_PROJECTIONS['incomes']))
             expenses = list(mongo.db.expenses.find(expense_query, PDF_PROJECTIONS['expenses']))
             
-            total_income = sum(inc.get('amount', 0) for inc in incomes)
+            # CRITICAL FIX: Separate Sales Revenue from Other Income (same logic as PDF function)
+            # Define what constitutes "Sales Revenue" (actual business revenue)
+            sales_revenue_sources = [
+                'vas_commission',                    # VAS commission income (REAL revenue) ✅
+                'deposit_fee',                      # Deposit fees (MOST RELIABLE revenue) ✅
+                'inventory_sale',                   # Inventory sales (when we have them) ✅
+            ]
+            
+            # Define what constitutes "Other Income" (internal accounting, not real external revenue)
+            other_income_sources = [
+                'fc_consumption',                   # Consumed promotional FC spends (internal) ✅
+                'fee_waiver_consumption',          # Consumed promotional fee waivers (internal) ✅
+                'subscription_consumption',        # Consumed promotional subscriptions (internal) ✅
+                'manual',                         # Manual entries (could be grants, interest, etc.) ✅
+                'voice',                          # Voice entries (could be grants, interest, etc.) ✅
+            ]
+            
+            # Calculate Gross Sales Revenue
+            gross_sales_revenue = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in sales_revenue_sources
+            )
+            
+            # Get gateway fees from expenses collection (business expenses)
+            gateway_fees = list(mongo.db.expenses.find({
+                'userId': BUSINESS_USER_ID,
+                'sourceType': 'gateway_fee',
+                'status': 'active',
+                'isDeleted': False
+            }))
+            
+            total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+            
+            # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+            sales_revenue = gross_sales_revenue - total_gateway_fees
+            
+            print(f"[DEBUG] Revenue Calculation (Section 5):")
+            print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+            print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+            print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
+            
+            # Calculate Other Income
+            other_income = sum(
+                inc.get('amount', 0) for inc in incomes 
+                if inc.get('sourceType') in other_income_sources
+            )
+            
+            total_income = sales_revenue + other_income
             total_expenses = sum(exp.get('amount', 0) for exp in expenses)
             net_profit = total_income - total_expenses
             
@@ -6479,6 +6625,8 @@ def init_reports_blueprint(mongo, token_required):
                         'net_assets': total_assets + total_inventory + total_debtors - total_creditors
                     },
                     'profit_loss': {
+                        'sales_revenue': sales_revenue,      # NEW: Separated sales revenue
+                        'other_income': other_income,        # NEW: Separated other income  
                         'total_income': total_income,
                         'total_expenses': total_expenses,
                         'net_profit': net_profit,
@@ -7938,11 +8086,29 @@ def init_reports_blueprint(mongo, token_required):
                 'voice',                           # Voice entries (could be grants, interest, etc.) ✅
             ]
             
-            # Calculate Sales Revenue from incomes collection (including VAS commissions)
-            sales_revenue = sum(
+            # Calculate Gross Sales Revenue from incomes collection (including VAS commissions)
+            gross_sales_revenue = sum(
                 inc.get('amount', 0) for inc in incomes 
                 if inc.get('sourceType') in sales_revenue_sources
             )
+            
+            # Get gateway fees from expenses collection (business expenses)
+            gateway_fees = list(mongo.db.expenses.find({
+                'userId': BUSINESS_USER_ID,
+                'sourceType': 'gateway_fee',
+                'status': 'active',
+                'isDeleted': False
+            }))
+            
+            total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+            
+            # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+            sales_revenue = gross_sales_revenue - total_gateway_fees
+            
+            print(f"[DEBUG] Revenue Calculation (Section 6):")
+            print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+            print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+            print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
             
             # Calculate Other Income (internal accounting, not real external revenue)
             other_income = sum(
@@ -8416,8 +8582,28 @@ def init_reports_blueprint(mongo, token_required):
                         if inc.get('sourceType') in sales_revenue_sources
                     )
                     
-                    # Total Sales Revenue = VAS Commissions + Other Sales Revenue
-                    sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+                    # Calculate Gross Sales Revenue first
+                    gross_sales_revenue = vas_commission_revenue + sales_revenue_from_incomes
+                    
+                    # Get gateway fees from expenses collection (business expenses)
+                    gateway_fees = list(mongo.db.expenses.find({
+                        'userId': BUSINESS_USER_ID,
+                        'sourceType': 'gateway_fee',
+                        'status': 'active',
+                        'isDeleted': False
+                    }))
+                    
+                    total_gateway_fees = sum(fee.get('amount', 0) for fee in gateway_fees)
+                    
+                    # Calculate Net Sales Revenue (Gross Revenue - Gateway Fees)
+                    sales_revenue = gross_sales_revenue - total_gateway_fees
+                    
+                    print(f"[DEBUG] Revenue Calculation (Section 7 - SOA):")
+                    print(f"  VAS Commission Revenue: ₦{vas_commission_revenue:,.2f}")
+                    print(f"  Sales Revenue from Incomes: ₦{sales_revenue_from_incomes:,.2f}")
+                    print(f"  Gross Sales Revenue: ₦{gross_sales_revenue:,.2f}")
+                    print(f"  Gateway Fees: ₦{total_gateway_fees:,.2f}")
+                    print(f"  Net Sales Revenue: ₦{sales_revenue:,.2f}")
                     
                     # Calculate Other Income (internal accounting, not real external revenue)
                     other_income = sum(
