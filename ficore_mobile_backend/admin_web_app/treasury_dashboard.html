@@ -646,6 +646,18 @@
                 <div class="label">Total Wallet Float</div>
                 <div class="sublabel">Total liability in real time</div>
             </div>
+            <div class="stat-card" style="--card-color: #e74c3c;">
+                <div class="icon"><i class="fas fa-credit-card"></i></div>
+                <div class="number" id="providerGatewayFees">₦0</div>
+                <div class="label">Provider Gateway Fees</div>
+                <div class="sublabel">Total fees paid to payment providers</div>
+            </div>
+            <div class="stat-card" style="--card-color: #8e44ad;">
+                <div class="icon"><i class="fas fa-piggy-bank"></i></div>
+                <div class="number" id="providerDeposits">₦0</div>
+                <div class="label">Provider Deposits</div>
+                <div class="sublabel">Total deposits by provider</div>
+            </div>
         </div>
 
         <!-- Referral System Metrics -->
@@ -1038,6 +1050,14 @@
             // Show Deposit Fees (₦30 from free users)
             document.getElementById('depositFees').textContent = `₦${(revenueBreakdown?.depositFees?.net || 0).toLocaleString()}`;
             document.getElementById('totalTransactions').textContent = (overview?.totalTransactions || 0).toLocaleString();
+            
+            // Update new provider-wise cards
+            const gatewayFeesTotal = treasuryData?.costBreakdown?.gatewayFees?.total || 0;
+            document.getElementById('providerGatewayFees').textContent = `₦${gatewayFeesTotal.toLocaleString()}`;
+            
+            // Calculate total deposits by provider (sum of all VAS volume)
+            const totalProviderDeposits = (providerStats || []).reduce((sum, provider) => sum + (provider.volume || 0), 0);
+            document.getElementById('providerDeposits').textContent = `₦${totalProviderDeposits.toLocaleString()}`;
             
             // Update provider breakdown (use providerStats from backend)
             updateProviderBreakdown(providerStats || []);
