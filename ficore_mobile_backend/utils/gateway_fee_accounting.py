@@ -425,7 +425,6 @@ def record_subscription_purchase_with_gateway_fees(
                 'payment_reference': payment_reference
             }
         )
-        )
         
         # Transaction 3: Subscription Liability Creation (Obligation to provide subscription service)
         subscription_liability_entry = {
