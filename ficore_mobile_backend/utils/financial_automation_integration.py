@@ -13,7 +13,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from business_bookkeeping import (
     record_fc_marketing_expense,
     record_subscription_marketing_expense,
-    record_vas_commission_revenue,
     record_fc_consumption_revenue,
     record_monthly_depreciation,
     accrue_daily_subscription_revenue,

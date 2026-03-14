@@ -866,14 +866,14 @@ def record_fc_consumption_revenue(
     service: str
 ) -> Dict[str, ObjectId]:
     """
-    Record FC consumption with proper revenue recognition
+    Record FC consumption with CORRECTED 3-transaction pattern
     
-    CRITICAL FIX: Only records revenue for PROMOTIONAL FCs
-    PAID FCs already had revenue recorded at purchase time
+    CRITICAL FIX: NO PHANTOM REVENUE CREATION
+    Consumption only reduces liability - revenue was already recorded when promotional FCs were granted
     
-    Implements double-entry bookkeeping:
-    - Dr. FC Liability (decreases liability) - ALWAYS
-    - Cr. Revenue (increases income) - ONLY for promotional FCs
+    Implements corrected pattern:
+    - Dr. FC Liability (decreases liability) - ONLY LIABILITY REDUCTION
+    - NO REVENUE ENTRY (prevents double-counting)
     
     Args:
         mongo: MongoDB connection
@@ -883,7 +883,7 @@ def record_fc_consumption_revenue(
         service: Service used (report_export, premium_feature, etc.)
     
     Returns:
-        Dict with revenue_id and liability_reduction_id
+        Dict with liability_reduction_id only
     """
     try:
         # Calculate total value (₦30 per FC)
@@ -893,73 +893,30 @@ def record_fc_consumption_revenue(
         user = mongo.users.find_one({'_id': user_id})
         user_email = user.get('email', 'Unknown') if user else 'Unknown'
         
-        # Get FC liability breakdown by type
-        liability_breakdown = calculate_user_fc_liabilities_by_type(mongo, user_id)
-        
-        # Determine how much is promotional vs paid (FIFO: consume paid first)
-        paid_consumed = min(fc_amount * FC_RATE, liability_breakdown['paid'])
-        promotional_consumed = (fc_amount * FC_RATE) - paid_consumed
-        
-        print(f'🔍 FC Consumption Analysis for {user_email}:')
+        print(f'🔍 FC Consumption (CORRECTED) for {user_email}:')
         print(f'   Total consuming: {fc_amount} FCs (₦{naira_value:,.2f})')
-        print(f'   Paid FCs consumed: ₦{paid_consumed:,.2f} (no new revenue - already recorded)')
-        print(f'   Promotional FCs consumed: ₦{promotional_consumed:,.2f} (new revenue)')
+        print(f'   Action: LIABILITY REDUCTION ONLY (no phantom revenue)')
         
-        revenue_id = None
-        
-        # 1. Record revenue ONLY for promotional FCs (paid FCs already had revenue recorded)
-        if promotional_consumed > 0:
-            revenue_entry = {
-                '_id': ObjectId(),
-                'userId': BUSINESS_USER_ID,
-                'amount': promotional_consumed,
-                'category': 'Service Revenue',
-                'description': f'FC Consumption (Promotional) - {description} ({promotional_consumed/FC_RATE:.1f} FCs @ ₦{FC_RATE}/FC) by {user_email}',
-                'date': datetime.utcnow(),
-                'sourceType': 'fc_consumption',
-                'status': 'active',
-                'isDeleted': False,
-                'metadata': {
-                    'customerUserId': str(user_id),
-                    'customerEmail': user_email,
-                    'fcAmount': promotional_consumed / FC_RATE,
-                    'fcRate': FC_RATE,
-                    'service': service,
-                    'fcType': 'promotional',
-                    'automated': True,
-                    'doubleEntry': True
-                },
-                'createdAt': datetime.utcnow(),
-                'updatedAt': datetime.utcnow()
-            }
-            
-            mongo.incomes.insert_one(revenue_entry)
-            revenue_id = revenue_entry['_id']
-            
-            print(f'✅ Recorded promotional FC consumption revenue: ₦{promotional_consumed:,.2f}')
-        else:
-            print(f'ℹ️ No promotional FCs consumed - no new revenue recorded')
-        
-        # 2. ALWAYS record liability reduction (for both paid and promotional FCs)
+        # CORRECTED: ONLY record liability reduction (no revenue entry)
         liability_reduction = {
             '_id': ObjectId(),
             'userId': BUSINESS_USER_ID,
             'amount': -naira_value,  # Negative = liability reduction
             'category': 'Liability Adjustment',
-            'description': f'FC Liability Reduction - {description} ({fc_amount} FCs total)',
+            'description': f'FC Liability Reduction - {description} ({fc_amount} FCs consumed by {user_email})',
             'date': datetime.utcnow(),
             'sourceType': 'liability_adjustment_fc_consumption',
             'status': 'active',
             'isDeleted': False,
             'metadata': {
-                'linkedRevenueId': str(revenue_id) if revenue_id else None,
                 'customerUserId': str(user_id),
+                'customerEmail': user_email,
                 'fcAmount': fc_amount,
-                'paidFcAmount': paid_consumed / FC_RATE,
-                'promotionalFcAmount': promotional_consumed / FC_RATE,
+                'fcRate': FC_RATE,
                 'service': service,
                 'automated': True,
-                'doubleEntry': True
+                'correctedPattern': True,  # Flag to indicate corrected implementation
+                'noPhantomRevenue': True
             },
             'createdAt': datetime.utcnow(),
             'updatedAt': datetime.utcnow()
@@ -968,17 +925,16 @@ def record_fc_consumption_revenue(
         mongo.expenses.insert_one(liability_reduction)
         
         print(f'✅ Recorded FC liability reduction: {fc_amount} FCs (₦{naira_value:,.2f}) from {user_email}')
+        print(f'✅ NO phantom revenue created (corrected pattern)')
         
         return {
-            'revenue_id': revenue_id,
             'liability_reduction_id': liability_reduction['_id'],
             'amount': naira_value,
-            'promotional_revenue': promotional_consumed,
-            'paid_consumed': paid_consumed
+            'phantom_revenue_prevented': True
         }
         
     except Exception as e:
-        print(f'❌ Error recording FC consumption revenue: {str(e)}')
+        print(f'❌ Error recording FC consumption: {str(e)}')
         raise
 
 
@@ -991,13 +947,15 @@ def record_subscription_consumption_revenue(
     service: str
 ) -> Dict[str, any]:
     """
-    Record subscription consumption revenue when services are used
+    Record subscription consumption with CORRECTED 3-transaction pattern
+    
+    CRITICAL FIX: NO PHANTOM REVENUE CREATION
+    Consumption only reduces liability - revenue was already recorded when subscription was granted/purchased
     
     This function:
     1. Checks if user has outstanding subscription liabilities
     2. Consumes available liability (up to consumption_amount)
-    3. Records revenue for consumed amount
-    4. Records liability reduction
+    3. Records ONLY liability reduction (NO REVENUE)
     
     Args:
         mongo: MongoDB connection
@@ -1007,7 +965,7 @@ def record_subscription_consumption_revenue(
         service: Service type (vas_purchase, report_export, etc.)
     
     Returns:
-        Dict with consumed_amount, revenue_id, liability_reduction_id
+        Dict with consumed_amount and liability_reduction_id only
     """
     try:
         # Get user details
@@ -1031,15 +989,19 @@ def record_subscription_consumption_revenue(
         if consumed_amount <= 0:
             return {'consumed_amount': 0}
         
-        # 1. Record revenue (Credit)
-        revenue_entry = {
+        print(f'🔍 Subscription Consumption (CORRECTED) for {user_email}:')
+        print(f'   Consuming: ₦{consumed_amount:,.2f}')
+        print(f'   Action: LIABILITY REDUCTION ONLY (no phantom revenue)')
+        
+        # CORRECTED: ONLY record liability reduction (no revenue entry)
+        liability_reduction = {
             '_id': ObjectId(),
             'userId': BUSINESS_USER_ID,
-            'amount': consumed_amount,
-            'category': 'Subscription Revenue',
-            'description': f'Subscription Service Consumption - {description} for {user_email}',
+            'amount': -consumed_amount,  # Negative = liability reduction
+            'category': 'Liability Adjustment',
+            'description': f'Subscription Liability Reduction - {description} for {user_email}',
             'date': datetime.utcnow(),
-            'sourceType': 'subscription_consumption',
+            'sourceType': 'liability_adjustment_subscription',
             'status': 'active',
             'isDeleted': False,
             'metadata': {
@@ -1048,32 +1010,8 @@ def record_subscription_consumption_revenue(
                 'service': service,
                 'consumedAmount': consumed_amount,
                 'automated': True,
-                'doubleEntry': True
-            },
-            'createdAt': datetime.utcnow(),
-            'updatedAt': datetime.utcnow()
-        }
-        
-        mongo.incomes.insert_one(revenue_entry)
-        
-        # 2. Record liability reduction (Debit - negative expense = liability reduction)
-        liability_reduction = {
-            '_id': ObjectId(),
-            'userId': BUSINESS_USER_ID,
-            'amount': -consumed_amount,  # Negative = liability reduction
-            'category': 'Liability Adjustment',
-            'description': f'Subscription Liability Reduction - Service consumption for {user_email}',
-            'date': datetime.utcnow(),
-            'sourceType': 'liability_adjustment_subscription',
-            'status': 'active',
-            'isDeleted': False,
-            'metadata': {
-                'linkedRevenueId': str(revenue_entry['_id']),
-                'customerUserId': str(user_id),
-                'service': service,
-                'consumedAmount': consumed_amount,
-                'automated': True,
-                'doubleEntry': True
+                'correctedPattern': True,  # Flag to indicate corrected implementation
+                'noPhantomRevenue': True
             },
             'createdAt': datetime.utcnow(),
             'updatedAt': datetime.utcnow()
@@ -1082,11 +1020,12 @@ def record_subscription_consumption_revenue(
         mongo.expenses.insert_one(liability_reduction)
         
         print(f'✅ Subscription consumption recorded: ₦{consumed_amount:,.2f} for {user_email} ({service})')
+        print(f'✅ NO phantom revenue created (corrected pattern)')
         
         return {
             'consumed_amount': consumed_amount,
-            'revenue_id': revenue_entry['_id'],
-            'liability_reduction_id': liability_reduction['_id']
+            'liability_reduction_id': liability_reduction['_id'],
+            'phantom_revenue_prevented': True
         }
         
     except Exception as e:
@@ -1237,10 +1176,14 @@ def consume_fee_waiver_liability(
     deposit_amount: float
 ) -> Dict[str, ObjectId]:
     """
-    Consume fee waiver liability when user makes a deposit
-    Implements double-entry bookkeeping:
-    - Dr. Fee Waiver Liability (reduces liability)
-    - Cr. Revenue (increases income)
+    Consume fee waiver liability with CORRECTED 3-transaction pattern
+    
+    CRITICAL FIX: NO PHANTOM REVENUE CREATION
+    Consumption only reduces liability - revenue was already recorded when fee waiver was granted
+    
+    Implements corrected pattern:
+    - Dr. Fee Waiver Liability (reduces liability) - ONLY LIABILITY REDUCTION
+    - NO REVENUE ENTRY (prevents double-counting)
     
     Args:
         mongo: MongoDB connection
@@ -1248,7 +1191,7 @@ def consume_fee_waiver_liability(
         deposit_amount: Amount deposited (triggers consumption)
     
     Returns:
-        Dict with revenue_id and liability_reduction_id
+        Dict with liability_reduction_id only
     """
     try:
         # Check if user has outstanding fee waiver liability
@@ -1273,15 +1216,19 @@ def consume_fee_waiver_liability(
         # Consume the liability (up to the amount available)
         consumption_amount = min(total_liability, 30.0)  # Fee waiver is ₦30
         
-        # 1. Record revenue (Credit) - Fee waiver service provided
-        revenue_entry = {
+        print(f'🔍 Fee Waiver Consumption (CORRECTED) for {user_email}:')
+        print(f'   Consuming: ₦{consumption_amount:,.2f}')
+        print(f'   Action: LIABILITY REDUCTION ONLY (no phantom revenue)')
+        
+        # CORRECTED: ONLY record liability reduction (no revenue entry)
+        liability_reduction = {
             '_id': ObjectId(),
             'userId': BUSINESS_USER_ID,
-            'amount': consumption_amount,
-            'category': 'Service Revenue',
-            'description': f'Fee Waiver Service Provided - Deposit by {user_email}',
+            'amount': -consumption_amount,  # Negative = liability reduction
+            'category': 'Liability Adjustment',
+            'description': f'Fee Waiver Liability Reduction - Deposit by {user_email}',
             'date': datetime.utcnow(),
-            'sourceType': 'fee_waiver_consumption',
+            'sourceType': 'liability_adjustment_fee_waiver',
             'status': 'active',
             'isDeleted': False,
             'metadata': {
@@ -1290,31 +1237,8 @@ def consume_fee_waiver_liability(
                 'depositAmount': deposit_amount,
                 'liabilityConsumed': consumption_amount,
                 'automated': True,
-                'doubleEntry': True
-            },
-            'createdAt': datetime.utcnow(),
-            'updatedAt': datetime.utcnow()
-        }
-        
-        mongo.incomes.insert_one(revenue_entry)
-        
-        # 2. Record liability reduction (Debit - negative expense = liability reduction)
-        liability_reduction = {
-            '_id': ObjectId(),
-            'userId': BUSINESS_USER_ID,
-            'amount': -consumption_amount,  # Negative = liability reduction
-            'category': 'Liability Adjustment',
-            'description': f'Fee Waiver Liability Reduction - Service provided to {user_email}',
-            'date': datetime.utcnow(),
-            'sourceType': 'liability_adjustment_fee_waiver',
-            'status': 'active',
-            'isDeleted': False,
-            'metadata': {
-                'linkedRevenueId': str(revenue_entry['_id']),
-                'customerUserId': str(user_id),
-                'liabilityConsumed': consumption_amount,
-                'automated': True,
-                'doubleEntry': True
+                'correctedPattern': True,  # Flag to indicate corrected implementation
+                'noPhantomRevenue': True
             },
             'createdAt': datetime.utcnow(),
             'updatedAt': datetime.utcnow()
@@ -1323,11 +1247,12 @@ def consume_fee_waiver_liability(
         mongo.expenses.insert_one(liability_reduction)
         
         print(f'✅ Consumed fee waiver liability: ₦{consumption_amount:,.2f} for {user_email}')
+        print(f'✅ NO phantom revenue created (corrected pattern)')
         
         return {
-            'revenue_id': revenue_entry['_id'],
             'liability_reduction_id': liability_reduction['_id'],
-            'amount': consumption_amount
+            'amount': consumption_amount,
+            'phantom_revenue_prevented': True
         }
         
     except Exception as e:

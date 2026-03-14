@@ -3197,17 +3197,22 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         creditors_display = format_currency(creditors_value) if creditors_count > 0 else "N0.00 (Not tracked)"
         loans_display = format_currency(loans_outstanding) if loans_outstanding > 0 else "N0.00 (Not tracked)"  # NEW (Feb 27, 2026)
         
-        # CRITICAL FIX (Mar 11, 2026): Define FC Credit and Subscription display variables here
-        # These are used in both Current Assets & Liabilities section AND Balance Sheet section
-        fc_credit_display = format_currency(fc_credit_liabilities) if fc_credit_liabilities > 0 else "N0.00 (Not tracked)"
-        subscription_display = format_currency(subscription_liabilities) if subscription_liabilities > 0 else "N0.00 (Not tracked)"
-        fee_waiver_display = format_currency(fee_waiver_liabilities) if fee_waiver_liabilities > 0 else "N0.00 (Not tracked)"
+        # PRIVACY FIX (Mar 14, 2026): Only show liability sections if user actually has these liabilities
+        # Don't show business liability categories to regular users who don't have them
+        show_fc_credits = fc_credit_liabilities > 0
+        show_subscriptions = subscription_liabilities > 0
+        show_fee_waivers = fee_waiver_liabilities > 0
+        
+        fc_credit_display = format_currency(fc_credit_liabilities) if show_fc_credits else None
+        subscription_display = format_currency(subscription_liabilities) if show_subscriptions else None
+        fee_waiver_display = format_currency(fee_waiver_liabilities) if show_fee_waivers else None
         
         # CRITICAL FIX (Feb 19, 2026): Display helper for cash - show if tracked via Cash/Bank Management
         # If user has set opening balance OR has adjustments, consider it "tracked"
         # Otherwise show "Not tracked" to encourage setup
         cash_display = format_currency(cash_balance) if cash_balance != 0 else "N0.00 (Not tracked)"
         
+        # Build current assets and liabilities table dynamically
         current_assets_liabilities = [
             ['Item', 'Amount (N)', 'Notes'],
             ['CURRENT ASSETS', '', ''],
@@ -3218,19 +3223,38 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ['', '', ''],
             ['CURRENT LIABILITIES', '', ''],
             ['Accounts Payable (Creditors)', creditors_display, f'{creditors_count} vendors' if creditors_count > 0 else ''],
-            ['FC Credit Liabilities', fc_credit_display, 'Obligations'],  # NEW (Mar 10, 2026)
-            ['Subscription Liabilities', subscription_display, 'Obligations'],  # NEW (Mar 10, 2026)
-            ['Fee Waiver Liabilities', fee_waiver_display, 'Obligations'],  # NEW (Mar 11, 2026)
+        ]
+        
+        # PRIVACY FIX (Mar 14, 2026): Only add liability rows if user actually has these liabilities
+        if fc_credit_display is not None:
+            current_assets_liabilities.append(['FC Credit Liabilities', fc_credit_display, 'Obligations'])
+        if subscription_display is not None:
+            current_assets_liabilities.append(['Subscription Liabilities', subscription_display, 'Obligations'])
+        if fee_waiver_display is not None:
+            current_assets_liabilities.append(['Fee Waiver Liabilities', fee_waiver_display, 'Obligations'])
+        
+        # Always add these rows
+        current_assets_liabilities.extend([
             ['Loans Payable', loans_display, 'Obligations'],  # NEW (Feb 27, 2026)
             ['Estimated Tax Payable', format_currency(unpaid_tax), 'Obligations'],
             ['Total Current Liabilities', format_currency(total_current_liabilities), ''],
             ['', '', ''],
             ['NET CURRENT ASSETS', format_currency(total_current_assets - total_current_liabilities), 'Working Capital'],
-        ]
+        ])
         
         current_table = create_table(current_assets_liabilities, col_widths=[2.5*inch, 2*inch, 1.5*inch])
         
         # Apply text wrapping to prevent overflow in Notes column
+        # Calculate dynamic row indices based on table content
+        current_liabilities_row = None
+        net_current_assets_row = None
+        
+        for i, row in enumerate(current_assets_liabilities):
+            if row[0] == 'CURRENT LIABILITIES':
+                current_liabilities_row = i
+            elif row[0] == 'NET CURRENT ASSETS':
+                net_current_assets_row = i
+        
         current_table_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INVENTORY_GREEN),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -3238,11 +3262,16 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT ASSETS
-            ('FONTNAME', (0, 7), (0, 7), 'Helvetica-Bold'),  # CURRENT LIABILITIES (was 6, now 7 due to loans row)
-            ('FONTNAME', (0, 13), (-1, 13), 'Helvetica-Bold'),  # NET CURRENT ASSETS (was 12, now 13 due to fee waiver row)
-            ('BACKGROUND', (0, 13), (-1, 13), colors.HexColor('#E8F5E9')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ])
+        
+        # Add dynamic styling for CURRENT LIABILITIES and NET CURRENT ASSETS
+        if current_liabilities_row is not None:
+            current_table_style.add('FONTNAME', (0, current_liabilities_row), (0, current_liabilities_row), 'Helvetica-Bold')
+        if net_current_assets_row is not None:
+            current_table_style.add('FONTNAME', (0, net_current_assets_row), (-1, net_current_assets_row), 'Helvetica-Bold')
+            current_table_style.add('BACKGROUND', (0, net_current_assets_row), (-1, net_current_assets_row), colors.HexColor('#E8F5E9'))
+        
+        current_table_style.add('GRID', (0, 0), (-1, -1), 1, colors.black)
         apply_text_wrapping_style(current_table_style)
         current_table.setStyle(current_table_style)
         
@@ -3384,13 +3413,23 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
         
         # Note: fc_credit_display and subscription_display are already defined above
         
+        # Build liabilities section dynamically
         liabilities_section = [
             ['Category', 'Amount (N)'],
             ['CURRENT LIABILITIES', ''],
             ['Accounts Payable (Creditors)', creditors_display],
-            ['FC Credit Liabilities', fc_credit_display],  # NEW (Mar 10, 2026)
-            ['Subscription Liabilities', subscription_display],  # NEW (Mar 10, 2026)
-            ['Fee Waiver Liabilities', fee_waiver_display],  # NEW (Mar 11, 2026)
+        ]
+        
+        # PRIVACY FIX (Mar 14, 2026): Only add liability rows if user actually has these liabilities
+        if fc_credit_display is not None:
+            liabilities_section.append(['FC Credit Liabilities', fc_credit_display])
+        if subscription_display is not None:
+            liabilities_section.append(['Subscription Liabilities', subscription_display])
+        if fee_waiver_display is not None:
+            liabilities_section.append(['Fee Waiver Liabilities', fee_waiver_display])
+        
+        # Always add these rows
+        liabilities_section.extend([
             ['Loans Payable', loans_display],  # NEW (Feb 27, 2026)
             ['Estimated Tax Payable', format_currency(unpaid_tax)],
             ['Total Current Liabilities', format_currency(total_current_liabilities)],
@@ -3403,23 +3442,48 @@ If you sell products, ensure they are categorized as "Sales Revenue" for accurat
             ['Closing Equity', format_currency(closing_equity)],
             ['', ''],
             ['TOTAL LIABILITIES & EQUITY', format_currency(total_current_liabilities + closing_equity)],
-        ]
+        ])
         
         liabilities_bs_table = create_table(liabilities_section, col_widths=[3*inch, 3*inch])
-        liabilities_bs_table.setStyle(TableStyle([
+        
+        # Calculate dynamic row indices based on table content
+        current_liabilities_row = None
+        owners_equity_row = None
+        closing_equity_row = None
+        total_liabilities_equity_row = None
+        
+        for i, row in enumerate(liabilities_section):
+            if row[0] == 'CURRENT LIABILITIES':
+                current_liabilities_row = i
+            elif row[0] == 'OWNER\'S EQUITY':
+                owners_equity_row = i
+            elif row[0] == 'Closing Equity':
+                closing_equity_row = i
+            elif row[0] == 'TOTAL LIABILITIES & EQUITY':
+                total_liabilities_equity_row = i
+        
+        liabilities_bs_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), ReportColors.EXPENSE_RED),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),  # CURRENT LIABILITIES
-            ('FONTNAME', (0, 9), (0, 9), 'Helvetica-Bold'),  # OWNER'S EQUITY (was 7, now 9 due to FC Credit + Subscription rows)
-            ('FONTNAME', (0, 14), (-1, 14), 'Helvetica-Bold'),  # Closing Equity (was 12, now 14 due to new liability rows)
-            ('BACKGROUND', (0, 14), (-1, 14), colors.HexColor('#E8F5E9')),  # Light green
-            ('FONTNAME', (0, 16), (-1, 16), 'Helvetica-Bold'),  # TOTAL (was 14, now 16 due to new liability rows)
-            ('BACKGROUND', (0, 16), (-1, 16), colors.HexColor('#FFEBEE')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
+        ])
+        
+        # Add dynamic styling based on actual row positions
+        if current_liabilities_row is not None:
+            liabilities_bs_style.add('FONTNAME', (0, current_liabilities_row), (0, current_liabilities_row), 'Helvetica-Bold')
+        if owners_equity_row is not None:
+            liabilities_bs_style.add('FONTNAME', (0, owners_equity_row), (0, owners_equity_row), 'Helvetica-Bold')
+        if closing_equity_row is not None:
+            liabilities_bs_style.add('FONTNAME', (0, closing_equity_row), (-1, closing_equity_row), 'Helvetica-Bold')
+            liabilities_bs_style.add('BACKGROUND', (0, closing_equity_row), (-1, closing_equity_row), colors.HexColor('#E8F5E9'))
+        if total_liabilities_equity_row is not None:
+            liabilities_bs_style.add('FONTNAME', (0, total_liabilities_equity_row), (-1, total_liabilities_equity_row), 'Helvetica-Bold')
+            liabilities_bs_style.add('BACKGROUND', (0, total_liabilities_equity_row), (-1, total_liabilities_equity_row), colors.HexColor('#FFEBEE'))
+        
+        liabilities_bs_style.add('GRID', (0, 0), (-1, -1), 1, colors.black)
+        liabilities_bs_table.setStyle(liabilities_bs_style)
         
         story.append(liabilities_bs_table)
         

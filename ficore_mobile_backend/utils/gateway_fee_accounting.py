@@ -200,17 +200,20 @@ def record_fc_purchase_with_gateway_fees(
         mongo.db.incomes.insert_one(cash_increase_entry)
         print(f"✅ Cash increase recorded: ₦{naira_amount} (ID: {cash_increase_entry['_id']})")
         
-        # Transaction 2: Gateway Fee Expense (NEW - This was missing!)
-        gateway_fee_expense_id = record_gateway_fee_expense(
+        # Transaction 2: Gateway Fee Expense using unified system
+        from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+        gateway_fee_result = record_corporate_revenue_automatically(
             mongo=mongo,
-            transaction_id=cash_increase_entry['_id'],
+            revenue_type='gateway_fee',
+            amount=gateway_fee,
             user_id=user_id,
-            provider='paystack',
-            transaction_type='fc_purchase',
-            gross_amount=naira_amount,
-            gateway_fee=gateway_fee,
-            payment_reference=payment_reference,
-            description_context=f'{fc_amount} FCs by {user_email}'
+            transaction_id=cash_increase_entry['_id'],
+            metadata={
+                'payment_amount': naira_amount,
+                'gateway_provider': 'paystack',
+                'fee_rate': 1.6,
+                'payment_reference': payment_reference
+            }
         )
         
         # Transaction 3: FC Liability Creation (Obligation to provide FC Credits service)
@@ -407,17 +410,21 @@ def record_subscription_purchase_with_gateway_fees(
         mongo.db.incomes.insert_one(cash_increase_entry)
         print(f"✅ Cash increase recorded: ₦{subscription_amount} (ID: {cash_increase_entry['_id']})")
         
-        # Transaction 2: Gateway Fee Expense (NEW - This was missing!)
-        gateway_fee_expense_id = record_gateway_fee_expense(
+        # Transaction 2: Gateway Fee Expense using unified system
+        from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+        gateway_fee_result = record_corporate_revenue_automatically(
             mongo=mongo,
-            transaction_id=cash_increase_entry['_id'],
+            revenue_type='gateway_fee',
+            amount=gateway_fee,
             user_id=user_id,
-            provider='paystack',
-            transaction_type='subscription_purchase',
-            gross_amount=subscription_amount,
-            gateway_fee=gateway_fee,
-            payment_reference=payment_reference,
-            description_context=f'{plan_name} by {user_email}'
+            transaction_id=cash_increase_entry['_id'],
+            metadata={
+                'payment_amount': subscription_amount,
+                'gateway_provider': 'paystack',
+                'fee_rate': 1.6,
+                'payment_reference': payment_reference
+            }
+        )
         )
         
         # Transaction 3: Subscription Liability Creation (Obligation to provide subscription service)
@@ -591,25 +598,28 @@ def record_vas_transaction_with_fees(
         Dict with commission transaction ID only
     """
     try:
-        # Record VAS commission revenue (existing logic - this is correct)
-        from utils.business_bookkeeping import record_vas_commission_revenue
-        commission_id = record_vas_commission_revenue(
+        # Record VAS commission revenue using unified system
+        from utils.unified_corporate_revenue import record_corporate_revenue_automatically
+        commission_result = record_corporate_revenue_automatically(
             mongo=mongo,
-            transaction_id=transaction_id,
+            revenue_type='vas_commission',
+            amount=commission,
             user_id=user_id,
-            provider=provider,
-            transaction_type=transaction_type,
-            amount=amount,
-            commission=commission
+            transaction_id=transaction_id,
+            metadata={
+                'provider': provider,
+                'transaction_type': transaction_type,
+                'transaction_amount': amount
+            }
         )
         
         # NO gateway fee expense for VAS transactions
         # VAS providers PAY US, we don't pay them
         
-        print(f'✅ VAS transaction recorded: Commission ₦{commission:,.2f} (NO gateway fees on VAS)')
+        print(f'✅ VAS transaction recorded via unified system: Commission ₦{commission:,.2f} (NO gateway fees on VAS)')
         
         return {
-            'commission_revenue_id': commission_id,
+            'commission_revenue_id': commission_result.get('revenue_id'),
             'gateway_fee_expense_id': None  # No gateway fees on VAS
         }
         
