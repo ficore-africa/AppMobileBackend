@@ -216,6 +216,9 @@ def record_fc_purchase_with_gateway_fees(
             }
         )
         
+        # Extract the expense ID from the result
+        gateway_fee_expense_id = gateway_fee_result.get('expense_id') if gateway_fee_result else None
+        
         # Transaction 3: FC Liability Creation (Obligation to provide FC Credits service)
         fc_liability_entry = {
             '_id': ObjectId(),
@@ -425,6 +428,9 @@ def record_subscription_purchase_with_gateway_fees(
                 'payment_reference': payment_reference
             }
         )
+        
+        # Extract the expense ID from the result
+        gateway_fee_expense_id = gateway_fee_result.get('expense_id') if gateway_fee_result else None
         
         # Transaction 3: Subscription Liability Creation (Obligation to provide subscription service)
         subscription_liability_entry = {
