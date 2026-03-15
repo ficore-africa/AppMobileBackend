@@ -73,6 +73,76 @@ def format_tin_display(tin_value):
     return tin_value
 
 
+def format_source_type_display(source_type):
+    """
+    Convert sourceType to user-friendly display name for PDF reports
+    
+    CRITICAL FIX (Mar 15, 2026): Show clear distinction between manual entries
+    and system-generated transactions in PDF reports.
+    
+    Args:
+        source_type: sourceType string from transaction data
+    
+    Returns:
+        User-friendly display name
+    """
+    if not source_type:
+        return 'Manual'
+    
+    # VAS Transactions
+    if source_type == 'vas_airtime':
+        return 'VAS: Airtime'
+    elif source_type == 'vas_data':
+        return 'VAS: Data'
+    elif source_type == 'vas_electricity':
+        return 'VAS: Electricity'
+    elif source_type == 'vas_bills':
+        return 'VAS: Bills'
+    elif source_type == 'vas_commission':
+        return 'VAS: Commission'
+    
+    # Automated System Entries
+    elif source_type == 'depreciation':
+        return 'Depreciation'
+    elif source_type == 'accumulated_depreciation':
+        return 'Accumulated Depreciation'
+    elif source_type == 'inventory_sale':
+        return 'Inventory Sale'
+    elif source_type == 'inventory_sale_cogs':
+        return 'Cost of Goods Sold'
+    elif source_type == 'wallet_auto':
+        return 'Wallet Operation'
+    
+    # Business Operations (FiCore Internal)
+    elif source_type.startswith('marketing_expense'):
+        return 'Marketing Expense'
+    elif source_type.endswith('_liability_accrual'):
+        return 'Liability Accrual'
+    elif source_type.endswith('_consumption'):
+        return 'Service Revenue'
+    elif source_type.startswith('liability_adjustment'):
+        return 'Liability Adjustment'
+    
+    # Gateway and Fees
+    elif source_type == 'gateway_fee':
+        return 'Gateway Fee'
+    elif source_type == 'deposit_fee':
+        return 'Deposit Fee'
+    elif source_type == 'deposit_fee_revenue':
+        return 'Deposit Fee Revenue'
+    
+    # User Entries
+    elif source_type == 'manual':
+        return 'Manual'
+    elif source_type == 'voice':
+        return 'Voice Entry'
+    
+    # Default fallback
+    else:
+        # Convert snake_case to Title Case for unknown types
+        return source_type.replace('_', ' ').title()
+
+
 def get_nigerian_time():
     """Get current time in Nigerian timezone (WAT - UTC+1)"""
     return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=1)))
@@ -424,7 +494,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         if 'expenses' in export_data and export_data['expenses']:
             story.append(Paragraph("Expenses Summary", self.styles['SectionHeader']))
             
-            expense_data = [['Date', 'Category', 'Description', 'Amount (N)']]
+            expense_data = [['Date', 'Category', 'Source', 'Description', 'Amount (N)']]
             total_expenses = 0
             
             for expense in export_data['expenses']:
@@ -433,30 +503,34 @@ Your registered tax profile remains <b>{profile_name}</b>.
                 # Use description if available, otherwise fall back to title
                 description = expense.get('description') or expense.get('notes') or expense.get('title', 'N/A')
                 category = expense.get('category', 'N/A')
+                # CRITICAL FIX (Mar 15, 2026): Show sourceType to distinguish manual vs system entries
+                source_type_display = format_source_type_display(expense.get('sourceType'))
                 
                 # Wrap long text in Paragraph objects for automatic text wrapping
                 category_para = Paragraph(category, self.styles['Normal'])
-                description_para = Paragraph(description, self.styles['Normal'])
+                source_para = Paragraph(source_type_display, self.styles['Normal'])
+                description_para = Paragraph(truncate_text_for_pdf(description, 35), self.styles['Normal'])
                 
                 expense_data.append([
                     date_str,
                     category_para,
+                    source_para,
                     description_para,
                     format_currency(expense.get('amount', 0))
                 ])
                 total_expenses += expense.get('amount', 0)
             
-            expense_data.append(['', '', 'Total:', format_currency(total_expenses)])
+            expense_data.append(['', '', '', 'Total:', format_currency(total_expenses)])
             
-            # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
-            expense_table = create_table(expense_data, col_widths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
+            # Adjusted column widths: Date (1"), Category (1.2"), Source (1.2"), Description (2"), Amount (1.1")
+            expense_table = create_table(expense_data, col_widths=[1*inch, 1.2*inch, 1.2*inch, 2*inch, 1.1*inch])
             expense_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), ReportColors.EXPENSE_RED),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ('ALIGN', (4, 0), (4, -1), 'RIGHT'),  # Amount column right-aligned
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),  # Smaller header font to fit
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('TOPPADDING', (0, 1), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
@@ -474,7 +548,7 @@ Your registered tax profile remains <b>{profile_name}</b>.
         if 'incomes' in export_data and export_data['incomes']:
             story.append(Paragraph("Income Summary", self.styles['SectionHeader']))
             
-            income_data = [['Date', 'Category', 'Description', 'Amount (N)']]
+            income_data = [['Date', 'Category', 'Source', 'Description', 'Amount (N)']]
             total_income = 0
             
             for income in export_data['incomes']:
@@ -484,30 +558,34 @@ Your registered tax profile remains <b>{profile_name}</b>.
                 description = income.get('description') or income.get('source', 'N/A')
                 # Get category display name
                 category = income.get('category', 'Other')
+                # CRITICAL FIX (Mar 15, 2026): Show sourceType to distinguish manual vs system entries
+                source_type_display = format_source_type_display(income.get('sourceType'))
                 
                 # Wrap long text in Paragraph objects for automatic text wrapping
                 category_para = Paragraph(category, self.styles['Normal'])
-                description_para = Paragraph(description, self.styles['Normal'])
+                source_para = Paragraph(source_type_display, self.styles['Normal'])
+                description_para = Paragraph(truncate_text_for_pdf(description, 35), self.styles['Normal'])
                 
                 income_data.append([
                     date_str,
                     category_para,
+                    source_para,
                     description_para,
                     format_currency(income.get('amount', 0))
                 ])
                 total_income += income.get('amount', 0)
             
-            income_data.append(['', '', 'Total:', format_currency(total_income)])
+            income_data.append(['', '', '', 'Total:', format_currency(total_income)])
             
-            # Optimized column widths: Date (1.2"), Category (1.5"), Description (2.5"), Amount (1.3")
-            income_table = create_table(income_data, col_widths=[1.2*inch, 1.5*inch, 2.5*inch, 1.3*inch])
+            # Adjusted column widths: Date (1"), Category (1.2"), Source (1.2"), Description (2"), Amount (1.1")
+            income_table = create_table(income_data, col_widths=[1*inch, 1.2*inch, 1.2*inch, 2*inch, 1.1*inch])
             income_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), ReportColors.INCOME_BLUE),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ('ALIGN', (4, 0), (4, -1), 'RIGHT'),  # Amount column right-aligned
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),  # Smaller header font to fit
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('TOPPADDING', (0, 1), (-1, -1), 6),
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
