@@ -71,6 +71,7 @@ PDF_PROJECTIONS = {
         'category': 1,
         'tags': 1,
         'status': 1,
+        'sourceType': 1,  # CRITICAL: Include sourceType for proper classification
         '_id': 1  # Keep _id for tracking
     },
     'expenses': {
@@ -82,6 +83,7 @@ PDF_PROJECTIONS = {
         'category': 1,
         'tags': 1,
         'status': 1,
+        'sourceType': 1,  # CRITICAL: Include sourceType for proper classification
         '_id': 1
     },
     'assets': {
@@ -821,7 +823,10 @@ def init_reports_blueprint(mongo, token_required):
                 export_data['incomes'].append({
                     'source': income.get('source', ''),
                     'amount': income.get('amount', 0),
-                    'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
+                    'sourceType': income.get('sourceType', 'manual'),  # CRITICAL: Include sourceType
+                    'category': income.get('category', 'Uncategorized'),
+                    'description': income.get('description', 'No description')
                 })
             
             # Generate PDF
@@ -971,7 +976,10 @@ def init_reports_blueprint(mongo, token_required):
                     export_data['incomes'].append({
                         'source': income.get('source', ''),
                         'amount': income.get('amount', 0),
-                        'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
+                        'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
+                        'sourceType': income.get('sourceType', 'manual'),  # CRITICAL: Include sourceType
+                        'category': income.get('category', 'Uncategorized'),
+                        'description': income.get('description', 'No description')
                     })
                 
                 # Generate PDF
@@ -1273,7 +1281,8 @@ def init_reports_blueprint(mongo, token_required):
                     'amount': expense.get('amount', 0),
                     'category': expense.get('category', 'Other'),
                     'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
-                    'description': expense.get('description', '')
+                    'description': expense.get('description', ''),
+                    'sourceType': expense.get('sourceType', 'manual')  # CRITICAL: Include sourceType
                 })
             
             # Generate PDF
@@ -1423,7 +1432,8 @@ def init_reports_blueprint(mongo, token_required):
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Other'),
                         'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
-                        'description': expense.get('description', '')
+                        'description': expense.get('description', ''),
+                        'sourceType': expense.get('sourceType', 'manual')  # CRITICAL: Include sourceType
                     })
                 
                 # Generate PDF
@@ -1743,7 +1753,10 @@ def init_reports_blueprint(mongo, token_required):
                 export_data['incomes'].append({
                     'source': income.get('source', ''),
                     'amount': income.get('amount', 0),
-                    'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
+                    'sourceType': income.get('sourceType', 'manual'),  # CRITICAL: Include sourceType
+                    'category': income.get('category', 'Uncategorized'),
+                    'description': income.get('description', 'No description')
                 })
             
             for expense in expenses:
@@ -1751,7 +1764,8 @@ def init_reports_blueprint(mongo, token_required):
                     'title': expense.get('title', ''),
                     'amount': expense.get('amount', 0),
                     'category': expense.get('category', 'Other'),
-                    'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z'
+                    'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                    'sourceType': expense.get('sourceType', 'manual')  # CRITICAL: Include sourceType
                 })
             
             # Generate PDF with validation
@@ -1964,7 +1978,10 @@ def init_reports_blueprint(mongo, token_required):
                     export_data['incomes'].append({
                         'source': income.get('source', ''),
                         'amount': income.get('amount', 0),
-                        'date': income.get('date', datetime.utcnow()).isoformat() + 'Z'
+                        'date': income.get('date', datetime.utcnow()).isoformat() + 'Z',
+                        'sourceType': income.get('sourceType', 'manual'),  # CRITICAL: Include sourceType
+                        'category': income.get('category', 'Uncategorized'),
+                        'description': income.get('description', 'No description')
                     })
                 
                 for expense in expenses:
@@ -1972,7 +1989,8 @@ def init_reports_blueprint(mongo, token_required):
                         'title': expense.get('title', ''),
                         'amount': expense.get('amount', 0),
                         'category': expense.get('category', 'Other'),
-                        'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z'
+                        'date': expense.get('date', datetime.utcnow()).isoformat() + 'Z',
+                        'sourceType': expense.get('sourceType', 'manual')  # CRITICAL: Include sourceType
                     })
                 
                 # Generate PDF with validation
