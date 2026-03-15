@@ -658,10 +658,10 @@ def reset_password():
         print(f'📥 [RESET-PASSWORD] [{request_id}] Request data received: {bool(data)}')
         
         token = data.get('token')
-        new_password = data.get('password')
+        new_password = data.get('new_password') or data.get('password')  # Support both field names for compatibility
         
         print(f'🔑 [RESET-PASSWORD] [{request_id}] Token provided: {bool(token)} (length: {len(token) if token else 0})')
-        print(f'🔒 [RESET-PASSWORD] [{request_id}] Password provided: {bool(new_password)} (length: {len(new_password) if new_password else 0})')
+        print(f'🔒 [RESET-PASSWORD] [{request_id}] New password provided: {bool(new_password)} (length: {len(new_password) if new_password else 0})')
         
         if token:
             print(f'🔑 [RESET-PASSWORD] [{request_id}] Token preview: {token[:8]}***')
@@ -671,14 +671,14 @@ def reset_password():
             if not token:
                 missing_fields.append('token')
             if not new_password:
-                missing_fields.append('password')
+                missing_fields.append('new_password')  # Match frontend field name
             print(f'❌ [RESET-PASSWORD] [{request_id}] FAILED: Missing required fields: {missing_fields}')
             return jsonify({
                 'success': False,
                 'message': 'Token and new password are required',
                 'errors': {
                     'token': ['Reset token is required'] if not token else [],
-                    'password': ['New password is required'] if not new_password else []
+                    'new_password': ['New password is required'] if not new_password else []
                 }
             }), 400
         
