@@ -100,6 +100,7 @@ TEST_ACCOUNT_USER_IDS = [
     ObjectId('69626f46da4d4eb555860c7a'),  # makesaisai@gmail.com
     ObjectId('6964ca3ada4d4eb5558615d8'),  # mokomali@gmail.com
     ObjectId('694823bbe0c1f2ef8facd59a'),  # mustaphakaka@gmail.com
+    ObjectId('68e1ade6fb67022829297282'),  # admin@ficore.com
     ObjectId('694d8d89e0c1f2ef8fad012b'),  # nagin@gmail.com
     ObjectId('698b10a2f4d2d58b6228f94e'),  # newtest@gmail.com
     ObjectId('694463715a3f75f2eb5bfcf4'),  # nhooksapp@gmail.com
